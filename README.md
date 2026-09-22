@@ -59,6 +59,7 @@ With the skill installed, an agent knows
 - **when to ask the graph**: any question about people, requests, decisions or product history, before concluding "nobody asked for this";
 - **how to ask it**: by topic rather than by name, one question per call, how to follow up on an entity it did not expect;
 - **how to read an answer**: entity types, why similarity is not confidence, stale summaries, fact sources, contradictions, relation evidence;
+- **the gotchas**: names miss where topics hit, twin entities, truncated excerpts, internal notes that look like customer requests, nima's own ids, learned-versus-said dates, rate limits;
 - **how to answer from it**: told versus inferred, cite sources the way the graph does, never invent an id or a quote.
 
 Try it once connected:
