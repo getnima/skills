@@ -1,0 +1,12 @@
+{
+  "name": "nima",
+  "description": "nima for coding agents: ask the knowledge graph before claiming demand or history, and file guarded product-gap signals.",
+  "owner": { "name": "nima", "url": "https://getnima.io" },
+  "plugins": [
+    {
+      "name": "nima",
+      "source": "./",
+      "description": "Query nima's knowledge graph automatically before claiming demand or history, and file verified, deduplicated product gaps as signals."
+    }
+  ]
+}
