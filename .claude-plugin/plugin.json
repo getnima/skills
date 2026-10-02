@@ -1,0 +1,9 @@
+{
+  "name": "nima",
+  "displayName": "nima",
+  "description": "Ask nima's knowledge graph and signals before claiming demand or history, and file signals for confirmed product gaps.",
+  "author": { "name": "nima", "url": "https://getnima.io" },
+  "homepage": "https://docs.getnima.io/docs/mcp-server/overview/",
+  "repository": "https://github.com/getnima/skills",
+  "keywords": ["nima", "mcp", "signals", "knowledge-graph"]
+}

@@ -1,0 +1,63 @@
+{
+  "description": "nima: query product context automatically; gate, track and nudge signal filing.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/run.sh\" session-start"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 5,
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/run.sh\" prompt"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*create_signal",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/run.sh\" guard"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__.*(create_signal|search_signals|ask_knowledge_graph)",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/run.sh\" record"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 10,
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/run.sh\" stop"
+          }
+        ]
+      }
+    ]
+  }
+}
