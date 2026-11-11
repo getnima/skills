@@ -81,6 +81,8 @@ export const FINAL_GRACE_MS = 1_500;
 export const RESUME_COUNTDOWN_MS = 3_000;
 /** A cutscene the TV never reports as finished is ended by the server after this long. */
 export const CUTSCENE_MAX_MS = 90_000;
+/** Suspense between the start of the results phase and the round winner's reveal. */
+export const WINNER_REVEAL_MS = 8_000;
 /** Clients send `player:score` at most this often while playing. */
 export const SCORE_SEND_INTERVAL_MS = 250;
 /** Server broadcasts the live `scores` event at most this often. */
@@ -167,6 +169,20 @@ export interface RoundResults {
   readonly gameId: GameId;
   /** Sorted by `rank` (overall), then name. */
   readonly rows: readonly ResultRow[];
+  /**
+   * Winner(s) of THIS round: every player with roundRank 1 and raw > 0
+   * (several on a tie, none when nobody scored). The round winner gets the
+   * prize, so the TV runs a winner ceremony with the victory song.
+   */
+  readonly winnerIds: readonly string[];
+  /**
+   * Server epoch ms at which the TV reveals the round winner. The TV paces
+   * its ranking reveal to land on it; phones hide the personal result until
+   * then so nobody is spoiled. Set to now + WINNER_REVEAL_MS when the results
+   * phase begins; a cutscene that plays before it pushes it back by the
+   * cutscene's length.
+   */
+  readonly revealAt: number;
 }
 
 /** Full room snapshot. Broadcast to everyone in the room on every change. */

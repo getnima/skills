@@ -22,11 +22,17 @@ export interface PlayingSceneProps {
   readonly durationMs: number;
 }
 
-/** Staged reveal after a round: round ranking first, then overall standings. */
+/**
+ * After a round: the ranking builds up from last place and lands on the
+ * round WINNER exactly at `results.revealAt` (server time), then the winner
+ * ceremony (prize + victory song), then the overall standings.
+ */
 export interface ResultsSceneProps {
   readonly game: GameMeta;
   readonly results: RoundResults;
-  /** False while a cutscene covers the scene: hold the reveal until true. */
+  /** Server-synced epoch ms, to pace the reveal toward `results.revealAt`. */
+  now(): number;
+  /** False while a cutscene covers the scene: hold everything until true. */
   readonly active: boolean;
 }
 
