@@ -1,0 +1,750 @@
+/**
+ * One party room: players, phases, the round clock, cutscenes and scoring.
+ * Pure logic: no sockets, no globals. Time and timers come from a Scheduler
+ * and everything it wants to tell the outside world goes through a RoomSink,
+ * so the whole state machine runs under fake timers in unit tests.
+ */
+import { CUTSCENES } from '../shared/cutscenes';
+import {
+  CUTSCENE_MAX_MS,
+  FINAL_GRACE_MS,
+  GAME_IDS,
+  GAMES,
+  MAX_PLAYERS,
+  RESUME_COUNTDOWN_MS,
+  SCORE_BROADCAST_INTERVAL_MS,
+  WINNER_REVEAL_MS,
+} from '../shared/protocol';
+import { roundTime } from '../shared/round-clock';
+import { computeRoundScores, rankDescending } from '../shared/scoring';
+
+import { DEFAULT_TIMING } from './config';
+import { cleanName, uniqueName } from './names';
+
+import type { CutsceneDef } from '../shared/cutscenes';
+import type {
+  Ack,
+  CutsceneState,
+  ErrorCode,
+  GameId,
+  Phase,
+  PlayerPublic,
+  ResultRow,
+  RoomState,
+  RoundPublic,
+  RoundResults,
+} from '../shared/protocol';
+import type { RoomTiming } from './config';
+
+export type TimerHandle = unknown;
+
+export interface Scheduler {
+  now(): number;
+  setTimeout(fn: () => void, ms: number): TimerHandle;
+  clearTimeout(handle: TimerHandle): void;
+}
+
+/** Uses the global clock and timers (which vitest's fake timers replace). */
+export const SYSTEM_SCHEDULER: Scheduler = {
+  now: (): number => Date.now(),
+  setTimeout: (fn: () => void, ms: number): TimerHandle => setTimeout(fn, ms),
+  clearTimeout: (handle: TimerHandle): void => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+export interface ScoresMessage {
+  readonly round: number;
+  readonly scores: ReadonlyArray<readonly [string, number]>;
+}
+
+export interface RoomSink {
+  /** The room changed: send this snapshot to everyone in it. */
+  state(state: RoomState): void;
+  scores(msg: ScoresMessage): void;
+  /** These connections belong to a player the host just removed. */
+  kicked(connIds: readonly string[]): void;
+}
+
+export interface RoomDeps {
+  readonly sink: RoomSink;
+  readonly scheduler?: Scheduler;
+  readonly timing?: RoomTiming;
+  /** Cutscene manifest (tests inject their own). */
+  readonly cutscenes?: readonly CutsceneDef[];
+  /** Random token for player ids and secrets. */
+  readonly token: () => string;
+  /** Random uint32 for round seeds. */
+  readonly seed: () => number;
+  readonly onError?: (err: unknown) => void;
+}
+
+export interface JoinRequest {
+  readonly name: unknown;
+  readonly playerId?: unknown;
+  readonly secret?: unknown;
+}
+
+export type OkAck = Ack<{}>;
+
+interface PlayerRec {
+  readonly id: string;
+  readonly secret: string;
+  name: string;
+  readonly avatar: number;
+  total: number;
+  /** Was in a results table before (prevRank is null on a first appearance). */
+  appeared: boolean;
+  readonly conns: Set<string>;
+}
+
+interface RoundRec {
+  readonly index: number;
+  readonly gameId: GameId;
+  readonly seed: number;
+  startAt: number;
+  endAt: number;
+  frozenAt: number | null;
+  resumeAt: number | null;
+  readonly participants: Set<string>;
+  readonly live: Map<string, number>;
+  readonly finals: Map<string, number>;
+  /** 'during' cutscenes already handled in this round. */
+  readonly duringDone: Set<string>;
+  /** host:endRound arrived while a cutscene was playing. */
+  pendingEnd: boolean;
+}
+
+const OK: OkAck = { ok: true };
+
+function fail(error: ErrorCode, message: string): { ok: false; error: ErrorCode; message: string } {
+  return { ok: false, error, message };
+}
+
+function isGameId(value: unknown): value is GameId {
+  return typeof value === 'string' && (GAME_IDS as readonly string[]).includes(value);
+}
+
+export class Room {
+  readonly code: string;
+  readonly hostKey: string;
+
+  private readonly sink: RoomSink;
+  private readonly scheduler: Scheduler;
+  private readonly timing: RoomTiming;
+  private readonly cutscenes: readonly CutsceneDef[];
+  private readonly token: () => string;
+  private readonly seed: () => number;
+  private readonly onError: (err: unknown) => void;
+
+  private phase: Phase = 'lobby';
+  private readonly players = new Map<string, PlayerRec>();
+  /** connection id → player id. */
+  private readonly playerConns = new Map<string, string>();
+  private readonly hostConns = new Set<string>();
+  private readonly kickedIds = new Set<string>();
+  private round: RoundRec | null = null;
+  private nextRoundIndex = 0;
+  private played: GameId[] = [];
+  private results: RoundResults | null = null;
+  private cutscene: CutsceneState | null = null;
+  private autoCutscenes = true;
+  /** Automatic cutscenes already fired in this competition. */
+  private readonly firedCutscenes = new Set<string>();
+  private nextAvatar = 0;
+
+  private phaseTimers: TimerHandle[] = [];
+  private cutsceneTimer: TimerHandle | null = null;
+  private scoresTimer: TimerHandle | null = null;
+  private scoresDirty = false;
+  private lastScoresAt = Number.NEGATIVE_INFINITY;
+  private emptySince: number | null;
+  private destroyed = false;
+
+  constructor(code: string, hostKey: string, deps: RoomDeps) {
+    this.code = code;
+    this.hostKey = hostKey;
+    this.sink = deps.sink;
+    this.scheduler = deps.scheduler ?? SYSTEM_SCHEDULER;
+    this.timing = deps.timing ?? DEFAULT_TIMING;
+    this.cutscenes = deps.cutscenes ?? CUTSCENES;
+    this.token = deps.token;
+    this.seed = deps.seed;
+    this.onError = deps.onError ?? ((err: unknown): void => console.error('[room] timer failed', err));
+    this.emptySince = this.scheduler.now();
+  }
+
+  // ───────────────────────────── Queries ─────────────────────────────
+
+  snapshot(): RoomState {
+    const now = this.scheduler.now();
+    const r = this.round;
+    if (r !== null && r.resumeAt !== null && r.frozenAt === null && now >= r.resumeAt) r.resumeAt = null;
+    const players: PlayerPublic[] = [...this.players.values()].map((p) => ({
+      id: p.id,
+      name: p.name,
+      avatar: p.avatar,
+      connected: p.conns.size > 0,
+      total: p.total,
+    }));
+    return {
+      code: this.code,
+      phase: this.phase,
+      players,
+      round: r === null ? null : this.roundPublic(r),
+      played: [...this.played],
+      results: this.results,
+      cutscene: this.cutscene,
+      autoCutscenes: this.autoCutscenes,
+      serverNow: now,
+    };
+  }
+
+  get playerCount(): number {
+    return this.players.size;
+  }
+
+  get connectionCount(): number {
+    return this.hostConns.size + this.playerConns.size;
+  }
+
+  get hostConnected(): boolean {
+    return this.hostConns.size > 0;
+  }
+
+  /** Ms since the last socket left; 0 while anyone is attached. */
+  idleMs(): number {
+    return this.emptySince === null ? 0 : this.scheduler.now() - this.emptySince;
+  }
+
+  isHostConn(connId: string): boolean {
+    return this.hostConns.has(connId);
+  }
+
+  playerIdOf(connId: string): string | null {
+    return this.playerConns.get(connId) ?? null;
+  }
+
+  // ───────────────────────────── Connections ─────────────────────────────
+
+  attachHost(connId: string): RoomState {
+    this.detach(connId);
+    this.hostConns.add(connId);
+    this.emptySince = null;
+    return this.snapshot();
+  }
+
+  join(connId: string, req: JoinRequest): Ack<{ playerId: string; secret: string; state: RoomState }> {
+    const name = cleanName(req.name);
+    const playerId = typeof req.playerId === 'string' ? req.playerId : null;
+    const secret = typeof req.secret === 'string' ? req.secret : null;
+
+    const existing = playerId !== null ? this.players.get(playerId) : undefined;
+    if (existing !== undefined && secret !== null && existing.secret === secret) {
+      this.detach(connId);
+      if (name !== null && name !== existing.name) {
+        existing.name = uniqueName(name, this.namesExcept(existing.id));
+      }
+      existing.conns.add(connId);
+      this.playerConns.set(connId, existing.id);
+      this.emptySince = null;
+      this.broadcast();
+      return { ok: true, playerId: existing.id, secret: existing.secret, state: this.snapshot() };
+    }
+    if (playerId !== null && this.kickedIds.has(playerId)) {
+      return fail('KICKED', 'המנחה הוציא אותך מהמשחק');
+    }
+    if (name === null) return fail('BAD_NAME', 'צריך לבחור שם');
+    if (this.players.size >= MAX_PLAYERS) return fail('ROOM_FULL', 'החדר מלא');
+
+    this.detach(connId);
+    const player: PlayerRec = {
+      id: this.token(),
+      secret: this.token(),
+      name: uniqueName(name, this.namesExcept(null)),
+      avatar: this.nextAvatar++,
+      total: 0,
+      appeared: false,
+      conns: new Set([connId]),
+    };
+    this.players.set(player.id, player);
+    this.playerConns.set(connId, player.id);
+    this.emptySince = null;
+    this.broadcast();
+    return { ok: true, playerId: player.id, secret: player.secret, state: this.snapshot() };
+  }
+
+  /** A socket went away (or moved to another room). Player and scores are kept. */
+  disconnect(connId: string): void {
+    const playerId = this.playerConns.get(connId);
+    const wasAttached = this.detach(connId);
+    if (!wasAttached) return;
+    if (this.connectionCount === 0) this.emptySince = this.scheduler.now();
+    if (playerId === undefined) return;
+    const player = this.players.get(playerId);
+    if (player === undefined || player.conns.size > 0) return;
+    if (this.maybeEndEarly()) return;
+    this.broadcast();
+  }
+
+  // ───────────────────────────── Host actions ─────────────────────────────
+
+  start(gameId: unknown): OkAck {
+    if (!isGameId(gameId)) return fail('BAD_REQUEST', 'unknown game');
+    if (this.phase !== 'lobby' && this.phase !== 'results') return fail('BAD_PHASE', 'a round is already running');
+    const now = this.scheduler.now();
+    const startAt = now + this.timing.introMs + this.timing.countdownMs;
+    this.clearPhaseTimers();
+    this.round = {
+      index: this.nextRoundIndex++,
+      gameId,
+      seed: this.seed() >>> 0,
+      startAt,
+      endAt: startAt + this.timing.durationMs(gameId),
+      frozenAt: null,
+      resumeAt: null,
+      participants: new Set(this.players.keys()),
+      live: new Map(),
+      finals: new Map(),
+      duringDone: new Set(),
+      pendingEnd: false,
+    };
+    this.phase = 'intro';
+    this.scoresDirty = false;
+    if (this.cutscene !== null) {
+      // A manual cutscene is still on the TV: the new round waits for it.
+      this.round.frozenAt = now;
+    } else {
+      const before = this.findAuto((c) => c.when.at === 'before' && c.when.gameId === gameId);
+      if (before !== undefined) this.beginCutscene(before.id, true);
+      else this.armPhaseTimers();
+    }
+    this.broadcast();
+    return OK;
+  }
+
+  endRound(): OkAck {
+    const r = this.round;
+    if (r === null || (this.phase !== 'intro' && this.phase !== 'countdown' && this.phase !== 'playing')) {
+      return fail('BAD_PHASE', 'no round is running');
+    }
+    if (this.cutscene !== null) {
+      // Never under a video: carried out the moment the cutscene ends.
+      r.pendingEnd = true;
+      return OK;
+    }
+    this.endRoundNow();
+    return OK;
+  }
+
+  toLobby(): OkAck {
+    if (this.phase !== 'results' && this.phase !== 'final') return fail('BAD_PHASE', 'not in results or final');
+    this.clearPhaseTimers();
+    this.phase = 'lobby';
+    this.round = null;
+    this.broadcast();
+    return OK;
+  }
+
+  toFinal(): OkAck {
+    if (this.phase !== 'lobby' && this.phase !== 'results') return fail('BAD_PHASE', 'not in lobby or results');
+    this.clearPhaseTimers();
+    this.phase = 'final';
+    this.round = null;
+    if (this.cutscene === null) {
+      const def = this.findAuto((c) => c.when.at === 'final');
+      if (def !== undefined) this.beginCutscene(def.id, true);
+    }
+    this.broadcast();
+    return OK;
+  }
+
+  reset(): OkAck {
+    this.clearPhaseTimers();
+    this.clearCutsceneTimer();
+    this.clearScoresTimer();
+    this.cutscene = null;
+    this.phase = 'lobby';
+    this.round = null;
+    this.nextRoundIndex = 0;
+    this.played = [];
+    this.results = null;
+    this.firedCutscenes.clear();
+    for (const p of this.players.values()) {
+      p.total = 0;
+      p.appeared = false;
+    }
+    this.broadcast();
+    return OK;
+  }
+
+  kick(playerId: unknown): OkAck {
+    if (typeof playerId !== 'string') return fail('BAD_REQUEST', 'playerId must be a string');
+    const player = this.players.get(playerId);
+    if (player === undefined) return fail('BAD_REQUEST', 'unknown player');
+    const conns = [...player.conns];
+    for (const c of conns) this.playerConns.delete(c);
+    this.players.delete(playerId);
+    this.kickedIds.add(playerId);
+    const r = this.round;
+    if (r !== null && r.participants.delete(playerId)) {
+      r.live.delete(playerId);
+      r.finals.delete(playerId);
+      if (this.phase === 'playing') this.markScoresDirty();
+    }
+    if (this.connectionCount === 0) this.emptySince = this.scheduler.now();
+    this.sink.kicked(conns);
+    if (this.maybeEndEarly()) return OK;
+    this.broadcast();
+    return OK;
+  }
+
+  startCutscene(id: unknown): OkAck {
+    if (typeof id !== 'string') return fail('BAD_REQUEST', 'id must be a string');
+    if (this.cutscenes.find((c) => c.id === id) === undefined) return fail('BAD_REQUEST', 'unknown cutscene');
+    if (this.cutscene !== null) return fail('BAD_PHASE', 'a cutscene is already playing');
+    this.beginCutscene(id, false);
+    this.broadcast();
+    return OK;
+  }
+
+  /** The TV finished (or skipped) the video, or the safety timer ran out. Idempotent. */
+  endCutscene(): OkAck {
+    const cs = this.cutscene;
+    if (cs === null) return OK;
+    const now = this.scheduler.now();
+    this.cutscene = null;
+    this.clearCutsceneTimer();
+
+    // The winner reveal never happens under a video.
+    if (this.results !== null && cs.startedAt < this.results.revealAt) {
+      this.results = { ...this.results, revealAt: this.results.revealAt + (now - cs.startedAt) };
+    }
+
+    const r = this.round;
+    if (r !== null && r.frozenAt !== null) {
+      const playing = this.phase === 'playing';
+      const elapsedAtFreeze = roundTime(this.roundPublic(r), now).elapsedMs;
+      const resumePoint = playing ? now + RESUME_COUNTDOWN_MS : now;
+      const delta = resumePoint - r.frozenAt;
+      r.startAt += delta;
+      r.endAt += delta;
+      r.frozenAt = null;
+      r.resumeAt = playing ? resumePoint : null;
+      const elapsedAtResume = roundTime(this.roundPublic(r), resumePoint).elapsedMs;
+      if (elapsedAtResume !== elapsedAtFreeze) {
+        this.onError(new Error(`round clock drifted over a freeze: ${elapsedAtFreeze} -> ${elapsedAtResume}`));
+      }
+      if (r.pendingEnd) {
+        r.pendingEnd = false;
+        this.endRoundNow();
+        return OK;
+      }
+      if (this.maybeEndEarly()) return OK;
+      this.armPhaseTimers();
+    }
+    this.broadcast();
+    return OK;
+  }
+
+  setAutoCutscenes(enabled: unknown): OkAck {
+    if (typeof enabled !== 'boolean') return fail('BAD_REQUEST', 'enabled must be a boolean');
+    if (this.autoCutscenes !== enabled) {
+      this.autoCutscenes = enabled;
+      this.broadcast();
+    }
+    return OK;
+  }
+
+  // ───────────────────────────── Player actions ─────────────────────────────
+
+  /** Live score. Fire-and-forget: anything invalid is dropped silently. */
+  score(playerId: string, roundIndex: unknown, score: unknown): void {
+    const r = this.round;
+    if (r === null || this.phase !== 'playing') return;
+    if (roundIndex !== r.index || typeof score !== 'number' || !Number.isFinite(score)) return;
+    if (!r.participants.has(playerId) || r.finals.has(playerId)) return;
+    const value = this.clamp(r.gameId, score);
+    if (r.live.get(playerId) === value) return;
+    r.live.set(playerId, value);
+    this.markScoresDirty();
+  }
+
+  final(playerId: string, roundIndex: unknown, score: unknown): OkAck {
+    const r = this.round;
+    if (typeof roundIndex !== 'number' || typeof score !== 'number' || !Number.isFinite(score)) {
+      return fail('BAD_REQUEST', 'round and score must be finite numbers');
+    }
+    if (r === null || this.phase !== 'playing' || roundIndex !== r.index) {
+      return fail('BAD_PHASE', 'that round is not running');
+    }
+    if (!r.participants.has(playerId)) return fail('BAD_REQUEST', 'not a participant of this round');
+    if (r.finals.has(playerId)) return OK; // the first final wins
+    r.finals.set(playerId, this.clamp(r.gameId, score));
+    this.markScoresDirty();
+    this.maybeEndEarly();
+    return OK;
+  }
+
+  /** Cancels every timer. The room must not be used afterwards. */
+  destroy(): void {
+    this.destroyed = true;
+    this.clearPhaseTimers();
+    this.clearCutsceneTimer();
+    this.clearScoresTimer();
+  }
+
+  // ───────────────────────────── Internals ─────────────────────────────
+
+  private roundPublic(r: RoundRec): RoundPublic {
+    return {
+      index: r.index,
+      gameId: r.gameId,
+      seed: r.seed,
+      startAt: r.startAt,
+      endAt: r.endAt,
+      frozenAt: r.frozenAt,
+      resumeAt: r.resumeAt,
+    };
+  }
+
+  private broadcast(): void {
+    if (this.destroyed) return;
+    this.sink.state(this.snapshot());
+  }
+
+  private namesExcept(playerId: string | null): string[] {
+    const names: string[] = [];
+    for (const p of this.players.values()) if (p.id !== playerId) names.push(p.name);
+    return names;
+  }
+
+  /** Removes a connection from whatever it was attached to. */
+  private detach(connId: string): boolean {
+    if (this.hostConns.delete(connId)) return true;
+    const playerId = this.playerConns.get(connId);
+    if (playerId === undefined) return false;
+    this.playerConns.delete(connId);
+    this.players.get(playerId)?.conns.delete(connId);
+    return true;
+  }
+
+  private clamp(gameId: GameId, score: number): number {
+    return Math.min(GAMES[gameId].maxRaw, Math.max(0, score));
+  }
+
+  private later(ms: number, fn: () => void): TimerHandle {
+    return this.scheduler.setTimeout(() => {
+      if (this.destroyed) return;
+      try {
+        fn();
+      } catch (err) {
+        this.onError(err);
+      }
+    }, Math.max(0, ms));
+  }
+
+  private clearPhaseTimers(): void {
+    for (const t of this.phaseTimers) this.scheduler.clearTimeout(t);
+    this.phaseTimers = [];
+  }
+
+  private clearCutsceneTimer(): void {
+    if (this.cutsceneTimer !== null) this.scheduler.clearTimeout(this.cutsceneTimer);
+    this.cutsceneTimer = null;
+  }
+
+  private clearScoresTimer(): void {
+    if (this.scoresTimer !== null) this.scheduler.clearTimeout(this.scoresTimer);
+    this.scoresTimer = null;
+    this.scoresDirty = false;
+  }
+
+  /** (Re)arms the timers of the current phase from the round's (possibly shifted) times. */
+  private armPhaseTimers(): void {
+    this.clearPhaseTimers();
+    const r = this.round;
+    if (r === null || r.frozenAt !== null) return;
+    const now = this.scheduler.now();
+    switch (this.phase) {
+      case 'intro':
+        this.phaseTimers.push(
+          this.later(r.startAt - this.timing.countdownMs - now, () => this.enterPhase('countdown')),
+        );
+        return;
+      case 'countdown':
+        this.phaseTimers.push(this.later(r.startAt - now, () => this.enterPhase('playing')));
+        return;
+      case 'playing': {
+        this.phaseTimers.push(this.later(r.endAt + FINAL_GRACE_MS - now, () => this.finishRound()));
+        const duration = r.endAt - r.startAt;
+        const scale = duration / GAMES[r.gameId].durationMs;
+        for (const def of this.cutscenes) {
+          if (def.when.at !== 'during' || r.duringDone.has(def.id)) continue;
+          if (def.when.gameId !== undefined && def.when.gameId !== r.gameId) continue;
+          const target = def.when.atMs * scale;
+          if (!(target >= 0) || target >= duration) continue;
+          // Round time `target` is reached at startAt + target; never before the 3-2-1 after a freeze is over.
+          const fireAt = Math.max(r.startAt + target, r.resumeAt ?? 0);
+          this.phaseTimers.push(this.later(fireAt - now, () => this.fireDuring(def)));
+        }
+        return;
+      }
+      case 'lobby':
+      case 'results':
+      case 'final':
+        return;
+      default: {
+        const _exhaustive: never = this.phase;
+        throw new Error(`Unhandled phase: ${String(_exhaustive)}`);
+      }
+    }
+  }
+
+  private enterPhase(phase: 'countdown' | 'playing'): void {
+    this.phase = phase;
+    this.armPhaseTimers();
+    this.broadcast();
+  }
+
+  private fireDuring(def: CutsceneDef): void {
+    const r = this.round;
+    if (r === null || this.phase !== 'playing' || this.cutscene !== null) return;
+    r.duringDone.add(def.id);
+    if (!this.autoAllowed(def)) return;
+    this.beginCutscene(def.id, true);
+    this.broadcast();
+  }
+
+  private autoAllowed(def: CutsceneDef): boolean {
+    if (!this.autoCutscenes || def.enabled === false || !this.hostConnected) return false;
+    return def.repeat === true || !this.firedCutscenes.has(def.id);
+  }
+
+  private findAuto(match: (def: CutsceneDef) => boolean): CutsceneDef | undefined {
+    return this.cutscenes.find((c) => match(c) && this.autoAllowed(c));
+  }
+
+  /** Sets the cutscene and freezes a running round. The caller broadcasts. */
+  private beginCutscene(id: string, auto: boolean): void {
+    const now = this.scheduler.now();
+    this.cutscene = { id, startedAt: now };
+    if (auto) this.firedCutscenes.add(id);
+    this.clearCutsceneTimer();
+    this.cutsceneTimer = this.later(CUTSCENE_MAX_MS, () => {
+      this.cutsceneTimer = null;
+      this.endCutscene();
+    });
+    const r = this.round;
+    if (r === null || r.frozenAt !== null) return;
+    if (this.phase !== 'intro' && this.phase !== 'countdown' && this.phase !== 'playing') return;
+    // During the 3-2-1 after an earlier cutscene the round clock already stands at resumeAt.
+    r.frozenAt = r.resumeAt !== null && now < r.resumeAt ? r.resumeAt : now;
+    r.resumeAt = null;
+    this.clearPhaseTimers();
+  }
+
+  private endRoundNow(): void {
+    if (this.phase === 'playing') {
+      this.finishRound();
+      return;
+    }
+    // intro / countdown: the round never started, so it leaves no trace.
+    this.clearPhaseTimers();
+    this.phase = 'lobby';
+    this.round = null;
+    this.nextRoundIndex = Math.max(0, this.nextRoundIndex - 1);
+    this.broadcast();
+  }
+
+  /** Ends the round when every connected participant has sent a final. */
+  private maybeEndEarly(): boolean {
+    const r = this.round;
+    if (r === null || this.phase !== 'playing' || this.cutscene !== null || r.finals.size === 0) return false;
+    for (const id of r.participants) {
+      const p = this.players.get(id);
+      if (p !== undefined && p.conns.size > 0 && !r.finals.has(id)) return false;
+    }
+    this.finishRound();
+    return true;
+  }
+
+  private markScoresDirty(): void {
+    this.scoresDirty = true;
+    if (this.scoresTimer !== null) return;
+    const wait = this.lastScoresAt + SCORE_BROADCAST_INTERVAL_MS - this.scheduler.now();
+    this.scoresTimer = this.later(wait, () => {
+      this.scoresTimer = null;
+      this.flushScores();
+    });
+  }
+
+  private rawOf(r: RoundRec, playerId: string): number {
+    return r.finals.get(playerId) ?? r.live.get(playerId) ?? 0;
+  }
+
+  private flushScores(): void {
+    const r = this.round;
+    if (!this.scoresDirty || r === null) return;
+    this.scoresDirty = false;
+    this.lastScoresAt = this.scheduler.now();
+    const scores: Array<readonly [string, number]> = [];
+    for (const id of r.participants) scores.push([id, this.rawOf(r, id)]);
+    this.sink.scores({ round: r.index, scores });
+  }
+
+  private finishRound(): void {
+    const r = this.round;
+    if (r === null || this.phase !== 'playing') return;
+    this.clearPhaseTimers();
+    if (this.scoresTimer !== null) this.scheduler.clearTimeout(this.scoresTimer);
+    this.scoresTimer = null;
+    this.flushScores();
+    const now = this.scheduler.now();
+
+    const raws = new Map<string, number>();
+    for (const id of r.participants) if (this.players.has(id)) raws.set(id, this.rawOf(r, id));
+    const scored = computeRoundScores(raws);
+
+    const all = [...this.players.values()];
+    const prevRanks = rankDescending(all.map((p) => [p.id, p.total] as const));
+    for (const p of all) p.total += scored.get(p.id)?.points ?? 0;
+    const ranks = rankDescending(all.map((p) => [p.id, p.total] as const));
+
+    const rows: ResultRow[] = all.map((p) => {
+      const s = scored.get(p.id);
+      return {
+        playerId: p.id,
+        name: p.name,
+        avatar: p.avatar,
+        raw: raws.get(p.id) ?? 0,
+        points: s?.points ?? 0,
+        roundRank: s?.roundRank ?? raws.size + 1,
+        total: p.total,
+        rank: ranks.get(p.id) ?? all.length,
+        prevRank: p.appeared ? (prevRanks.get(p.id) ?? null) : null,
+      };
+    });
+    rows.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'he'));
+    for (const p of all) p.appeared = true;
+
+    this.results = {
+      roundIndex: r.index,
+      gameId: r.gameId,
+      rows,
+      winnerIds: rows.filter((row) => raws.has(row.playerId) && row.roundRank === 1 && row.raw > 0).map((row) => row.playerId),
+      revealAt: now + WINNER_REVEAL_MS,
+    };
+    this.played.push(r.gameId);
+    r.frozenAt = null;
+    r.resumeAt = null;
+    r.pendingEnd = false;
+    this.phase = 'results';
+
+    if (this.cutscene === null) {
+      const after = this.findAuto(
+        (c) => c.when.at === 'after' && (c.when.gameId === undefined || c.when.gameId === r.gameId),
+      );
+      if (after !== undefined) this.beginCutscene(after.id, true);
+    }
+    this.broadcast();
+  }
+}
