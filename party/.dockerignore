@@ -1,0 +1,22 @@
+# Keep the build context small: dependencies and build output are made inside the image.
+node_modules
+**/node_modules
+dist
+.vite
+*.log
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.firebase
+.firebaserc
+firebase-debug.log
+tests/e2e/out
+tests/**/out
+*.tgz
+Dockerfile
+.dockerignore
+.gcloudignore
+deploy
+!deploy/.build-env

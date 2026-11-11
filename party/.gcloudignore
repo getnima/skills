@@ -1,0 +1,16 @@
+# What `gcloud run deploy --source .` does NOT upload to Cloud Build.
+# (Same rules as .gitignore; the Dockerfile must stay included.)
+.gcloudignore
+.git
+.gitignore
+node_modules/
+dist/
+.vite/
+*.log
+.env
+.env.*
+.firebase/
+.firebaserc
+firebase-debug.log
+tests/e2e/out/
+*.tgz

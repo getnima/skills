@@ -1,19 +1,15 @@
-import type { JSX } from 'preact';
-import type { FinalSceneProps, PlayingSceneProps, ResultsSceneProps, StandingsPanelProps } from './types';
+/**
+ * The TV show. Scenes fill their parent, animate themselves from props and
+ * never touch the network. See types.ts for the props.
+ *
+ * Also exported for the host shell:
+ * - setShowCalm / isShowCalm / onShowCalmChange: the global "calm" switch
+ *   that turns the funny layer down.
+ */
+import './show.css';
 
-// Placeholder scenes: replaced by the real show.
-export function PlayingScene(props: PlayingSceneProps): JSX.Element {
-  return <div>{props.game.title}</div>;
-}
-
-export function ResultsScene(props: ResultsSceneProps): JSX.Element {
-  return <div>{props.results.rows.length}</div>;
-}
-
-export function FinalScene(props: FinalSceneProps): JSX.Element {
-  return <div>{props.players.length}</div>;
-}
-
-export function StandingsPanel(props: StandingsPanelProps): JSX.Element {
-  return <div>{props.players.length}</div>;
-}
+export { PlayingScene } from './playing';
+export { ResultsScene } from './results';
+export { FinalScene } from './final';
+export { StandingsPanel } from './standings';
+export { isShowCalm, onShowCalmChange, setShowCalm } from './settings';
