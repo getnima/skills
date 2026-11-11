@@ -77,6 +77,10 @@ export const INTRO_MS = 7_000;
 export const COUNTDOWN_MS = 3_000;
 /** After `round.endAt` the server waits this long for `player:final` before scoring. */
 export const FINAL_GRACE_MS = 1_500;
+/** After a mid-game cutscene the game stays frozen for a 3-2-1 before it continues. */
+export const RESUME_COUNTDOWN_MS = 3_000;
+/** A cutscene the TV never reports as finished is ended by the server after this long. */
+export const CUTSCENE_MAX_MS = 90_000;
 /** Clients send `player:score` at most this often while playing. */
 export const SCORE_SEND_INTERVAL_MS = 250;
 /** Server broadcasts the live `scores` event at most this often. */
@@ -117,6 +121,27 @@ export interface RoundPublic {
   /** Server epoch ms. The intro runs until `startAt - COUNTDOWN_MS`. */
   readonly startAt: number;
   readonly endAt: number;
+  /**
+   * Set while the round clock is frozen (a cutscene is playing): the round's
+   * time stands still at this server ms. On resume the server shifts
+   * `startAt` / `endAt` forward by the frozen duration and clears it.
+   */
+  readonly frozenAt: number | null;
+  /**
+   * After a freeze during `playing`: the game stays frozen until this server
+   * ms (3-2-1 "continuing"), with `startAt` / `endAt` already shifted so the
+   * round continues exactly where it stopped. Null otherwise.
+   * Always read round time through `roundTime()` in shared/round-clock.ts.
+   */
+  readonly resumeAt: number | null;
+}
+
+/** A cutscene is playing on the TV; every phone is frozen and told to watch. */
+export interface CutsceneState {
+  /** `id` of an entry in CUTSCENES (shared/cutscenes.ts). */
+  readonly id: string;
+  /** Server epoch ms. */
+  readonly startedAt: number;
 }
 
 export interface ResultRow {
@@ -155,6 +180,13 @@ export interface RoomState {
   readonly played: readonly GameId[];
   /** Results of the last finished round (kept through lobby/final), or null. */
   readonly results: RoundResults | null;
+  /**
+   * Non-null while a cutscene plays. Orthogonal to `phase`: the phase stays
+   * what it was and its clock is frozen (see RoundPublic.frozenAt).
+   */
+  readonly cutscene: CutsceneState | null;
+  /** Host switch: whether cutscenes with an automatic trigger fire. */
+  readonly autoCutscenes: boolean;
   /** Server epoch ms when this snapshot was made. */
   readonly serverNow: number;
 }
@@ -193,6 +225,11 @@ export interface C2S {
   /** Zero all totals, clear played games and results, → lobby. Players stay. */
   'host:reset': (req: {}, ack: (res: Ack<{}>) => void) => void;
   'host:kick': (req: { playerId: string }, ack: (res: Ack<{}>) => void) => void;
+  /** Play a cutscene now, in any phase (freezes a running round). BAD_PHASE if one is already playing. */
+  'host:cutscene': (req: { id: string }, ack: (res: Ack<{}>) => void) => void;
+  /** The TV finished playing the current cutscene (or the host skipped it). */
+  'host:cutsceneEnd': (req: {}, ack: (res: Ack<{}>) => void) => void;
+  'host:setAutoCutscenes': (req: { enabled: boolean }, ack: (res: Ack<{}>) => void) => void;
 
   /**
    * Join a room, or resume as the same player after a refresh/reconnect when

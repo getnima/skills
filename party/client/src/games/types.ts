@@ -17,8 +17,13 @@ export interface GameContext {
   /** Identical for every player of the round: derive ALL randomness from it. */
   readonly seed: number;
   readonly durationMs: number;
-  /** Remaining round time in ms, synced to the server clock. Never negative. */
+  /**
+   * Remaining round time in ms, synced to the server clock. Never negative.
+   * Stands still while the round is frozen (a cutscene is playing on the TV).
+   */
   timeLeftMs(): number;
+  /** True while the round is frozen. */
+  isPaused(): boolean;
   /**
    * CSS px at the top of `root` covered by the stage HUD (includes the
    * safe-area inset). Keep gameplay and important UI below it.
@@ -38,11 +43,25 @@ export interface GameContext {
 export interface GameInstance {
   /** Stop loops, remove listeners, release audio. Must be idempotent. */
   destroy(): void;
+  /**
+   * The round froze (cutscene) / continues. The stage already freezes every
+   * kit loop, tween and input through `setKitPaused`, so a game whose time
+   * comes only from the kit loop needs nothing here. Implement it for what the
+   * kit does not own: setTimeout chains, CSS animations, audio loops.
+   */
+  setPaused?(paused: boolean): void;
 }
 
 export interface GameModule {
   readonly id: GameId;
   create(ctx: GameContext): GameInstance | Promise<GameInstance>;
+}
+
+export interface RoundClockSample {
+  /** Remaining round time in ms (never negative). */
+  readonly leftMs: number;
+  /** The round is frozen: pause the game, keep everything as it is. */
+  readonly frozen: boolean;
 }
 
 /** Stage = HUD + game lifecycle. Implemented in `client/src/play/stage.ts`. */
@@ -51,10 +70,11 @@ export interface StageOptions {
   readonly gameId: GameId;
   readonly seed: number;
   readonly durationMs: number;
-  /** Server-synced epoch ms. */
-  now(): number;
-  /** Server epoch ms when the round ends. */
-  readonly endAt: number;
+  /**
+   * Round clock, polled by the stage every frame. The shell derives it from
+   * `roundTime()` (shared/round-clock.ts) and the server clock.
+   */
+  clock(): RoundClockSample;
   /** Called (already throttled by the stage) whenever the score changed. */
   onScore(score: number): void;
   /**
@@ -62,7 +82,7 @@ export interface StageOptions {
    * The shell may send the final score early; `onEnd` still fires at time-up.
    */
   onFinish?(score: number): void;
-  /** Called exactly once, when time is up, with the final score. */
+  /** Called exactly once, when `leftMs` reaches 0 while not frozen, with the final score. */
   onEnd(finalScore: number): void;
 }
 

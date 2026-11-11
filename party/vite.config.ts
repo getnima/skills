@@ -32,6 +32,7 @@ export default defineConfig({
         player: resolve(import.meta.dirname, 'client/index.html'),
         host: resolve(import.meta.dirname, 'client/host.html'),
         dev: resolve(import.meta.dirname, 'client/dev.html'),
+        show: resolve(import.meta.dirname, 'client/show.html'),
       },
     },
   },
