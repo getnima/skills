@@ -16,6 +16,7 @@
   /* isolates the rounded clip on old Safari */
   transform: translateZ(0);
 }
+.av > canvas,
 .av > img {
   position: absolute;
   inset: 0;

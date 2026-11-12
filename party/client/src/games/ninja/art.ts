@@ -1,12 +1,18 @@
 /**
  * Art of נינג׳ה תבורי. Every replaceable picture is a kit file slot under
- * client/public/assets/ninja/ (see the README there). The bomb's fuse, its
- * sparks, the warning glow and the blade are drawn in code by the game, so
- * they survive an art swap. UI sprites (glows, ghost hand) are pre-rendered
- * once here so the hot path only calls drawImage.
+ * client/public/assets/ninja/ (see the README there). The golden target defaults to a gold
+ * star sticker wearing one of three of the owner's party accessories
+ * (client/public/assets/shimi/prop_*.png); without those files it is a gold coin. The bomb's
+ * fuse, its sparks, the warning burst and the blade are drawn in code by the game, so they
+ * survive an art swap. Everything else the game shows (the stage, juice splats, halves, UI
+ * stickers) is pre-rendered once here so the hot path only calls drawImage.
+ *
+ * Style: the party look (shimi/README.md): flat colours, thick ink outlines, hard highlights,
+ * no soft glows.
  */
 import { drawFace, loadAssets, paintDrawable, shade } from '../../kit/assets';
 import { roundRectPath } from '../../kit/canvas';
+import { KABOOM, PAL, STAR10, halftone, makeLayer, polyPath, stickerShape } from './look';
 
 import type { Drawable, Painter } from '../../kit/assets';
 
@@ -15,24 +21,30 @@ export const SPRITE_BOX = 128;
 /** Share of the box the round body covers (radius / box), for hit tests and halves. */
 export const BODY_RADIUS = 0.42;
 
-const INK = '#2b1436';
+const INK = PAL.ink;
+
+export type Inside = 'melon' | 'citrus' | 'apple' | 'stone' | 'gold';
 
 export interface FruitStyle {
   /** Juice color of the splash and the cut edge. */
   readonly juice: string;
-  /** Lighter flesh color shown on the cut edge. */
+  /** Lighter flesh color shown on the cut face. */
   readonly flesh: string;
+  /** Skin / rind colour around the cut face. */
+  readonly rind: string;
+  /** What the cut face shows. */
+  readonly inside: Inside;
 }
 
 /** Juice per target_N (index = variant). Stays when real art replaces the placeholder. */
 export const FRUIT_STYLES: readonly FruitStyle[] = [
-  { juice: '#ff3b5c', flesh: '#ff8fa3' }, // watermelon
-  { juice: '#ff9a1f', flesh: '#ffd08a' }, // orange
-  { juice: '#ff4d3d', flesh: '#fff1d6' }, // apple
-  { juice: '#a347ff', flesh: '#e2b8ff' }, // plum
-  { juice: '#ffe03d', flesh: '#fff6b8' }, // lemon
+  { juice: '#ff3b5c', flesh: '#ff6f86', rind: '#2fb35a', inside: 'melon' }, // watermelon
+  { juice: '#ff9a1f', flesh: '#ffc061', rind: '#ff9a1f', inside: 'citrus' }, // orange
+  { juice: '#ff4d3d', flesh: '#fff1d6', rind: '#ff3d3d', inside: 'apple' }, // apple
+  { juice: '#a347ff', flesh: '#e8d36a', rind: '#8b3dff', inside: 'stone' }, // plum
+  { juice: '#ffe03d', flesh: '#fff3a0', rind: '#ffd400', inside: 'citrus' }, // lemon
 ];
-export const GOLD_STYLE: FruitStyle = { juice: '#ffd23f', flesh: '#fff3b0' };
+export const GOLD_STYLE: FruitStyle = { juice: '#ffd23f', flesh: '#fff3b0', rind: '#e6a100', inside: 'gold' };
 
 type Mood = 'smile' | 'oh' | 'grin' | 'tongue' | 'cheeky';
 
@@ -47,7 +59,7 @@ function fruitFace(ctx: CanvasRenderingContext2D, mood: Mood, dx = 0, dy = 0.08)
     ctx.fillStyle = INK;
     ctx.beginPath();
     if (mood === 'cheeky' && ex > 0) {
-      ctx.lineWidth = 0.08;
+      ctx.lineWidth = 0.09;
       ctx.strokeStyle = INK;
       ctx.moveTo(ex - 0.12, -0.12);
       ctx.quadraticCurveTo(ex, -0.24, ex + 0.12, -0.12);
@@ -62,7 +74,7 @@ function fruitFace(ctx: CanvasRenderingContext2D, mood: Mood, dx = 0, dy = 0.08)
     ctx.fill();
   }
   // cheeks
-  ctx.fillStyle = 'rgba(255, 80, 120, 0.4)';
+  ctx.fillStyle = 'rgba(255, 80, 120, 0.45)';
   ctx.beginPath();
   ctx.ellipse(-0.5, 0.08, 0.13, 0.08, 0, 0, Math.PI * 2);
   ctx.ellipse(0.5, 0.08, 0.13, 0.08, 0, 0, Math.PI * 2);
@@ -70,7 +82,7 @@ function fruitFace(ctx: CanvasRenderingContext2D, mood: Mood, dx = 0, dy = 0.08)
   // mouth
   ctx.strokeStyle = INK;
   ctx.fillStyle = '#5a1030';
-  ctx.lineWidth = 0.07;
+  ctx.lineWidth = 0.08;
   ctx.beginPath();
   switch (mood) {
     case 'smile':
@@ -124,24 +136,35 @@ function unit(paint: (ctx: CanvasRenderingContext2D) => void): Painter {
   };
 }
 
+/** Flat comic body: base colour, a darker crescent bottom-right, ink outline. */
 function body(ctx: CanvasRenderingContext2D, color: string, rx = 1, ry = 1): void {
-  const g = ctx.createRadialGradient(-0.35, -0.4, 0.05, 0, 0, 1.1);
-  g.addColorStop(0, shade(color, 0.4));
-  g.addColorStop(0.55, color);
-  g.addColorStop(1, shade(color, -0.3));
-  ctx.fillStyle = g;
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 0.07;
   ctx.beginPath();
   ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = color;
   ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = shade(color, -0.28);
+  ctx.beginPath();
+  ctx.ellipse(0.32 * rx, 0.38 * ry, rx * 1.02, ry * 0.98, 0, 0, Math.PI * 2);
+  ctx.ellipse(-0.1 * rx, -0.08 * ry, rx * 1.05, ry * 1.02, 0, 0, Math.PI * 2, true);
+  ctx.fill('evenodd');
+  ctx.restore();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 0.1;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
   ctx.stroke();
 }
 
+/** Hard white highlight (flat shapes, no gradient). */
 function shine(ctx: CanvasRenderingContext2D): void {
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.fillStyle = '#ffffff';
   ctx.beginPath();
-  ctx.ellipse(-0.42, -0.5, 0.2, 0.11, -0.7, 0, Math.PI * 2);
+  ctx.ellipse(-0.44, -0.5, 0.22, 0.11, -0.75, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(-0.66, -0.22, 0.06, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -151,7 +174,7 @@ function leaf(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number
   ctx.rotate(angle);
   ctx.fillStyle = color;
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 0.05;
+  ctx.lineWidth = 0.07;
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.quadraticCurveTo(0.22, -0.2, 0.46, 0);
@@ -165,10 +188,10 @@ const watermelon = unit((ctx) => {
   body(ctx, '#2fb35a');
   ctx.save();
   ctx.beginPath();
-  ctx.arc(0, 0, 0.96, 0, Math.PI * 2);
+  ctx.arc(0, 0, 0.95, 0, Math.PI * 2);
   ctx.clip();
   ctx.strokeStyle = '#13702f';
-  ctx.lineWidth = 0.13;
+  ctx.lineWidth = 0.14;
   for (let i = -2; i <= 2; i++) {
     ctx.beginPath();
     ctx.moveTo(i * 0.36, -1.1);
@@ -177,9 +200,9 @@ const watermelon = unit((ctx) => {
   }
   ctx.restore();
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 0.07;
+  ctx.lineWidth = 0.1;
   ctx.beginPath();
-  ctx.arc(0, 0, 0.96, 0, Math.PI * 2);
+  ctx.arc(0, 0, 1, 0, Math.PI * 2);
   ctx.stroke();
   shine(ctx);
   fruitFace(ctx, 'grin');
@@ -187,7 +210,7 @@ const watermelon = unit((ctx) => {
 
 const orange = unit((ctx) => {
   body(ctx, '#ff9a1f');
-  ctx.fillStyle = 'rgba(160, 70, 0, 0.25)';
+  ctx.fillStyle = 'rgba(160, 70, 0, 0.35)';
   const dots = [
     [-0.55, -0.2],
     [0.6, -0.3],
@@ -199,35 +222,43 @@ const orange = unit((ctx) => {
   ] as const;
   for (const [x, y] of dots) {
     ctx.beginPath();
-    ctx.arc(x, y, 0.045, 0, Math.PI * 2);
+    ctx.arc(x, y, 0.05, 0, Math.PI * 2);
     ctx.fill();
   }
   shine(ctx);
-  leaf(ctx, 0.05, -0.92, -0.5);
+  leaf(ctx, 0.05, -0.95, -0.5);
   fruitFace(ctx, 'smile');
 });
 
 const apple = unit((ctx) => {
   // two-lobed apple outline
-  const g = ctx.createRadialGradient(-0.35, -0.4, 0.05, 0, 0, 1.1);
-  g.addColorStop(0, '#ff8a7a');
-  g.addColorStop(0.55, '#ff3d3d');
-  g.addColorStop(1, '#a3121c');
-  ctx.fillStyle = g;
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 0.07;
-  ctx.beginPath();
-  ctx.moveTo(0, -0.7);
-  ctx.bezierCurveTo(0.5, -1.05, 1.08, -0.7, 0.98, 0.05);
-  ctx.bezierCurveTo(0.9, 0.7, 0.45, 1.02, 0, 0.88);
-  ctx.bezierCurveTo(-0.45, 1.02, -0.9, 0.7, -0.98, 0.05);
-  ctx.bezierCurveTo(-1.08, -0.7, -0.5, -1.05, 0, -0.7);
-  ctx.closePath();
+  const outline = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(0, -0.7);
+    ctx.bezierCurveTo(0.5, -1.05, 1.08, -0.7, 0.98, 0.05);
+    ctx.bezierCurveTo(0.9, 0.7, 0.45, 1.02, 0, 0.88);
+    ctx.bezierCurveTo(-0.45, 1.02, -0.9, 0.7, -0.98, 0.05);
+    ctx.bezierCurveTo(-1.08, -0.7, -0.5, -1.05, 0, -0.7);
+    ctx.closePath();
+  };
+  outline();
+  ctx.fillStyle = '#ff3d3d';
   ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = '#c81e22';
+  ctx.beginPath();
+  ctx.ellipse(0.42, 0.45, 1, 0.95, 0, 0, Math.PI * 2);
+  ctx.ellipse(-0.06, -0.06, 1.02, 1, 0, 0, Math.PI * 2, true);
+  ctx.fill('evenodd');
+  ctx.restore();
+  outline();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 0.1;
   ctx.stroke();
   // stem
   ctx.strokeStyle = '#6b3b1a';
-  ctx.lineWidth = 0.1;
+  ctx.lineWidth = 0.12;
   ctx.beginPath();
   ctx.moveTo(0, -0.7);
   ctx.quadraticCurveTo(0.04, -0.95, 0.14, -1.06);
@@ -239,8 +270,8 @@ const apple = unit((ctx) => {
 
 const plum = unit((ctx) => {
   body(ctx, '#8b3dff', 0.94, 1);
-  ctx.strokeStyle = 'rgba(40, 0, 80, 0.4)';
-  ctx.lineWidth = 0.06;
+  ctx.strokeStyle = 'rgba(40, 0, 80, 0.55)';
+  ctx.lineWidth = 0.07;
   ctx.beginPath();
   ctx.moveTo(0.1, -0.95);
   ctx.quadraticCurveTo(0.45, -0.2, 0.2, 0.9);
@@ -254,14 +285,14 @@ const lemon = unit((ctx) => {
   // pointy ends
   ctx.fillStyle = '#ffd400';
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 0.07;
+  ctx.lineWidth = 0.09;
   ctx.beginPath();
-  ctx.ellipse(-1.02, 0, 0.14, 0.1, 0, 0, Math.PI * 2);
-  ctx.ellipse(1.02, 0, 0.14, 0.1, 0, 0, Math.PI * 2);
+  ctx.ellipse(-1.02, 0, 0.15, 0.11, 0, 0, Math.PI * 2);
+  ctx.ellipse(1.02, 0, 0.15, 0.11, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   body(ctx, '#ffe03d', 1, 0.8);
-  ctx.fillStyle = 'rgba(180, 130, 0, 0.22)';
+  ctx.fillStyle = 'rgba(180, 130, 0, 0.3)';
   for (const [x, y] of [
     [-0.5, 0.35],
     [0.55, -0.3],
@@ -269,204 +300,201 @@ const lemon = unit((ctx) => {
     [-0.65, -0.1],
   ] as const) {
     ctx.beginPath();
-    ctx.arc(x, y, 0.04, 0, Math.PI * 2);
+    ctx.arc(x, y, 0.045, 0, Math.PI * 2);
     ctx.fill();
   }
   shine(ctx);
   fruitFace(ctx, 'cheeky', 0, 0.02);
 });
 
+/** The gold coin (used when neither target_gold.png nor the party props exist). */
 const goldPainter = unit((ctx) => {
-  // gold coin with a star, rim and shine
-  const g = ctx.createRadialGradient(-0.35, -0.45, 0.05, 0, 0, 1.1);
-  g.addColorStop(0, '#fff6c2');
-  g.addColorStop(0.45, '#ffd23f');
-  g.addColorStop(1, '#c47a00');
-  ctx.fillStyle = g;
-  ctx.strokeStyle = '#6b3d00';
-  ctx.lineWidth = 0.08;
+  ctx.fillStyle = PAL.yel;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 0.1;
   ctx.beginPath();
   ctx.arc(0, 0, 1, 0, Math.PI * 2);
   ctx.fill();
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(120, 70, 0, 0.55)';
-  ctx.lineWidth = 0.06;
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = PAL.org;
   ctx.beginPath();
-  ctx.arc(0, 0, 0.8, 0, Math.PI * 2);
+  ctx.ellipse(0.35, 0.4, 1, 0.95, 0, 0, Math.PI * 2);
+  ctx.ellipse(-0.06, -0.06, 1.02, 1, 0, 0, Math.PI * 2, true);
+  ctx.fill('evenodd');
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(0, 0, 1, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = '#fff3a8';
-  ctx.strokeStyle = '#9a5a00';
-  ctx.lineWidth = 0.06;
+  ctx.lineWidth = 0.07;
+  ctx.beginPath();
+  ctx.arc(0, 0, 0.78, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = PAL.yel2;
   ctx.beginPath();
   for (let i = 0; i < 10; i++) {
     const a = -Math.PI / 2 + (i * Math.PI) / 5;
-    const rr = i % 2 === 0 ? 0.6 : 0.26;
+    const rr = i % 2 === 0 ? 0.58 : 0.25;
     if (i === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
     else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
   }
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-  ctx.beginPath();
-  ctx.ellipse(-0.45, -0.5, 0.22, 0.1, -0.7, 0, Math.PI * 2);
-  ctx.fill();
+  shine(ctx);
 });
 
 /**
- * Bomb body with a face window in the middle (the real art puts the hosts'
- * faces there). No fuse: the game draws fuse + sparks on top.
+ * Bomb body with a face window in the middle (the real art puts the hosts' faces there; the
+ * placeholder is a generic cartoon face). No fuse: the game draws fuse + sparks on top.
  */
 const bombPainter = unit((ctx) => {
-  const g = ctx.createRadialGradient(-0.35, -0.4, 0.05, 0, 0.1, 1.1);
-  g.addColorStop(0, '#6a6485');
-  g.addColorStop(0.45, '#2a2638');
-  g.addColorStop(1, '#0b0912');
-  ctx.fillStyle = g;
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 0.07;
+  ctx.fillStyle = '#26212f';
   ctx.beginPath();
   ctx.arc(0, 0, 1, 0, Math.PI * 2);
   ctx.fill();
-  ctx.stroke();
-  // rivets band
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.lineWidth = 0.05;
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = '#0b0912';
   ctx.beginPath();
-  ctx.arc(0, 0, 0.88, 0, Math.PI * 2);
-  ctx.stroke();
-  // face window
-  ctx.fillStyle = '#ff4d5e';
+  ctx.ellipse(0.35, 0.42, 1, 0.95, 0, 0, Math.PI * 2);
+  ctx.ellipse(-0.06, -0.06, 1.02, 1, 0, 0, Math.PI * 2, true);
+  ctx.fill('evenodd');
+  ctx.restore();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 0.1;
   ctx.beginPath();
-  ctx.arc(0, 0.06, 0.66, 0, Math.PI * 2);
+  ctx.arc(0, 0, 1, 0, Math.PI * 2);
+  ctx.stroke();
+  // face window: red ring, ink outline
+  ctx.fillStyle = PAL.red;
+  ctx.beginPath();
+  ctx.arc(0, 0.06, 0.68, 0, Math.PI * 2);
   ctx.fill();
-  drawFace(ctx, 0, 0.06, 0.58, 'laughing', '#ffc79a');
-  // shine
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-  ctx.lineWidth = 0.08;
+  ctx.lineWidth = 0.07;
+  ctx.stroke();
+  drawFace(ctx, 0, 0.06, 0.56, 'laughing', '#ffc79a');
+  // hard highlight
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 0.1;
   ctx.beginPath();
-  ctx.arc(0, 0, 0.82, Math.PI * 1.1, Math.PI * 1.38);
+  ctx.arc(0, 0, 0.84, Math.PI * 1.12, Math.PI * 1.36);
   ctx.stroke();
 });
 
-/** Optional backdrop: a night dojo with a big moon and bamboo. */
+/** The slot placeholder of background.jpg (unused: the game paints its stage at device pixels). */
 const backgroundPainter: Painter = (ctx, w, h) => {
-  const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, '#12062e');
-  g.addColorStop(0.5, '#33106b');
-  g.addColorStop(1, '#5a1a6e');
-  ctx.fillStyle = g;
+  ctx.fillStyle = PAL.cobD;
   ctx.fillRect(0, 0, w, h);
-
-  // moon
-  const mx = w * 0.7;
-  const my = h * 0.24;
-  const mr = w * 0.16;
-  const halo = ctx.createRadialGradient(mx, my, mr * 0.8, mx, my, mr * 2.4);
-  halo.addColorStop(0, 'rgba(255, 210, 120, 0.22)');
-  halo.addColorStop(1, 'rgba(255, 210, 120, 0)');
-  ctx.fillStyle = halo;
-  ctx.fillRect(0, 0, w, h);
-  const mg = ctx.createRadialGradient(mx - mr * 0.3, my - mr * 0.3, mr * 0.1, mx, my, mr);
-  mg.addColorStop(0, '#fff6dc');
-  mg.addColorStop(1, '#f2c98a');
-  ctx.fillStyle = mg;
-  ctx.beginPath();
-  ctx.arc(mx, my, mr, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(200, 120, 40, 0.18)';
-  for (const [x, y, r] of [
-    [-0.3, -0.2, 0.18],
-    [0.25, 0.15, 0.24],
-    [-0.1, 0.45, 0.12],
-  ] as const) {
-    ctx.beginPath();
-    ctx.arc(mx + x * mr, my + y * mr, r * mr, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // stars
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-  const stars = [
-    [0.08, 0.06],
-    [0.22, 0.16],
-    [0.4, 0.05],
-    [0.12, 0.3],
-    [0.9, 0.08],
-    [0.33, 0.24],
-    [0.52, 0.14],
-    [0.95, 0.44],
-    [0.06, 0.48],
-  ] as const;
-  for (const [x, y] of stars) {
-    ctx.beginPath();
-    ctx.arc(x * w, y * h, 1.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // far mountains
-  ctx.fillStyle = '#2a0c55';
-  ctx.beginPath();
-  ctx.moveTo(0, h * 0.72);
-  ctx.lineTo(w * 0.2, h * 0.58);
-  ctx.lineTo(w * 0.38, h * 0.68);
-  ctx.lineTo(w * 0.62, h * 0.52);
-  ctx.lineTo(w * 0.85, h * 0.66);
-  ctx.lineTo(w, h * 0.6);
-  ctx.lineTo(w, h);
-  ctx.lineTo(0, h);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#1e0841';
-  ctx.beginPath();
-  ctx.moveTo(0, h * 0.8);
-  ctx.lineTo(w * 0.3, h * 0.7);
-  ctx.lineTo(w * 0.55, h * 0.78);
-  ctx.lineTo(w * 0.8, h * 0.72);
-  ctx.lineTo(w, h * 0.78);
-  ctx.lineTo(w, h);
-  ctx.lineTo(0, h);
-  ctx.closePath();
-  ctx.fill();
-
-  // bamboo on both sides
-  const bamboo = (x: number, width: number, lean: number): void => {
-    ctx.save();
-    ctx.translate(x, h);
-    ctx.rotate(lean);
-    ctx.fillStyle = '#0f3b2a';
-    roundRectPath(ctx, -width / 2, -h * 1.1, width, h * 1.1, width / 2);
-    ctx.fill();
-    ctx.fillStyle = '#0a2a1e';
-    for (let y = -h * 0.12; y > -h * 1.1; y -= h * 0.11) ctx.fillRect(-width / 2, y, width, width * 0.22);
-    ctx.restore();
-  };
-  bamboo(w * 0.04, w * 0.05, 0.03);
-  bamboo(w * 0.12, w * 0.035, -0.02);
-  bamboo(w * 0.95, w * 0.055, -0.04);
-  bamboo(w * 0.87, w * 0.03, 0.02);
-
-  // wooden floor
-  const fy = h * 0.9;
-  const fg = ctx.createLinearGradient(0, fy, 0, h);
-  fg.addColorStop(0, '#5b2a1a');
-  fg.addColorStop(1, '#2a120a');
-  ctx.fillStyle = fg;
-  ctx.fillRect(0, fy, w, h - fy);
-  ctx.fillStyle = 'rgba(255, 200, 150, 0.12)';
-  ctx.fillRect(0, fy, w, 2);
 };
 
-/** Soft round glow (white core); tinted by drawing with globalAlpha / composite. */
-function glowPainter(rgb: string): Painter {
+/**
+ * The stage (painted once per canvas size, straight at device pixels): a cobalt TV-show stage
+ * with a faint sunburst, a halftone vignette, red side curtains, a string of light bulbs and
+ * a stage floor with marquee bulbs. Dark in the middle so bright fruit pops.
+ */
+export function paintStage(ctx: CanvasRenderingContext2D, w: number, h: number, top: number): void {
+  const cx = w / 2;
+  const cy = top + (h - top) * 0.42;
+  ctx.fillStyle = PAL.cobD;
+  ctx.fillRect(0, 0, w, h);
+  // sunburst hint
+  ctx.fillStyle = '#14299e';
+  ctx.beginPath();
+  const n = 28;
+  const R = Math.hypot(w, h);
+  for (let i = 0; i < n; i += 2) {
+    const a0 = (i / n) * Math.PI * 2;
+    const a1 = ((i + 1) / n) * Math.PI * 2;
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R);
+    ctx.lineTo(cx + Math.cos(a1) * R, cy + Math.sin(a1) * R);
+    ctx.closePath();
+  }
+  ctx.fill();
+  // halftone vignette (dots grow towards the edges)
+  const maxD = Math.hypot(w / 2, h / 2);
+  halftone(ctx, 0, 0, w, h, 11, 'rgba(6, 10, 50, 0.55)', (u, v) => {
+    const d = Math.hypot((u - 0.5) * w, (v - 0.45) * h) / maxD;
+    return (d - 0.38) * 2.1;
+  });
+  // stage floor
+  const fy = h * 0.88;
+  ctx.fillStyle = PAL.cob;
+  ctx.fillRect(0, fy, w, h - fy);
+  ctx.strokeStyle = 'rgba(22, 18, 14, 0.45)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = -6; i <= 6; i++) {
+    ctx.moveTo(cx + i * w * 0.09, fy);
+    ctx.lineTo(cx + i * w * 0.2, h);
+  }
+  ctx.stroke();
+  ctx.fillStyle = PAL.ink;
+  ctx.fillRect(0, fy - 2, w, 4);
+  ctx.fillStyle = PAL.red;
+  ctx.fillRect(0, fy + 2, w, Math.max(10, h * 0.018));
+  ctx.fillStyle = PAL.ink;
+  ctx.fillRect(0, fy + 2 + Math.max(10, h * 0.018), w, 3);
+  // marquee bulbs on the stage edge
+  const bulbs = (y: number, r: number, gap: number, colors: readonly string[]): void => {
+    let k = 0;
+    for (let x = gap / 2; x < w; x += gap, k++) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = colors[k % colors.length] ?? PAL.yel;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = PAL.ink;
+      ctx.stroke();
+    }
+  };
+  bulbs(fy + 2 + Math.max(10, h * 0.018) / 2, Math.max(3, h * 0.0045), Math.max(18, w * 0.055), [PAL.yel, PAL.white]);
+  // string lights across the top, under the HUD
+  const sy = top + (h - top) * 0.05;
+  ctx.strokeStyle = PAL.ink;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, sy);
+  ctx.quadraticCurveTo(w / 2, sy + h * 0.07, w, sy);
+  ctx.stroke();
+  const lights = [PAL.yel, PAL.pink, PAL.white, PAL.org];
+  for (let i = 1; i < 12; i++) {
+    const t = i / 12;
+    const x = t * w;
+    const y = (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * (sy + h * 0.07) + t * t * sy;
+    ctx.fillStyle = PAL.ink;
+    ctx.fillRect(x - 2.5, y, 5, 5);
+    ctx.beginPath();
+    ctx.ellipse(x, y + 10, 5, 7, 0, 0, Math.PI * 2);
+    ctx.fillStyle = lights[i % lights.length] ?? PAL.yel;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  // side curtains
+  const cw = Math.max(14, w * 0.055);
+  for (const side of [0, 1]) {
+    const x0 = side === 0 ? 0 : w - cw;
+    ctx.fillStyle = PAL.red;
+    ctx.fillRect(x0, 0, cw, fy);
+    ctx.fillStyle = PAL.redD;
+    for (let k = 0; k < 3; k++) ctx.fillRect(x0 + (k + 0.55) * (cw / 3), 0, cw / 9, fy);
+    ctx.fillStyle = PAL.ink;
+    ctx.fillRect(side === 0 ? cw - 1.5 : w - cw - 1.5, 0, 3, fy);
+  }
+}
+
+/** Soft round glow kept for the ghost hint only (UI, not part of the stage). */
+function dotPainter(color: string): Painter {
   return (ctx, w, h) => {
-    const r = Math.min(w, h) / 2;
-    const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, r);
-    g.addColorStop(0, `rgba(${rgb}, 1)`);
-    g.addColorStop(0.45, `rgba(${rgb}, 0.45)`);
-    g.addColorStop(1, `rgba(${rgb}, 0)`);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = color;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, Math.min(w, h) / 2 - 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   };
 }
 
@@ -505,80 +533,132 @@ const handPainter: Painter = (ctx, w, h) => {
   ctx.restore();
 };
 
+/** Golden target skins from the owner's party props (used when target_gold.png is not dropped in). */
+const GOLD_PROPS = [
+  { key: 'crown', file: 'prop_08_crown.png' },
+  { key: 'party', file: 'prop_17_party_hat.png' },
+  { key: 'hearts', file: 'prop_09_heart_glasses.png' },
+] as const;
+
+/** A gold star sticker (body-sized) with a party prop on it. */
+function goldSkin(key: string, prop: Drawable): Drawable {
+  return paintDrawable(
+    `gold_${key}`,
+    (ctx, w, h) => {
+      const r = Math.min(w, h) * BODY_RADIUS;
+      const s = r * 2.18;
+      stickerShape(ctx, STAR10, w / 2 - s / 2, h / 2 - s / 2, s, s, PAL.yel, PAL.org, Math.max(3, r * 0.09));
+      // inner disc so the prop has a calm ground
+      ctx.beginPath();
+      ctx.arc(w / 2, h / 2, r * 0.62, 0, Math.PI * 2);
+      ctx.fillStyle = PAL.yel2;
+      ctx.fill();
+      ctx.lineWidth = Math.max(2, r * 0.06);
+      ctx.strokeStyle = PAL.ink;
+      ctx.stroke();
+      const k = Math.min((r * 1.45) / prop.width, (r * 1.2) / prop.height);
+      prop.draw(ctx, w / 2, h / 2 + r * 0.04, prop.width * k, prop.height * k, -0.12);
+      // hard highlight
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(w / 2 - r * 0.5, h / 2 - r * 0.62, r * 0.18, r * 0.08, -0.7, 0, Math.PI * 2);
+      ctx.fill();
+    },
+    SPRITE_BOX,
+  );
+}
+
 export interface NinjaArt {
   /** target_1..target_5, index = Throw.variant. */
   readonly targets: readonly Drawable[];
-  readonly gold: Drawable;
+  /** The golden target's looks (one is picked per throw, by its id: looks only). */
+  readonly golds: readonly Drawable[];
   readonly bomb: Drawable;
   readonly background: Drawable;
-  readonly glowRed: Drawable;
-  readonly glowGold: Drawable;
-  readonly glowWhite: Drawable;
   readonly hand: Drawable;
+  /** UI sprites (pre-rendered, not replaceable). */
+  readonly sunburst: HTMLCanvasElement;
+  readonly kaboom: HTMLCanvasElement;
+  readonly spark: HTMLCanvasElement;
+  readonly coin: Drawable;
+  /** Which ninja slots hold a real file. */
+  readonly real: Readonly<Record<string, boolean>>;
+}
+
+/** Yellow / orange rays (behind the golden target), 128 x 128 CSS px. */
+function renderSunburst(): HTMLCanvasElement {
+  const { canvas, ctx } = makeLayer(128, 128);
+  if (!ctx) return canvas;
+  const c = 64;
+  ctx.beginPath();
+  for (let i = 0; i < 16; i += 2) {
+    const a0 = (i / 16) * Math.PI * 2;
+    const a1 = ((i + 1) / 16) * Math.PI * 2;
+    ctx.moveTo(c, c);
+    ctx.lineTo(c + Math.cos(a0) * 62, c + Math.sin(a0) * 62);
+    ctx.lineTo(c + Math.cos(a1) * 62, c + Math.sin(a1) * 62);
+    ctx.closePath();
+  }
+  ctx.fillStyle = PAL.yel;
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = PAL.ink;
+  ctx.stroke();
+  return canvas;
 }
 
 export async function loadNinjaArt(): Promise<NinjaArt> {
-  const a = await loadAssets('ninja', [
-    {
-      key: 'target_1',
-      file: 'target_1.png',
-      size: SPRITE_BOX,
-      placeholder: watermelon,
-    },
-    {
-      key: 'target_2',
-      file: 'target_2.png',
-      size: SPRITE_BOX,
-      placeholder: orange,
-    },
-    {
-      key: 'target_3',
-      file: 'target_3.png',
-      size: SPRITE_BOX,
-      placeholder: apple,
-    },
-    {
-      key: 'target_4',
-      file: 'target_4.png',
-      size: SPRITE_BOX,
-      placeholder: plum,
-    },
-    {
-      key: 'target_5',
-      file: 'target_5.png',
-      size: SPRITE_BOX,
-      placeholder: lemon,
-    },
-    {
-      key: 'target_gold',
-      file: 'target_gold.png',
-      size: SPRITE_BOX,
-      placeholder: goldPainter,
-    },
-    {
-      key: 'bomb',
-      file: 'bomb.png',
-      size: SPRITE_BOX,
-      placeholder: bombPainter,
-    },
-    {
-      key: 'background',
-      file: 'background.jpg',
-      size: 430,
-      height: 932,
-      fit: 'cover',
-      placeholder: backgroundPainter,
-    },
+  const [a, p] = await Promise.all([
+    loadAssets('ninja', [
+      { key: 'target_1', file: 'target_1.png', size: SPRITE_BOX, placeholder: watermelon },
+      { key: 'target_2', file: 'target_2.png', size: SPRITE_BOX, placeholder: orange },
+      { key: 'target_3', file: 'target_3.png', size: SPRITE_BOX, placeholder: apple },
+      { key: 'target_4', file: 'target_4.png', size: SPRITE_BOX, placeholder: plum },
+      { key: 'target_5', file: 'target_5.png', size: SPRITE_BOX, placeholder: lemon },
+      { key: 'target_gold', file: 'target_gold.png', size: SPRITE_BOX, placeholder: goldPainter },
+      { key: 'bomb', file: 'bomb.png', size: SPRITE_BOX, placeholder: bombPainter },
+      { key: 'background', file: 'background.jpg', size: 430, height: 932, fit: 'cover', placeholder: backgroundPainter },
+    ]),
+    loadAssets(
+      'shimi',
+      GOLD_PROPS.map((g) => ({ key: g.key, file: g.file, size: 96, placeholder: (): void => undefined })),
+    ),
   ]);
+  const real: Record<string, boolean> = {};
+  for (const [k, d] of Object.entries(a)) real[k] = !d.isPlaceholder;
+  let golds: Drawable[] = [a.target_gold];
+  if (a.target_gold.isPlaceholder) {
+    const skins = GOLD_PROPS.map((g) => p[g.key]).filter((d): d is Drawable => !!d && !d.isPlaceholder);
+    if (skins.length > 0) golds = skins.map((d) => goldSkin(d.key, d));
+  }
+  // the warning burst behind a bomb: red kaboom with an ink outline
+  const kb = makeLayer(128, 128);
+  if (kb.ctx) stickerShape(kb.ctx, KABOOM, 6, 6, 112, 112, PAL.red, PAL.ink, 3);
+  // fuse spark: small yellow star
+  const sp = makeLayer(48, 48);
+  if (sp.ctx) {
+    polyPath(sp.ctx, STAR10, 3, 3, 42, 42);
+    sp.ctx.fillStyle = PAL.yel;
+    sp.ctx.fill();
+    sp.ctx.lineWidth = 2.5;
+    sp.ctx.strokeStyle = PAL.ink;
+    sp.ctx.stroke();
+    sp.ctx.beginPath();
+    sp.ctx.arc(24, 24, 6, 0, Math.PI * 2);
+    sp.ctx.fillStyle = '#ffffff';
+    sp.ctx.fill();
+  }
   return {
     targets: [a.target_1, a.target_2, a.target_3, a.target_4, a.target_5],
-    gold: a.target_gold,
+    golds,
     bomb: a.bomb,
     background: a.background,
-    glowRed: paintDrawable('glow_red', glowPainter('255, 60, 80'), 96),
-    glowGold: paintDrawable('glow_gold', glowPainter('255, 215, 80'), 96),
-    glowWhite: paintDrawable('glow_white', glowPainter('255, 255, 255'), 64),
     hand: paintDrawable('hand', handPainter, 100),
+    sunburst: renderSunburst(),
+    kaboom: kb.canvas,
+    spark: sp.canvas,
+    coin: paintDrawable('coin', dotPainter(PAL.yel), 32),
+    real,
   };
 }
 
@@ -586,10 +666,11 @@ export async function loadNinjaArt(): Promise<NinjaArt> {
  * The backdrop pre-scaled once to the canvas' device pixels and then copied 1:1 every
  * frame. A cover-scaled drawImage of a full-screen picture is a resample of every pixel
  * every frame: on a slow phone that alone cost a whole frame (measured at CPU 4x).
- * Redrawn only when the canvas size changes. Draw it first, outside any shake.
+ * Redrawn only when the canvas size changes. Draw it first, outside any shake. Without a
+ * real background file the stage is painted straight at device pixels (crisp halftone).
  */
 export interface Backdrop {
-  draw(g: CanvasRenderingContext2D, w: number, h: number, dpr: number): void;
+  draw(g: CanvasRenderingContext2D, w: number, h: number, dpr: number, top: number): void;
   dispose(): void;
 }
 
@@ -598,7 +679,7 @@ export function createBackdrop(bg: Drawable, overscale = 1): Backdrop {
   let cw = 0;
   let ch = 0;
   return {
-    draw(g: CanvasRenderingContext2D, w: number, h: number, dpr: number): void {
+    draw(g: CanvasRenderingContext2D, w: number, h: number, dpr: number, top: number): void {
       const pw = Math.round(w * dpr);
       const ph = Math.round(h * dpr);
       if (!cache || pw !== cw || ph !== ch) {
@@ -610,8 +691,11 @@ export function createBackdrop(bg: Drawable, overscale = 1): Backdrop {
         const c = cache.getContext('2d');
         if (c) {
           c.setTransform(dpr, 0, 0, dpr, 0, 0);
-          const k = Math.max(w / bg.width, h / bg.height) * overscale;
-          bg.draw(c, w / 2, h / 2, bg.width * k, bg.height * k);
+          if (bg.isPlaceholder) paintStage(c, w, h, top);
+          else {
+            const k = Math.max(w / bg.width, h / bg.height) * overscale;
+            bg.draw(c, w / 2, h / 2, bg.width * k, bg.height * k);
+          }
         }
       }
       g.save();
@@ -629,11 +713,106 @@ export function createBackdrop(bg: Drawable, overscale = 1): Backdrop {
   };
 }
 
+/** The cut face: rind ring, flesh and the inside pattern of `style`, centred, rx x ry. */
+function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, style: FruitStyle): void {
+  g.beginPath();
+  g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  g.fillStyle = style.inside === 'melon' ? '#e9fbe3' : style.rind;
+  g.fill();
+  g.lineWidth = Math.max(3, rx * 0.06);
+  g.strokeStyle = INK;
+  g.stroke();
+  const fx = rx * (style.inside === 'melon' ? 0.84 : 0.88);
+  const fy = ry * (style.inside === 'melon' ? 0.76 : 0.82);
+  g.beginPath();
+  g.ellipse(cx, cy, fx, fy, 0, 0, Math.PI * 2);
+  g.fillStyle = style.flesh;
+  g.fill();
+  g.save();
+  g.clip();
+  switch (style.inside) {
+    case 'melon': {
+      g.fillStyle = INK;
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + 0.3;
+        const d = i % 2 === 0 ? 0.55 : 0.3;
+        g.beginPath();
+        g.ellipse(cx + Math.cos(a) * fx * d, cy + Math.sin(a) * fy * d, rx * 0.045, ry * 0.12, a, 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
+    case 'citrus': {
+      g.strokeStyle = '#ffffff';
+      g.lineWidth = Math.max(2, rx * 0.035);
+      g.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        g.moveTo(cx, cy);
+        g.lineTo(cx + Math.cos(a) * fx, cy + Math.sin(a) * fy);
+      }
+      g.stroke();
+      g.fillStyle = shade(style.juice, 0.15);
+      for (let i = 0; i < 10; i++) {
+        const a = ((i + 0.5) / 10) * Math.PI * 2;
+        g.beginPath();
+        g.ellipse(cx + Math.cos(a) * fx * 0.55, cy + Math.sin(a) * fy * 0.55, rx * 0.12, ry * 0.18, a, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.beginPath();
+      g.ellipse(cx, cy, rx * 0.1, ry * 0.18, 0, 0, Math.PI * 2);
+      g.fillStyle = '#ffffff';
+      g.fill();
+      break;
+    }
+    case 'apple': {
+      g.strokeStyle = 'rgba(160, 110, 40, 0.6)';
+      g.lineWidth = Math.max(2, rx * 0.03);
+      g.beginPath();
+      g.ellipse(cx, cy, fx * 0.42, fy * 0.5, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.fillStyle = '#6b3b1a';
+      for (const s of [-1, 1]) {
+        g.beginPath();
+        g.ellipse(cx + s * fx * 0.17, cy, rx * 0.06, ry * 0.16, s * 0.4, 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
+    case 'stone': {
+      g.beginPath();
+      g.ellipse(cx, cy, fx * 0.36, fy * 0.5, 0, 0, Math.PI * 2);
+      g.fillStyle = '#8a4b1c';
+      g.fill();
+      g.lineWidth = Math.max(2, rx * 0.035);
+      g.strokeStyle = INK;
+      g.stroke();
+      break;
+    }
+    case 'gold': {
+      g.fillStyle = '#ffffff';
+      polyPath(g, STAR10, cx - rx * 0.32, cy - ry * 0.55, rx * 0.64, ry * 1.1);
+      g.fill();
+      break;
+    }
+    default: {
+      const never: never = style.inside;
+      throw new Error(`Unhandled inside: ${String(never)}`);
+    }
+  }
+  // juice highlight
+  g.fillStyle = 'rgba(255, 255, 255, 0.75)';
+  g.beginPath();
+  g.ellipse(cx - fx * 0.45, cy - fy * 0.35, fx * 0.18, fy * 0.14, -0.3, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+}
+
 /**
  * The two halves of a sliced target, pre-cut once along the picture's own horizontal
- * axis with the juicy cut face painted on: [upper half, lower half], each a canvas of
- * the full sprite box at 2x. Drawing a half is then one rotated drawImage, not a clip
- * per half per frame (the clip was the most expensive draw of the game on a slow phone).
+ * axis, each showing the whole juicy cut face (rind, flesh, seeds / segments / stone):
+ * [upper half, lower half], each a canvas of the full sprite box at 2x. Drawing a half is
+ * then one rotated drawImage, not a clip per half per frame.
  */
 export function buildHalves(d: Drawable, style: FruitStyle): readonly [HTMLCanvasElement, HTMLCanvasElement] {
   const S = SPRITE_BOX * 2;
@@ -643,18 +822,64 @@ export function buildHalves(d: Drawable, style: FruitStyle): readonly [HTMLCanva
     c.height = S;
     const g = c.getContext('2d');
     if (!g) return c;
+    g.save();
     g.beginPath();
     g.rect(0, upper ? 0 : S / 2, S, S / 2);
     g.clip();
     d.draw(g, S / 2, S / 2, S, S);
-    g.fillStyle = style.flesh;
-    g.strokeStyle = style.juice;
-    g.lineWidth = 6;
-    g.beginPath();
-    g.ellipse(S / 2, S / 2, S * BODY_RADIUS * 0.92, S * BODY_RADIUS * 0.2, 0, 0, Math.PI * 2);
-    g.fill();
-    g.stroke();
+    g.restore();
+    const rx = S * BODY_RADIUS * 0.94;
+    const ry = S * BODY_RADIUS * 0.34;
+    // the face leans towards the viewer: the upper half shows it below its cut, the lower above
+    cutFace(g, S / 2, S / 2 + (upper ? ry * 0.15 : -ry * 0.15), rx, ry, style);
     return c;
   };
   return [make(true), make(false)];
+}
+
+/** Juice splat decals: flat comic blobs with an ink outline, `count` shapes in `color`, 96 x 96 CSS px each. */
+export function buildSplats(color: string, count: number): HTMLCanvasElement[] {
+  const out: HTMLCanvasElement[] = [];
+  for (let s = 0; s < count; s++) {
+    const { canvas, ctx } = makeLayer(96, 96);
+    if (ctx) {
+      const blob = (k: number, ox: number, oy: number): void => {
+        ctx.beginPath();
+        const n = 9 + s * 2;
+        for (let i = 0; i <= n * 2; i++) {
+          const a = (i / (n * 2)) * Math.PI * 2;
+          const wob = i % 2 === 0 ? 1 : 0.62 + 0.18 * Math.sin(i * 1.7 + s);
+          const r = 30 * k * wob * (1 + 0.12 * Math.sin(a * 3 + s * 2));
+          const x = 48 + ox + Math.cos(a) * r;
+          const y = 48 + oy + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.quadraticCurveTo(48 + ox + Math.cos(a - 0.15) * r * 1.08, 48 + oy + Math.sin(a - 0.15) * r * 1.08, x, y);
+        }
+        ctx.closePath();
+      };
+      blob(1, 0, 0);
+      // drops around the blob
+      for (let i = 0; i < 5; i++) {
+        const a = i * 1.37 + s;
+        const d = 36 + (i % 2) * 6;
+        ctx.moveTo(48 + Math.cos(a) * d + 4 + (i % 3), 48 + Math.sin(a) * d);
+        ctx.arc(48 + Math.cos(a) * d, 48 + Math.sin(a) * d, 4 + (i % 3), 0, Math.PI * 2);
+      }
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = PAL.ink;
+      ctx.stroke();
+      // a lighter inner pool
+      blob(0.45, -6, -6);
+      ctx.fillStyle = shade(color, 0.3);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(36, 36, 6, 3.5, -0.6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.fill();
+    }
+    out.push(canvas);
+  }
+  return out;
 }

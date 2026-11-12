@@ -8,10 +8,10 @@ export {
 } from './catalog';
 export type { AvatarBg, AvatarBgKind, AvatarFly, AvatarItem, AvatarSnd, AvatarTower } from './catalog';
 export {
-  AVATAR_BUCKETS, AVATAR_CACHE_MAX, avatarBucket, avatarCacheStats, avatarCanvas, avatarUrl, clearAvatarCache,
-  composeAvatar, drawPlate, holdAvatarUrl, peekAvatarUrl, preloadAvatarAssets,
+  AVATAR_BUCKETS, AVATAR_CACHE_MAX, AVATAR_URL_MAX, avatarBitmap, avatarBucket, avatarCacheStats, avatarCanvas, avatarUrl, clearAvatarCache,
+  composeAvatar, drawPlate, holdAvatarUrl, peekAvatarBitmap, peekAvatarUrl, preloadAvatarAssets,
 } from './compose';
-export type { ComposeOptions } from './compose';
+export type { AvatarCacheStats, ComposeOptions } from './compose';
 export { FRAME_MARGIN, frameLook, layoutLook, placeBox } from './layout';
 export type { AvatarCrop, AvatarLayer, Box, PlacedItem } from './layout';
 export type { DressingRoomProps } from './room-contract';

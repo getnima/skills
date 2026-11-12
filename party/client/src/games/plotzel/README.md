@@ -49,8 +49,9 @@ then par 4-5. Par 3-5 come from the original's curated starts, par 2 from common
 | A solved ladder is never worth less than | 100 |
 | Skipped ("דלג", after 15 s on the same ladder, confirm tap; shows the shortest path ~2.5 s) | 0 |
 
-No points for unsolved progress. The total is clamped to `GAMES.plotzel.maxRaw` (12,000: about 1.5x
-what a bot typing shortest paths at 4 keys/s scores in 120 s, see `tests/e2e/plotzel-play.cjs`).
+No points for unsolved progress. The total is clamped to `GAMES.plotzel.maxRaw` = 12,000: 1.5x the
+best 120 s score of a bot typing shortest paths at 4 keys/s with no mistakes (7,600-8,000, 19-20
+ladders, measured on six phone sizes by `tests/e2e/plotzel-play.cjs bots`).
 
 ## Freeze and reload
 

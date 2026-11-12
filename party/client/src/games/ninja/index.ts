@@ -10,6 +10,12 @@
  * Score: +10 per slice, +50 golden, +10 per object of a swipe of 3 or more
  * (+30 when it reaches 3, then +10 per extra), bomb -50 (never below 0) and a
  * 1.2 s stun.
+ *
+ * Look (render-only, never read by the logic): the party sticker style. A cobalt TV stage
+ * pre-rendered once per size, fruit drawn to their hit circle, a tapered white blade
+ * ribbon with a yellow edge (pink while a combo lives, grey while stunned), pooled juice
+ * splat decals pre-rendered per colour, pre-cut halves with a juicy inside, and every text
+ * a pre-rendered sticker. A quality flag drops decals and droplets when frames are slow.
  */
 import { sfx } from '../../kit/audio';
 import { createGameCanvas, drawText, roundRectPath } from '../../kit/canvas';
@@ -17,9 +23,10 @@ import { clamp, createFx, ease, lerp } from '../../kit/fx';
 import { haptic } from '../../kit/haptics';
 import { createInput } from '../../kit/input';
 import { createLoop, STEP_S } from '../../kit/loop';
-import { COLORS, font } from '../../kit/theme';
+import { COLORS } from '../../kit/theme';
 import { GAMES } from '../../../../shared/protocol';
-import { BODY_RADIUS, buildHalves, createBackdrop, FRUIT_STYLES, GOLD_STYLE, loadNinjaArt, SPRITE_BOX } from './art';
+import { BODY_RADIUS, buildHalves, buildSplats, createBackdrop, FRUIT_STYLES, GOLD_STYLE, loadNinjaArt } from './art';
+import { PAL, blit, createStickerCache, loadDisplayFont, renderChip, renderSticker } from './look';
 import { buildSchedule, GRAVITY, LAUNCH_Y, scheduleSignature } from './waves';
 
 import type { Drawable } from '../../kit/assets';
@@ -27,6 +34,7 @@ import type { BurstOptions } from '../../kit/fx';
 import type { KitPointer } from '../../kit/input';
 import type { GameContext, GameInstance, GameModule } from '../types';
 import type { FruitStyle } from './art';
+import type { Sticker } from './look';
 import type { ThrowKind } from './waves';
 
 // ───────────────────────────── Tuning ─────────────────────────────
@@ -55,6 +63,14 @@ const MAX_SPLATS = 18;
 const MAX_SLASHES = 10;
 const MAX_BLADES = 5;
 const TRAIL = 16;
+/** Fruit and bombs are drawn to their hit circle (R * 1.05), not inside it. Looks only. */
+const DRAW_K = 1.05;
+const MAX_POPS = 8;
+/** Splat decals stay this long (s) and fade over the last part. */
+const SPLAT_LIFE = 1.8;
+/** Frame time (ms, moving average) above which decals and droplets thin out, and below which they come back. */
+const SLOW_FRAME_MS = 30;
+const FAST_FRAME_MS = 21;
 /** A trail point fades out after this many steps. */
 const TRAIL_LIFE = 9;
 
@@ -79,7 +95,7 @@ const GOLD_SPARKLE: BurstOptions = {
   shape: 'star',
 };
 
-const COMBO_TEXT: readonly string[] = Array.from({ length: 16 }, (_, n) => `קומבו x${n}!`);
+const COMBO_TEXT: readonly string[] = Array.from({ length: 16 }, (_, n) => `קומבו ×${n}!`);
 const PLUS_TEXT: readonly string[] = Array.from({ length: 16 }, (_, n) => `+${n * POINTS_COMBO_EACH}`);
 
 // ───────────────────────────── Types ─────────────────────────────
@@ -129,6 +145,18 @@ interface Splat {
   color: string;
   life: number;
   rot: number;
+  /** Pre-rendered blob (look only). */
+  img: HTMLCanvasElement | null;
+}
+
+interface Pop {
+  active: boolean;
+  sticker: Sticker | null;
+  x: number;
+  y: number;
+  age: number;
+  life: number;
+  rise: number;
 }
 
 interface Slash {
@@ -306,10 +334,16 @@ function styleOf(kind: ThrowKind, variant: number): FruitStyle {
 export const game: GameModule = {
   id: 'ninja',
   async create(ctx: GameContext): Promise<GameInstance> {
-    const art = await loadNinjaArt();
+    const [art] = await Promise.all([loadNinjaArt(), loadDisplayFont()]);
     const backdrop = createBackdrop(art.background, 1.06);
-    // pre-cut halves: index = fruit variant, last = gold
-    const halfArt = [...art.targets.map((d, i) => buildHalves(d, FRUIT_STYLES[i] ?? GOLD_STYLE)), buildHalves(art.gold, GOLD_STYLE)];
+    // pre-cut halves: index = fruit variant, then one per golden look
+    const halfArt = [...art.targets.map((d, i) => buildHalves(d, FRUIT_STYLES[i] ?? GOLD_STYLE)), ...art.golds.map((d) => buildHalves(d, GOLD_STYLE))];
+    // juice decals: three blob shapes per juice colour, pre-rendered once
+    const splatArt = new Map<string, HTMLCanvasElement[]>();
+    for (const st of [...FRUIT_STYLES, GOLD_STYLE]) if (!splatArt.has(st.juice)) splatArt.set(st.juice, buildSplats(st.juice, 3));
+    const stickers = createStickerCache(24);
+    /** Which golden look a throw wears (looks only). */
+    const goldLook = (id: number): number => id % art.golds.length;
     const bgOpaque = art.background.isPlaceholder || /\.jpe?g(\?|$)/i.test(art.background.url);
     const view = createGameCanvas(ctx.root);
     const input = createInput(view.canvas);
@@ -332,7 +366,18 @@ export const game: GameModule = {
       color: '#fff',
       life: 0,
       rot: 0,
+      img: null,
     }));
+    const pops: Pop[] = Array.from({ length: MAX_POPS }, () => ({ active: false, sticker: null, x: 0, y: 0, age: 0, life: 1, rise: 60 }));
+    let popCursor = 0;
+    let lowQuality = false;
+    let frameEma = 16.7;
+    let lastFrameAt = 0;
+    let slowSteps = 0;
+    // blade ribbon scratch (normals), reused every frame
+    const ribX = new Float32Array(TRAIL);
+    const ribY = new Float32Array(TRAIL);
+    const ribW = new Float32Array(TRAIL);
     const slashes: Slash[] = Array.from({ length: MAX_SLASHES }, () => ({
       active: false,
       x: 0,
@@ -428,9 +473,13 @@ export const game: GameModule = {
     }
 
     function addSplat(x: number, y: number, color: string, r: number): void {
+      // slow phone: keep only every other decal slot in use
+      if (lowQuality && splatCursor % 2 === 1) splatCursor = (splatCursor + 1) % MAX_SPLATS;
       const s = splats[splatCursor];
       splatCursor = (splatCursor + 1) % MAX_SPLATS;
       if (!s) return;
+      const set = splatArt.get(color);
+      s.img = set ? (set[(sliced + splatCursor) % set.length] ?? null) : null;
       s.active = true;
       s.x = x;
       s.y = y;
@@ -452,8 +501,22 @@ export const game: GameModule = {
       s.gold = gold;
     }
 
+    /** Floating sticker ("+10", "-50") at (x, y) (looks only). */
+    function addPop(x: number, y: number, text: string, color: string, px: number, life = 0.85, rise = 60): void {
+      const p = pops[popCursor];
+      popCursor = (popCursor + 1) % MAX_POPS;
+      if (!p) return;
+      p.active = true;
+      p.sticker = stickers.get(`p|${text}|${color}|${px}`, (old) => renderSticker(text, { size: px, fill: color, shadow: color === PAL.red ? PAL.ink : PAL.red }, old));
+      p.x = x;
+      p.y = y;
+      p.age = 0;
+      p.life = life;
+      p.rise = rise;
+    }
+
     function addHalves(f: Flyer, x: number, y: number, angle: number): void {
-      const pair = f.kind === 'gold' ? halfArt[halfArt.length - 1] : halfArt[f.variant];
+      const pair = f.kind === 'gold' ? halfArt[art.targets.length + goldLook(f.id)] : halfArt[f.variant];
       const nx = -Math.sin(angle);
       const ny = Math.cos(angle);
       const bvx = f.vx * colW;
@@ -505,11 +568,12 @@ export const game: GameModule = {
       fx.shake(26, 650);
       fx.burst(x, y, {
         count: 46,
-        colors: [COLORS.orange, COLORS.yellow, COLORS.red, '#ffffff'],
+        colors: [PAL.org, PAL.yel, PAL.red, '#ffffff'],
         speed: 640,
         size: 7,
         life: 0.8,
         gravity: 300,
+        shape: 'star',
       });
       fx.burst(x, y, {
         count: 16,
@@ -521,12 +585,7 @@ export const game: GameModule = {
         shape: 'dot',
       });
       // below the "blade down" pill (top + 12 .. top + 62) for its whole 80 px rise
-      fx.text(x, Math.max(top + 150, y - R), `-${BOMB_PENALTY}`, {
-        color: COLORS.red,
-        size: 48,
-        life: 1.2,
-        rise: 80,
-      });
+      addPop(clamp(x, 70, W - 70), Math.max(top + 150, y - R), `-${BOMB_PENALTY}`, PAL.red, 48, 1.2, 80);
       sfx.explode();
       haptic.heavy();
     }
@@ -543,46 +602,55 @@ export const game: GameModule = {
       sliced++;
       const st = styleOf(f.kind, f.variant);
       addHalves(f, x, y, angle);
-      addSplat(x, y, st.juice, R * 1.25);
+      const big = Math.min(blade.swipe + 1, 6);
+      addSplat(x, y, st.juice, R * (1.5 + (big >= COMBO_MIN ? 0.18 * big : 0)));
       addSlash(x, y, angle, f.kind === 'gold');
-      fx.burst(x, y, {
-        count: 16,
-        colors: [st.juice, st.flesh, st.juice],
-        speed: 420,
-        size: 4.5,
-        life: 0.65,
-        gravity: 900,
-      });
+      // juice droplets fly along the cut, both ways
+      const drops = (lowQuality ? 5 : 9) + (big >= COMBO_MIN ? big * 2 : 0);
+      for (const dir of [0, Math.PI]) {
+        fx.burst(x, y, {
+          count: drops,
+          colors: [st.juice, st.flesh, st.juice],
+          speed: 480 + big * 40,
+          size: 4.5,
+          life: 0.6,
+          gravity: 900,
+          angle: angle + dir,
+          spread: 0.7,
+        });
+      }
       blade.swipe++;
       blade.sinceSlice = 0;
       let gain = f.kind === 'gold' ? POINTS_GOLD : POINTS_FRUIT;
       if (f.kind === 'gold') {
         golds++;
-        fx.text(x, y - R * 0.6, `+${POINTS_GOLD}`, {
-          color: COLORS.yellow,
-          size: 44,
-          life: 1.1,
-          rise: 90,
-        });
+        addPop(x, y - R * 0.6, `+${POINTS_GOLD}`, PAL.yel, 46, 1.1, 90);
         fx.burst(x, y, {
           count: 22,
-          colors: [COLORS.yellow, '#ffffff', '#ffb000'],
+          colors: [PAL.yel, '#ffffff', PAL.org],
           speed: 380,
           size: 5,
           life: 0.9,
           gravity: 200,
           shape: 'star',
         });
+        // a burst of coins
+        fx.burst(x, y, {
+          count: 14,
+          colors: [PAL.yel, PAL.yel2],
+          speed: 520,
+          size: 7,
+          life: 0.9,
+          gravity: 1100,
+          angle: -Math.PI / 2,
+          spread: Math.PI * 1.2,
+          shape: 'square',
+        });
         fx.shake(8, 220);
         sfx.coin(1.1);
         haptic.success();
       } else {
-        fx.text(x, y - R * 0.5, `+${POINTS_FRUIT}`, {
-          color: '#ffffff',
-          size: 28,
-          life: 0.75,
-          rise: 55,
-        });
+        addPop(x, y - R * 0.5, `+${POINTS_FRUIT}`, '#ffffff', 30, 0.75, 55);
         fx.shake(3, 110);
         sfx.slice(1 + Math.min(blade.swipe, 8) * 0.07);
         haptic.tap();
@@ -595,7 +663,7 @@ export const game: GameModule = {
         showCallout(
           COMBO_TEXT[n] ?? '',
           PLUS_TEXT[Math.min(n, PLUS_TEXT.length - 1)] ?? '',
-          blade.swipe >= 5 ? COLORS.pink : COLORS.yellow,
+          blade.swipe >= 5 ? PAL.pink : PAL.yel,
           x,
           y,
         );
@@ -803,9 +871,19 @@ export const game: GameModule = {
       }
       for (const s of splats) {
         if (!s.active) continue;
-        s.life -= dt * 0.8;
+        s.life -= dt / SPLAT_LIFE;
         if (s.life <= 0) s.active = false;
       }
+      for (const p of pops) {
+        if (!p.active) continue;
+        p.age += dt;
+        if (p.age >= p.life) p.active = false;
+      }
+      // the quality flag follows the measured frame time (changed only here: a frozen frame never changes)
+      if (frameEma > SLOW_FRAME_MS) slowSteps = Math.min(120, slowSteps + 1);
+      else if (frameEma < FAST_FRAME_MS) slowSteps = Math.max(-120, slowSteps - 1);
+      if (!lowQuality && slowSteps >= 90) lowQuality = true;
+      else if (lowQuality && slowSteps <= -90) lowQuality = false;
       for (const s of slashes) {
         if (!s.active) continue;
         s.life -= dt * 4.5;
@@ -828,7 +906,7 @@ export const game: GameModule = {
         const left = ctx.timeLeftMs();
         if (left > 0 && left <= 10_000) {
           tenSecondsCalled = true;
-          showCallout('10 שניות!', 'תנו בראש!', COLORS.cyan, W / 2, top + fieldH * 0.32);
+          showCallout('10 שניות!', 'תנו בראש!', PAL.white, W / 2, top + fieldH * 0.32);
           callout.life = 1.4;
           sfx.drumroll(700);
         }

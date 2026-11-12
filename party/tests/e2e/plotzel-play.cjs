@@ -188,13 +188,15 @@ async function layoutIssues(page) {
     if (window.scrollY !== 0 || se.scrollHeight > innerHeight + 0.5 || se.scrollWidth > innerWidth + 0.5) out.push({ scrollY: window.scrollY, sh: se.scrollHeight, sw: se.scrollWidth });
     const pz = document.querySelector('.pz');
     if (pz && (pz.scrollHeight > pz.clientHeight + 1 || pz.scrollWidth > pz.clientWidth + 1)) out.push({ pzOverflow: [pz.scrollHeight, pz.clientHeight, pz.scrollWidth, pz.clientWidth] });
-    for (const el of document.querySelectorAll('.pz-head, .pz-kb, .pz-key, .pz-tools, .pz-tool, .pz-row:not([hidden]), .pz-toast.is-on')) {
+    for (const el of document.querySelectorAll(sliding ? '.pz-head, .pz-kb, .pz-key, .pz-tools, .pz-tool' : '.pz-head, .pz-kb, .pz-key, .pz-tools, .pz-tool, .pz-row:not([hidden]), .pz-toast.is-on')) {
       const r = el.getBoundingClientRect();
       if (r.width > 0 && (r.right > innerWidth + 0.5 || r.left < -0.5 || r.bottom > innerHeight + 0.5 || r.top < -0.5)) out.push({ outside: el.className, r: [r.left, r.top, r.right, r.bottom].map(Math.round) });
     }
     // rows never spill out of the board
     const board = document.querySelector('.pz-board');
-    if (board) {
+    const rowsEl = document.querySelector('.pz-rows');
+    const sliding = rowsEl && rowsEl.getAnimations().some((a) => a.playState === 'running');
+    if (board && !sliding) {
       const b = board.getBoundingClientRect();
       for (const row of document.querySelectorAll('.pz-rows > .pz-row:not([hidden]), .pz-more:not([hidden])')) {
         const r = row.getBoundingClientRect();
@@ -239,7 +241,8 @@ async function expertBot(page, km, perKeyMs, until) {
   while (!until()) {
     const s = await st(page).catch(() => null);
     if (!s || s.ended) break;
-    if (s.phase !== 'play' || s.frozen) {
+    if (s.phase !== 'play' || s.frozen || s.leftMs < 1800) {
+      // (nothing new is started in the last 1.8 s: a word landing exactly at time-up is a race)
       await sleep(60);
       continue;
     }
@@ -266,6 +269,8 @@ async function clumsyBot(page, km, perKeyMs, until, rejects) {
   const ledger = [];
   const seen = new Set();
   const expectReject = async (word, reason, expected) => {
+    const s0 = await st(page).catch(() => null);
+    if (!s0 || s0.leftMs < 2500) return; // too close to time-up to judge
     await typeWord(page, km, word, perKeyMs);
     const t = await toast(page);
     rejects.push({ reason, ok: !!t && t.kind === 'bad' && t.text === expected, got: t && t.text, expected });
@@ -273,7 +278,7 @@ async function clumsyBot(page, km, perKeyMs, until, rejects) {
   while (!until()) {
     const s = await st(page).catch(() => null);
     if (!s || s.ended) break;
-    if (s.phase !== 'play' || s.frozen) {
+    if (s.phase !== 'play' || s.frozen || s.leftMs < 2500) {
       await sleep(80);
       continue;
     }
@@ -300,11 +305,7 @@ async function clumsyBot(page, km, perKeyMs, until, rejects) {
     const i = s.idx;
     const cur = s.words[s.words.length - 1];
     // short word, same word, two letters at once, a non-word
-    await typeWord(page, km, Array.from(cur).slice(0, 2).join(''), perKeyMs);
-    {
-      const t = await toast(page);
-      rejects.push({ reason: 'short', ok: !!t && t.text === MSG.short, got: t && t.text });
-    }
+    await expectReject(Array.from(cur).slice(0, 2).join(''), 'short', MSG.short);
     if (until()) break;
     if (i % 2 === 0) await expectReject(cur, 'same', MSG.same);
     const two = await lad(page, 'twochange');
@@ -355,7 +356,8 @@ async function clumsyBot(page, km, perKeyMs, until, rejects) {
 }
 
 async function botRun(browser, w, h, kind, seed) {
-  const g = await openGame(browser, w, h, `seed=${seed}&duration=${DUR}`);
+  // the dev harness buttons sit over the skip button: hidden, or a skip tap would hit them
+  const g = await openGame(browser, w, h, `seed=${seed}&duration=${DUR}`, { hideTools: true });
   const { page } = g;
   const label = `${g.label} ${kind}`;
   const km = await keyChecks(page, label, h > w);

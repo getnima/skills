@@ -279,7 +279,8 @@ function composeInner(input: AvatarLook | string, opts: ComposeOptions): Compose
       sg.fillStyle = opts.plate === false ? '#16120E' : getBg(look.bg).outline;
       sg.fillRect(0, 0, size, size);
       const r = Math.max(1, size * 0.02);
-      const steps = r > 2.5 ? 16 : 8;
+      // a 1 px outline needs only the four straight neighbours; thicker ones need a rounder stamp
+      const steps = r <= 1.2 ? 4 : r > 2.5 ? 16 : 8;
       for (let i = 0; i < steps; i++) {
         const a = (i / steps) * Math.PI * 2;
         g.drawImage(sg.canvas, Math.cos(a) * r, Math.sin(a) * r);
@@ -354,12 +355,15 @@ export async function avatarCanvas(
   }
 }
 
-/* ───────────────────────── URL cache ───────────────────────── */
+/* ───────────────────────── caches ───────────────────────── */
 
-/** Device-pixel sizes the cache holds. */
+/** Device-pixel sizes the caches hold. */
 export const AVATAR_BUCKETS: readonly number[] = [48, 96, 192, 384];
-/** Most cached pictures; the least recently used one that no <Avatar> shows goes first. */
-export const AVATAR_CACHE_MAX = 480;
+/** Most composed pictures kept (least recently used goes first), and their total size. */
+export const AVATAR_CACHE_MAX = 600;
+export const AVATAR_CACHE_MAX_BYTES = 48 * 1024 * 1024;
+/** Most object URLs kept; the least recently used one that nothing holds is revoked first. */
+export const AVATAR_URL_MAX = 300;
 
 /** The bucket for a CSS size on this screen. */
 export function avatarBucket(cssSize: number, dpr: number = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1): number {
@@ -368,44 +372,72 @@ export function avatarBucket(cssSize: number, dpr: number = typeof devicePixelRa
   return AVATAR_BUCKETS[AVATAR_BUCKETS.length - 1] ?? 384;
 }
 
-interface Entry {
+interface Bitmap {
+  canvas: HTMLCanvasElement;
+  bytes: number;
+}
+interface UrlEntry {
   url: string;
   bytes: number;
   refs: number;
 }
 
-const cache = new Map<string, Entry>();
-const pending = new Map<string, Promise<string>>();
-/** Holds asked for before the picture exists. */
+const bitmaps = new Map<string, Bitmap>();
+let bitmapBytes = 0;
+const bitmapPending = new Map<string, Promise<HTMLCanvasElement>>();
+const urls = new Map<string, UrlEntry>();
+const urlPending = new Map<string, Promise<string>>();
+/** Holds asked for before the URL exists. */
 const earlyRefs = new Map<string, number>();
 
-function cacheKey(look: AvatarLook | string, size: number, crop: AvatarCrop): string {
-  return `${lookKey(look)}|${avatarBucket(size)}|${crop}`;
+interface Request {
+  key: string;
+  look: AvatarLook;
+  bucket: number;
+  crop: AvatarCrop;
 }
 
-function touch(key: string, e: Entry): void {
-  cache.delete(key);
-  cache.set(key, e);
+function request(look: AvatarLook | string, size: number, crop: AvatarCrop): Request {
+  const l = normalizeLook(typeof look === 'string' ? decodeLook(look) : look);
+  const bucket = avatarBucket(size);
+  return { key: `${lookKey(l)}|${bucket}|${crop}`, look: l, bucket, crop };
 }
 
-function evict(): void {
-  if (cache.size <= AVATAR_CACHE_MAX) return;
-  for (const [key, e] of cache) {
-    if (cache.size <= AVATAR_CACHE_MAX) break;
+function touch<T>(map: Map<string, T>, key: string, e: T): void {
+  map.delete(key);
+  map.set(key, e);
+}
+
+function evictBitmaps(): void {
+  for (const [key, b] of bitmaps) {
+    if (bitmaps.size <= AVATAR_CACHE_MAX && bitmapBytes <= AVATAR_CACHE_MAX_BYTES) break;
+    bitmaps.delete(key);
+    bitmapBytes -= b.bytes;
+  }
+}
+
+function revoke(url: string): void {
+  try {
+    URL.revokeObjectURL(url);
+  } catch {
+    /* ignore */
+  }
+}
+
+function evictUrls(): void {
+  if (urls.size <= AVATAR_URL_MAX) return;
+  for (const [key, e] of urls) {
+    if (urls.size <= AVATAR_URL_MAX) break;
     if (e.refs > 0) continue;
-    cache.delete(key);
-    try {
-      URL.revokeObjectURL(e.url);
-    } catch {
-      /* ignore */
-    }
+    urls.delete(key);
+    revoke(e.url);
   }
 }
 
 /* composing is spread over frames: a full lobby asking for 120 pictures at once must not freeze the TV */
 const jobs: (() => void)[] = [];
 let pumping = false;
-const SLICE_MS = 7;
+const SLICE_MS = 8;
 
 function pump(): void {
   const start = performance.now();
@@ -413,114 +445,172 @@ function pump(): void {
     const job = jobs.shift();
     if (job !== undefined) job();
   }
-  if (jobs.length > 0) setTimeout(pump, 0);
+  if (jobs.length > 0) yieldThen(pump);
   else pumping = false;
+}
+
+let channel: MessageChannel | null = null;
+let afterYield: (() => void) | null = null;
+/** Like setTimeout(fn, 0) without the 4 ms clamp of nested timers. */
+function yieldThen(fn: () => void): void {
+  try {
+    if (channel === null) {
+      channel = new MessageChannel();
+      channel.port1.onmessage = () => {
+        const f = afterYield;
+        afterYield = null;
+        if (f !== null) f();
+      };
+    }
+    afterYield = fn;
+    channel.port2.postMessage(0);
+  } catch {
+    setTimeout(fn, 0);
+  }
 }
 
 function schedule(job: () => void): void {
   jobs.push(job);
   if (pumping) return;
   pumping = true;
-  setTimeout(pump, 0);
+  yieldThen(pump);
 }
 
-function toBlobUrl(canvas: HTMLCanvasElement): Promise<{ url: string; bytes: number; blob: boolean }> {
-  return new Promise((resolve) => {
-    const viaData = (): void => {
-      let url = BLANK;
-      try {
-        url = canvas.toDataURL('image/png');
-      } catch {
-        /* keep the blank */
+function produceBitmap(r: Request): Promise<{ canvas: HTMLCanvasElement; complete: boolean }> {
+  return Promise.all(lookFiles(r.look).map(loadPic)).then(
+    () =>
+      new Promise<Composed>((resolve) => {
+        schedule(() => {
+          try {
+            resolve(composeInner(r.look, { size: r.bucket, crop: r.crop }));
+          } catch {
+            resolve({ canvas: fallbackCanvas(r.look, r.bucket), complete: false });
+          }
+        });
+      }),
+  );
+}
+
+function bitmapFor(r: Request): Promise<HTMLCanvasElement> {
+  const hit = bitmaps.get(r.key);
+  if (hit !== undefined) {
+    touch(bitmaps, r.key, hit);
+    return Promise.resolve(hit.canvas);
+  }
+  const running = bitmapPending.get(r.key);
+  if (running !== undefined) return running;
+  const p = produceBitmap(r)
+    .then((made) => {
+      // a picture is missing (404, offline): hand out the simpler picture but do not keep it,
+      // so the next request tries again
+      if (made.complete) {
+        const bytes = made.canvas.width * made.canvas.height * 4;
+        bitmaps.set(r.key, { canvas: made.canvas, bytes });
+        bitmapBytes += bytes;
+        evictBitmaps();
       }
-      resolve({ url, bytes: url.length, blob: false });
-    };
-    try {
-      canvas.toBlob((b) => {
-        if (b === null) viaData();
-        else resolve({ url: URL.createObjectURL(b), bytes: b.size, blob: true });
-      }, 'image/png');
-    } catch {
-      viaData();
-    }
-  });
+      return made.canvas;
+    })
+    .catch(() => fallbackCanvas(r.look, r.bucket))
+    .finally(() => bitmapPending.delete(r.key));
+  bitmapPending.set(r.key, p);
+  return p;
+}
+
+/**
+ * The shared, cached picture of a look as a canvas (bucket-sized, see avatarBucket). This is the
+ * cheapest way to show an avatar: draw it into your own canvas with drawImage. Do NOT draw on it
+ * or resize it: every caller gets the same canvas. `size` is in CSS pixels. Never rejects.
+ */
+export function avatarBitmap(look: AvatarLook | string, size: number, crop: AvatarCrop = 'icon'): Promise<HTMLCanvasElement> {
+  try {
+    return bitmapFor(request(look, size, crop));
+  } catch {
+    return Promise.resolve(fallbackCanvas(look, avatarBucket(size)));
+  }
+}
+
+/** The cached picture right now, or null (no work is started). */
+export function peekAvatarBitmap(look: AvatarLook | string, size: number, crop: AvatarCrop = 'icon'): HTMLCanvasElement | null {
+  try {
+    const r = request(look, size, crop);
+    const hit = bitmaps.get(r.key);
+    if (hit === undefined) return null;
+    touch(bitmaps, r.key, hit);
+    return hit.canvas;
+  } catch {
+    return null;
+  }
 }
 
 /** 1x1 transparent GIF: the answer when even a canvas cannot be made. */
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 
-function produce(key: string, look: AvatarLook, bucket: number, crop: AvatarCrop): Promise<string> {
-  return Promise.all(lookFiles(look).map(loadPic))
-    .then(
-      () =>
-        new Promise<Composed>((resolve) => {
-          schedule(() => {
-            try {
-              resolve(composeInner(look, { size: bucket, crop }));
-            } catch {
-              resolve({ canvas: fallbackCanvas(look, bucket), complete: false });
-            }
-          });
-        }),
-    )
-    .then(async (made) => {
-      if (!made.complete) {
-        // a picture is missing (404, offline): hand out the simpler picture but do not keep it,
-        // so the next request tries again
-        try {
-          return made.canvas.toDataURL('image/png');
-        } catch {
-          return BLANK;
-        }
-      }
-      const r = await toBlobUrl(made.canvas);
-      if (r.blob) {
-        cache.set(key, { url: r.url, bytes: r.bytes, refs: earlyRefs.get(key) ?? 0 });
-        earlyRefs.delete(key);
-        evict();
-      }
-      return r.url;
-    })
-    .catch(() => BLANK);
+function dataUrl(canvas: HTMLCanvasElement): string {
+  try {
+    return canvas.toDataURL('image/png');
+  } catch {
+    return BLANK;
+  }
+}
+
+function blobOf(canvas: HTMLCanvasElement): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    try {
+      canvas.toBlob((b) => resolve(b), 'image/png');
+    } catch {
+      resolve(null);
+    }
+  });
 }
 
 /**
- * URL of a look's picture for an <img>. `size` is in CSS pixels; the picture is made at the
- * next bucket (48 / 96 / 192 / 384 device px) and shared by every caller. Resolves at once when
- * cached. Never rejects: when a picture cannot be loaded the URL shows the plate with the bare head.
- * The URL can be revoked later when the cache is full, unless it is held (holdAvatarUrl / <Avatar />):
- * ask again rather than storing it.
+ * URL of a look's picture, for an <img src> or a CSS background. `size` is in CSS pixels; the
+ * picture is made at the next bucket (48 / 96 / 192 / 384 device px) and shared by every caller.
+ * Resolves at once when cached. Never rejects: when a picture cannot be loaded the URL shows the
+ * plate with what could be drawn (the bare head). The URL is an object URL that is revoked when
+ * the cache is full, unless it is held (holdAvatarUrl / useAvatarUrl): ask again rather than
+ * storing it. For lists of many avatars prefer <Avatar /> (it paints the cached canvas, no PNG).
  */
 export function avatarUrl(look: AvatarLook | string, size: number, crop: AvatarCrop = 'icon'): Promise<string> {
-  let key: string;
-  let l: AvatarLook;
-  let bucket: number;
+  let r: Request;
   try {
-    l = normalizeLook(typeof look === 'string' ? decodeLook(look) : look);
-    bucket = avatarBucket(size);
-    key = `${lookKey(l)}|${bucket}|${crop}`;
+    r = request(look, size, crop);
   } catch {
     return Promise.resolve(BLANK);
   }
-  const hit = cache.get(key);
+  const hit = urls.get(r.key);
   if (hit !== undefined) {
-    touch(key, hit);
+    touch(urls, r.key, hit);
     return Promise.resolve(hit.url);
   }
-  const running = pending.get(key);
+  const running = urlPending.get(r.key);
   if (running !== undefined) return running;
-  const p = produce(key, l, bucket, crop).finally(() => pending.delete(key));
-  pending.set(key, p);
+  const p = bitmapFor(r)
+    .then(async (canvas) => {
+      // only pictures that made it into the bitmap cache are complete
+      if (bitmaps.get(r.key)?.canvas !== canvas) return dataUrl(canvas);
+      const blob = await blobOf(canvas);
+      if (blob === null) return dataUrl(canvas);
+      const url = URL.createObjectURL(blob);
+      urls.set(r.key, { url, bytes: blob.size, refs: earlyRefs.get(r.key) ?? 0 });
+      earlyRefs.delete(r.key);
+      evictUrls();
+      return url;
+    })
+    .catch(() => BLANK)
+    .finally(() => urlPending.delete(r.key));
+  urlPending.set(r.key, p);
   return p;
 }
 
 /** The cached URL right now, or null (no work is started). */
 export function peekAvatarUrl(look: AvatarLook | string, size: number, crop: AvatarCrop = 'icon'): string | null {
   try {
-    const key = cacheKey(look, size, crop);
-    const hit = cache.get(key);
+    const r = request(look, size, crop);
+    const hit = urls.get(r.key);
     if (hit === undefined) return null;
-    touch(key, hit);
+    touch(urls, r.key, hit);
     return hit.url;
   } catch {
     return null;
@@ -528,27 +618,27 @@ export function peekAvatarUrl(look: AvatarLook | string, size: number, crop: Ava
 }
 
 /**
- * Keeps a look's URL alive (never revoked) until the returned function is called. <Avatar /> does
- * this for you; call it yourself only if you put avatarUrl() results into your own long-lived DOM.
+ * Keeps a look's URL alive (never revoked) until the returned function is called. useAvatarUrl
+ * does this for you; call it yourself only if you put avatarUrl() results into long-lived DOM.
  */
 export function holdAvatarUrl(look: AvatarLook | string, size: number, crop: AvatarCrop = 'icon'): () => void {
   let key: string;
   try {
-    key = cacheKey(look, size, crop);
+    key = request(look, size, crop).key;
   } catch {
     return () => undefined;
   }
-  const e = cache.get(key);
+  const e = urls.get(key);
   if (e !== undefined) e.refs++;
   else earlyRefs.set(key, (earlyRefs.get(key) ?? 0) + 1);
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    const now = cache.get(key);
+    const now = urls.get(key);
     if (now !== undefined) {
       now.refs = Math.max(0, now.refs - 1);
-      evict();
+      evictUrls();
       return;
     }
     const early = (earlyRefs.get(key) ?? 0) - 1;
@@ -557,26 +647,38 @@ export function holdAvatarUrl(look: AvatarLook | string, size: number, crop: Ava
   };
 }
 
-/** For the lab and for tests: what the cache holds. */
-export function avatarCacheStats(): { entries: number; bytes: number; pending: number; held: number; pictures: number } {
-  let bytes = 0;
-  let held = 0;
-  for (const e of cache.values()) {
-    bytes += e.bytes;
-    if (e.refs > 0) held++;
-  }
-  return { entries: cache.size, bytes, pending: pending.size, held, pictures: pics.size };
+export interface AvatarCacheStats {
+  /** Composed pictures in memory and their size (width x height x 4). */
+  bitmaps: number;
+  bitmapBytes: number;
+  /** Object URLs (PNG blobs) and their size. */
+  urls: number;
+  urlBytes: number;
+  urlsHeld: number;
+  /** Compositions not finished yet. */
+  pending: number;
+  /** Picture files loaded. */
+  pictures: number;
 }
 
-/** Drops every cached picture that nothing holds (tests; a "new party" reset). */
+/** For the lab and for tests: what the caches hold. */
+export function avatarCacheStats(): AvatarCacheStats {
+  let urlBytes = 0;
+  let urlsHeld = 0;
+  for (const e of urls.values()) {
+    urlBytes += e.bytes;
+    if (e.refs > 0) urlsHeld++;
+  }
+  return { bitmaps: bitmaps.size, bitmapBytes, urls: urls.size, urlBytes, urlsHeld, pending: bitmapPending.size + urlPending.size + jobs.length, pictures: pics.size };
+}
+
+/** Drops every cached picture and every URL that nothing holds (tests; a "new party" reset). */
 export function clearAvatarCache(): void {
-  for (const [key, e] of cache) {
+  bitmaps.clear();
+  bitmapBytes = 0;
+  for (const [key, e] of urls) {
     if (e.refs > 0) continue;
-    cache.delete(key);
-    try {
-      URL.revokeObjectURL(e.url);
-    } catch {
-      /* ignore */
-    }
+    urls.delete(key);
+    revoke(e.url);
   }
 }

@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { AVATAR_SLOTS, decodeLook, defaultLook, encodeLook, randomLook } from '../../../shared/avatar';
 import { Avatar } from './Avatar';
 import { AVATAR_BGS, CATALOG_PROBLEMS, DOLL, ITEMS, ITEM_IDS, getItem, itemAr, itemsOfSlot, normalizeLook } from './catalog';
-import { avatarCacheStats, avatarUrl, composeAvatar, preloadAvatarAssets } from './compose';
+import { avatarBitmap, avatarCacheStats, composeAvatar, preloadAvatarAssets } from './compose';
 import { frameLook } from './layout';
 
 import type { ComponentType, JSX } from 'preact';
@@ -44,11 +44,13 @@ interface LabReport {
   view: View;
   ready: boolean;
   wallMs: number | null;
+  /** Part of wallMs until every picture was composed (the rest is painting them into the page). */
+  wallComposeMs: number | null;
   wallCount: number;
   cache: ReturnType<typeof avatarCacheStats> | null;
   errors: string[];
 }
-const report: LabReport = { view, ready: false, wallMs: null, wallCount: 0, cache: null, errors: [] };
+const report: LabReport = { view, ready: false, wallMs: null, wallComposeMs: null, wallCount: 0, cache: null, errors: [] };
 (window as unknown as { __avatarLab: LabReport }).__avatarLab = report;
 window.addEventListener('error', (e) => report.errors.push(String(e.message)));
 window.addEventListener('unhandledrejection', (e) => report.errors.push(`unhandled: ${String(e.reason)}`));
@@ -189,7 +191,8 @@ function WallView(): JSX.Element {
       await new Promise((r) => setTimeout(r, 300));
       const t0 = performance.now();
       setGo(true);
-      await Promise.all(looks.flatMap((l) => [avatarUrl(l, 28), avatarUrl(l, 40), avatarUrl(l, 96)]));
+      await Promise.all(looks.flatMap((l) => [avatarBitmap(l, 28), avatarBitmap(l, 40), avatarBitmap(l, 96)]));
+      report.wallComposeMs = performance.now() - t0;
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       const dt = performance.now() - t0;
       report.wallMs = dt;
@@ -213,7 +216,7 @@ function WallView(): JSX.Element {
         <p class="lab-note" id="wall-stat" style={{ direction: 'ltr' }}>
           {ms === null
             ? 'composing…'
-            : `${n} looks x 3 sizes in ${ms.toFixed(0)} ms · cache ${stats?.entries} pictures, ${((stats?.bytes ?? 0) / 1024).toFixed(0)} KB`}
+            : `${n} looks x 3 sizes in ${ms.toFixed(0)} ms · cache ${stats?.bitmaps} pictures, ${((stats?.bitmapBytes ?? 0) / 1024).toFixed(0)} KB`}
         </p>
         <div class="lab-wall tv" data-wall="28">
           {go && looks.map((l, i) => <Avatar key={i} look={l} size={28} />)}
@@ -418,7 +421,7 @@ function Lab(): JSX.Element {
           ))}
         </nav>
         <span class="lab-stat">
-          {ITEMS.length} items · cache {s.entries} / {(s.bytes / 1024).toFixed(0)} KB · pending {s.pending}
+          {ITEMS.length} items · cache {s.bitmaps} / {(s.bitmapBytes / 1024).toFixed(0)} KB · pending {s.pending}
           {CATALOG_PROBLEMS.length > 0 ? ` · ${CATALOG_PROBLEMS.length} CATALOG PROBLEMS` : ''}
         </span>
       </header>

@@ -4,6 +4,12 @@ What the Shimi doll says in the dressing room when a guest puts an accessory on 
 The owner asked for "super cynical and dense punch lines ... according to what the player chose", gave three
 lines himself, and approved the batch below with "this is the comedic line in general".
 
+> **OWNER FEEDBACK (latest, overrides the voice below): "Too cynical."** The owner wants the lines **שנון** - witty,
+> sharp, clever - in the humor of "הפשוטע" (Bar Almaliah's persona and podcasts) and "קהילת הלימונים", not bitter
+> or dark. A research pass is rewriting this guide and the example lines from those sources. Until it lands, treat
+> the examples below as the wrong tone: keep the density and the one-sentence form, drop the bitterness and the
+> sad-loser angle, aim for a clever twist or wordplay that makes people say "וואלה".
+
 ## The voice
 
 - First person, the doll talking about itself. Deadpan, self-aware, a little bitter, never cheerful.

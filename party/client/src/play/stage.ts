@@ -1,6 +1,7 @@
 /**
- * The stage: HUD (time left + score) and the lifecycle of one mini game.
- * See StageOptions / Stage in games/types.ts for the contract.
+ * The stage: HUD (live place + chase line, score, time left) and the lifecycle of one mini game.
+ * See StageOptions / Stage in games/types.ts for the contract. The live place is fed by the shell
+ * through PlayStage.setStanding (the games never see it).
  */
 import '../kit/base.css';
 import './stage.css';
@@ -11,11 +12,31 @@ import { sfx } from '../kit/audio';
 import { haptic } from '../kit/haptics';
 import { setKitErrorHandler, setKitPaused } from '../kit/loop';
 import { getSafeArea, initMobileViewport, keepAwake } from '../kit/mobile';
+import { createPlaceHud } from './hud-place';
 
 import type { GameContext, GameInstance, GameModule, Stage, StageOptions } from '../games/types';
+import type { PlaceShown } from './hud-place';
+import type { LiveStanding } from './standing';
 
-/** Height of the HUD row in CSS px, without the safe-area inset. */
-export const HUD_ROW_PX = 56;
+/**
+ * Height of the HUD block in CSS px, without the safe-area inset: the chip row (38) + the chase
+ * line (16) + padding. Must equal `.pa-hud`'s height in stage.css (tests/e2e/qa-hud.cjs checks it).
+ */
+export const HUD_ROW_PX = 66;
+
+/** The stage as the phone shell sees it: the game contract's Stage + the live place. */
+export interface PlayStage extends Stage {
+  /** Latest live standing of this player in this round (null: not ranked in it). */
+  setStanding(standing: LiveStanding | null): void;
+  /** What the place chip / chase line show right now. */
+  placeShown(): PlaceShown;
+}
+
+/** Shell-only extras (not part of the game contract). */
+export interface StageExtras {
+  /** Called whenever the HUD painted a new place / chase line (test hooks). */
+  onPlaceShown?(shown: PlaceShown): void;
+}
 const URGENT_MS = 5_000;
 
 function el(tag: string, className: string, text?: string): HTMLElement {
@@ -49,12 +70,16 @@ async function loadWithRetry(load: () => Promise<GameModule>, gaveUp: () => bool
 }
 
 /** Mount the stage and the game `opts.gameId` (loaded through the registry). */
-export function mountStage(opts: StageOptions): Promise<Stage> {
-  return mountStageWith(opts, () => loadGame(opts.gameId));
+export function mountStage(opts: StageOptions, extras: StageExtras = {}): Promise<PlayStage> {
+  return mountStageWith(opts, () => loadGame(opts.gameId), extras);
 }
 
 /** Same as mountStage, with the game module supplied by the caller (dev harness, tests). */
-export async function mountStageWith(opts: StageOptions, load: () => Promise<GameModule>): Promise<Stage> {
+export async function mountStageWith(
+  opts: StageOptions,
+  load: () => Promise<GameModule>,
+  extras: StageExtras = {},
+): Promise<PlayStage> {
   initMobileViewport();
   void keepAwake();
 
@@ -70,7 +95,10 @@ export async function mountStageWith(opts: StageOptions, load: () => Promise<Gam
   const fill = el('div', 'pa-hud-fill');
   bar.append(fill);
   const secs = el('div', 'pa-hud-secs', '');
-  hud.append(scoreBox, bar, secs);
+  const place = createPlaceHud(extras.onPlaceShown);
+  const row = el('div', 'pa-hud-row');
+  row.append(place.chip, scoreBox, bar, secs);
+  hud.append(row, place.line);
   const wait = overlay('🎉', 'סיימת!');
   wait.sub.innerHTML = 'ממתינים לשאר<span class="pa-dots"><span>.</span><span>.</span><span>.</span></span>';
   const crash = overlay('🙈', 'אופס, המשחק נתקע');
@@ -170,6 +198,7 @@ export async function mountStageWith(opts: StageOptions, load: () => Promise<Gam
     if (next === frozen) return;
     frozen = next;
     root.classList.toggle('is-frozen', next);
+    place.setHeld(next); // a cutscene keeps the place as it was
     setKitPaused(next);
     if (gameAlive && instance?.setPaused) {
       try {
@@ -206,6 +235,7 @@ export async function mountStageWith(opts: StageOptions, load: () => Promise<Gam
     cancelAnimationFrame(raf);
     if (backup !== null) clearInterval(backup);
     backup = null;
+    place.destroy();
     if (sendTimer !== null) clearTimeout(sendTimer);
     sendTimer = null;
     document.removeEventListener('visibilitychange', onVisibility);
@@ -306,8 +336,12 @@ export async function mountStageWith(opts: StageOptions, load: () => Promise<Gam
     onGameError(err);
   }
 
-  const stage: Stage = {
+  const stage: PlayStage = {
     getScore: (): number => score,
+    setStanding(standing: LiveStanding | null): void {
+      if (!over) place.set(standing);
+    },
+    placeShown: (): PlaceShown => place.shown(),
     destroy(): void {
       if (root.isConnected) root.remove();
       if (over) return;
