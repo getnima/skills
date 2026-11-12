@@ -172,12 +172,58 @@ export function commentatorUrls(): string[] {
 
 const STICKER_EMOJI: readonly string[] = ['🤣', '🔥', '🚀', '🐔', '💥', '🤯', '👑', '🦄'];
 
-/** sticker_1 .. sticker_8: the real picture when it exists, else a built-in emoji. */
+/**
+ * The race's moments have drawn stickers (die-cut, in the show's comic look): each replaces the emoji
+ * it is named by. The ninja bomb rain is the hosts' own bomb (the bombs are the hosts).
+ */
+const THEMED_STICKERS: Readonly<Record<string, readonly [group: string, file: string]>> = {
+  '👑': [GROUP, 'crown.png'],
+  '🚀': [GROUP, 'sticker_rocket.png'],
+  '🤜': [GROUP, 'sticker_fist.png'],
+  '🐌': [GROUP, 'sticker_snail.png'],
+  '😴': [GROUP, 'sticker_sleep.png'],
+  '📸': [GROUP, 'sticker_camera.png'],
+  '🔥': [GROUP, 'sticker_fire.png'],
+  '⏰': [GROUP, 'sticker_clock.png'],
+  '💣': ['hosts', 'bomb_hosts.png'],
+};
+
+/** The drawn sticker for a moment's emoji, or null while its file is not there (the emoji flies instead). */
+export function themedStickerArt(char: string): StickerArt | null {
+  const slot = THEMED_STICKERS[char];
+  const url = slot === undefined ? null : assetFileUrl(slot[0], slot[1]);
+  return url === null ? null : { kind: 'img', url };
+}
+
+/** Every drawn sticker that exists, the bomb included (to warm the cache before the first fly-by). */
+export function drawnStickerUrls(): string[] {
+  const out: string[] = [];
+  for (const char of Object.keys(THEMED_STICKERS)) {
+    const a = themedStickerArt(char);
+    if (a !== null && a.kind === 'img') out.push(a.url);
+  }
+  return out;
+}
+
+/** The drawn stickers that exist (the bomb is only for its rain). */
+function drawnStickers(): StickerArt[] {
+  const out: StickerArt[] = [];
+  for (const char of Object.keys(THEMED_STICKERS)) {
+    if (char === '💣') continue;
+    const a = themedStickerArt(char);
+    if (a !== null) out.push(a);
+  }
+  return out;
+}
+
+/** sticker_1 .. sticker_8: the real picture when it exists, else one of the drawn stickers, else a built-in emoji. */
 export function stickerArt(index: number): StickerArt {
   const i = ((Math.floor(index) % STICKER_COUNT) + STICKER_COUNT) % STICKER_COUNT;
   const url = assetFileUrl(GROUP, `sticker_${i + 1}.png`);
   if (url !== null) return { kind: 'img', url };
-  return { kind: 'emoji', char: STICKER_EMOJI[i] ?? '🎉' };
+  const drawn = drawnStickers();
+  const pick = drawn[((Math.floor(index) % drawn.length) + drawn.length) % Math.max(1, drawn.length)];
+  return pick ?? { kind: 'emoji', char: STICKER_EMOJI[i] ?? '🎉' };
 }
 
 export function crownUrl(): string {

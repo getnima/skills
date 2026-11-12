@@ -8,7 +8,7 @@ import { useEffect, useRef } from 'preact/hooks';
 
 import { sfx } from '../../kit/audio';
 import { createRng } from '../../kit/rng';
-import { commentatorUrl, commentatorUrls, STICKER_COUNT, stickerArt } from './art';
+import { commentatorUrl, commentatorUrls, drawnStickerUrls, STICKER_COUNT, stickerArt, themedStickerArt } from './art';
 import { createConfetti } from './confetti';
 import { createLinePicker } from './lines';
 import { onMicFree, releaseMic, takeMic } from './mic';
@@ -141,6 +141,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () =
   host.append(canvas, stickers, flashEl, comm);
   // warm the other pictures (the moods, or the second host) so the first swap does not blink
   for (const url of commentatorUrls()) new Image().src = url;
+  for (const url of drawnStickerUrls()) new Image().src = url;
 
   const confetti: Confetti = createConfetti(canvas, random);
   const queue: Pending[] = [];
@@ -168,6 +169,9 @@ export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () =
   }
 
   function themed(char: string): StickerArt {
+    // the moment's own drawn sticker first (art.ts), then the dropped-in photos, then the emoji
+    const drawn = themedStickerArt(char);
+    if (drawn !== null) return drawn;
     if (realStickers.length === 0) return { kind: 'emoji', char };
     return realStickers[stickerTurn++ % realStickers.length] ?? { kind: 'emoji', char };
   }
@@ -462,7 +466,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () =
       case 'drop':
         sfx.explode();
         flash('#f2361b');
-        fly('rain', { kind: 'emoji', char: '💣' });
+        fly('rain', themedStickerArt('💣') ?? { kind: 'emoji', char: '💣' });
         break;
       case 'tie':
         sfx.beep();
@@ -486,7 +490,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () =
         sfx.go();
         flash('#ffd21f');
         zoom();
-        fly('rain', { kind: 'emoji', char: '⏰' });
+        fly('rain', themedStickerArt('⏰') ?? { kind: 'emoji', char: '⏰' });
         break;
       case 'photo':
         sfx.slice();
