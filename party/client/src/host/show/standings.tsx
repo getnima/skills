@@ -38,7 +38,7 @@ export function StandingsPanel(props: StandingsPanelProps): JSX.Element {
             <div class={`sh-prow ${anyPoints && r.rank === 1 ? 'is-first' : ''} ${r.player.connected ? '' : 'is-away'}`} key={r.player.id}>
               <span class="sh-rank">{anyPoints ? r.rank : '·'}</span>
               <Avatar avatar={r.player.avatar} name={r.player.name} />
-              <span class="sh-name">
+              <span class="sh-name" dir="auto">
                 <bdi>{r.player.name}</bdi>
               </span>
               {r.delta !== null && r.delta !== 0 ? (

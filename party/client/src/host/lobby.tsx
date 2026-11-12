@@ -6,7 +6,7 @@ import { GAME_IDS, GAMES, MAX_PLAYERS } from '../../../shared/protocol';
 import { StandingsPanel } from './show/index';
 import { avatarColor, initialOf } from './show/common';
 import { PrizeRelic } from './show/prize';
-import { joinInfo, prettyUrl } from './util';
+import { prettyUrl, useJoinInfo } from './util';
 
 import type { JSX } from 'preact';
 import type { GameId, PlayerPublic, RoomState } from '../../../shared/protocol';
@@ -53,7 +53,7 @@ export function QrCode(props: { readonly text: string; readonly class?: string }
 }
 
 function JoinPanel(props: { readonly code: string; readonly compact: boolean }): JSX.Element {
-  const info = joinInfo(props.code);
+  const info = useJoinInfo(props.code);
   return (
     <section class={`hs-join ${props.compact ? 'is-compact' : ''}`} data-testid="join">
       {props.compact ? <div class="hs-join-late">עוד לא הצטרפתם? סרקו!</div> : (
@@ -73,7 +73,7 @@ function JoinPanel(props: { readonly code: string; readonly compact: boolean }):
       <div class="hs-url" dir="ltr" data-testid="join-url">
         {prettyUrl(info.url)}
       </div>
-      {info.local ? (
+      {info.local && !info.pending ? (
         <div class="hs-local-warn" data-testid="local-warn">
           <span class="hs-warn-long">⚠️ הכתובת היא localhost: טלפונים לא יגיעו אליה. פתחו את הדף דרך כתובת הרשת של המחשב, או הוסיפו לכתובת:</span>
           <span class="hs-warn-short">⚠️ localhost: הטלפונים לא יגיעו. הוסיפו לכתובת:</span>
@@ -141,7 +141,9 @@ function PlayerChips(props: { readonly players: readonly PlayerPublic[]; onKick(
             }}
           >
             <span class="hs-chip-av">{initialOf(p.name)}</span>
-            <span class="hs-chip-name">{p.name}</span>
+            <span class="hs-chip-name" dir="auto">
+              {p.name}
+            </span>
             {p.connected ? null : <span class="hs-chip-off">💤</span>}
           </button>
         ))

@@ -69,6 +69,7 @@ Try things at `/dev.html` (games), `/dev.html?game=demo` (the example below), `/
 ### audio.ts (synth, no files; silent until the first touch, which unlocks it automatically)
 - `sfx.tap(p) pop(p) coin(p) whoosh(p) slice(p) jump(p) land(p) hit() explode() splat(p) fart(variant?, p?) success() fail() tick(p) beep() go() drumroll(ms?) fanfare() cheer() boo() laugh(p) fall() key(p)`; `p` = pitch multiplier (default 1), e.g. `sfx.pop(1 + combo * 0.06)`. `fart` variants: 0 short, 1 long, 2 squeaker, 3 wet; none = they take turns.
 - `unlockAudio()` call from a gesture (also done automatically on the first pointerdown / keydown)
+- While the page is hidden (locked phone, another app) the AudioContext is suspended and song files are paused; both come back when the page is visible again (iOS may need the next tap).
 - `setMuted(bool)` / `isMuted()` / `onMuteChange(fn): off` (persisted in localStorage)
 - Building blocks for custom sounds: `tone({ freq, to?, dur, type?, vol?, at?, attack?, vibrato?, lowpass? })`, `noise({ dur, vol?, at?, filter? })`, `midiHz(note)`, `getAudioContext()`, `getAudioOutput()`, `whenAudioReady(fn)`, `playFanfare(at?)`
 

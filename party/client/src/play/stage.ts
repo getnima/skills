@@ -33,6 +33,21 @@ function overlay(emoji: string, title: string): { root: HTMLElement; score: HTML
   return { root, score, sub };
 }
 
+/** A game chunk that failed to download (a Wi-Fi blip at round start) is tried again before giving up. */
+async function loadWithRetry(load: () => Promise<GameModule>, gaveUp: () => boolean): Promise<GameModule> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await load();
+    } catch (err) {
+      lastErr = err;
+      if (gaveUp()) break;
+      await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 /** Mount the stage and the game `opts.gameId` (loaded through the registry). */
 export function mountStage(opts: StageOptions): Promise<Stage> {
   return mountStageWith(opts, () => loadGame(opts.gameId));
@@ -193,7 +208,8 @@ export async function mountStageWith(opts: StageOptions, load: () => Promise<Gam
     backup = null;
     if (sendTimer !== null) clearTimeout(sendTimer);
     sendTimer = null;
-    document.removeEventListener('visibilitychange', tick);
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('pagehide', sendScore);
   }
 
   function end(): void {
@@ -227,6 +243,12 @@ export async function mountStageWith(opts: StageOptions, load: () => Promise<Gam
     setFrozen(sample.frozen);
     paintClock(sample.leftMs);
     if (!sample.frozen && sample.leftMs <= 0) end();
+  }
+
+  /** Hiding (lock, app switch, notification) flushes the score now: the page may never wake up in time. */
+  function onVisibility(): void {
+    if (document.visibilityState === 'hidden' && !over) sendScore();
+    tick();
   }
 
   function frame(): void {
@@ -277,7 +299,7 @@ export async function mountStageWith(opts: StageOptions, load: () => Promise<Gam
   }
 
   try {
-    const mod = await load();
+    const mod = await loadWithRetry(load, () => over);
     gameAlive = true;
     instance = await mod.create(ctx);
   } catch (err) {
@@ -297,7 +319,8 @@ export async function mountStageWith(opts: StageOptions, load: () => Promise<Gam
     },
   };
 
-  document.addEventListener('visibilitychange', tick);
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', sendScore);
   backup = setInterval(tick, 250);
   raf = requestAnimationFrame(frame);
   tick();

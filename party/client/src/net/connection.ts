@@ -33,11 +33,20 @@ export interface ServerClock {
   now(): number;
   /** Take a few ping samples and keep the one with the lowest round trip. */
   sync(samples?: number): Promise<void>;
+  /**
+   * A server timestamp that just arrived (e.g. RoomState.serverNow). Used only
+   * until the first ping answered, so a phone whose own clock is hours off never
+   * reads a round with its raw clock.
+   */
+  hint(serverNow: number): void;
+  /** True once at least one ping sample was taken. */
+  readonly synced: boolean;
 }
 
 export function createServerClock(socket: PartySocket): ServerClock {
   let offset = 0;
   let bestRtt = Number.POSITIVE_INFINITY;
+  let sampled = false;
 
   function sample(): Promise<void> {
     return new Promise((resolve) => {
@@ -49,6 +58,7 @@ export function createServerClock(socket: PartySocket): ServerClock {
         if (rtt < bestRtt) {
           bestRtt = rtt;
           offset = res.serverNow + rtt / 2 - Date.now();
+          sampled = true;
         }
         resolve();
       });
@@ -58,9 +68,16 @@ export function createServerClock(socket: PartySocket): ServerClock {
   return {
     now: (): number => Date.now() + offset,
     async sync(samples = 5): Promise<void> {
-      // A reconnect can land on a different network path: start over.
+      // A reconnect (or a long sleep) can land on a different network path: start over.
       bestRtt = Number.POSITIVE_INFINITY;
       for (let i = 0; i < samples; i++) await sample();
+    },
+    hint(serverNow: number): void {
+      if (sampled || !Number.isFinite(serverNow)) return;
+      offset = serverNow - Date.now();
+    },
+    get synced(): boolean {
+      return sampled;
     },
   };
 }

@@ -1,9 +1,9 @@
 /** The full-screen cutscene player and the host's cutscene menu. */
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { CUTSCENES } from '../../../shared/cutscenes';
 import { GAMES } from '../../../shared/protocol';
-import { cutsceneStatus, cutsceneUrl, resolveSources } from './media';
+import { allCutsceneStatuses, cutsceneUrl, resolveSources } from './media';
 import { Btn, Modal, Switch } from './ui';
 
 import type { JSX } from 'preact';
@@ -65,10 +65,8 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
       setMode({ kind: 'placeholder', reason: 'missing' });
       return;
     }
-    void resolveSources(props.def).then((sources) => {
-      if (!alive) return;
-      setMode(sources.length > 0 ? { kind: 'video', sources, index: 0 } : { kind: 'placeholder', reason: 'missing' });
-    });
+    const sources = resolveSources(props.def);
+    if (alive) setMode(sources.length > 0 ? { kind: 'video', sources, index: 0 } : { kind: 'placeholder', reason: 'missing' });
     return () => {
       alive = false;
     };
@@ -257,21 +255,7 @@ const STATUS_TEXT: Readonly<Record<FileStatus, string>> = {
 };
 
 export function useCutsceneStatuses(): Readonly<Record<string, FileStatus>> {
-  const [map, setMap] = useState<Readonly<Record<string, FileStatus>>>(() =>
-    Object.fromEntries(CUTSCENES.map((c) => [c.id, 'checking' as FileStatus])),
-  );
-  useEffect(() => {
-    let alive = true;
-    for (const def of CUTSCENES) {
-      void cutsceneStatus(def).then((s) => {
-        if (alive) setMap((m) => ({ ...m, [def.id]: s }));
-      });
-    }
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return map;
+  return useMemo(allCutsceneStatuses, []);
 }
 
 export interface CutsceneMenuProps {

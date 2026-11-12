@@ -54,6 +54,7 @@ export class RoomRegistry {
   /** Null when the server holds MAX_ROOMS rooms already. */
   create(): Room | null {
     if (this.rooms.size >= MAX_ROOMS) this.sweep();
+    if (this.rooms.size >= MAX_ROOMS) this.dropAbandoned();
     if (this.rooms.size >= MAX_ROOMS) return null;
     let code = randomRoomCode();
     while (this.rooms.has(code)) code = randomRoomCode();
@@ -79,6 +80,15 @@ export class RoomRegistry {
       dropped++;
     }
     return dropped;
+  }
+
+  /** Under pressure only: rooms with nobody attached and no player ever joined (a stray script, old TV tabs). */
+  private dropAbandoned(): void {
+    for (const [code, room] of this.rooms) {
+      if (room.connectionCount > 0 || room.playerCount > 0) continue;
+      room.destroy();
+      this.rooms.delete(code);
+    }
   }
 
   stats(): { rooms: number; players: number } {

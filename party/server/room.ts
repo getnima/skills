@@ -113,6 +113,9 @@ interface RoundRec {
   pendingEnd: boolean;
 }
 
+/** How long a disconnected participant is waited for before the others' finals may end the round early. */
+export const DISCONNECT_END_GRACE_MS = 5_000;
+
 const OK: OkAck = { ok: true };
 
 function fail(error: ErrorCode, message: string): { ok: false; error: ErrorCode; message: string } {
@@ -237,8 +240,15 @@ export class Room {
     const playerId = typeof req.playerId === 'string' ? req.playerId : null;
     const secret = typeof req.secret === 'string' ? req.secret : null;
 
-    const existing = playerId !== null ? this.players.get(playerId) : undefined;
-    if (existing !== undefined && secret !== null && existing.secret === secret) {
+    let existing = playerId !== null ? this.players.get(playerId) : undefined;
+    if (existing !== undefined && (secret === null || existing.secret !== secret)) existing = undefined;
+    if (existing === undefined && playerId === null) {
+      // The same socket joining again without an identity (a double tap on "join", a
+      // retry after a lost ack) is the same guest, never a second player.
+      const mine = this.playerConns.get(connId);
+      existing = mine !== undefined ? this.players.get(mine) : undefined;
+    }
+    if (existing !== undefined) {
       this.detach(connId);
       if (name !== null && name !== existing.name) {
         existing.name = uniqueName(name, this.namesExcept(existing.id));
@@ -281,7 +291,12 @@ export class Room {
     if (playerId === undefined) return;
     const player = this.players.get(playerId);
     if (player === undefined || player.conns.size > 0) return;
-    if (this.maybeEndEarly()) return;
+    // A phone that drops for a moment (screen lock, Wi-Fi blip) must not end the round
+    // for itself: only when it stays away is the round ended early without it.
+    const r = this.round;
+    if (r !== null && this.phase === 'playing' && r.finals.size > 0 && r.participants.has(playerId) && !r.finals.has(playerId)) {
+      this.phaseTimers.push(this.later(DISCONNECT_END_GRACE_MS, () => void this.maybeEndEarly()));
+    }
     this.broadcast();
   }
 
@@ -390,6 +405,7 @@ export class Room {
       r.finals.delete(playerId);
       if (this.phase === 'playing') this.markScoresDirty();
     }
+    this.dropFromResults(playerId);
     if (this.connectionCount === 0) this.emptySince = this.scheduler.now();
     this.sink.kicked(conns);
     if (this.maybeEndEarly()) return OK;
@@ -421,7 +437,10 @@ export class Room {
 
     const r = this.round;
     if (r !== null && r.frozenAt !== null) {
-      const playing = this.phase === 'playing';
+      // Frozen after the round's time was up (in the grace for finals): nothing is left
+      // to continue, so no 3-2-1; the round is scored as soon as the video ends.
+      const over = this.phase === 'playing' && r.frozenAt >= r.endAt;
+      const playing = this.phase === 'playing' && !over;
       const elapsedAtFreeze = roundTime(this.roundPublic(r), now).elapsedMs;
       const resumePoint = playing ? now + RESUME_COUNTDOWN_MS : now;
       const delta = resumePoint - r.frozenAt;
@@ -433,7 +452,7 @@ export class Room {
       if (elapsedAtResume !== elapsedAtFreeze) {
         this.onError(new Error(`round clock drifted over a freeze: ${elapsedAtFreeze} -> ${elapsedAtResume}`));
       }
-      if (r.pendingEnd) {
+      if (r.pendingEnd || over) {
         r.pendingEnd = false;
         this.endRoundNow();
         return OK;
@@ -528,7 +547,8 @@ export class Room {
   }
 
   private clamp(gameId: GameId, score: number): number {
-    return Math.min(GAMES[gameId].maxRaw, Math.max(0, score));
+    // Whole numbers only: the TV prints raw scores and ties must be exact.
+    return Math.round(Math.min(GAMES[gameId].maxRaw, Math.max(0, score)));
   }
 
   private later(ms: number, fn: () => void): TimerHandle {
@@ -675,6 +695,22 @@ export class Room {
       this.scoresTimer = null;
       this.flushScores();
     });
+  }
+
+  /** A kicked player leaves the last results table too; overall ranks close up. */
+  private dropFromResults(playerId: string): void {
+    const res = this.results;
+    if (res === null || !res.rows.some((row) => row.playerId === playerId)) return;
+    const kept = res.rows.filter((row) => row.playerId !== playerId);
+    const ranks = rankDescending(kept.map((row) => [row.playerId, row.total] as const));
+    const prevRanks = rankDescending(kept.map((row) => [row.playerId, row.total - row.points] as const));
+    const rows = kept.map((row) => ({
+      ...row,
+      rank: ranks.get(row.playerId) ?? row.rank,
+      prevRank: row.prevRank === null ? null : (prevRanks.get(row.playerId) ?? row.prevRank),
+    }));
+    rows.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'he'));
+    this.results = { ...res, rows, winnerIds: res.winnerIds.filter((id) => id !== playerId) };
   }
 
   private rawOf(r: RoundRec, playerId: string): number {

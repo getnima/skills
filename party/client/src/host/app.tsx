@@ -13,9 +13,8 @@ import { enterFullscreen } from '../kit/mobile';
 import { CutsceneMenu, CutscenePlayer } from './cutscene';
 import { CountdownScreen, GoSplash, IntroScreen, ResumeOverlay } from './intro';
 import { Lobby, nextGame } from './lobby';
-import { prefetchCutsceneStatus } from './media';
 import { useHostRoom } from './room';
-import { FinalScene, isShowCalm, onShowCalmChange, PlayingScene, ResultsScene, setShowCalm } from './show/index';
+import { FinalScene, isShowCalm, onShowCalmChange, PlayingScene, ResultsScene, setShowCalm, standingsAt } from './show/index';
 import { Btn, ConfirmDialog, Modal, Switch, Toast } from './ui';
 import { useAudioLocked, useBedMusic, useMuted } from './util';
 
@@ -45,7 +44,28 @@ declare global {
 interface PrimaryAction {
   readonly label: string;
   readonly icon: string;
+  /** Needs a second press within ARM_MS (skipping the winner ceremony). */
+  readonly confirm?: string;
   run(): void;
+}
+
+/** Keyboard actions are ignored this long after the phase changed (Space-Space must not skip two screens). */
+const KEY_GUARD_MS = 1_500;
+/** Clicks on the main button are ignored this long after the phase changed (a double click). */
+const CLICK_GUARD_MS = 700;
+/** A risky action asks for a second press within this window. */
+const ARM_MS = 3_500;
+/** ...but not sooner than this after the first one (a double tap does not count). */
+const ARM_MIN_MS = 400;
+
+/** Re-render every `ms` while `on` (labels that depend on the clock). */
+function useEvery(ms: number, on: boolean): void {
+  const [, set] = useState(0);
+  useEffect(() => {
+    if (!on) return undefined;
+    const id = setInterval(() => set((n) => (n + 1) % 1_000_000), ms);
+    return () => clearInterval(id);
+  }, [ms, on]);
 }
 
 function useFullscreen(): boolean {
@@ -123,6 +143,14 @@ function ResultsView(props: { readonly state: RoomState; readonly room: HostRoom
   );
 }
 
+/** What happens next when there is nothing to press: the host is never left guessing. */
+function nextHint(phase: string | null, cutscene: boolean): string {
+  if (cutscene) return '🎬 סרטון רץ · S לדילוג';
+  if (phase === 'intro' || phase === 'countdown') return '⏳ המשחק מתחיל לבד';
+  if (phase === 'playing') return '⏳ הסיבוב רץ · התוצאות יופיעו לבד';
+  return '';
+}
+
 function Connection(props: { readonly room: HostRoom }): JSX.Element {
   const { status, state } = props.room;
   const text = status === 'online' ? 'מחובר' : status === 'connecting' ? 'מתחבר…' : 'אין חיבור';
@@ -150,6 +178,9 @@ export function App(): JSX.Element {
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [replay, setReplay] = useState(0);
   const [replayAt, setReplayAt] = useState<number | null>(null);
+  /** A risky action waiting for its second press: which one and until when (performance.now()). */
+  const [armed, setArmed] = useState<{ readonly id: string; readonly until: number } | null>(null);
+  const phaseAt = useRef(performance.now());
 
   const hookRef = useRef(room);
   hookRef.current = room;
@@ -164,9 +195,36 @@ export function App(): JSX.Element {
   const phase = state?.phase ?? null;
   const cutscene = state?.cutscene ?? null;
   useBedMusic(phase, cutscene !== null);
+  const phaseKey = `${state?.code ?? ''}:${phase ?? ''}:${state?.round?.index ?? -1}:${state?.results?.roundIndex ?? -1}`;
+  // stamped during render, so a key pressed right after the new screen appears is already guarded
+  const lastPhaseKey = useRef(phaseKey);
+  if (lastPhaseKey.current !== phaseKey) {
+    lastPhaseKey.current = phaseKey;
+    phaseAt.current = performance.now();
+  }
+  useEffect(() => setArmed(null), [phaseKey]);
+  useEffect(() => {
+    if (armed === null) return undefined;
+    const t = setTimeout(() => setArmed(null), Math.max(0, armed.until - performance.now()));
+    return () => clearTimeout(t);
+  }, [armed]);
+  /** Run `fn` now when `id` is armed, else arm it (the button then says "press again"). */
+  const twice = (id: string, fn: () => void): void => {
+    const t = performance.now();
+    if (armed !== null && armed.id === id && t < armed.until) {
+      // a bounce / double tap is not a second decision: the host has to see "sure?" first
+      if (t - (armed.until - ARM_MS) < ARM_MIN_MS) return;
+      setArmed(null);
+      fn();
+    } else {
+      setArmed({ id, until: t + ARM_MS });
+    }
+  };
+  const isArmed = (id: string): boolean => armed !== null && armed.id === id;
+  // the results' "continue" waits for the ceremony; the label follows the clock
+  useEvery(500, phase === 'results');
 
   useEffect(() => {
-    prefetchCutsceneStatus();
     const unlock = (): void => unlockAudio();
     window.addEventListener('pointerdown', unlock, true);
     window.addEventListener('keydown', unlock, true);
@@ -230,13 +288,27 @@ export function App(): JSX.Element {
           ? { label: `המשחק הבא: ${GAMES[next].title}`, icon: GAMES[next].emoji, run: () => startGame(next) }
           : { label: 'פודיום סופי', icon: '🏆', run: () => void room.final() };
     } else if (phase === 'results') {
-      primary = allPlayed
+      const res = state.results;
+      const early = res !== null && room.clock.now() < standingsAt(replayAt !== null ? { ...res, revealAt: replayAt } : res);
+      const go = allPlayed
         ? { label: 'פודיום סופי', icon: '🏆', run: () => void room.final() }
-        : { label: 'המשך', icon: '⏩', run: () => void room.lobby() };
+        : { label: 'המשך ללובי', icon: '⏩', run: () => void room.lobby() };
+      primary = early ? { ...go, label: `${go.label} (מדלג על הטקס)`, icon: '⏭', confirm: 'skip-ceremony' } : go;
     } else if (phase === 'final') {
       primary = { label: 'תחרות חדשה', icon: '🔄', run: askReset };
     }
   }
+  const runPrimary = (): void => {
+    // a double click must not land on the next screen's button too
+    if (primary === null || performance.now() - phaseAt.current < CLICK_GUARD_MS) return;
+    const p = primary;
+    if (p.confirm !== undefined) twice(p.confirm, p.run);
+    else p.run();
+  };
+  const endRound = (): void => {
+    if (phase === 'playing') twice('end-round', () => void room.endRound());
+    else void room.endRound();
+  };
   const canNext = state !== null && (phase === 'lobby' || phase === 'results') && nextGame(state.played) !== null;
   const roundRunning = phase === 'intro' || phase === 'countdown' || phase === 'playing';
 
@@ -253,13 +325,23 @@ export function App(): JSX.Element {
       if (cutscene !== null) void room.cutsceneEnd();
     } else if (cutscene !== null) return;
     else if (code === 'Space' || code === 'Enter' || code === 'NumpadEnter') {
-      if (e.repeat) return;
-      primary?.run();
+      e.preventDefault();
+      // a held key, or a second press right after the screen changed, is not a decision
+      if (e.repeat || performance.now() - phaseAt.current < KEY_GUARD_MS) return;
+      runPrimary();
+      return;
     } else if (code === 'KeyN') {
+      e.preventDefault();
+      if (e.repeat || performance.now() - phaseAt.current < KEY_GUARD_MS) return;
       const next = nextGame(state.played);
-      if (canNext && next !== null) startGame(next);
+      if (canNext && next !== null) {
+        if (phase === 'results' && primary?.confirm !== undefined) twice('skip-ceremony-next', () => startGame(next));
+        else startGame(next);
+      }
+      return;
     } else if (code === 'KeyE') {
-      if (roundRunning) void room.endRound();
+      if (e.repeat) return;
+      if (roundRunning) endRound();
     } else if (code === 'KeyC') setMenu('cutscenes');
     else if (code === 'KeyR') {
       if (phase === 'results' || phase === 'final') doReplay();
@@ -316,12 +398,13 @@ export function App(): JSX.Element {
       stripButtons.push(
         <Btn
           key="end"
-          label={phase === 'playing' ? 'סיים סיבוב עכשיו' : 'בטל סיבוב'}
+          label={phase !== 'playing' ? 'בטל סיבוב' : isArmed('end-round') ? 'בטוח? לחצו שוב לסיום' : 'סיים סיבוב עכשיו'}
           icon="⏹"
           kbd="E"
           tone="danger"
+          class={isArmed('end-round') ? 'is-armed' : ''}
           testId="btn-end"
-          onClick={() => void room.endRound()}
+          onClick={endRound}
         />,
       );
     }
@@ -350,8 +433,20 @@ export function App(): JSX.Element {
         <div class="hs-strip-main">
           {stripButtons}
           {primary !== null ? (
-            <Btn label={primary.label} icon={primary.icon} kbd="Space" tone="primary" class="hs-primary" testId="btn-primary" onClick={primary.run} />
-          ) : null}
+            <Btn
+              label={primary.confirm !== undefined && isArmed(primary.confirm) ? 'בטוח? לחצו שוב כדי לדלג' : primary.label}
+              icon={primary.icon}
+              kbd="Space"
+              tone={primary.confirm !== undefined ? 'plain' : 'primary'}
+              class={`hs-primary ${primary.confirm !== undefined && isArmed(primary.confirm) ? 'is-armed' : ''}`}
+              testId="btn-primary"
+              onClick={runPrimary}
+            />
+          ) : (
+            <span class="hs-next-hint" data-testid="next-hint">
+              {nextHint(phase, cutscene !== null)}
+            </span>
+          )}
         </div>
         <div class="hs-strip-side hs-strip-tools">
           <Btn label="סרטונים" icon="🎬" kbd="C" tone="ghost" testId="btn-cutscenes" disabled={state === null} onClick={() => setMenu('cutscenes')} />

@@ -15,7 +15,7 @@ import { useFunnyLayer } from './funny';
 import { PrizeRelic } from './prize';
 
 import type { JSX } from 'preact';
-import type { ResultRow } from '../../../../shared/protocol';
+import type { ResultRow, RoundResults } from '../../../../shared/protocol';
 import type { StageSize } from './common';
 import type { ResultsSceneProps } from './types';
 
@@ -32,6 +32,11 @@ const REST_AFTER = 7_500;
 const PAGE_MS = 6_000;
 
 type Phase = 'suspense' | 'blackout' | 'ceremony' | 'standings';
+
+/** Server ms when the ceremony is over and the standings begin (for the host's "continue" button). */
+export function standingsAt(results: RoundResults): number {
+  return results.revealAt + (results.winnerIds.length > 0 ? CEREMONY_MS : NOBODY_MS);
+}
 
 interface View {
   readonly phase: Phase;
@@ -55,6 +60,8 @@ interface Plan {
   readonly climbed: number;
   readonly newLeader: ResultRow | null;
   readonly ceremonyEnd: number;
+  /** Nobody had a place before this round: no "new" tags (everyone is new). */
+  readonly firstRound: boolean;
 }
 
 function buildPlan(rows: readonly ResultRow[], winnerIds: readonly string[], topCount: number): Plan {
@@ -96,6 +103,7 @@ function buildPlan(rows: readonly ResultRow[], winnerIds: readonly string[], top
     climbed,
     newLeader,
     ceremonyEnd: winners.length > 0 ? CEREMONY_MS : NOBODY_MS,
+    firstRound: rows.every((r) => r.prevRank === null),
   };
 }
 
@@ -353,7 +361,7 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string 
                 <div class="sh-rrow-in">
                   <span class="sh-rank">{medal(r.roundRank)}</span>
                   <Avatar avatar={r.avatar} name={r.name} />
-                  <span class="sh-name">
+                  <span class="sh-name" dir="auto">
                     <bdi>{r.name}</bdi>
                   </span>
                   {isLast ? snail.kind === 'img' ? <img class="sh-snail" src={snail.url} alt="" /> : <span class="sh-snail">{snail.char}</span> : null}
@@ -394,7 +402,7 @@ function Ceremony(props: { winners: readonly ResultRow[]; skipMs: number; title:
             {shownWinners.map((w) => (
               <div class="sh-cer-tie" key={w.playerId}>
                 <Avatar avatar={w.avatar} name={w.name} class="sh-avatar--lg" />
-                <span class="sh-cer-name" style={{ fontSize: nameSize(w.name, props.portrait ? 64 : 120, props.portrait ? 440 : 900) }}>
+                <span class="sh-cer-name" dir="auto" style={{ fontSize: nameSize(w.name, props.portrait ? 64 : 120, props.portrait ? 440 : 900) }}>
                   <bdi>{w.name}</bdi>
                 </span>
               </div>
@@ -404,7 +412,7 @@ function Ceremony(props: { winners: readonly ResultRow[]; skipMs: number; title:
         ) : first ? (
           <div class="sh-cer-solo">
             <Avatar avatar={first.avatar} name={first.name} class="sh-avatar--xl" />
-            <div class="sh-cer-name" style={{ fontSize: nameSize(first.name, props.portrait ? 120 : 230, props.portrait ? 590 : 1180) }}>
+            <div class="sh-cer-name" dir="auto" style={{ fontSize: nameSize(first.name, props.portrait ? 120 : 230, props.portrait ? 590 : 1180) }}>
               <bdi>{first.name}</bdi>
             </div>
           </div>
@@ -504,10 +512,10 @@ function Standings(props: { plan: Plan; view: View; size: StageSize; clockT(): n
               <div class="sh-trow-in">
                 <span class="sh-rank">{moved ? r.rank : (r.prevRank ?? '–')}</span>
                 <span class={`sh-move ${!moved || delta === null || delta === 0 ? 'is-flat' : delta > 0 ? 'is-up' : 'is-down'}`} dir="ltr">
-                  {!moved ? '' : delta === null ? 'חדש' : delta === 0 ? '•' : delta > 0 ? `▲${delta}` : `▼${-delta}`}
+                  {!moved ? '' : delta === null ? (plan.firstRound ? '' : 'חדש') : delta === 0 ? '•' : delta > 0 ? `▲${delta}` : `▼${-delta}`}
                 </span>
                 <Avatar avatar={r.avatar} name={r.name} />
-                <span class="sh-name">
+                <span class="sh-name" dir="auto">
                   <bdi>{r.name}</bdi>
                 </span>
                 {isLeader ? <span class="sh-tag sh-tag--gold">👑 מוביל חדש</span> : isClimber ? <span class="sh-tag">🚀 מטפס הסיבוב</span> : null}

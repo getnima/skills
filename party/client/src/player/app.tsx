@@ -22,6 +22,7 @@ import {
   ResultsScreen,
   ResumeOverlay,
   RevealScreen,
+  RotateOverlay,
   SendingScreen,
   SuspenseScreen,
   WinScreen,
@@ -217,6 +218,7 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
       {body}
       {overlay}
       {banner ? <ReconnectBanner /> : null}
+      <RotateOverlay />
     </div>
   );
 }

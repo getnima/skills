@@ -4,7 +4,6 @@
   "description": "משחקי מסיבה על הטלפון, תוצאות על הטלוויזיה",
   "lang": "he",
   "dir": "rtl",
-  "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
   "display_override": ["fullscreen", "standalone"],

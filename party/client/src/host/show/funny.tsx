@@ -29,6 +29,8 @@ export interface SayOptions {
   /** The mascot loses its mind: jumps and shakes while it talks. */
   readonly crazy?: boolean;
   readonly holdMs?: number;
+  /** Checked again when a queued line comes up: false drops it (the race moved on). */
+  readonly valid?: () => boolean;
 }
 
 export interface FunnyLayer {
@@ -43,9 +45,12 @@ export interface FunnyLayer {
   burst(x: number, y: number, count?: number): void;
   cannons(count?: number): void;
   rain(count?: number): void;
-  /** React to a race moment: a mix of commentary, stickers, punches and sfx. */
-  /** `force`: speak right now (the demo's moment buttons). */
-  moment(m: Moment, force?: boolean): void;
+  /**
+   * React to a race moment: a mix of commentary, stickers, punches and sfx.
+   * `force`: speak right now (the demo's moment buttons). Each kind of moment
+   * has a cooldown; returns false when this one was dropped (nothing happened).
+   */
+  moment(m: Moment, force?: boolean, valid?: () => boolean): boolean;
   dispose(): void;
 }
 
@@ -56,6 +61,7 @@ interface Pending {
   readonly crazy: boolean;
   readonly holdMs: number;
   readonly at: number;
+  readonly valid: (() => boolean) | null;
 }
 
 const MAX_STICKERS = 8;
@@ -66,6 +72,18 @@ const CALM_GAP_MS = 9_000;
 const PUNCH_GAP_MS = 1_100;
 /** Sticker fly-bys of ordinary moments keep this distance; the big moments (priority 8+) always get theirs. */
 const STICKER_GAP_MS = 2_600;
+/** The same kind of race moment fires its effects at most this often. */
+const MOMENT_GAP_MS: Partial<Record<MomentType, number>> = {
+  lead: 3_500,
+  overtake: 3_000,
+  drop: 2_500,
+  jump: 2_500,
+  tie: 4_000,
+  streak: 3_000,
+  comeback: 3_000,
+};
+/** Any two ordinary moments (priority < 8) keep at least this distance. */
+const ANY_MOMENT_GAP_MS = 700;
 
 const MOMENT_MOOD: Readonly<Record<MomentType, MascotMood>> = {
   lead: 'happy',
@@ -164,7 +182,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
     const now = performance.now();
     for (let i = queue.length - 1; i >= 0; i--) {
       const q = queue[i];
-      if (q && now - q.at > STALE_MS) queue.splice(i, 1);
+      if (q && (now - q.at > STALE_MS || (q.valid !== null && !q.valid()))) queue.splice(i, 1);
     }
     if (queue.length === 0) return;
     if (now < nextAllowed) {
@@ -188,6 +206,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
       crazy: opts.crazy ?? false,
       holdMs: opts.holdMs ?? Math.min(4_400, Math.max(2_500, 1_700 + text.length * 48)),
       at: performance.now(),
+      valid: opts.valid ?? null,
     };
     if (opts.force) {
       queue.length = 0;
@@ -329,12 +348,24 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
     return isShowCalm() ? Math.ceil(count * 0.25) : count;
   }
 
-  function moment(m: Moment, force = false): void {
-    if (disposed) return;
+  const momentAt = new Map<MomentType, number>();
+  let anyMomentAt = Number.NEGATIVE_INFINITY;
+
+  function moment(m: Moment, force = false, valid?: () => boolean): boolean {
+    if (disposed) return false;
+    const t = performance.now();
+    if (!force) {
+      // rate limits: a leader change every 250 ms must not strobe the room
+      if (t - (momentAt.get(m.type) ?? Number.NEGATIVE_INFINITY) < (MOMENT_GAP_MS[m.type] ?? 2_000)) return false;
+      if (m.priority < 8 && t - anyMomentAt < ANY_MOMENT_GAP_MS) return false;
+    }
+    momentAt.set(m.type, t);
+    anyMomentAt = t;
     const args: LineArgs = { a: m.a?.name, b: m.b?.name };
     const mood = MOMENT_MOOD[m.type];
-    sayLine(m.type, args, mood, { priority: m.priority, force });
-    const t = performance.now();
+    // no line twice in one round: a pool that ran dry stays quiet (the effects still play)
+    const line = force ? picker.pick(m.type, args) : picker.fresh(m.type, args);
+    if (line !== null) say(line, mood, { priority: m.priority, force, valid });
     const showy = force || m.priority >= 8 || t - lastSticker >= STICKER_GAP_MS;
     if (showy) lastSticker = t;
     const fly = (style: StickerStyle, art?: StickerArt): void => {
@@ -397,6 +428,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
         throw new Error(`Unhandled moment: ${String(_exhaustive)}`);
       }
     }
+    return true;
   }
 
   return {

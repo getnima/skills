@@ -9,7 +9,7 @@
 import './show.css';
 
 export { PlayingScene } from './playing';
-export { ResultsScene } from './results';
+export { ResultsScene, standingsAt } from './results';
 export { FinalScene } from './final';
 export { StandingsPanel } from './standings';
 export { isShowCalm, onShowCalmChange, setShowCalm } from './settings';

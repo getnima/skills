@@ -29,6 +29,8 @@ interface Track {
   gain: GainNode | null;
   loopTimer: ReturnType<typeof setTimeout> | null;
   fadeTimer: ReturnType<typeof setInterval> | null;
+  /** Paused because the page went hidden; played again when it is visible. */
+  hiddenPause?: boolean;
 }
 
 const AUDIO_EXTS = ['mp3', 'm4a', 'ogg', 'wav', 'webm'] as const;
@@ -43,6 +45,28 @@ declare global {
 }
 if (typeof window !== 'undefined') {
   window.__partyMusic = { started: startedLog, playing: (name: string): boolean => isTrackPlaying(name) };
+}
+
+// A song file must not keep playing from a locked phone or a background tab.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    const hidden = document.visibilityState === 'hidden';
+    for (const t of tracks.values()) {
+      const el = t.el;
+      if (!el || t.stopped) continue;
+      try {
+        if (hidden && !el.paused) {
+          t.hiddenPause = true;
+          el.pause();
+        } else if (!hidden && t.hiddenPause) {
+          t.hiddenPause = false;
+          void el.play().catch(() => undefined);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  });
 }
 
 onMuteChange((m) => {

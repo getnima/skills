@@ -15,7 +15,7 @@ import {
 import { roundTime } from '../../shared/round-clock';
 import { computeRoundScores } from '../../shared/scoring';
 import { timingFromEnv } from '../../server/config';
-import { Room } from '../../server/room';
+import { DISCONNECT_END_GRACE_MS, Room } from '../../server/room';
 import { normalizeRoomCode, randomRoomCode, ROOM_CODE_ALPHABET, RoomRegistry } from '../../server/rooms';
 
 import type { CutsceneDef } from '../../shared/cutscenes';
@@ -391,6 +391,9 @@ describe('round lifecycle', () => {
     h.room.final(a, 0, 12);
     expect(h.state().phase).toBe('playing');
     h.room.disconnect('c-b');
+    // Not at once (a Wi-Fi blip must not cost b the round), only when b stays away.
+    expect(h.state().phase).toBe('playing');
+    vi.advanceTimersByTime(DISCONNECT_END_GRACE_MS);
     expect(h.state().phase).toBe('results');
   });
 

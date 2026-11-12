@@ -7,7 +7,10 @@ import { render } from 'preact';
 import { initMobileViewport } from '../kit/mobile';
 import { App } from './app';
 import { createController } from './controller';
+import { keepFullscreen, watchOrientation } from './device';
 
 initMobileViewport();
+watchOrientation();
+keepFullscreen();
 const root = document.getElementById('app');
 if (root !== null) render(<App ctl={createController()} />, root);

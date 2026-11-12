@@ -21,6 +21,8 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/socket.io': { target: `http://localhost:${serverPort}`, ws: true, changeOrigin: true },
+      // GET /api/info: the laptop's LAN address, for the QR of a TV page opened on localhost
+      '/api': { target: `http://localhost:${serverPort}`, changeOrigin: true },
     },
   },
   build: {

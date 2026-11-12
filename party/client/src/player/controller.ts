@@ -57,6 +57,14 @@ export interface Snapshot {
 
 const JOIN_TIMEOUT_MS = 7_000;
 const FINAL_TIMEOUT_MS = 4_000;
+/** Back from a locked screen / another app after at least this long: check the link at once. */
+const RETURN_MIN_AWAY_MS = 1_000;
+const RETURN_CHECK_MS = 2_000;
+/** Server pingInterval + pingTimeout (server/app.ts): away this long, the socket is gone. */
+const DEAD_AFTER_MS = 14_000;
+/** While visible: a ping every few seconds; two unanswered in a row = a dead link, reconnect. */
+const HEALTH_EVERY_MS = 4_000;
+const HEALTH_TIMEOUT_MS = 3_000;
 
 const ERROR_TEXT: Partial<Record<ErrorCode, string>> = {
   ROOM_NOT_FOUND: 'לא מצאנו חדר עם הקוד הזה 🤔 בדקו את הקוד על הטלוויזיה',
@@ -144,6 +152,7 @@ export function createController(): PlayerController {
   // ── state ──
   function applyState(state: RoomState): void {
     if (snap.status !== 'in' || state.code !== snap.code) return;
+    if (!clock.synced) clock.hint(state.serverNow);
     const patch: { -readonly [K in keyof Snapshot]?: Snapshot[K] } = { state };
     // A new round started: forget the previous round's local end.
     if (snap.endedRound !== null && state.round !== null && state.round.index !== snap.endedRound) {
@@ -239,6 +248,75 @@ export function createController(): PlayerController {
     pendingFinal = null;
     set({ status: 'kicked', state: null, playerId: null });
   });
+
+  // ── link health ──
+  // A locked phone or a switched app comes back with a socket that may look connected
+  // but is dead (iOS drops it silently) and a clock that may have drifted. Check at
+  // once on return, and every few seconds while visible, instead of waiting for
+  // socket.io's own ping timeout (~14 s of a stale screen).
+  let hiddenAt = 0;
+  let healthInFlight = false;
+  let healthFails = 0;
+
+  function forceReconnect(): void {
+    healthFails = 0;
+    socket.disconnect();
+    socket.connect();
+  }
+
+  function onReturn(awayMs: number): void {
+    // Away longer than the server's ping window: the server has dropped this socket for
+    // sure (a frozen page answered no pings). Reconnect at once instead of waiting for
+    // socket.io to notice and then for its reconnection delay.
+    if (awayMs >= DEAD_AFTER_MS && socket.connected) {
+      forceReconnect();
+      return;
+    }
+    if (!socket.connected) {
+      if (!socket.active) socket.connect();
+      return; // socket.io is reconnecting; 'connect' re-joins and re-syncs
+    }
+    socket.timeout(RETURN_CHECK_MS).emit('time:ping', Date.now(), (err) => {
+      if (err) {
+        if (socket.connected) forceReconnect();
+        return;
+      }
+      void clock.sync(3);
+      // Fresh state right away (and the server re-attaches this socket if it had dropped it).
+      if (identity !== null && snap.status === 'in') resume();
+    });
+  }
+
+  function heartbeat(): void {
+    if (document.visibilityState !== 'visible' || !socket.connected || healthInFlight) return;
+    healthInFlight = true;
+    socket.timeout(HEALTH_TIMEOUT_MS).emit('time:ping', Date.now(), (err) => {
+      healthInFlight = false;
+      if (!err) {
+        healthFails = 0;
+        return;
+      }
+      healthFails++;
+      if (healthFails >= 2 && socket.connected) forceReconnect();
+    });
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+        return;
+      }
+      const away = hiddenAt > 0 ? Date.now() - hiddenAt : 0;
+      hiddenAt = 0;
+      if (away >= RETURN_MIN_AWAY_MS) onReturn(away);
+    });
+    window.addEventListener('pageshow', (e: PageTransitionEvent) => {
+      if (e.persisted) onReturn(0);
+    });
+    window.addEventListener('online', () => onReturn(0));
+    setInterval(heartbeat, HEALTH_EVERY_MS);
+  }
 
   // ── final score ──
   function flushFinal(): void {

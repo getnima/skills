@@ -1,5 +1,5 @@
 /** Small building blocks of the host page: buttons, dialogs, the switch, the toast. */
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
 
 import type { ComponentChildren, JSX } from 'preact';
 
@@ -46,7 +46,8 @@ export interface ModalProps {
 }
 
 export function Modal(props: ModalProps): JSX.Element {
-  useEffect(() => {
+  // layout effect: Escape works from the very frame the dialog appears
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -81,7 +82,7 @@ export interface ConfirmRequest {
 
 export function ConfirmDialog(props: { readonly req: ConfirmRequest; onClose(): void }): JSX.Element {
   const { req } = props;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Enter') {
         e.preventDefault();

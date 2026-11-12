@@ -34,6 +34,16 @@ export function injectMoment(m: Moment): boolean {
 }
 
 const PAGE_MS = 4_500;
+/** The rows re-order at most this often (the numbers still tick every frame). */
+const ORDER_HOLD_MS = 650;
+/** The crown's big hop to a new leader plays at most this often. */
+const CROWN_HOP_GAP_MS = 1_800;
+
+function sameOrder(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
 const RING_R = 44;
 const RING_LEN = 2 * Math.PI * RING_R;
 
@@ -65,9 +75,27 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const racersRef = useRef(racers);
   racersRef.current = racers;
 
-  const n = racers.length;
-  const topScore = racers[0]?.score ?? 0;
-  const leaderId = topScore > 0 ? (racers[0]?.id ?? null) : null;
+  // ── what the rows show: the ranking, re-ordered at most every ORDER_HOLD_MS so a race
+  //    where places change on every score update stays readable from across the room ──
+  const shownOrder = useRef<readonly string[]>([]);
+  const shownOrderAt = useRef(0);
+  const frameNow = performance.now();
+  const byId = new Map(racers.map((r) => [r.id, r]));
+  const wanted = racers.map((r) => r.id);
+  const sameSet = wanted.length === shownOrder.current.length && shownOrder.current.every((id) => byId.has(id));
+  if (!sameSet || (frameNow - shownOrderAt.current >= ORDER_HOLD_MS && !sameOrder(wanted, shownOrder.current))) {
+    if (!sameOrder(wanted, shownOrder.current)) shownOrderAt.current = frameNow;
+    shownOrder.current = wanted;
+  }
+  const board: Racer[] = [];
+  for (const id of shownOrder.current) {
+    const r = byId.get(id);
+    if (r) board.push(r);
+  }
+
+  const n = board.length;
+  const topScore = board[0]?.score ?? 0;
+  const leaderId = topScore > 0 ? (board[0]?.id ?? null) : null;
 
   // ── the visible window: everybody when they fit, else the top half pinned + a rotating page ──
   const fitAll = size.portrait ? 10 : 12;
@@ -87,6 +115,8 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
 
   // ── row effects ──
   const fx = useRef(new Map<string, RowFx>());
+  const slotEnter = useRef(new Map<number, { readonly id: string; readonly cls: string }>());
+  const prevIndexRef = useRef(new Map<string, number>());
   const now = performance.now();
   const rowFx = (id: string): RowFx => {
     let f = fx.current.get(id);
@@ -103,8 +133,11 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const rowHRef = useRef(rowH);
   rowHRef.current = rowH;
   const lastLeader = useRef<string | null>(null);
+  const lastHop = useRef(Number.NEGATIVE_INFINITY);
   useEffect(() => {
-    if (leaderId !== null && lastLeader.current !== null && leaderId !== lastLeader.current) {
+    const t = performance.now();
+    if (leaderId !== null && lastLeader.current !== null && leaderId !== lastLeader.current && t - lastHop.current >= CROWN_HOP_GAP_MS) {
+      lastHop.current = t;
       // the crown hops over to the new leader
       // (it starts on the old leader, now one row down, and loops through the middle of the screen)
       const u = sizeRef.current.u;
@@ -127,12 +160,22 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
 
   const handleMoment = (m: Moment, force = false): void => {
     const t = performance.now();
+    // the funny layer rate-limits each kind of moment; a moment it drops leaves the rows alone too
+    // a queued "new leader" line is dropped when somebody else leads by the time it comes up
+    const valid =
+      m.a !== null && (m.type === 'lead' || m.type === 'comeback')
+        ? (): boolean => {
+            const list = racersRef.current;
+            const idx = list.findIndex((r) => r.id === m.a?.id);
+            return m.type === 'lead' ? idx === 0 : idx >= 0 && idx < 3;
+          }
+        : undefined;
+    if (!(funny.layer()?.moment(m, force, valid) ?? false)) return;
     if (m.a) {
       if (m.type === 'drop') rowFx(m.a.id).dropUntil = t + 1_100;
       if (m.type === 'streak' || m.type === 'comeback') rowFx(m.a.id).fireUntil = t + 5_000;
       if (m.type === 'lead' || m.type === 'overtake') rowFx(m.a.id).glowUntil = t + 1_600;
     }
-    funny.layer()?.moment(m, force);
   };
   const handleRef = useRef(handleMoment);
   handleRef.current = handleMoment;
@@ -169,7 +212,6 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const scoreEls = useRef(new Map<string, HTMLSpanElement>());
   const shown = useRef(new Map<string, number>());
   const lastSecond = useRef(-1);
-  const hiddenRef = useRef(new Set<string>());
   useFrame(() => {
     const sample = clockRef.current();
     const root = rootRef.current;
@@ -195,14 +237,14 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
       }
     }
     for (const r of racersRef.current) {
-      const el = scoreEls.current.get(r.id);
-      if (!el) continue;
-      if (hiddenRef.current.has(r.id)) {
+      let el = scoreEls.current.get(r.id);
+      if (el && !el.isConnected) {
+        scoreEls.current.delete(r.id);
+        el = undefined;
+      }
+      if (!el) {
         // off screen: no ticking, just be right when it comes back
-        if (shown.current.get(r.id) !== r.score) {
-          shown.current.set(r.id, r.score);
-          el.textContent = formatScore(r.score);
-        }
+        shown.current.set(r.id, r.score);
         continue;
       }
       const from = shown.current.get(r.id) ?? r.score;
@@ -220,69 +262,81 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
 
   const lastArt = lastPlaceArt();
   const bg = backdropUrl();
-  const lastId = n >= 3 && (racers[n - 2]?.score ?? 0) > (racers[n - 1]?.score ?? 0) ? (racers[n - 1]?.id ?? null) : null;
+  const lastId = n >= 3 && (board[n - 2]?.score ?? 0) > (board[n - 1]?.score ?? 0) ? (board[n - 1]?.id ?? null) : null;
 
-  // Rows keep ONE DOM order (by id) and move by transform only: no DOM reordering, so
-  // transitions are never interrupted (and Chromium's moveBefore() leaves no stale styles).
-  const rankOf = new Map(racers.map((r, i) => [r.id, i]));
-  const stable = [...racers].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const hiddenNow = new Set<string>();
-  hiddenRef.current = hiddenNow;
-  const rows = stable.map((r) => {
-    const i = rankOf.get(r.id) ?? 0;
-    let slot = -1;
-    if (!paged) slot = i;
-    else if (i < pinned) slot = i;
-    else if (i >= pageStart && i < pageStart + rotating) slot = pinned + (i - pageStart);
-    const hidden = slot < 0 || rowH === 0;
-    if (hidden) hiddenNow.add(r.id);
-    const y = hidden ? (i < pageStart ? pinned : visible) * rowH + dividerH : slot * rowH + (slot >= pinned ? dividerH : 0);
+  // Rows are FIXED SLOTS that never move: slot k always sits at the same place. When a
+  // slot gets a new occupant, the new row rolls in INSIDE its own slot (clipped), from
+  // below when that player climbed, from above when they fell. So two rows never
+  // overlap each other or the "rotating places" label, at any moment, at any head count.
+  const indexOf = new Map(board.map((r, i) => [r.id, i]));
+  const prevIndex = prevIndexRef.current;
+  const rows: JSX.Element[] = [];
+  for (let k = 0; k < visible && rowH > 0; k++) {
+    const i = k < pinned ? k : pageStart + (k - pinned);
+    const r = board[i];
+    if (!r) continue;
+    let enter = slotEnter.current.get(k);
+    if (enter === undefined || enter.id !== r.id) {
+      const was = prevIndex.get(r.id);
+      const cls = enter === undefined ? '' : was === undefined ? 'is-in-fade' : was > i ? 'is-in-up' : was < i ? 'is-in-down' : 'is-in-fade';
+      enter = { id: r.id, cls };
+      slotEnter.current.set(k, enter);
+    }
+    const y = k * rowH + (k >= pinned ? dividerH : 0);
     const f = fx.current.get(r.id);
     const fill = topScore > 0 ? Math.max(0.025, r.score / topScore) : 0.025;
     const cls = [
       'sh-row',
-      hidden ? 'is-hidden' : '',
       r.id === leaderId ? 'is-lead' : '',
       f && f.dropUntil > now ? 'is-drop' : '',
       f && f.glowUntil > now ? 'is-glow' : '',
-      i % 2 === 1 ? 'is-odd' : '',
+      k % 2 === 1 ? 'is-odd' : '',
     ].join(' ');
-    return (
-      <div class={cls} key={r.id} style={{ transform: `translate3d(0, ${y.toFixed(1)}px, 0)`, height: `${rowH.toFixed(1)}px` }}>
-        <div class="sh-row-in">
-          <span class="sh-rank">{i + 1}</span>
-          <Avatar avatar={r.avatar} name={r.name} />
-          <span class="sh-name">
-            <bdi>{r.name}</bdi>
-          </span>
-          <span class="sh-badges">
-            {f && f.fireUntil > now ? <span class="sh-fire">🔥</span> : null}
-            {r.id === lastId ? (
-              lastArt.kind === 'img' ? (
-                <img class="sh-snail" src={lastArt.url} alt="" />
-              ) : (
-                <span class="sh-snail">{lastArt.char}</span>
-              )
-            ) : null}
-          </span>
-          <span
-            class="sh-score"
-            dir="ltr"
-            ref={(el) => {
-              if (el) scoreEls.current.set(r.id, el);
-              else scoreEls.current.delete(r.id);
-            }}
-          />
-          <div class="sh-track">
-            <div
-              class="sh-fill"
-              style={{ transform: `translate3d(${((1 - fill) * 100).toFixed(2)}%, 0, 0)`, backgroundColor: avatarColor(r.avatar) }}
+    rows.push(
+      <div class={cls} key={`slot${k}`} data-slot={k} style={{ transform: `translate3d(0, ${y.toFixed(1)}px, 0)`, height: `${rowH.toFixed(1)}px` }}>
+        <div class={`sh-row-enter ${enter.cls}`} key={r.id}>
+          <div class="sh-row-in">
+            <span class="sh-rank">{i + 1}</span>
+            <Avatar avatar={r.avatar} name={r.name} />
+            <span class={`sh-name ${Array.from(r.name).length > 11 ? 'is-long' : ''}`} dir="auto">
+              <bdi>{r.name}</bdi>
+            </span>
+            <span class="sh-badges">
+              {f && f.fireUntil > now ? <span class="sh-fire">🔥</span> : null}
+              {r.id === lastId ? (
+                lastArt.kind === 'img' ? (
+                  <img class="sh-snail" src={lastArt.url} alt="" />
+                ) : (
+                  <span class="sh-snail">{lastArt.char}</span>
+                )
+              ) : null}
+            </span>
+            <span
+              class="sh-score"
+              dir="ltr"
+              ref={(el) => {
+                if (el) {
+                  if (!scoreEls.current.has(r.id) || scoreEls.current.get(r.id) !== el) {
+                    // a row that just came on screen shows its real score at once
+                    shown.current.set(r.id, racersRef.current.find((x) => x.id === r.id)?.score ?? r.score);
+                    el.textContent = formatScore(shown.current.get(r.id) ?? r.score);
+                  }
+                  scoreEls.current.set(r.id, el);
+                }
+              }}
             />
+            <div class="sh-track">
+              <div
+                class="sh-fill"
+                style={{ transform: `translate3d(${((1 - fill) * 100).toFixed(2)}%, 0, 0)`, backgroundColor: avatarColor(r.avatar) }}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      </div>,
     );
-  });
+  }
+  prevIndexRef.current = indexOf;
 
   return (
     <section

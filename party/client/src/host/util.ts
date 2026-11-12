@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { getAudioContext, isMuted, onMuteChange } from '../kit/audio';
 import { playTrack, stopTrack } from '../kit/music';
+import { serverUrl } from '../net/connection';
 
 import type { Phase } from '../../../shared/protocol';
 import type { ServerClock } from '../net/connection';
@@ -29,24 +30,83 @@ export interface JoinInfo {
   readonly local: boolean;
 }
 
-function publicBase(): string {
+function isLocalHostname(host: string): boolean {
+  const h = host.toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]' || h.endsWith('.localhost');
+}
+
+/** ?join= on the TV page, then VITE_PUBLIC_URL at build time; null when neither is set. */
+function forcedBase(): string | null {
   const fromQuery = new URLSearchParams(window.location.search).get('join');
   if (fromQuery !== null && fromQuery.trim().length > 0) return fromQuery.trim();
   const fromEnv = import.meta.env.VITE_PUBLIC_URL as string | undefined;
   if (fromEnv !== undefined && fromEnv.trim().length > 0) return fromEnv.trim();
-  return window.location.origin;
+  return null;
 }
 
-export function joinInfo(code: string): JoinInfo {
-  const base = publicBase().replace(/\/+$/, '');
+let lanIpsOnce: Promise<readonly string[]> | null = null;
+
+/** The server's LAN addresses (GET /api/info → { lanIps }); [] when the route is missing or fails. */
+function fetchLanIps(): Promise<readonly string[]> {
+  lanIpsOnce ??= (async (): Promise<readonly string[]> => {
+    try {
+      const res = await fetch(`${serverUrl().replace(/\/+$/, '')}/api/info`, { cache: 'no-store' });
+      if (!res.ok) return [];
+      const body: unknown = await res.json();
+      if (typeof body !== 'object' || body === null) return [];
+      const ips = (body as { lanIps?: unknown }).lanIps;
+      return Array.isArray(ips) ? ips.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) : [];
+    } catch {
+      return [];
+    }
+  })();
+  return lanIpsOnce;
+}
+
+function buildJoinInfo(rawBase: string, code: string): JoinInfo {
+  const base = rawBase.replace(/\/+$/, '');
   let local = false;
   try {
-    const host = new URL(base).hostname;
-    local = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]' || host.endsWith('.localhost');
+    local = isLocalHostname(new URL(base).hostname);
   } catch {
     local = false;
   }
   return { base, url: `${base}/?room=${encodeURIComponent(code)}`, local };
+}
+
+/** True when the TV page itself was opened on this machine's loopback address. */
+function pageIsLocal(): boolean {
+  return isLocalHostname(window.location.hostname);
+}
+
+/**
+ * The address the QR points at: ?join=, then VITE_PUBLIC_URL, then (a TV page
+ * opened on localhost) the laptop's first LAN address from the server with the
+ * page's port, else the page's own origin. `pending` while the LAN lookup runs.
+ */
+export function useJoinInfo(code: string): JoinInfo & { readonly pending: boolean } {
+  const forced = forcedBase();
+  const needLan = forced === null && pageIsLocal();
+  const [lan, setLan] = useState<readonly string[] | null>(null);
+  useEffect(() => {
+    if (!needLan) return undefined;
+    let alive = true;
+    void fetchLanIps().then((ips) => {
+      if (alive) setLan(ips);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [needLan]);
+  if (forced !== null) return { ...buildJoinInfo(forced, code), pending: false };
+  if (!needLan) return { ...buildJoinInfo(window.location.origin, code), pending: false };
+  const ip = lan?.[0];
+  if (ip !== undefined) {
+    const host = ip.includes(':') && !ip.startsWith('[') ? `[${ip}]` : ip;
+    const port = window.location.port;
+    return { ...buildJoinInfo(`http://${host}${port !== '' ? `:${port}` : ''}`, code), pending: false };
+  }
+  return { ...buildJoinInfo(window.location.origin, code), pending: lan === null };
 }
 
 /** The URL without the scheme, for display. */

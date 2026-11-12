@@ -99,6 +99,32 @@ export function unlockAudio(): void {
   }
 }
 
+/**
+ * A hidden page (locked phone, another app, notification) plays nothing: Android
+ * keeps a running AudioContext audible from a pocket otherwise. Back on screen it
+ * resumes (iOS may still want a tap, which the auto-unlock below gives it).
+ */
+let suspendedByHide = false;
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    const c = ctx;
+    if (!c) return;
+    try {
+      if (document.visibilityState === 'hidden') {
+        if (c.state === 'running') {
+          suspendedByHide = true;
+          void c.suspend().catch(() => undefined);
+        }
+      } else if (suspendedByHide) {
+        suspendedByHide = false;
+        void c.resume().then(flushReady, () => undefined);
+      }
+    } catch {
+      // ignore
+    }
+  });
+}
+
 if (typeof window !== 'undefined') {
   const auto = (): void => unlockAudio();
   window.addEventListener('pointerdown', auto, { capture: true, passive: true });

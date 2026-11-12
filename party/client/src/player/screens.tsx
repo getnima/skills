@@ -8,8 +8,9 @@ import { preloadGame } from '../games/registry';
 import { isMuted, setMuted, sfx, unlockAudio } from '../kit/audio';
 import { findPublicFile } from '../kit/files';
 import { haptic, vibrate } from '../kit/haptics';
-import { enterFullscreen, isStandalone, keepAwake } from '../kit/mobile';
+import { isStandalone, keepAwake } from '../kit/mobile';
 import { playTrack, stopTrack } from '../kit/music';
+import { goFullscreen } from './device';
 import { dismissTip, isTipDismissed } from './identity';
 import { Avatar, Confetti, fmt, joinNames, medal, standings, useCountUp, useTick } from './ui';
 
@@ -32,13 +33,33 @@ function Dots(): JSX.Element {
 
 // ───────────────────────────── Boot / Join ─────────────────────────────
 
+const SLOW_BOOT_MS = 6_000;
+
 export function BootScreen(): JSX.Element {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setSlow(true), SLOW_BOOT_MS);
+    return (): void => clearTimeout(id);
+  }, []);
   return (
     <div class="pp-screen pp-center">
       <div class="pp-logo-emoji pp-bob">🎉</div>
       <div class="pp-title">מתחברים למסיבה<Dots /></div>
+      {slow ? <div class="pp-text">לוקח רגע… בדקו שיש Wi-Fi או אינטרנט, ממשיכים לנסות</div> : null}
     </div>
   );
+}
+
+/** Grapheme-safe cut: an emoji (or a letter with niqqud) is never split in half. */
+function cutName(raw: string): string {
+  try {
+    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    const parts = Array.from(seg.segment(raw), (x) => x.segment);
+    return parts.length > NAME_MAX_LEN ? parts.slice(0, NAME_MAX_LEN).join('') : raw;
+  } catch {
+    const cps = Array.from(raw);
+    return cps.length > NAME_MAX_LEN ? cps.slice(0, NAME_MAX_LEN).join('') : raw;
+  }
 }
 
 export function JoinScreen(props: { readonly ctl: PlayerController; readonly snap: Snapshot }): JSX.Element {
@@ -59,7 +80,7 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
     if (busy) return;
     // THE user gesture: sound, fullscreen (Android) and the wake lock all need it.
     unlockAudio();
-    void enterFullscreen();
+    goFullscreen();
     void keepAwake();
     nameRef.current?.blur();
     sfx.pop(1.2);
@@ -82,6 +103,7 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
         <div class="pp-sub">5 משחקים · מנצח בכל סיבוב · פרס אמיתי 🏆</div>
       </div>
 
+      <A2hsTip />
       <div class="pp-join-card">
         {showCodeInput ? (
           <label class="pp-field">
@@ -113,7 +135,12 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
             ref={nameRef}
             class="pp-input pp-name-input"
             value={snap.name}
-            onInput={(e) => ctl.setName((e.currentTarget as HTMLInputElement).value.slice(0, NAME_MAX_LEN))}
+            onInput={(e) => {
+              const el = e.currentTarget as HTMLInputElement;
+              const v = cutName(el.value);
+              if (v !== el.value) el.value = v;
+              ctl.setName(v);
+            }}
             maxLength={NAME_MAX_LEN}
             placeholder="השם שלך"
             autocapitalize="off"
@@ -151,6 +178,12 @@ function isIphoneSafari(): boolean {
   return ios && /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\//.test(ua);
 }
 
+/**
+ * iPhone only (no Fullscreen API): "Add to Home Screen" is the only way to lose
+ * Safari's bars. Shown on the join screen, BEFORE joining, on purpose: an iPhone
+ * home-screen app has its own storage, so a guest who adds it after joining
+ * would come back as a second player. Dismissible, in the flow (never over a button).
+ */
 function A2hsTip(): JSX.Element | null {
   const [show, setShow] = useState(() => isIphoneSafari() && !isStandalone() && !isTipDismissed());
   if (!show) return null;
@@ -164,10 +197,10 @@ function A2hsTip(): JSX.Element | null {
       }}
     >
       <span class="pp-tip-icon">⬆️</span>
-      <span>
-        למסך מלא: <b>שיתוף</b> ← <b>הוספה למסך הבית</b>
+      <span class="pp-tip-text">
+        למסך מלא בלי שורת הכתובת: <b>שיתוף</b> ← <b>הוספה למסך הבית</b>, ונכנסים משם
       </span>
-      <span class="pp-tip-x">✕</span>
+      <span class="pp-tip-x" aria-label="סגירה">✕</span>
     </button>
   );
 }
@@ -281,7 +314,6 @@ export function LobbyScreen(props: { readonly snap: Snapshot; readonly state: Ro
         </span>
         <span>{played ? 'מחכים לסיבוב הבא' : 'מחכים שהמנחה יתחיל'}<Dots /></span>
       </div>
-      <A2hsTip />
     </div>
   );
 }
@@ -542,7 +574,7 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
       {row !== undefined ? (
         <div class={`pp-res-card ${won ? 'is-winner' : ''}`}>
           <div class="pp-res-rank">
-            {won ? '🏆 ' : medal(row.roundRank)}מקום {row.roundRank} בסיבוב
+            {row.raw <= 0 ? 'לא קלעת הפעם 🙈' : `${won ? '🏆 ' : medal(row.roundRank)}מקום ${row.roundRank} בסיבוב`}
           </div>
           <div class="pp-res-raw">⭐ {fmt(row.raw)} במשחק</div>
           <div class="pp-res-points" dir="ltr">
@@ -573,7 +605,7 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
         <ol class="pp-top3">
           {top3.map((r) => (
             <li key={r.playerId} class={r.playerId === props.me ? 'is-me' : ''}>
-              <span class="pp-st-rank">{medal(r.roundRank) || r.roundRank}</span>
+              <span class="pp-st-rank">{r.raw > 0 ? medal(r.roundRank) || r.roundRank : '–'}</span>
               <Avatar index={r.avatar} size={30} />
               <span class="pp-st-name">{r.name}</span>
               <span class="pp-st-total">⭐ {fmt(r.raw)}</span>
@@ -665,6 +697,17 @@ export function ClosedScreen(props: { readonly onRestart: () => void }): JSX.Ele
       <button type="button" class="pp-btn pp-btn-go pp-btn-mid" onClick={props.onRestart}>
         להזין קוד חדש
       </button>
+    </div>
+  );
+}
+
+/** Shown by CSS only while a phone is held sideways (html.pp-landscape, see device.ts). Never pauses anything. */
+export function RotateOverlay(): JSX.Element {
+  return (
+    <div class="pp-rotate" aria-hidden="true">
+      <div class="pp-rotate-phone">📱</div>
+      <div class="pp-title">סובבו את הטלפון</div>
+      <div class="pp-text">המשחק עובד רק לאורך ⬆️</div>
     </div>
   );
 }

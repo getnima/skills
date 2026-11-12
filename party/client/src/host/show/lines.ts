@@ -133,45 +133,78 @@ function fill(template: string, args: LineArgs): string {
 export interface LinePicker {
   /** Next line of the pool: every line is used once before any repeats, and never twice in a row. */
   pick(pool: LinePool, args?: LineArgs): string;
+  /** Like pick, but null once every line of the pool was used by this picker (no repeats at all). */
+  fresh(pool: LinePool, args?: LineArgs): string | null;
 }
 
 export function createLinePicker(random: () => number): LinePicker {
   const decks = new Map<LinePool, number[]>();
   const lastUsed = new Map<LinePool, number>();
+  /** Templates already spoken, per pool. */
+  const spoken = new Map<LinePool, Set<string>>();
+
+  /** The next template of the pool's shuffled deck (refilled when empty). */
+  function draw(pool: LinePool, args: LineArgs): string {
+    const lines = LINES[pool];
+    let deck = decks.get(pool);
+    if (deck === undefined || deck.length === 0) {
+      deck = lines.map((_, i) => i);
+      for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(random() * (i + 1));
+        const a = deck[i];
+        const b = deck[j];
+        if (a !== undefined && b !== undefined) {
+          deck[i] = b;
+          deck[j] = a;
+        }
+      }
+      // the next line to be dealt is the last element: keep it different from the previous one
+      const top = deck[deck.length - 1];
+      if (deck.length > 1 && top === lastUsed.get(pool)) {
+        const first = deck[0];
+        if (first !== undefined && top !== undefined) {
+          deck[0] = top;
+          deck[deck.length - 1] = first;
+        }
+      }
+      decks.set(pool, deck);
+    }
+    const index = deck.pop() ?? 0;
+    lastUsed.set(pool, index);
+    // a template that needs {b} without one falls back to a line that does not
+    let template = lines[index] ?? '';
+    if (template.includes('{b}') && args.b === undefined) {
+      template = lines.find((l) => !l.includes('{b}')) ?? template;
+    }
+    return template;
+  }
+
+  function remember(pool: LinePool, template: string): void {
+    let set = spoken.get(pool);
+    if (set === undefined) {
+      set = new Set();
+      spoken.set(pool, set);
+    }
+    set.add(template);
+  }
+
   return {
     pick(pool: LinePool, args: LineArgs = {}): string {
-      const lines = LINES[pool];
-      let deck = decks.get(pool);
-      if (deck === undefined || deck.length === 0) {
-        deck = lines.map((_, i) => i);
-        for (let i = deck.length - 1; i > 0; i--) {
-          const j = Math.floor(random() * (i + 1));
-          const a = deck[i];
-          const b = deck[j];
-          if (a !== undefined && b !== undefined) {
-            deck[i] = b;
-            deck[j] = a;
-          }
-        }
-        // the next line to be dealt is the last element: keep it different from the previous one
-        const top = deck[deck.length - 1];
-        if (deck.length > 1 && top === lastUsed.get(pool)) {
-          const first = deck[0];
-          if (first !== undefined && top !== undefined) {
-            deck[0] = top;
-            deck[deck.length - 1] = first;
-          }
-        }
-        decks.set(pool, deck);
-      }
-      const index = deck.pop() ?? 0;
-      lastUsed.set(pool, index);
-      // a template that needs {b} without one falls back to a line that does not
-      let template = lines[index] ?? '';
-      if (template.includes('{b}') && args.b === undefined) {
-        template = lines.find((l) => !l.includes('{b}')) ?? template;
-      }
+      const template = draw(pool, args);
+      remember(pool, template);
       return fill(template, args);
+    },
+    fresh(pool: LinePool, args: LineArgs = {}): string | null {
+      const set = spoken.get(pool);
+      // one full deck is enough to meet every template that has not been spoken yet
+      for (let tries = 0; tries < LINES[pool].length * 2; tries++) {
+        const template = draw(pool, args);
+        if (set === undefined || !set.has(template)) {
+          remember(pool, template);
+          return fill(template, args);
+        }
+      }
+      return null;
     },
   };
 }

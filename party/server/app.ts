@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { networkInterfaces } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
 import express from 'express';
@@ -33,6 +34,21 @@ export function findClientDir(): string | null {
     if (dir !== undefined && dir.length > 0 && existsSync(join(dir, 'index.html'))) return resolve(dir);
   }
   return null;
+}
+
+/** Non-internal IPv4 addresses of this machine: what a phone on the same Wi-Fi can reach. */
+export function lanIps(): string[] {
+  const out: string[] = [];
+  try {
+    for (const list of Object.values(networkInterfaces())) {
+      for (const info of list ?? []) {
+        if (info.family === 'IPv4' && !info.internal && !out.includes(info.address)) out.push(info.address);
+      }
+    }
+  } catch (err) {
+    console.error('[http] could not list network interfaces', err);
+  }
+  return out;
 }
 
 function mountClient(app: Express, dir: string): void {
@@ -90,6 +106,14 @@ export function createPartyApp(config: ServerConfig): PartyApp {
   app.get('/healthz', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json({ ok: true, ...registry.stats(), uptime: Math.round((Date.now() - startedAt) / 1000) });
+  });
+
+  // The TV page opened on localhost asks for the laptop's LAN address to build a QR phones can open.
+  app.get('/api/info', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    // Readable from the vite dev origin and from a client hosted on another origin.
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json({ lanIps: lanIps() });
   });
 
   const clientDir = findClientDir();

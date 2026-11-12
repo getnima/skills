@@ -2,11 +2,32 @@
  * Cutscene video files: which ones exist and which source this browser plays.
  * A manifest entry names e.g. "tap_freeze.mp4"; the player tries that file,
  * then the same base name as .webm and .mp4, in the order the browser can
- * play them. Every probe runs once per page load (HEAD, ranged GET fallback).
+ * play them.
+ *
+ * Which files exist is taken at dev-server / build time (import.meta.glob keys
+ * only, like kit/files.ts: nothing is bundled and nothing is fetched), so a
+ * missing video costs no request and logs no 404. Dev: reload the page after
+ * dropping a file. Production: re-run the build.
  */
 import { CUTSCENES } from '../../../shared/cutscenes';
 
 import type { CutsceneDef } from '../../../shared/cutscenes';
+
+const videoKeys = Object.keys(import.meta.glob('../../public/cutscenes/*.{mp4,m4v,webm,mov,ogv,MP4,M4V,WEBM,MOV,OGV}'));
+
+/** lower-cased file name → real file name in client/public/cutscenes/ */
+const present = new Map<string, string>();
+for (const key of videoKeys) {
+  const name = key.slice(key.lastIndexOf('/') + 1);
+  if (name.length > 0) present.set(name.toLowerCase(), name);
+}
+// Browser tests: ?testCutscenes=joker_1.webm,joker_2.webm declares extra files (the test serves them).
+try {
+  const extra = new URLSearchParams(window.location.search).get('testCutscenes');
+  for (const name of (extra ?? '').split(',')) if (/^[\w.-]+$/.test(name)) present.set(name.toLowerCase(), name);
+} catch {
+  // no window: nothing to add
+}
 
 export type FileStatus = 'checking' | 'ok' | 'unplayable' | 'missing';
 
@@ -54,53 +75,29 @@ export function canPlay(file: string): boolean {
   }
 }
 
-/** A dev server answers a missing path with the html page: only a non-html 2xx counts. */
-function isMediaResponse(res: Response): boolean {
-  if (res.status !== 200 && res.status !== 206) return false;
-  const type = (res.headers.get('content-type') ?? '').toLowerCase();
-  return !type.startsWith('text/html');
-}
-
-const probes = new Map<string, Promise<boolean>>();
-
-export function fileExists(file: string): Promise<boolean> {
-  let p = probes.get(file);
-  if (p === undefined) {
-    const url = cutsceneUrl(file);
-    p = (async (): Promise<boolean> => {
-      try {
-        const head = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-        if (isMediaResponse(head)) return true;
-        if (head.status !== 405 && head.status !== 501) return false;
-        const ranged = await fetch(url, { headers: { Range: 'bytes=0-1' }, cache: 'no-store' });
-        const ok = isMediaResponse(ranged);
-        void ranged.body?.cancel();
-        return ok;
-      } catch {
-        return false;
-      }
-    })();
-    probes.set(file, p);
-  }
-  return p;
+/** The real file name of a dropped-in video (case-insensitive), or null when it is not there. */
+export function findCutsceneFile(file: string): string | null {
+  return present.get(file.toLowerCase()) ?? null;
 }
 
 /** Existing files for this cutscene, playable ones first. Empty = show the placeholder card. */
-export async function resolveSources(def: CutsceneDef): Promise<string[]> {
-  const files = candidateFiles(def.file);
-  const exists = await Promise.all(files.map((f) => fileExists(f)));
-  const present = files.filter((_, i) => exists[i] === true);
-  return [...present.filter((f) => canPlay(f)), ...present.filter((f) => !canPlay(f))];
+export function resolveSources(def: CutsceneDef): string[] {
+  const found: string[] = [];
+  for (const f of candidateFiles(def.file)) {
+    const real = findCutsceneFile(f);
+    if (real !== null && !found.includes(real)) found.push(real);
+  }
+  return [...found.filter((f) => canPlay(f)), ...found.filter((f) => !canPlay(f))];
 }
 
-export async function cutsceneStatus(def: CutsceneDef): Promise<FileStatus> {
-  const files = await resolveSources(def);
+export function cutsceneStatus(def: CutsceneDef): FileStatus {
+  const files = resolveSources(def);
   const first = files[0];
   if (first === undefined) return 'missing';
   return canPlay(first) ? 'ok' : 'unplayable';
 }
 
-/** Kick off every probe once, early, so the menu dots and the first cutscene are instant. */
-export function prefetchCutsceneStatus(): void {
-  for (const def of CUTSCENES) void resolveSources(def);
+/** Every cutscene's file status (sync: the list of files is known at build time). */
+export function allCutsceneStatuses(): Readonly<Record<string, FileStatus>> {
+  return Object.fromEntries(CUTSCENES.map((c) => [c.id, cutsceneStatus(c)]));
 }

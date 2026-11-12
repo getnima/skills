@@ -387,6 +387,17 @@
   }
 }
 
+@container (max-height: 440px) {
+  .pp-join .pp-tip {
+    display: none;
+  }
+}
+/* the tip takes the faces' room on short screens (never clip the hero) */
+@container (max-height: 640px) {
+  .pp-join:has(.pp-tip) .pp-join-faces {
+    display: none;
+  }
+}
 @container (max-height: 520px) {
   .pp-join-faces,
   .pp-sub {
@@ -457,12 +468,17 @@
 }
 .pp-me-name {
   max-width: 100%;
-  font-size: 30px;
+  font-size: clamp(24px, 7.6vw, 30px);
   font-weight: 900;
   line-height: 1.1;
+  text-align: center;
+  /* a long own name wraps (two lines at most) instead of losing its end */
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 .pp-me-in {
   font-size: 20px;
@@ -561,13 +577,20 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 48px;
   padding: 8px 12px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 13px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px dashed rgba(255, 255, 255, 0.18);
+  font-size: 14px;
+  line-height: 1.3;
   font-weight: 600;
   color: var(--c-dim);
   text-align: right;
+}
+.pp-tip-text {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .pp-tip b {
   color: #fff;
@@ -576,8 +599,15 @@
   font-size: 18px;
 }
 .pp-tip-x {
-  margin-inline-start: auto;
-  opacity: 0.6;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  opacity: 0.8;
 }
 
 /* standings (lobby) and top-3 (results) */
@@ -624,6 +654,8 @@
   white-space: nowrap;
 }
 .pp-st-total {
+  flex: none;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
   color: var(--c-yellow);
   direction: ltr;
@@ -1225,6 +1257,9 @@
   position: relative;
   z-index: 2;
 }
+.pp-final > .pp-pill-dim {
+  margin-bottom: 10px;
+}
 .pp-final-medal {
   font-size: clamp(90px, 30vw, 128px);
   line-height: 1;
@@ -1299,6 +1334,41 @@
   color: var(--c-yellow);
 }
 
+/* ───────── turn the phone upright (html.pp-landscape, device.ts) ───────── */
+
+.pp-rotate {
+  display: none;
+}
+.pp-landscape .pp-rotate {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px max(16px, var(--sar)) 16px max(16px, var(--sal));
+  text-align: center;
+  background: radial-gradient(circle at 50% 40%, #3b1a8a, var(--c-bg) 75%);
+  touch-action: none;
+}
+.pp-rotate-phone {
+  font-size: 64px;
+  line-height: 1;
+  animation: pp-rotate 2.2s ease-in-out infinite;
+}
+@keyframes pp-rotate {
+  0%,
+  30% {
+    transform: rotate(-90deg);
+  }
+  60%,
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
 /* ───────── reconnect banner ───────── */
 
 .pp-banner {
@@ -1341,6 +1411,13 @@
   animation: pp-spin 0.8s linear infinite;
 }
 
+@media (max-height: 740px) {
+  /* the medal glyph (ribbon) draws above its line box: keep it off the pill */
+  .pp-final-medal {
+    font-size: clamp(72px, 24vw, 96px);
+    margin-top: 6px;
+  }
+}
 @media (max-height: 600px) {
   .pp-big-emoji {
     font-size: 72px;
