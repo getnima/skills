@@ -162,7 +162,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
     const before = prevOrder.current;
     if (elimination !== null) {
       // Everybody in the air is at the same point of the same course: they share one distance
-      // (the farthest reported) and keep their rows; who is out sinks below them, the last
+      // (the farthest reported) and keep their places; who is out sinks below them, the last
       // one to fall on top.
       let far = 0;
       for (const r of list) if (r.out !== true) far = Math.max(far, r.score);
@@ -299,7 +299,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
 
   const handleMoment = (m: Moment, force = false): void => {
     const t = performance.now();
-    // the funny layer rate-limits each kind of moment; a moment it drops leaves the rows alone too
+    // the funny layer rate-limits each kind of moment; a moment it drops leaves the cards alone too
     // a queued "new leader" line is dropped when somebody else leads by the time it comes up
     const valid =
       m.a !== null && (m.type === 'lead' || m.type === 'comeback')

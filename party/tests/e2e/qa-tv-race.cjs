@@ -34,7 +34,8 @@ const { check, failures } = checker();
       check(r.bad === 0, `${n} players ${VW}x${VH}: no overlapping cards / label on any of ${r.frames} frames over 6 s`, r.examples);
       check(r.blink === 0, `${n} players: the board never blinks (frames with most cards faded: ${r.blink})`);
       check(r.misorder <= r.frames * 0.1, `${n} players: scores agree with the places (frames where a card shows more than the place before it: ${r.misorder}/${r.frames})`);
-      check(r.orders >= 3, `${n} players: the board really re-ordered during the burst (${r.orders})`);
+      // (a board that shows everybody, 13 cards, re-orders only on real crossings: no page turns count)
+      check(r.orders >= 2, `${n} players: the board really re-ordered during the burst (${r.orders})`);
       check(!SHOTS || frames >= 30, `${n} players: burst screenshots (${frames} in 6 s, one per compositor frame, at most every 100 ms)`);
       // everybody as cards while they fit at a readable size; a bigger room pages under a label
       const geo = await raceGeometry(page);

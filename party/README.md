@@ -233,7 +233,7 @@ every 250 ms; the server merges them into one `scores` message per 250 ms for th
 room, and dolls into one `looks` message per 200 ms, so traffic grows gently with the
 head count. The TV shows 40: the lobby grid holds every name; the race is a board of player
 cards (the dressed doll big, the name, the points and a bar), everybody at once while they fit
-at a readable size (21 at 1920x1080), else the top row stays and the rest turn in pages.
+at a readable size (about 18 on a 1920x1080 TV), else the top row stays and the rest turn in pages.
 Re-run: start a server, then
 `npx tsx tests/load/bots.ts --url <server> --players 40 --rounds 5 --churn 0.02 --storm`
 next to `npx tsx tests/load/watch-server.ts --pid <server pid> --url <server>`
