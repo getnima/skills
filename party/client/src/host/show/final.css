@@ -1,0 +1,491 @@
+/*
+ * The final podium's stage (final.tsx, pictures from finale-art.ts): the owner asked for a finish
+ * that is impressive. A red velvet curtain opens on the podium during the drum roll, two toy
+ * spotlights sweep and then find each place as it comes up (both on the champion), the blocks are
+ * gold, silver and bronze with a laurel medallion, every doll wears its medal, the crown drops onto
+ * the champion, the evening's trophy rises with the angel in its cup, and two toy cannons pop up
+ * and fire the confetti. Every piece is optional: a missing picture leaves it out.
+ *
+ * Sizes in design units (calc(N * var(--u))) on the 1920x1080 board. Only transform and opacity
+ * animate (the beams' screen blend is static). The stage pieces are for the landscape TV: in
+ * portrait the podium plays as before.
+ */
+
+/* ── the order of the layers on the stage ── */
+.sh-final .sh-final-sun {
+  z-index: 0;
+}
+.sh-final .fn-trophy {
+  z-index: 1;
+}
+.sh-final .sh-podium {
+  z-index: 2;
+}
+.sh-final .fn-cannons {
+  z-index: 3;
+}
+.sh-final .fn-lights {
+  z-index: 4;
+}
+.sh-final .sh-ftable {
+  z-index: 5;
+}
+.sh-final .fn-curtains {
+  z-index: 6;
+}
+.sh-final .sh-final-head {
+  z-index: 7;
+}
+/* the "וואו!" sticker: in the clear space between the champion's name and the trophy (the hosts stand at the left) */
+.sh-final .sh-burst--champ {
+  z-index: 8;
+  right: calc(280 * var(--u));
+  top: calc(300 * var(--u));
+}
+
+/* ── the curtain: two halves of red velvet and the swagged valance, then they open ── */
+.fn-curtains {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.fn-curtain {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 52%;
+  overflow: hidden;
+  transition: transform 1350ms cubic-bezier(0.55, 0, 0.25, 1);
+  will-change: transform;
+}
+.fn-curtain > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 100%;
+}
+.fn-curtain--l {
+  left: 0;
+  transform-origin: 0 50%;
+  filter: drop-shadow(calc(10 * var(--u)) 0 0 rgba(22, 18, 14, 0.35));
+}
+.fn-curtain--r {
+  right: 0;
+  transform-origin: 100% 50%;
+}
+/* the right half is the left half mirrored (the fold that meets the middle is the image's right edge) */
+.fn-curtain--r > img {
+  scale: -1 1;
+}
+.fn-curtains.is-open .fn-curtain--l {
+  transform: translate3d(-104%, 0, 0) scaleX(0.55);
+}
+.fn-curtains.is-open .fn-curtain--r {
+  transform: translate3d(104%, 0, 0) scaleX(0.55);
+}
+.fn-valance {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(150 * var(--u));
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  background-position: 50% 0;
+  filter: drop-shadow(0 calc(8 * var(--u)) 0 rgba(22, 18, 14, 0.35));
+  transition: transform 900ms cubic-bezier(0.5, 0, 0.3, 1) 650ms;
+  will-change: transform;
+}
+.fn-curtains.is-open .fn-valance {
+  transform: translate3d(0, -110%, 0);
+}
+
+/* ── the spotlights: two toy lamps in the top corners and their beams ── */
+.fn-lights {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 500ms ease 300ms;
+}
+.fn-lights.is-on {
+  opacity: 1;
+}
+.fn-lights.is-off {
+  opacity: 0;
+  transition-delay: 0ms;
+}
+.fn-spot {
+  position: absolute;
+  top: calc(10 * var(--u));
+  width: calc(230 * var(--u));
+  height: auto;
+  filter: drop-shadow(calc(5 * var(--u)) calc(7 * var(--u)) 0 rgba(22, 18, 14, 0.4));
+}
+.fn-spot--l {
+  left: calc(30 * var(--u));
+}
+.fn-spot--r {
+  right: calc(30 * var(--u));
+  scale: -1 1;
+}
+/* a beam: a long wedge of warm light, narrow at the lens, hanging from it and swung toward its place */
+.fn-beam {
+  --a: 0deg;
+  position: absolute;
+  top: calc(140 * var(--u));
+  width: calc(440 * var(--u));
+  height: calc(1250 * var(--u));
+  transform-origin: 50% 0;
+  transform: rotate(var(--a));
+  clip-path: polygon(42% 0, 58% 0, 100% 100%, 0 100%);
+  background: linear-gradient(to bottom, rgba(255, 252, 228, 0.85), rgba(255, 246, 200, 0.45) 50%, rgba(255, 240, 170, 0) 80%);
+  mix-blend-mode: screen;
+  transition: transform 950ms cubic-bezier(0.3, 0.9, 0.3, 1.08);
+  will-change: transform;
+}
+.fn-beam--l {
+  left: calc((173 - 220) * var(--u));
+  --a: -40deg;
+}
+.fn-beam--r {
+  right: calc((173 - 220) * var(--u));
+  --a: 40deg;
+}
+/* while the drums roll: searching */
+.fn-lights.is-on:not(.is-aimed) .fn-beam--l {
+  animation: fn-sweep-l 2.6s ease-in-out infinite alternate;
+}
+.fn-lights.is-on:not(.is-aimed) .fn-beam--r {
+  animation: fn-sweep-r 2.2s ease-in-out infinite alternate;
+}
+.fn-lights.is-aimed .fn-beam--l {
+  --a: var(--al);
+}
+.fn-lights.is-aimed .fn-beam--r {
+  --a: var(--ar);
+}
+@keyframes fn-sweep-l {
+  from {
+    transform: rotate(-62deg);
+  }
+  to {
+    transform: rotate(-12deg);
+  }
+}
+@keyframes fn-sweep-r {
+  from {
+    transform: rotate(14deg);
+  }
+  to {
+    transform: rotate(64deg);
+  }
+}
+
+/* ── the podium blocks: gold, silver, bronze, with the laurel medallion and the place on it ── */
+.sh-final .sh-pod--1 .sh-pod-block {
+  background-color: #f5b81c;
+  background-image:
+    linear-gradient(100deg, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0.45) 42%, rgba(255, 255, 255, 0) 54%),
+    radial-gradient(circle, rgba(22, 18, 14, 0.12) calc(2.6 * var(--u)), transparent calc(3.6 * var(--u))),
+    linear-gradient(to bottom, #ffe066, #f3a712 70%, #d98a06);
+  background-size:
+    100% 100%,
+    calc(22 * var(--u)) calc(22 * var(--u)),
+    100% 100%;
+}
+.sh-final .sh-pod--2 .sh-pod-block {
+  background-color: #d9dee8;
+  background-image:
+    linear-gradient(100deg, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0.55) 42%, rgba(255, 255, 255, 0) 54%),
+    radial-gradient(circle, rgba(22, 18, 14, 0.12) calc(2.6 * var(--u)), transparent calc(3.6 * var(--u))),
+    linear-gradient(to bottom, #f4f6fa, #c4cbd8 70%, #a9b1c0);
+  background-size:
+    100% 100%,
+    calc(22 * var(--u)) calc(22 * var(--u)),
+    100% 100%;
+}
+.sh-final .sh-pod--3 .sh-pod-block {
+  background-color: #d98a4e;
+  background-image:
+    linear-gradient(100deg, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0.35) 42%, rgba(255, 255, 255, 0) 54%),
+    radial-gradient(circle, rgba(22, 18, 14, 0.12) calc(2.6 * var(--u)), transparent calc(3.6 * var(--u))),
+    linear-gradient(to bottom, #f0a76a, #c97538 70%, #a95c28);
+  background-size:
+    100% 100%,
+    calc(22 * var(--u)) calc(22 * var(--u)),
+    100% 100%;
+}
+.sh-final .sh-pod-deco {
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  width: auto;
+  height: 82%;
+  max-width: 70%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(calc(4 * var(--u)) calc(5 * var(--u)) 0 rgba(22, 18, 14, 0.35));
+}
+.sh-final .sh-pod-deco + .sh-pod-num {
+  position: relative;
+  z-index: 1;
+  display: block;
+  color: #fff;
+  -webkit-text-stroke: calc(7 * var(--u)) var(--ink);
+  paint-order: stroke fill;
+  font-family: var(--read);
+}
+.sh-final .sh-pod--1 .sh-pod-deco + .sh-pod-num {
+  font-size: calc(120 * var(--u));
+}
+.sh-final .sh-pod--2 .sh-pod-deco + .sh-pod-num {
+  font-size: calc(92 * var(--u));
+}
+.sh-final .sh-pod--3 .sh-pod-deco + .sh-pod-num {
+  font-size: calc(64 * var(--u));
+  -webkit-text-stroke-width: calc(5 * var(--u));
+}
+
+/* ── the medal on each doll: the medallion pinned on the chest, swinging in after the column is up ── */
+.fn-who-pic {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.fn-medal {
+  position: absolute;
+  left: 50%;
+  bottom: calc(-22 * var(--u));
+  width: calc(84 * var(--u));
+  height: calc(84 * var(--u));
+  margin-left: calc(-42 * var(--u));
+  transform-origin: 50% -40%;
+  opacity: 0;
+  scale: 0.3;
+}
+.sh-pod--1 .fn-medal {
+  width: calc(110 * var(--u));
+  height: calc(110 * var(--u));
+  margin-left: calc(-55 * var(--u));
+  bottom: calc(-30 * var(--u));
+}
+/* room for the medal's lower half above the name sticker */
+.sh-final .fn-who-pic {
+  margin-bottom: calc(22 * var(--u));
+}
+.fn-medal > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(calc(3 * var(--u)) calc(4 * var(--u)) 0 rgba(22, 18, 14, 0.45));
+}
+.fn-medal > b {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 900 calc(38 * var(--u)) / 1 var(--read);
+  color: #fff;
+  -webkit-text-stroke: calc(4 * var(--u)) var(--ink);
+  paint-order: stroke fill;
+}
+.sh-pod--1 .fn-medal > b {
+  font-size: calc(50 * var(--u));
+}
+.sh-pod.is-up .fn-medal {
+  animation: fn-medal-in 900ms cubic-bezier(0.2, 1.4, 0.4, 1) 650ms both;
+}
+@keyframes fn-medal-in {
+  0% {
+    opacity: 0;
+    scale: 0.3;
+    rotate: -30deg;
+  }
+  45% {
+    opacity: 1;
+    scale: 1.15;
+    rotate: 14deg;
+  }
+  75% {
+    rotate: -6deg;
+    scale: 1;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+    rotate: 0deg;
+  }
+}
+
+/* ── the crown drops onto the champion, bigger than before ── */
+.sh-final .sh-pod-crown {
+  width: calc(170 * var(--u));
+  height: calc(150 * var(--u));
+  margin-bottom: calc(-58 * var(--u));
+}
+.sh-final .sh-pod--1.is-up .sh-pod-crown {
+  animation:
+    fn-crown-drop 900ms cubic-bezier(0.3, 0, 0.4, 1) 700ms both,
+    sh-hop 2.2s cubic-bezier(0.3, 0, 0.3, 1) 1.8s infinite;
+}
+@keyframes fn-crown-drop {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, calc(-520 * var(--u)), 0) rotate(-25deg);
+  }
+  55% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(6deg) scale(1.1, 0.88);
+  }
+  75% {
+    transform: translate3d(0, calc(-30 * var(--u)), 0) rotate(-3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── the trophy: at the right of the stage, it rises with the champion, the angel in its cup ── */
+.fn-trophy {
+  position: absolute;
+  right: calc(14 * var(--u));
+  bottom: calc(-6 * var(--u));
+  width: calc(340 * var(--u));
+  height: calc(402 * var(--u));
+  transform: translate3d(0, 135%, 0);
+  transition:
+    transform 1100ms cubic-bezier(0.2, 1.25, 0.35, 1) 250ms,
+    opacity 500ms ease;
+  will-change: transform;
+  pointer-events: none;
+}
+.fn-trophy.is-up {
+  transform: none;
+}
+.fn-trophy.is-away {
+  transform: translate3d(0, 135%, 0);
+  transition-delay: 0ms;
+}
+.fn-trophy-cup {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(calc(6 * var(--u)) calc(8 * var(--u)) 0 rgba(22, 18, 14, 0.4));
+}
+/* the angel stands in the cup, its feet just under the rim */
+.fn-trophy-angel {
+  position: absolute;
+  left: 50%;
+  bottom: 84%;
+  height: calc(300 * var(--u));
+  width: auto;
+  transform: translateX(-50%);
+  filter: drop-shadow(calc(5 * var(--u)) calc(7 * var(--u)) 0 rgba(22, 18, 14, 0.35));
+}
+.fn-trophy.is-up .fn-trophy-angel {
+  animation: fn-angel-in 900ms cubic-bezier(0.2, 1.4, 0.4, 1) 1100ms both;
+}
+@keyframes fn-angel-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-220 * var(--u))) scale(0.6) rotate(-12deg);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1) rotate(0deg);
+  }
+}
+/* the glow: god-rays behind the trophy */
+.fn-trophy-glow {
+  position: absolute;
+  left: 50%;
+  top: -20%;
+  width: calc(700 * var(--u));
+  height: calc(700 * var(--u));
+  margin-left: calc(-350 * var(--u));
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side, rgba(255, 255, 255, 0.9), rgba(255, 236, 140, 0.5) 40%, rgba(255, 220, 90, 0) 72%),
+    repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0.35) 0deg 8deg, rgba(255, 255, 255, 0) 8deg 20deg);
+  -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+  opacity: 0;
+  transition: opacity 700ms ease 900ms;
+}
+.fn-trophy.is-up .fn-trophy-glow {
+  opacity: 1;
+  animation: fn-spin 14s linear infinite;
+}
+@keyframes fn-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* ── the toy cannons: they pop up from the stage floor and kick back with each shot ── */
+.fn-cannons {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.fn-cannon {
+  position: absolute;
+  bottom: calc(-14 * var(--u));
+  width: calc(230 * var(--u));
+  height: auto;
+  transform: translate3d(0, 120%, 0);
+  transition: transform 600ms cubic-bezier(0.2, 1.3, 0.35, 1);
+  filter: drop-shadow(calc(5 * var(--u)) calc(7 * var(--u)) 0 rgba(22, 18, 14, 0.4));
+}
+.fn-cannon--l {
+  left: calc(-12 * var(--u));
+}
+.fn-cannon--r {
+  right: calc(-12 * var(--u));
+  scale: -1 1;
+}
+.fn-cannons.is-up .fn-cannon {
+  transform: none;
+}
+.fn-cannons.is-up .fn-cannon:not([data-shot='0']) {
+  animation: fn-kick 520ms cubic-bezier(0.2, 1.2, 0.4, 1) both;
+}
+@keyframes fn-kick {
+  0% {
+    transform: none;
+  }
+  18% {
+    transform: translate3d(calc(-28 * var(--u)), calc(18 * var(--u)), 0) rotate(-9deg) scale(1.08, 0.9);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* ── the table comes in: the stage makes room ── */
+.sh-final.has-table .fn-cannons,
+.sh-final.has-table .fn-lights {
+  opacity: 0;
+}
+
+/* the stage pieces are for the landscape TV */
+[data-orient='portrait'] .fn-curtains,
+[data-orient='portrait'] .fn-lights,
+[data-orient='portrait'] .fn-trophy,
+[data-orient='portrait'] .fn-cannons {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fn-curtains.is-open {
+    display: none;
+  }
+  .fn-beam {
+    animation: none !important;
+  }
+}

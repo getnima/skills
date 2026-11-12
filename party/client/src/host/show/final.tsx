@@ -3,12 +3,15 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { sfx } from '../../kit/audio';
 import { playTrack, stopTrack } from '../../kit/music';
-import { backdropUrl, crownUrl, podiumUrl } from './art';
+import { backdropUrl, crownUrl, podiumUrl, prizeArt } from './art';
 import { cardGrid } from './card-grid';
 import { PlayerCard, useBoardBox } from './cards';
 import { Avatar, CountUp, formatScore, useFrame, useStage } from './common';
+import { finaleArt, preloadFinaleArt } from './finale-art';
 import { useFunnyLayer } from './funny';
 import { cueNarration, isNarratorOn, setNarrationSlot } from './narrator-bus';
+import { isShowCalm } from './settings';
+import './final.css';
 
 import type { JSX } from 'preact';
 import type { PlayerPublic } from '../../../../shared/protocol';
@@ -28,6 +31,21 @@ interface Timeline {
 
 const PAGE_MS = 5_500;
 const NEVER = Number.POSITIVE_INFINITY;
+/** The curtain opens on the podium this long into the drum roll. */
+const CURTAIN_OPEN_MS = 650;
+/** The toy cannons fire this long after the champion is named (they pop up first), and once more. */
+const CANNON_FIRE_MS = [520, 2_300] as const;
+/** Where the spotlights' lenses are (design units; final.css puts the lamps there). */
+const SPOT_L = { x: 173, y: 140 } as const;
+const SPOT_R = { x: 1920 - 173, y: 140 } as const;
+
+/**
+ * A spotlight beam's angle (deg, CSS rotate) from its lens to a target, both in design units:
+ * the beam hangs straight down at 0 and swings toward the target.
+ */
+function beamAngle(lensX: number, lensY: number, x: number, y: number): number {
+  return (-Math.atan2(x - lensX, Math.max(1, y - lensY)) * 180) / Math.PI;
+}
 
 function timelineFor(n: number): Timeline {
   if (n >= 3) return { third: 2_600, second: 4_900, first: 7_600, table: 13_200 };
@@ -53,7 +71,16 @@ function Column(props: { place: 1 | 2 | 3; entry: Ranked | undefined; up: boolea
       <div class="sh-pod-rise">
         <div class="sh-pod-who">
           {entry.rank === 1 ? <img class="sh-pod-crown" src={crownUrl()} alt="" /> : null}
-          <Avatar avatar={entry.player.avatar} name={entry.player.name} look={entry.player.look} crop="bust" class={place === 1 ? 'sh-avatar--xl' : 'sh-avatar--lg'} />
+          <div class="fn-who-pic">
+            <Avatar avatar={entry.player.avatar} name={entry.player.name} look={entry.player.look} crop="bust" class={place === 1 ? 'sh-avatar--xl' : 'sh-avatar--lg'} />
+            {/* the medal of the place, pinned on the doll's chest */}
+            {deco !== null ? (
+              <span class="fn-medal" aria-hidden="true">
+                <img src={deco} alt="" />
+                <b>{entry.rank}</b>
+              </span>
+            ) : null}
+          </div>
           <div class="sh-pod-name" dir="auto">
             <bdi>{entry.player.name}</bdi>
           </div>
@@ -103,6 +130,17 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
     narrated.current.add(moment);
     return cueNarration({ id: `${moment}:${sceneId.current}`, moment, ttlMs, valid, name, holdMs });
   };
+  // ── the stage (finale-art.ts): the curtain opens, the spotlights find each place, the trophy rises,
+  //    the cannons fire. A missing picture leaves its piece out; calm mode keeps it plain. ──
+  const art = finaleArt();
+  const prize = prizeArt();
+  const calm = isShowCalm();
+  const [opened, setOpened] = useState(false);
+  const openedRef = useRef(false);
+  const fired = useRef(0);
+  const [firing, setFiring] = useState(0);
+  useEffect(() => preloadFinaleArt([crownUrl(), podiumUrl(1), podiumUrl(2), podiumUrl(3)]), []);
+
   // the final table: player cards (cards.tsx) as big as its box allows, paging in a big room
   const tableBox = useBoardBox();
   const grid = cardGrid(n, tableBox.w, tableBox.h, { aspect: 1.36, gap: 26 * size.u, maxW: 230 * size.u, minW: 140 * size.u });
@@ -130,6 +168,18 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
     const t = clock.current;
     const next = stepAt(t, tlRef.current);
     const layer = funny.layer();
+    if (!openedRef.current && t >= CURTAIN_OPEN_MS) {
+      openedRef.current = true;
+      setOpened(true);
+      if (finaleArt().curtain !== null && !isShowCalm()) sfx.whoosh(1.2);
+    }
+    // the toy cannons pop up with the champion and fire twice
+    const shot = CANNON_FIRE_MS[fired.current];
+    if (next >= 3 && shot !== undefined && t >= tlRef.current.first + shot) {
+      fired.current++;
+      setFiring(fired.current);
+      layer?.cannons(fired.current === 1 ? 150 : 90);
+    }
     if (next !== stepRef.current) {
       const prev = stepRef.current;
       stepRef.current = next;
@@ -153,7 +203,6 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
         sfx.cheer();
         layer?.flash('#ffffff');
         layer?.zoom();
-        layer?.cannons(130);
         layer?.rain(90);
         const c = championRef.current;
         // the hosts crown the champion (the name rides as a tag on their bubble); without them, the commentator
@@ -186,6 +235,33 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
   useEffect(() => {
     setNarrationSlot('final', showTable ? 'final-top' : 'final-left');
   }, [showTable]);
+
+  // the spotlights aim at whoever just came up, both at the champion; measured from the podium
+  // itself (layout sizes, so a column still rising is aimed at where it will stand)
+  const lightsRef = useRef<HTMLDivElement | null>(null);
+  const [aim, setAim] = useState<{ readonly l: number; readonly r: number } | null>(null);
+  useEffect(() => {
+    const lights = lightsRef.current;
+    const scene = lights?.parentElement ?? null;
+    const place = step === 1 ? 3 : step === 2 ? 2 : step === 3 ? 1 : null;
+    if (lights === null || scene === null || place === null) {
+      setAim(null);
+      return;
+    }
+    const pod = scene.querySelector<HTMLElement>(`.sh-pod--${place}`);
+    const rise = pod?.querySelector<HTMLElement>('.sh-pod-rise') ?? null;
+    const pic = pod?.querySelector<HTMLElement>('.fn-who-pic') ?? null;
+    if (!pod || rise === null || pic === null) {
+      setAim(null);
+      return;
+    }
+    const u = size.u || 1;
+    const box = scene.getBoundingClientRect();
+    const p = pod.getBoundingClientRect();
+    const x = (p.left + p.width / 2 - box.left) / u;
+    const y = (p.bottom - box.top) / u - rise.offsetHeight / u + (pic.offsetTop + pic.offsetHeight * 0.45) / u;
+    setAim({ l: beamAngle(SPOT_L.x, SPOT_L.y, x, y), r: beamAngle(SPOT_R.x, SPOT_R.y, x, y) });
+  }, [step, size.w, size.h]);
   return (
     <section
       class={`sh-scene sh-final sh-final--s${step} ${showTable ? 'has-table' : ''} ${n < 3 ? 'is-small' : ''}`}
@@ -195,6 +271,37 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
     >
       {/* the sun that rises behind the podium when the champion is named */}
       <div class="sh-final-sun" aria-hidden="true" />
+      {/* the evening's trophy, with the angel standing in the cup: it rises with the champion */}
+      {art.trophy !== null && n > 0 ? (
+        <div class={`fn-trophy ${step >= 3 ? 'is-up' : ''} ${showTable ? 'is-away' : ''}`} aria-hidden="true">
+          <div class="fn-trophy-glow" />
+          {prize.cutout ? <img class="fn-trophy-angel" src={prize.url} alt="" draggable={false} /> : null}
+          <img class="fn-trophy-cup" src={art.trophy} alt="" draggable={false} />
+        </div>
+      ) : null}
+      {/* two toy spotlights: they sweep while the drums roll, then find each place */}
+      {art.spotlight !== null && n > 0 ? (
+        <div
+          class={`fn-lights ${opened ? 'is-on' : ''} ${aim !== null ? 'is-aimed' : ''} ${showTable ? 'is-off' : ''}`}
+          ref={lightsRef}
+          style={aim !== null ? { '--al': `${aim.l.toFixed(1)}deg`, '--ar': `${aim.r.toFixed(1)}deg` } : undefined}
+          aria-hidden="true"
+        >
+          <div class="fn-beam fn-beam--l" />
+          <div class="fn-beam fn-beam--r" />
+          <img class="fn-spot fn-spot--l" src={art.spotlight} alt="" draggable={false} />
+          <img class="fn-spot fn-spot--r" src={art.spotlight} alt="" draggable={false} />
+        </div>
+      ) : (
+        <div ref={lightsRef} hidden />
+      )}
+      {/* two toy confetti cannons pop up for the champion and fire */}
+      {art.cannon !== null && n > 0 ? (
+        <div class={`fn-cannons ${step >= 3 && !showTable ? 'is-up' : ''}`} aria-hidden="true">
+          <img class="fn-cannon fn-cannon--l" key={`l${firing}`} src={art.cannon} alt="" draggable={false} data-shot={firing} />
+          <img class="fn-cannon fn-cannon--r" key={`r${firing}`} src={art.cannon} alt="" draggable={false} data-shot={firing} />
+        </div>
+      ) : null}
       <header class="sh-final-head">
         {step >= 3 && champion ? (
           <div class="sh-champ" key="champ">
@@ -258,6 +365,18 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
                 })
               : null}
           </div>
+        </div>
+      ) : null}
+      {/* the red velvet curtain over the stage at the start: it opens during the drum roll */}
+      {art.curtain !== null && !calm ? (
+        <div class={`fn-curtains ${opened ? 'is-open' : ''}`} aria-hidden="true">
+          <div class="fn-curtain fn-curtain--l">
+            <img src={art.curtain} alt="" draggable={false} />
+          </div>
+          <div class="fn-curtain fn-curtain--r">
+            <img src={art.curtain} alt="" draggable={false} />
+          </div>
+          {art.valance !== null ? <div class="fn-valance" style={{ backgroundImage: `url("${art.valance}")` }} /> : null}
         </div>
       ) : null}
       {funny.node}
