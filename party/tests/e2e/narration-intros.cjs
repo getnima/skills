@@ -31,7 +31,13 @@ const covered = (page) =>
     const out = [];
     for (const sel of ['.hs-intro-round', '.hs-intro-title', '.hs-intro-text', '.hs-intro-foot > *', '.hs-intro-emoji', '.hs-progress', '.hs-countdown-num', '.hs-countdown-game', '.hs-countdown-hint']) {
       for (const el of document.querySelectorAll(sel)) {
-        const b = el.getBoundingClientRect();
+        // a line of text is judged by its letters (a heading's block box is as wide as its container)
+        let b = el.getBoundingClientRect();
+        if (/title|text|hint/.test(sel)) {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          b = range.getBoundingClientRect();
+        }
         if (b.width < 2) continue;
         if (mine.some((m) => Math.min(m.right, b.right) - Math.max(m.left, b.left) > 4 && Math.min(m.bottom, b.bottom) - Math.max(m.top, b.top) > 4)) out.push(sel);
       }

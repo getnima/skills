@@ -159,9 +159,9 @@
   top: calc(36 * var(--nu));
 }
 
-/* intro and countdown: the top-left corner */
+/* intro and countdown: the top-left corner, clear of the title's first letter (the longest titles start about 230 units in) */
 .nr--top {
-  --fh: calc(400 * var(--nu));
+  --fh: calc(360 * var(--nu));
   --fs: calc(36 * var(--nu));
   --bmax: calc(470 * var(--nu));
   left: calc(22 * var(--nu));
