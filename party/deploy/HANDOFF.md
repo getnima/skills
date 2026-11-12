@@ -96,6 +96,8 @@ Start a game from the TV (Space) and play it to the results with the bots; watch
 Android, one of them on mobile data): scan the QR, name, dress the doll, play one full round of
 שימי טאפ to the winner ceremony. Afterwards open **☰ → חדר חדש** on the TV (a fresh room code) so
 the party starts clean.
+A remote that was attached to the old room does not follow the TV to the new one (it says
+"המסך לא מחובר"): on the remote, ☰ → התנתק, enter the password again and pick the new code.
 
 ### 6. The room setup for the night (with the owner)
 

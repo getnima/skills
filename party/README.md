@@ -326,7 +326,22 @@ for a picture slot with the same base name (a file with the exact slot name wins
 ships as `.webp`: `npm run build` first runs `tools/assets/optimize.py`, which turns every PNG
 under `client/public/assets` into a visually lossless WebP of the same name (or keeps the PNG
 when WebP is not smaller; it needs python3 with Pillow, else the build goes on with the PNG).
-Each folder's README has sizes and framing rules.
+Each folder's README has sizes and framing rules. Keep your own copy of a PNG you drop in: the
+build removes it from the folder once the WebP is written.
+
+**Loading ahead.** Nothing waits for it and no screen is held back. The TV fetches its pictures,
+the two sound clips, one playable file per video and the fonts in the background as soon as the
+page opens (progress on the boot card, then a thin line at the top edge until it is done). A
+phone, once it is in the room, fetches the doll, the accessories, the key art and every game's
+art in the background; while a round is on it fetches only that game's art and the rest waits
+for the round to end. Which file belongs to which screen is one table,
+`client/src/kit/preload-sets.ts`, and a test fails when a new file is in no row. `?preload=0`
+in the address turns all of it off (the page then loads each picture when a screen first needs
+it, as before).
+
+**After you replace a picture.** The server tells browsers to keep a picture for 5 minutes, so a
+TV or phone that already had the old one shows the new one within 5 minutes of the deploy (the
+program files themselves are never stale). Songs and videos are checked on every load.
 
 | Folder | Slots (at the time of writing) |
 | --- | --- |
@@ -438,7 +453,9 @@ locally (`npm ci`, `npm run build`), copies the release with `gcloud compute scp
 runs `npm ci --omit=dev` on the VM, restarts the service and waits until
 `https://<host>/healthz` answers (the first certificate takes 1-5 minutes). The
 first `gcloud compute ssh` creates an SSH key for you (no passphrase). Re-running
-`gce-up.sh` on a running VM restarts nothing whose settings did not change.
+`gce-up.sh` on a running VM changes no infrastructure that is already right, but it **ends with
+the deploy, which restarts the game server and empties the room**; to check the infrastructure
+only, run `SKIP_DEPLOY=1 deploy/gce-up.sh`.
 
 **Addresses.** Caddy serves the same server on all of these at once, each name
 with its own Let's Encrypt certificate, so a problem with one does not block the
