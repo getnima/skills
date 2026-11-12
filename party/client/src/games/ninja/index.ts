@@ -25,7 +25,7 @@ import { createInput } from '../../kit/input';
 import { createLoop, STEP_S } from '../../kit/loop';
 import { COLORS } from '../../kit/theme';
 import { GAMES } from '../../../../shared/protocol';
-import { BODY_RADIUS, buildHalves, buildSplats, createBackdrop, GOLD_STYLE, loadNinjaArt } from './art';
+import { BODY_RADIUS, buildHalves, buildSplats, createBackdrop, loadNinjaArt } from './art';
 import { PAL, blit, createStickerCache, loadDisplayFont, renderChip, renderSticker } from './look';
 import { buildSchedule, GRAVITY, LAUNCH_Y, scheduleSignature } from './waves';
 
@@ -33,7 +33,7 @@ import type { Drawable } from '../../kit/assets';
 import type { BurstOptions } from '../../kit/fx';
 import type { KitPointer } from '../../kit/input';
 import type { GameContext, GameInstance, GameModule } from '../types';
-import type { FruitStyle } from './art';
+import type { CutLook } from './art';
 import type { Sticker } from './look';
 import type { ThrowKind } from './waves';
 
@@ -327,9 +327,9 @@ function segDist2(ax: number, ay: number, bx: number, by: number, cx: number, cy
   return ex * ex + ey * ey;
 }
 
-function styleOf(styles: readonly FruitStyle[], kind: ThrowKind, variant: number): FruitStyle {
-  if (kind === 'gold') return GOLD_STYLE;
-  return styles[variant] ?? GOLD_STYLE;
+function cutOf(cuts: readonly CutLook[], gold: CutLook, kind: ThrowKind, variant: number): CutLook {
+  if (kind === 'gold') return gold;
+  return cuts[variant] ?? gold;
 }
 
 // ───────────────────────────── Game ─────────────────────────────
@@ -340,10 +340,11 @@ export const game: GameModule = {
     const [art] = await Promise.all([loadNinjaArt(), loadDisplayFont()]);
     const backdrop = createBackdrop(art.background, 1.06);
     // pre-cut halves: index = fruit variant, then one per golden look
-    const halfArt = [...art.targets.map((d, i) => buildHalves(d, art.styles[i] ?? GOLD_STYLE)), ...art.golds.map((d) => buildHalves(d, GOLD_STYLE))];
+    const halfArt = [...art.targets.map((d, i) => buildHalves(d, art.cuts[i] ?? art.goldCut)), ...art.golds.map((d) => buildHalves(d, art.goldCut))];
     // juice decals: three blob shapes per juice colour, pre-rendered once
     const splatArt = new Map<string, HTMLCanvasElement[]>();
-    for (const st of [...art.styles, GOLD_STYLE]) if (!splatArt.has(st.juice)) splatArt.set(st.juice, buildSplats(st.juice, 3));
+    const splatKey = (c: CutLook): string => `${c.splash}|${c.splashKind}`;
+    for (const c of [...art.cuts, art.goldCut]) if (!splatArt.has(splatKey(c))) splatArt.set(splatKey(c), buildSplats(c.splash, c.splashKind, 3));
     const stickers = createStickerCache(24);
     /** Which golden look a throw wears (looks only). */
     const goldLook = (id: number): number => id % art.golds.length;
@@ -517,19 +518,20 @@ export const game: GameModule = {
       launched++;
     }
 
-    function addSplat(x: number, y: number, color: string, r: number): void {
+    /** A splat decal of the cut look `key` (splatKey) at (x, y), radius r (looks only). */
+    function addSplat(x: number, y: number, key: string, r: number): void {
       // slow phone: keep only every other decal slot in use
       if (lowQuality && splatCursor % 2 === 1) splatCursor = (splatCursor + 1) % MAX_SPLATS;
       const s = splats[splatCursor];
       splatCursor = (splatCursor + 1) % MAX_SPLATS;
       if (!s) return;
-      const set = splatArt.get(color);
+      const set = splatArt.get(key);
       s.img = set ? (set[(sliced + splatCursor) % set.length] ?? null) : null;
       s.active = true;
       s.x = x;
       s.y = y;
       s.r = r;
-      s.color = color;
+      s.color = key;
       s.life = 1;
       s.rot = (x * 13.7 + y * 3.1) % (Math.PI * 2);
     }
@@ -645,23 +647,25 @@ export const game: GameModule = {
       }
       hintDone = true;
       sliced++;
-      const st = styleOf(art.styles, f.kind, f.variant);
+      const st = cutOf(art.cuts, art.goldCut, f.kind, f.variant);
       addHalves(f, x, y, angle);
       const big = Math.min(blade.swipe + 1, 6);
-      addSplat(x, y, st.juice, R * (1.5 + (big >= COMBO_MIN ? 0.18 * big : 0)));
+      addSplat(x, y, splatKey(st), R * (1.5 + (big >= COMBO_MIN ? 0.18 * big : 0)));
       addSlash(x, y, angle, f.kind === 'gold');
-      // juice droplets fly along the cut, both ways
-      const drops = (lowQuality ? 5 : 9) + (big >= COMBO_MIN ? big * 2 : 0);
+      // droplets fly along the cut, both ways: thin fast juice, fat slow sauce, or dry crumbs
+      const kind = st.splashKind;
+      const drops = Math.round(((lowQuality ? 5 : 9) + (big >= COMBO_MIN ? big * 2 : 0)) * (kind === 'sauce' ? 0.6 : kind === 'crumbs' ? 1.3 : 1));
       for (const dir of [0, Math.PI]) {
         fx.burst(x, y, {
           count: drops,
-          colors: [st.juice, st.flesh, st.juice],
-          speed: 480 + big * 40,
-          size: 4.5,
-          life: 0.6,
-          gravity: 900,
+          colors: [st.splash, st.splash2 ?? st.flesh, st.splash],
+          speed: (kind === 'sauce' ? 300 : kind === 'crumbs' ? 420 : 480) + big * 40,
+          size: kind === 'sauce' ? 7 : kind === 'crumbs' ? 3.2 : 4.5,
+          life: kind === 'sauce' ? 0.85 : kind === 'crumbs' ? 0.5 : 0.6,
+          gravity: kind === 'sauce' ? 600 : kind === 'crumbs' ? 1500 : 900,
           angle: angle + dir,
-          spread: 0.7,
+          spread: kind === 'sauce' ? 0.45 : 0.7,
+          shape: kind === 'crumbs' ? 'square' : 'dot',
         });
       }
       blade.swipe++;

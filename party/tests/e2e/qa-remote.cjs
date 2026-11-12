@@ -22,6 +22,8 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
+/** Remote pages whose sheets a retry closes first. */
+const openPages = [];
 function check(name, ok, extra) {
   results.push({ name, ok: !!ok });
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${extra !== undefined ? ' ' + JSON.stringify(extra) : ''}`);
@@ -54,6 +56,12 @@ async function step(name, fn) {
       }
       console.log(`  retry ${name}: ${e.message.slice(0, 160)}`);
       await sleep(800);
+      // a sheet left open by the failed attempt would cover every button of the retry
+      for (const page of openPages) {
+        for (const id of ['confirm-no', 'more-close', 'cutscenes-close', 'players-close']) {
+          if (await page.locator(`[data-testid=${id}]`).isVisible().catch(() => false)) await page.click(`[data-testid=${id}]`).catch(() => undefined);
+        }
+      }
     }
   }
   return false;
@@ -101,6 +109,7 @@ async function big(r, opts = {}) {
 }
 async function confirmSheet(r, hold) {
   await r.waitForSelector('[data-testid=confirm]');
+  await sleep(350); // the sheet slides up; a thumb is never faster than that
   const yes = r.locator('[data-testid=confirm-yes]');
   if (hold) {
     const box = await yes.boundingBox();
@@ -178,6 +187,7 @@ async function joinPlayer(browser, code, name) {
     const rctx = await browser.newContext({ ...phone });
     const r = await rctx.newPage();
     tapFrames(r, 'remote', frames);
+    openPages.push(r);
     r.on('pageerror', (e) => check(`remote pageerror ${e.message}`, false));
     await r.goto(`${BASE}/remote`);
     await r.waitForSelector('[data-testid=unlock]');

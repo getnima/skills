@@ -446,12 +446,18 @@ function ConfirmSheet(props: { readonly ask: Ask; onYes(): void; onClose(): void
         type="button"
         class={`rm-btn rm-btn--wide rm-confirm-yes ${ask.danger ? 'rm-btn--red' : 'rm-btn--yellow'} ${armedAt !== null ? 'is-armed' : ''} ${holding ? 'is-holding' : ''}`}
         data-testid="confirm-yes"
-        onPointerDown={() => {
+        onPointerDown={(e) => {
+          // a wobbling thumb stays on the button: only lifting it (or the browser cancelling) stops the hold
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            // not capturable: fine
+          }
           setHolding(true);
+          if (holdTimer.current !== null) clearTimeout(holdTimer.current);
           holdTimer.current = setTimeout(fire, 700);
         }}
         onPointerUp={stopHold}
-        onPointerLeave={stopHold}
         onPointerCancel={stopHold}
         onClick={() => {
           press();

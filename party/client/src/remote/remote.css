@@ -566,15 +566,26 @@ body {
   -webkit-text-stroke: 0;
   text-shadow: none;
 }
+.rm-mid > section {
+  flex: 1 1 auto;
+}
+/* rows that do not fit wrap into a second column outside the box: never a half-cut row */
 .rm-top5 {
+  flex: 1 1 auto;
   margin: 0;
-  padding: 0;
+  padding: 2px 3px 4px 0;
   list-style: none;
   display: flex;
   flex-direction: column;
+  flex-wrap: wrap;
+  align-content: flex-start;
   gap: 5px;
+  column-gap: 40px;
   min-height: 0;
   overflow: hidden;
+}
+.rm-top5 > li {
+  width: calc(100% - 3px);
 }
 .rm-top5-row {
   display: flex;
@@ -603,8 +614,7 @@ body {
 .rm-place {
   flex: none;
   width: 28px;
-  font-family: var(--disp);
-  font-size: 22px;
+  font: 900 21px/1 var(--ui);
   text-align: center;
   color: var(--red-d);
 }

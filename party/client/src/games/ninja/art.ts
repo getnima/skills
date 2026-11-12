@@ -23,39 +23,57 @@ export const BODY_RADIUS = 0.42;
 
 const INK = PAL.ink;
 
-export type Inside = 'melon' | 'citrus' | 'apple' | 'stone' | 'arils' | 'berry' | 'gold';
+/** What the cut face of a half shows (drawn over its `flesh`, in its `detail` colour). */
+export type CutPattern = 'seeds' | 'segments' | 'core' | 'stone' | 'arils' | 'veins' | 'star' | 'layers' | 'speckles' | 'plain';
+/** How a cut splashes: thin fast juice, thick slow sauce (tahini, amba), or dry crumbs (falafel). */
+export type SplashKind = 'juice' | 'sauce' | 'crumbs';
 
-export interface FruitStyle {
-  /** Juice color of the splash and the cut edge. */
-  readonly juice: string;
-  /** Lighter flesh color shown on the cut face. */
-  readonly flesh: string;
-  /** Skin / rind colour around the cut face. */
+/** The look of a cut, per target slot: the halves' cut face, the droplets and the splat decals. Looks only. */
+export interface CutLook {
+  /** Outer ring of the cut face (skin, rind, crust, pita). */
   readonly rind: string;
-  /** What the cut face shows. */
-  readonly inside: Inside;
+  /** Optional thin band between the ring and the inside (a melon's white rind). */
+  readonly band?: string;
+  /** The inside. */
+  readonly flesh: string;
+  /** Seeds, segments, core, stone, layers... drawn in this colour. */
+  readonly detail: string;
+  readonly pattern: CutPattern;
+  /** Colour of the droplets and the splat decals. */
+  readonly splash: string;
+  readonly splash2?: string;
+  readonly splashKind: SplashKind;
 }
 
+export type CutSlot = 'target_1' | 'target_2' | 'target_3' | 'target_4' | 'target_5' | 'target_gold';
+
 /**
- * Juice and inside of the owner's target_N files (index = variant): watermelon, orange,
- * lemon, pomegranate, strawberry. Change here if other pictures go into those slots.
+ * THE table: slot → how a cut of that slot's picture looks. Matches the pictures in
+ * client/public/assets/ninja/ (watermelon, orange, lemon, pomegranate, strawberry, gold
+ * strawberry). When other pictures go into the slots (e.g. food), change only this table:
+ * hummus / tahini → splashKind 'sauce', falafel → 'crumbs' with pattern 'speckles',
+ * sabich / shawarma → pattern 'layers'.
  */
-export const FRUIT_STYLES: readonly FruitStyle[] = [
-  { juice: '#ff3b5c', flesh: '#ff6f86', rind: '#2fb35a', inside: 'melon' }, // watermelon
-  { juice: '#ff9a1f', flesh: '#ffc061', rind: '#ff9a1f', inside: 'citrus' }, // orange
-  { juice: '#ffe03d', flesh: '#fff3a0', rind: '#ffd400', inside: 'citrus' }, // lemon
-  { juice: '#d7193f', flesh: '#fbe7c6', rind: '#9e1530', inside: 'arils' }, // pomegranate
-  { juice: '#ff2e4d', flesh: '#ff7a8c', rind: '#e8202f', inside: 'berry' }, // strawberry
-];
-/** Juice and inside of the drawn fallbacks (when a target_N file is missing). */
-export const PLACEHOLDER_STYLES: readonly FruitStyle[] = [
-  { juice: '#ff3b5c', flesh: '#ff6f86', rind: '#2fb35a', inside: 'melon' }, // watermelon
-  { juice: '#ff9a1f', flesh: '#ffc061', rind: '#ff9a1f', inside: 'citrus' }, // orange
-  { juice: '#ff4d3d', flesh: '#fff1d6', rind: '#ff3d3d', inside: 'apple' }, // apple
-  { juice: '#a347ff', flesh: '#e8d36a', rind: '#8b3dff', inside: 'stone' }, // plum
-  { juice: '#ffe03d', flesh: '#fff3a0', rind: '#ffd400', inside: 'citrus' }, // lemon
-];
-export const GOLD_STYLE: FruitStyle = { juice: '#ffd23f', flesh: '#fff3b0', rind: '#e6a100', inside: 'gold' };
+export const CUT_LOOKS: Readonly<Record<CutSlot, CutLook>> = {
+  target_1: { rind: '#2fb35a', band: '#e9fbe3', flesh: '#ff6f86', detail: '#16120E', pattern: 'seeds', splash: '#ff3b5c', splashKind: 'juice' }, // watermelon
+  target_2: { rind: '#ff9a1f', flesh: '#ffc061', detail: '#ffb347', pattern: 'segments', splash: '#ff9a1f', splashKind: 'juice' }, // orange
+  target_3: { rind: '#ffd400', flesh: '#fff3a0', detail: '#ffe86b', pattern: 'segments', splash: '#ffe03d', splashKind: 'juice' }, // lemon
+  target_4: { rind: '#9e1530', flesh: '#fbe7c6', detail: '#c4122f', pattern: 'arils', splash: '#d7193f', splashKind: 'juice' }, // pomegranate
+  target_5: { rind: '#e8202f', flesh: '#ff7a8c', detail: '#ffd3da', pattern: 'veins', splash: '#ff2e4d', splashKind: 'juice' }, // strawberry
+  target_gold: { rind: '#e6a100', flesh: '#fff3b0', detail: '#ffffff', pattern: 'star', splash: '#ffd23f', splashKind: 'juice' }, // gold
+};
+
+/** The same for the drawn fallbacks (used only when a slot has no file). */
+export const CUT_LOOKS_DRAWN: Readonly<Record<CutSlot, CutLook>> = {
+  target_1: CUT_LOOKS.target_1, // watermelon
+  target_2: CUT_LOOKS.target_2, // orange
+  target_3: { rind: '#ff3d3d', flesh: '#fff1d6', detail: '#6b3b1a', pattern: 'core', splash: '#ff4d3d', splashKind: 'juice' }, // apple
+  target_4: { rind: '#8b3dff', flesh: '#e8d36a', detail: '#8a4b1c', pattern: 'stone', splash: '#a347ff', splashKind: 'juice' }, // plum
+  target_5: CUT_LOOKS.target_3, // lemon
+  target_gold: CUT_LOOKS.target_gold,
+};
+
+export const TARGET_SLOTS: readonly CutSlot[] = ['target_1', 'target_2', 'target_3', 'target_4', 'target_5'];
 
 type Mood = 'smile' | 'oh' | 'grin' | 'tongue' | 'cheeky';
 
@@ -595,8 +613,10 @@ function goldSkin(key: string, prop: Drawable): Drawable {
 export interface NinjaArt {
   /** target_1..target_5, index = Throw.variant. */
   readonly targets: readonly Drawable[];
-  /** Juice / inside per target (the owner's file style, or the drawn fallback's). */
-  readonly styles: readonly FruitStyle[];
+  /** Cut look per target variant (from CUT_LOOKS, or CUT_LOOKS_DRAWN for a missing file). */
+  readonly cuts: readonly CutLook[];
+  /** Cut look of the golden target. */
+  readonly goldCut: CutLook;
   /** The golden target's looks (one is picked per throw, by its id: looks only). */
   readonly golds: readonly Drawable[];
   readonly bomb: Drawable;
@@ -687,7 +707,11 @@ export async function loadNinjaArt(): Promise<NinjaArt> {
   const targets = [a.target_1, a.target_2, a.target_3, a.target_4, a.target_5];
   return {
     targets,
-    styles: targets.map((d, i) => (d.isPlaceholder ? PLACEHOLDER_STYLES[i] : FRUIT_STYLES[i]) ?? GOLD_STYLE),
+    cuts: targets.map((d, i) => {
+      const slot = TARGET_SLOTS[i] ?? 'target_1';
+      return d.isPlaceholder ? CUT_LOOKS_DRAWN[slot] : CUT_LOOKS[slot];
+    }),
+    goldCut: a.target_gold.isPlaceholder ? CUT_LOOKS_DRAWN.target_gold : CUT_LOOKS.target_gold,
     golds,
     bomb: a.bomb,
     background: a.background,
@@ -751,26 +775,33 @@ export function createBackdrop(bg: Drawable, overscale = 1): Backdrop {
   };
 }
 
-/** The cut face: rind ring, flesh and the inside pattern of `style`, centred, rx x ry. */
-function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, style: FruitStyle): void {
+/** The cut face of `look`: ring, optional band, inside and its pattern, centred, rx x ry. */
+function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, look: CutLook): void {
   g.beginPath();
   g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-  g.fillStyle = style.inside === 'melon' ? '#e9fbe3' : style.rind;
+  g.fillStyle = look.rind;
   g.fill();
   g.lineWidth = Math.max(3, rx * 0.06);
   g.strokeStyle = INK;
   g.stroke();
-  const fx = rx * (style.inside === 'melon' ? 0.84 : 0.88);
-  const fy = ry * (style.inside === 'melon' ? 0.76 : 0.82);
+  if (look.band) {
+    g.beginPath();
+    g.ellipse(cx, cy, rx * 0.92, ry * 0.86, 0, 0, Math.PI * 2);
+    g.fillStyle = look.band;
+    g.fill();
+  }
+  const fx = rx * (look.band ? 0.84 : 0.88);
+  const fy = ry * (look.band ? 0.76 : 0.82);
   g.beginPath();
   g.ellipse(cx, cy, fx, fy, 0, 0, Math.PI * 2);
-  g.fillStyle = style.flesh;
+  g.fillStyle = look.flesh;
   g.fill();
   g.save();
   g.clip();
-  switch (style.inside) {
-    case 'melon': {
-      g.fillStyle = INK;
+  const c = look.detail;
+  switch (look.pattern) {
+    case 'seeds': {
+      g.fillStyle = c;
       for (let i = 0; i < 9; i++) {
         const a = (i / 9) * Math.PI * 2 + 0.3;
         const d = i % 2 === 0 ? 0.55 : 0.3;
@@ -780,7 +811,7 @@ function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number
       }
       break;
     }
-    case 'citrus': {
+    case 'segments': {
       g.strokeStyle = '#ffffff';
       g.lineWidth = Math.max(2, rx * 0.035);
       g.beginPath();
@@ -790,7 +821,7 @@ function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number
         g.lineTo(cx + Math.cos(a) * fx, cy + Math.sin(a) * fy);
       }
       g.stroke();
-      g.fillStyle = shade(style.juice, 0.15);
+      g.fillStyle = c;
       for (let i = 0; i < 10; i++) {
         const a = ((i + 0.5) / 10) * Math.PI * 2;
         g.beginPath();
@@ -803,13 +834,13 @@ function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number
       g.fill();
       break;
     }
-    case 'apple': {
+    case 'core': {
       g.strokeStyle = 'rgba(160, 110, 40, 0.6)';
       g.lineWidth = Math.max(2, rx * 0.03);
       g.beginPath();
       g.ellipse(cx, cy, fx * 0.42, fy * 0.5, 0, 0, Math.PI * 2);
       g.stroke();
-      g.fillStyle = '#6b3b1a';
+      g.fillStyle = c;
       for (const s of [-1, 1]) {
         g.beginPath();
         g.ellipse(cx + s * fx * 0.17, cy, rx * 0.06, ry * 0.16, s * 0.4, 0, Math.PI * 2);
@@ -820,7 +851,7 @@ function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number
     case 'stone': {
       g.beginPath();
       g.ellipse(cx, cy, fx * 0.36, fy * 0.5, 0, 0, Math.PI * 2);
-      g.fillStyle = '#8a4b1c';
+      g.fillStyle = c;
       g.fill();
       g.lineWidth = Math.max(2, rx * 0.035);
       g.strokeStyle = INK;
@@ -828,8 +859,7 @@ function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number
       break;
     }
     case 'arils': {
-      // white membrane, packed ruby seeds
-      g.fillStyle = '#c4122f';
+      g.fillStyle = c;
       for (let j = 0; j < 4; j++) {
         for (let i = 0; i < 9; i++) {
           const a = (i / 9) * Math.PI * 2 + j * 0.35;
@@ -846,11 +876,10 @@ function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number
       }
       break;
     }
-    case 'berry': {
-      // pale heart and white veins towards the rim
+    case 'veins': {
       g.beginPath();
       g.ellipse(cx, cy, fx * 0.45, fy * 0.5, 0, 0, Math.PI * 2);
-      g.fillStyle = '#ffd3da';
+      g.fillStyle = c;
       g.fill();
       g.strokeStyle = 'rgba(255, 255, 255, 0.85)';
       g.lineWidth = Math.max(2, rx * 0.025);
@@ -863,22 +892,53 @@ function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number
       g.stroke();
       break;
     }
-    case 'gold': {
-      g.fillStyle = '#ffffff';
+    case 'star': {
+      g.fillStyle = c;
       polyPath(g, STAR10, cx - rx * 0.32, cy - ry * 0.55, rx * 0.64, ry * 1.1);
       g.fill();
       break;
     }
+    case 'layers': {
+      // stacked fillings (sabich, shawarma in pita): wavy bands in the detail colour
+      g.fillStyle = c;
+      for (let k = -1; k <= 1; k++) {
+        g.beginPath();
+        const y = cy + k * fy * 0.5;
+        g.moveTo(cx - fx, y);
+        for (let i = 0; i <= 8; i++) g.lineTo(cx - fx + (i / 8) * fx * 2, y + (i % 2 === 0 ? -1 : 1) * fy * 0.12);
+        g.lineTo(cx + fx, y + fy * 0.22);
+        g.lineTo(cx - fx, y + fy * 0.22);
+        g.closePath();
+        g.fill();
+      }
+      break;
+    }
+    case 'speckles': {
+      // crumb texture (falafel): dots and flecks in the detail colour
+      g.fillStyle = c;
+      for (let i = 0; i < 26; i++) {
+        const a = i * 2.39996;
+        const d = Math.sqrt((i + 0.5) / 26);
+        g.beginPath();
+        g.arc(cx + Math.cos(a) * fx * d * 0.9, cy + Math.sin(a) * fy * d * 0.9, rx * (0.025 + (i % 3) * 0.012), 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
+    case 'plain':
+      break;
     default: {
-      const never: never = style.inside;
-      throw new Error(`Unhandled inside: ${String(never)}`);
+      const never: never = look.pattern;
+      throw new Error(`Unhandled cut pattern: ${String(never)}`);
     }
   }
-  // juice highlight
-  g.fillStyle = 'rgba(255, 255, 255, 0.75)';
-  g.beginPath();
-  g.ellipse(cx - fx * 0.45, cy - fy * 0.35, fx * 0.18, fy * 0.14, -0.3, 0, Math.PI * 2);
-  g.fill();
+  // wet highlight (not on dry crumbs)
+  if (look.splashKind !== 'crumbs') {
+    g.fillStyle = 'rgba(255, 255, 255, 0.75)';
+    g.beginPath();
+    g.ellipse(cx - fx * 0.45, cy - fy * 0.35, fx * 0.18, fy * 0.14, -0.3, 0, Math.PI * 2);
+    g.fill();
+  }
   g.restore();
 }
 
@@ -888,7 +948,7 @@ function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number
  * [upper half, lower half], each a canvas of the full sprite box at 2x. Drawing a half is
  * then one rotated drawImage, not a clip per half per frame.
  */
-export function buildHalves(d: Drawable, style: FruitStyle): readonly [HTMLCanvasElement, HTMLCanvasElement] {
+export function buildHalves(d: Drawable, look: CutLook): readonly [HTMLCanvasElement, HTMLCanvasElement] {
   const S = SPRITE_BOX * 2;
   const make = (upper: boolean): HTMLCanvasElement => {
     const c = document.createElement('canvas');
@@ -905,53 +965,80 @@ export function buildHalves(d: Drawable, style: FruitStyle): readonly [HTMLCanva
     const rx = S * BODY_RADIUS * 0.94;
     const ry = S * BODY_RADIUS * 0.34;
     // the face leans towards the viewer: the upper half shows it below its cut, the lower above
-    cutFace(g, S / 2, S / 2 + (upper ? ry * 0.15 : -ry * 0.15), rx, ry, style);
+    cutFace(g, S / 2, S / 2 + (upper ? ry * 0.15 : -ry * 0.15), rx, ry, look);
     return c;
   };
   return [make(true), make(false)];
 }
 
-/** Juice splat decals: flat comic blobs with an ink outline, `count` shapes in `color`, 96 x 96 CSS px each. */
-export function buildSplats(color: string, count: number): HTMLCanvasElement[] {
+/**
+ * Splat decals of one cut look, `count` shapes, 96 x 96 CSS px each, flat with an ink outline:
+ * juice = a splashy blob with drops, sauce = a thick round puddle, crumbs = scattered bits.
+ */
+export function buildSplats(color: string, kind: SplashKind, count: number): HTMLCanvasElement[] {
   const out: HTMLCanvasElement[] = [];
   for (let s = 0; s < count; s++) {
     const { canvas, ctx } = makeLayer(96, 96);
     if (ctx) {
-      const blob = (k: number, ox: number, oy: number): void => {
+      if (kind === 'crumbs') {
+        // irregular little chunks, a few big ones
         ctx.beginPath();
-        const n = 9 + s * 2;
-        for (let i = 0; i <= n * 2; i++) {
-          const a = (i / (n * 2)) * Math.PI * 2;
-          const wob = i % 2 === 0 ? 1 : 0.62 + 0.18 * Math.sin(i * 1.7 + s);
-          const r = 30 * k * wob * (1 + 0.12 * Math.sin(a * 3 + s * 2));
-          const x = 48 + ox + Math.cos(a) * r;
-          const y = 48 + oy + Math.sin(a) * r;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.quadraticCurveTo(48 + ox + Math.cos(a - 0.15) * r * 1.08, 48 + oy + Math.sin(a - 0.15) * r * 1.08, x, y);
+        for (let i = 0; i < 16; i++) {
+          const a = i * 2.39996 + s;
+          const d = 8 + ((i * 7 + s * 5) % 30);
+          const r = i < 3 ? 7 : 3 + (i % 3);
+          const x = 48 + Math.cos(a) * d;
+          const y = 48 + Math.sin(a) * d;
+          ctx.moveTo(x - r, y - r * 0.4);
+          ctx.lineTo(x + r * 0.3, y - r);
+          ctx.lineTo(x + r, y + r * 0.2);
+          ctx.lineTo(x - r * 0.2, y + r);
+          ctx.closePath();
         }
-        ctx.closePath();
-      };
-      blob(1, 0, 0);
-      // drops around the blob
-      for (let i = 0; i < 5; i++) {
-        const a = i * 1.37 + s;
-        const d = 36 + (i % 2) * 6;
-        ctx.moveTo(48 + Math.cos(a) * d + 4 + (i % 3), 48 + Math.sin(a) * d);
-        ctx.arc(48 + Math.cos(a) * d, 48 + Math.sin(a) * d, 4 + (i % 3), 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = PAL.ink;
+        ctx.stroke();
+      } else {
+        const sauce = kind === 'sauce';
+        const blob = (k: number, ox: number, oy: number): void => {
+          ctx.beginPath();
+          const n = sauce ? 5 + s : 9 + s * 2;
+          for (let i = 0; i <= n * 2; i++) {
+            const a = (i / (n * 2)) * Math.PI * 2;
+            const wob = sauce ? 0.9 + 0.1 * Math.sin(i * 1.3 + s) : i % 2 === 0 ? 1 : 0.62 + 0.18 * Math.sin(i * 1.7 + s);
+            const r = (sauce ? 27 : 30) * k * wob * (1 + 0.12 * Math.sin(a * 3 + s * 2));
+            const x = 48 + ox + Math.cos(a) * r;
+            const y = 48 + oy + Math.sin(a) * r;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.quadraticCurveTo(48 + ox + Math.cos(a - 0.15) * r * 1.08, 48 + oy + Math.sin(a - 0.15) * r * 1.08, x, y);
+          }
+          ctx.closePath();
+        };
+        blob(1, 0, 0);
+        // drops around the blob (a sauce has two fat ones)
+        for (let i = 0; i < (sauce ? 2 : 5); i++) {
+          const a = i * 1.37 + s;
+          const d = sauce ? 36 : 36 + (i % 2) * 6;
+          const r = sauce ? 7 : 4 + (i % 3);
+          ctx.moveTo(48 + Math.cos(a) * d + r, 48 + Math.sin(a) * d);
+          ctx.arc(48 + Math.cos(a) * d, 48 + Math.sin(a) * d, r, 0, Math.PI * 2);
+        }
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.lineWidth = sauce ? 3 : 2.5;
+        ctx.strokeStyle = PAL.ink;
+        ctx.stroke();
+        // a lighter inner pool
+        blob(sauce ? 0.55 : 0.45, -6, -6);
+        ctx.fillStyle = shade(color, 0.3);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(36, 36, sauce ? 8 : 6, sauce ? 4.5 : 3.5, -0.6, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.fill();
       }
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = PAL.ink;
-      ctx.stroke();
-      // a lighter inner pool
-      blob(0.45, -6, -6);
-      ctx.fillStyle = shade(color, 0.3);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(36, 36, 6, 3.5, -0.6, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.fill();
     }
     out.push(canvas);
   }
