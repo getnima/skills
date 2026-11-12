@@ -185,10 +185,11 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   racersRef.current = racers;
   const banterEntries = (): BanterEntry[] => racersRef.current.map((r) => ({ id: r.id, name: r.name, score: r.score, out: r.out === true }));
 
-  // ── what the rows show: the ranking, re-ordered at most every ORDER_HOLD_MS so a race
+  // ── what the cards show: the ranking, re-ordered at most every ORDER_HOLD_MS so a race
   //    where places change on every score update stays readable from across the room ──
-  //    While an order is held, the rows also keep the scores of the moment it was taken, so
-  //    a row never shows more points than the row above it.
+  //    While an order is held, the cards also keep the scores of the moment it was taken, so
+  //    a card never shows more points than the place before it. An elimination round is not
+  //    held: its order changes only when somebody falls, and that card goes under at once.
   const shownOrder = useRef<readonly string[]>([]);
   const shownOrderAt = useRef(0);
   const shownScores = useRef(new Map<string, number>());
@@ -197,7 +198,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const wanted = racers.map((r) => r.id);
   const sameSet = wanted.length === shownOrder.current.length && shownOrder.current.every((id) => byId.has(id));
   const inOrder = sameOrder(wanted, shownOrder.current);
-  if (!sameSet || inOrder || frameNow - shownOrderAt.current >= ORDER_HOLD_MS) {
+  if (!sameSet || inOrder || elimination !== null || frameNow - shownOrderAt.current >= ORDER_HOLD_MS) {
     if (!inOrder) shownOrderAt.current = frameNow;
     shownOrder.current = wanted;
     shownScores.current = new Map(racers.map((r) => [r.id, r.score]));

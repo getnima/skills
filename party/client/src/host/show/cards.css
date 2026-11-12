@@ -208,7 +208,7 @@
 /*
  * ───────── the live race (playing.tsx): the card as a FIXED SLOT ─────────
  * The frame (.pc-in) never moves; who sits in it (.pc-body, keyed by the player) punches in inside
- * the frame, clipped by it, nudged up after a climb and down after a fall. So two cards never
+ * the frame, nudged up after a climb and down after a fall. So two cards never
  * overlap, at any moment, at any head count. The picture is a little shorter than on the tables
  * (the progress bar sits under the points); the card's height comes from the board as --ch.
  */
@@ -217,8 +217,18 @@
   /* a slot never moves while racing: no layer of its own (two dozen of them cost a laptop frames) */
   will-change: auto;
 }
+/*
+ * The frame does not clip (no overflow on .pc-in): a rounded clip over the odometers and the bar,
+ * which move all race long, makes the compositor mask every one of them on every frame (a laptop
+ * driving the TV lost a third of its frames to that). Only the picture rounds its own top corners,
+ * and the wash below clips itself; the occupant's punch-in stays inside the frame by itself.
+ */
+.pc--race .pc-in {
+  overflow: visible;
+}
 .pc--race .pc-pic {
   aspect-ratio: 1 / 0.86;
+  border-radius: calc(var(--cw) * 0.076) calc(var(--cw) * 0.076) 0 0;
 }
 .pc-body {
   position: absolute;
@@ -228,10 +238,10 @@
 }
 /* never from transparent: when the whole board re-orders at once it must not blink empty */
 .pc-body.is-in-up {
-  animation: pc-roll-up 320ms ease-out both;
+  animation: pc-roll-up 320ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 .pc-body.is-in-down {
-  animation: pc-roll-down 320ms ease-out both;
+  animation: pc-roll-down 320ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 .pc-body.is-in-fade {
   animation: pc-roll-fade 260ms ease-out both;
@@ -281,14 +291,21 @@
 .pc-wash {
   position: absolute;
   inset: 0;
-  opacity: 0;
+  border-radius: calc(var(--cw) * 0.076);
+  overflow: hidden;
   pointer-events: none;
 }
-.pc.is-glow .pc-wash {
+.pc-wash::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.pc.is-glow .pc-wash::before {
   background: linear-gradient(105deg, transparent 28%, rgba(255, 255, 255, 0.88) 44%, rgba(255, 255, 255, 0.88) 56%, transparent 72%);
   animation: pc-sheen 0.75s ease-in-out 2;
 }
-.pc.is-drop .pc-wash {
+.pc.is-drop .pc-wash::before {
   background: var(--red);
   animation: sh-redflash 1s ease-out;
 }
@@ -316,8 +333,8 @@
 /* stickers over the doll's bottom corner: the streak's flame, the last place's snail */
 .pc-art {
   position: absolute;
-  left: calc(var(--cw) * 0.03);
-  bottom: calc(var(--cw) * 0.02);
+  left: calc(var(--cw) * 0.02);
+  bottom: calc(var(--cw) * 0.01);
   display: flex;
   align-items: flex-end;
   gap: calc(var(--cw) * 0.02);
@@ -325,17 +342,17 @@
 }
 .pc-fire {
   display: block;
-  font-size: calc(var(--cw) * 0.22);
+  font-size: calc(var(--cw) * 0.2);
   line-height: 1;
   transform-origin: 50% 90%;
   animation: sh-flame 0.45s ease-in-out infinite alternate;
 }
 .pc-snail {
   display: block;
-  width: calc(var(--cw) * 0.3);
-  height: calc(var(--cw) * 0.3);
-  font-size: calc(var(--cw) * 0.24);
-  line-height: calc(var(--cw) * 0.3);
+  width: calc(var(--cw) * 0.26);
+  height: calc(var(--cw) * 0.26);
+  font-size: calc(var(--cw) * 0.21);
+  line-height: calc(var(--cw) * 0.26);
   text-align: center;
   object-fit: contain;
   animation: sh-crawl 1.6s ease-in-out infinite;
@@ -384,15 +401,11 @@
   color: rgba(22, 18, 14, 0.62);
   background: #fff;
 }
-/* a short punch-in, nudged the way they went: a card is too tall to roll a whole occupant through */
+/* a short punch-in, nudged the way they went (it never grows past the frame: the frame does not clip) */
 @keyframes pc-roll-up {
   0% {
     opacity: 0.7;
-    transform: translate3d(0, 7%, 0) scale(0.88);
-  }
-  60% {
-    opacity: 1;
-    transform: translate3d(0, -1%, 0) scale(1.02);
+    transform: translate3d(0, 5%, 0) scale(0.9);
   }
   100% {
     opacity: 1;
@@ -402,11 +415,7 @@
 @keyframes pc-roll-down {
   0% {
     opacity: 0.7;
-    transform: translate3d(0, -7%, 0) scale(0.88);
-  }
-  60% {
-    opacity: 1;
-    transform: translate3d(0, 1%, 0) scale(1.02);
+    transform: translate3d(0, -5%, 0) scale(0.9);
   }
   100% {
     opacity: 1;
