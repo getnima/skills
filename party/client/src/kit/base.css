@@ -2,7 +2,9 @@
  * Global mobile lock-down + shared tokens. Import once from every entry:
  *   import '../kit/base.css';
  * The page never scrolls, zooms, selects text or rubber-bands. A list that
- * really has to scroll opts in with class="kit-scroll".
+ * really has to scroll opts in with class="kit-scroll" (vertical) or
+ * class="kit-scroll-x" (a horizontal strip, e.g. the dressing room's shelf);
+ * kit/mobile.ts lets a finger scroll only inside those.
  */
 :root {
   /* colors (same values as kit/theme.ts) */
@@ -132,6 +134,18 @@ video {
 }
 .kit-scroll * {
   touch-action: pan-y;
+}
+
+/* opt-in horizontal scrolling for a strip */
+.kit-scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+}
+.kit-scroll-x * {
+  touch-action: pan-x;
 }
 
 @media (prefers-reduced-motion: reduce) {

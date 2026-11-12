@@ -1217,7 +1217,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
         </div>
         <div
           ref={shelfRef}
-          class={`dr-shelf${fade.s ? ' fs' : ''}${fade.e ? ' fe' : ''}`}
+          class={`dr-shelf kit-scroll-x${fade.s ? ' fs' : ''}${fade.e ? ' fe' : ''}`}
           role="tabpanel"
           onScroll={paintFade}
           style={{ '--tile': `${tilePx}px` }}

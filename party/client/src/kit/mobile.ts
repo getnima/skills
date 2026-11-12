@@ -10,8 +10,9 @@ function isInteractive(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('button, a, input, textarea, select, label, [role="button"]') !== null;
 }
 
+/** A finger may scroll inside an element that opted in: `.kit-scroll` (a vertical list) or `.kit-scroll-x` (a horizontal strip). */
 function inScroller(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('.kit-scroll') !== null;
+  return target instanceof Element && target.closest('.kit-scroll, .kit-scroll-x') !== null;
 }
 
 /**
