@@ -180,7 +180,7 @@ const STREAK_WORDS: ReadonlyArray<readonly [number, string]> = [
   [5, 'וואו!'],
   [10, 'שיא!'],
   [15, 'נודר!'],
-  [20, 'בן פורת יוסף!'],
+  [20, 'אש!'],
   [30, 'מחורחר!'],
 ];
 

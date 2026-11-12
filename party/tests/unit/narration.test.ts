@@ -61,7 +61,9 @@ describe('the script', () => {
 
   it("keeps the owner's exclamations", () => {
     const all = beats.map((b) => b.text).join(' ');
-    for (const word of ['נודר', 'צדיק!', 'בן פורת יוסף!', 'וואו', 'מחורחר!', 'אחשילי']) expect(all).toContain(word);
+    for (const word of ['נודר', 'וואו', 'מחורחר!', 'אחשילי']) expect(all).toContain(word);
+    // less בן פורת יוסף and no צדיק (the owner, 2026-11-12)
+    for (const word of ['בן פורת יוסף', 'צדיק']) expect(all).not.toContain(word);
   });
 
   it('has an intro for every game, and the plotzel one starts from חמוד', () => {

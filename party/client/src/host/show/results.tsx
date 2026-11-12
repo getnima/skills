@@ -450,10 +450,10 @@ function Suspense(props: { plan: Plan; view: View; game: GameMeta; elimination: 
 /** The owner's exclamations, on the star stickers of the ceremony (two per round, a different pair every round). */
 const CHEERS: readonly (readonly [string, string])[] = [
   ['וואו!', 'אש!'],
-  ['מחורחר!', 'בן פורת יוסף!'],
+  ['מחורחר!', 'תכבדו!'],
   ['נודר!', 'וואו!'],
   ['כפרה!', 'מחורחר!'],
-  ['בן פורת יוסף!', 'אחשילי!'],
+  ['טפו חמסה!', 'אחשילי!'],
 ];
 
 function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skipMs: number; title: string; portrait: boolean; elimination: boolean; round: number }): JSX.Element {

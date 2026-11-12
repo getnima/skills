@@ -72,5 +72,5 @@ The 14-point star, 10-point star and "kaboom" burst shapes of the source page (C
 ## Voice
 
 Short, loud, Hebrew slang, like the source page ("וואו־מטר", "עוד כובע!", "הכל!", "ניעור"). The owner's words for
-reactions: "נודר" (for real), "צדיק!" / "בן פורת יוסף!" (nice), "וואו!", "מחורחר!" (that's crazy).
+reactions: "נודר" (for real), "כפרה!" / "תכבדו!" (nice), "וואו!", "מחורחר!" (that's crazy). No צדיק, and בן פורת יוסף only for the champion (the owner, 2026-11-12).
 Instructions and button labels stay plain and clear.

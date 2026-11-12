@@ -56,7 +56,7 @@ const STATE = () => {
   };
 };
 
-const STREAKS = new Set(['וואו!', 'שיא!', 'נודר!', 'בן פורת יוסף!', 'מחורחר!']);
+const STREAKS = new Set(['וואו!', 'שיא!', 'נודר!', 'אש!', 'מחורחר!']);
 
 /** One flight; `moments` maps a frame name to a predicate on STATE. Each frame is taken once, the first time. */
 async function flight(browser, vp, query, moments, ms) {

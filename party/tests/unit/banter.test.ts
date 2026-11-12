@@ -75,7 +75,9 @@ describe('the lines', () => {
 
   it("speaks in the owner's voice and keeps his rules", () => {
     const all = beats.map((b) => b.text).join(' ');
-    for (const word of ['נודר', 'בן פורת יוסף!', 'מחורחר']) expect(all).toContain(word);
+    for (const word of ['נודר', 'מחורחר']) expect(all).toContain(word);
+    // less בן פורת יוסף and no צדיק (the owner, 2026-11-12)
+    for (const word of ['בן פורת יוסף', 'צדיק']) expect(all).not.toContain(word);
     for (const word of ['נזלת', 'חוטט', 'פלוץ ', 'גרבץ']) expect(all).not.toContain(word);
   });
 

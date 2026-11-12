@@ -23,8 +23,9 @@ just become someone, and he is thrilled about it.
    any group of people, no politics, no jokes on the guest.
 7. **The repeat test:** would a guest repeat it to a friend as a nickname for the doll? If not, cut it.
 
-The owner's exclamations belong to the voice: "נודר" (for real), "צדיק!", "בן פורת יוסף!" (nice), "וואו!",
-"מחורחר!" (that's crazy), "אחשילי".
+The owner's exclamations belong to the voice: "נודר" (for real), "כפרה!", "תכבדו!" (nice), "וואו!",
+"מחורחר!" (that's crazy), "אחשילי". No צדיק, and בן פורת יוסף only for the champion and the round winner's phone
+(the owner, 2026-11-12).
 
 ## Lines for the 17 original accessories
 
@@ -77,14 +78,14 @@ A combination line wins over the single-item lines when the whole set is worn.
 Usable with any hat, glasses or neck item. The first six are the owner's exclamations, on their own.
 
 1. נודר.
-2. צדיק!
-3. בן פורת יוסף!
+2. כפרה!
+3. תכבדו!
 4. וואו!
 5. מחורחר!
 6. אחשילי.
 7. נודר, זה אני?
 8. טפו חמסה, איזה יופי יצאתי.
-9. בן פורת יוסף. ובלי פילטר.
+9. פצצה. ובלי פילטר.
 10. אייקון. תרשמו.
 11. לא כל אחד יכול להרים את זה.
 12. מחורחר! מי הסטייליסט?

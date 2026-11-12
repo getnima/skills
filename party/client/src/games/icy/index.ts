@@ -701,7 +701,7 @@ export const game: GameModule = {
       if (comboJumps >= 2) {
         const mega = comboFloors >= 20;
         // the bigger the combo, the bigger the word (the owner's slang; looks only)
-        const word = comboFloors >= 25 ? 'מחורחר!' : comboFloors >= 15 ? 'בן פורת יוסף!' : comboFloors >= 8 ? 'אש!' : 'וואו!';
+        const word = comboFloors >= 25 ? 'מחורחר!' : comboFloors >= 15 ? 'פצצה!' : comboFloors >= 8 ? 'אש!' : 'וואו!';
         // the points are an LTR isolate, so the plus stays in front of the number in the Hebrew line
         showBanner(word, `${comboFloors} קומות · \u2066+${comboBonus}\u2069`, mega ? PAL.yel : PAL.pink, 1.6, mega ? 2 : 1);
         if (mega) {

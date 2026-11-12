@@ -11,8 +11,10 @@ speech bubble, like two TV-show hosts. Pictures and text only: no audio of any k
 - **Voice:** `punchlines.he.md` and `humor-research.md`, the הפשוטע register: two stars delighted with
   themselves and with the show, a grand frame on a small local thing, one image per line, a local proper
   noun as the punch, never bitter, never at a guest's expense, nothing gross. The owner's exclamations:
-  נודר, צדיק!, בן פורת יוסף!, וואו!, מחורחר!, אחשילי. **Less צדיק** (the owner, 2026-11-12): it stays only
-  on the champion and in the doll's one-word reactions; elsewhere אש!, כפרה!, שיא!, מטורף!.
+  נודר, וואו!, מחורחר!, אחשילי, טפו חמסה, כפרה!, תכבדו!. **Less צדיק, less בן פורת יוסף** (the owner,
+  2026-11-12, twice for צדיק): צדיק is out everywhere; בן פורת יוסף is kept for two moments only, the
+  evening's champion (lines.ts) and the round winner's own phone; elsewhere אש!, כפרה!, תכבדו!, טפו חמסה!,
+  פצצה!, שיא!. unit tests (banter, narration) fail if either comes back into the hosts' script.
 - **No guest name inside a line** of this script. Where it reads well the TV shows the name as a blue tag on
   the bubble (the first guests: whoever came in last; the champion). The exception is the round's banter
   (below): there the names are the point, and they show highlighted in blue inside the line.
@@ -68,7 +70,7 @@ two hosts themselves (`bomb_hosts.png`), so the hosts make the joke about themse
 
 | A · cheering | יאללה, אחשילי! מחורחר! |
 | --- | --- |
-| *or* B · cheering | צאו לדרך! בן פורת יוסף! |
+| *or* B · cheering | צאו לדרך! יאללה בלגן! |
 
 ### The last 10 seconds (7)
 
@@ -104,7 +106,7 @@ two hosts themselves (`bomb_hosts.png`), so the hosts make the joke about themse
 
 | B · cheering | וואו! כמו אוסקר, רק עם כנפיים. |
 | --- | --- |
-| *or* A · cheering | בן פורת יוסף! המלאך עובר דירה. |
+| *or* A · cheering | כפרה! המלאך עובר דירה. |
 | *or* B · laughing | כפרה! המלאך כבר מחפש חניה ליד הבית. |
 
 ### The standings (5)
@@ -121,7 +123,7 @@ two hosts themselves (`bomb_hosts.png`), so the hosts make the joke about themse
 
 ### The champion (9) · tag: the champion's name
 
-| A · cheering, then B · cheering | יש לנו אלוף ערב! בן פורת יוסף! / צדיק! מחר זה בכותרת הראשית של ynet. |
+| A · cheering, then B · cheering | יש לנו אלוף ערב! תכבדו! / וואו! מחר זה בכותרת הראשית של ynet. |
 | --- | --- |
 | *or* B · cheering | וואו! אלוף הערב, רשמית ובחתימה של שנינו. |
 
@@ -135,7 +137,7 @@ two hosts themselves (`bomb_hosts.png`), so the hosts make the joke about themse
 
 | A · cheering | איזה מרוץ! מחורחר! |
 | --- | --- |
-| *or* B · cheering | איזה ערב! בן פורת יוסף! |
+| *or* B · cheering | איזה ערב! טפו חמסה! |
 
 ## During a round: the banter (`client/src/host/show/banter.ts`)
 
@@ -290,7 +292,7 @@ The number after each kind is its priority. {a} is the guest the take is about, 
 | --- |
 | A · presenting: כולם על הטלפונים. כמו בחתונה. / B · laughing: רק שהפעם זה מותר. |
 | B · suspense: תסתכלו על הפרצופים. מחורחר. / A · presenting: אני רואה פה ריכוז. כמו בבגרות. |
-| A · cheering: איזה מרוץ! בן פורת יוסף! |
+| A · cheering: איזה מרוץ! תכבדו! |
 
 ### tap (3) · quiet race in Shimi Tap: anybody
 

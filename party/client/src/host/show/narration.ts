@@ -92,7 +92,7 @@ export const NARRATION: Readonly<Record<NarrationMoment, MomentScript>> = {
   },
   go: {
     priority: 6,
-    takes: [[a('cheer', 'יאללה, אחשילי! מחורחר!')], [b('cheer', 'צאו לדרך! בן פורת יוסף!')]],
+    takes: [[a('cheer', 'יאללה, אחשילי! מחורחר!')], [b('cheer', 'צאו לדרך! יאללה בלגן!')]],
   },
   final10: {
     priority: 7,
@@ -105,7 +105,7 @@ export const NARRATION: Readonly<Record<NarrationMoment, MomentScript>> = {
   // a round's banter comes with its own take (show/banter.ts): these are only the fallback, with no names
   race: {
     priority: 4,
-    takes: [[a('cheer', 'איזה מרוץ! מחורחר!')], [b('cheer', 'איזה ערב! בן פורת יוסף!')]],
+    takes: [[a('cheer', 'איזה מרוץ! מחורחר!')], [b('cheer', 'איזה ערב! טפו חמסה!')]],
   },
   resume: {
     priority: 6,
@@ -123,7 +123,7 @@ export const NARRATION: Readonly<Record<NarrationMoment, MomentScript>> = {
     priority: 9,
     takes: [
       [b('cheer', 'וואו! כמו אוסקר, רק עם כנפיים.')],
-      [a('cheer', 'בן פורת יוסף! המלאך עובר דירה.')],
+      [a('cheer', 'כפרה! המלאך עובר דירה.')],
       [b('laugh', 'כפרה! המלאך כבר מחפש חניה ליד הבית.')],
     ],
   },
@@ -138,7 +138,7 @@ export const NARRATION: Readonly<Record<NarrationMoment, MomentScript>> = {
   champion: {
     priority: 9,
     takes: [
-      [a('cheer', 'יש לנו אלוף ערב! בן פורת יוסף!'), b('cheer', 'צדיק! מחר זה בכותרת הראשית של ynet.')],
+      [a('cheer', 'יש לנו אלוף ערב! תכבדו!'), b('cheer', 'וואו! מחר זה בכותרת הראשית של ynet.')],
       [b('cheer', 'וואו! אלוף הערב, רשמית ובחתימה של שנינו.')],
     ],
   },
