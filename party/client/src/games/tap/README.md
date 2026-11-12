@@ -1,7 +1,8 @@
 # שימי טאפ (tap)
 
-The opening game: a 20-second sprint of tapping Shimi while he picks his nose. Art slots and how to replace a
-picture: `client/public/assets/tap/README.md`.
+The opening game: a 20-second sprint of tapping Shimi while he picks his nose. The faster you tap, the further
+his hand rises and the deeper the finger goes. Art slots and how to replace a picture:
+`client/public/assets/tap/README.md`.
 
 ## The rules (all in `pick.ts`, a pure engine, unit-tested in `tests/unit/tap-pick.test.ts`)
 
@@ -22,46 +23,59 @@ picture: `client/public/assets/tap/README.md`.
   per round (seed + duration); after a reload the same sprint continues, or the final frame comes back.
 - Scripted: slow 3/s ≈ 61, normal 6/s ≈ 122, fast 11/s ≈ 221, the cap 243.
 
-## The ladder (the show, all in `index.ts`; it never changes the score)
+## The picking (the show, all in `index.ts`; it never changes the score)
+
+The doll's picture is a **clip**: 40 frames of one image-to-video take (the hand rises from below, the index
+finger slides into the nostril, the eyes close in bliss and roll up, the head tilts back a little), all in the
+one head framing (`art.ts`: `CLIP_SRC`, `CLIP_KEYS`). One continuous state drives it, stepped at the fixed
+60 Hz step:
+
+- **depth d** (0 the hand is down out of sight, 0.35 the fingertip at the nostril, 0.62 in to the knuckle,
+  0.82 eyes shut, 1 eyes rolled up) follows the engine's smoothed tap rate (`D_RATE`: 1.5/s ≈ 0.26, 3/s ≈ 0.5,
+  5/s ≈ 0.8, 8/s ≈ 0.94, 11/s and up 1) through a critically damped spring, never faster than `D_MAX_V`;
+- **every counted tap is a jab**: a kick on a stiff spring, about 2.5 clip frames inward, back in ~150 ms;
+- **while deep the finger digs**: the clip rocks a few frames and the head turns ~2.4° about the nostril;
+- d is mapped to a clip position and the two nearest frames are crossfaded, so the motion never steps; when the
+  player stops, the hand eases out and drops. The last 5 s keep the finger at least at the knuckle.
+
+Still faces are crossfaded over the clip in 0.14 s (`FADE_S`); a face without the hand (the whistle, the
+yawn...) waits until the clip's hand is down (it pulls it down), so no ghost hand ever shows. Only the camera
+flash of the first tap and the final frame change the picture at once, under a white flash. The picture is
+blended at the frames' own size into one canvas only when it changed, so the screen gets one scaled draw per
+frame. `tests/e2e/qa-tap-fluent.cjs` checks all of this per rendered frame.
 
 | When | What |
 | --- | --- |
-| Waiting, every 3.3 s | One of five bits, all five before any repeats (`schedule.ts`): the sneak (caught, "לא ראית כלום."), the yawn ("נו? יש לי הופעה בבת ים."), the knock (fist, glass cracks, face pressed to the glass, "טוק טוק. יש פה מישהו?"), dozing off ("רק עצמתי עיניים."), the shy booger ("ששש. הוא ביישן."). Between bits a toy finger pokes his nose: "הקישו כדי להתחיל!" |
-| Last 5 s of the wait | Red star digits 5..1 in the sticker band, faces get impatient, his finger goes in by itself; at 2 "טוב. אני מתחיל לבד."; at 0 the auto-start "התחלתי בלעדיך. נודר." |
-| First tap | Paparazzi flash, caught face, "קליק!", then the shrug "כן, ו?" |
-| 8 / 18 / 28 / 40 | Yossi / the rope ("מחורחר!") / out of the ear ("יצא מהצד השני. נודר.") / mini Shimi ("שימי בתוך שימי. אחשילי.") |
-| 54 / 68 / 84 | The sneeze ("אפצ׳י!", "לבריאות לי.") / the squeegee ("ניקיתי. בערך.") / the king ("בן פורת יוסף!") |
-| 120 / 150 | The bobble spin ("סיבוב חינם. לונה פארק.") / the cork ("פקק באיילון. סוף סוף משהו זז.") |
-| Last 5 s of the sprint | No new set piece. Red star digits 5..1 ("תן הכול!"), the strand to his chin, one last booger grows on his fingertip with every tap, the head bobs harder. A milestone reached here is a burst of stars and a bigger booger. |
-| Final frame | The last booger lands on his head (the crowned king at 190+), a trophy face per rank (under 70 bored, 70-129 knuckle, 130-189 the long strand, 190+ both fingers), the count on a red star, the rank above: "חוטט מתלמד." / "חוטט מוסמך." / "דוקטור לחטטנות." / "האף של המדינה.", and "תראו לשכן. מחכים לכולם." One small alive gag every 2 s. The stage does not cover it (`ownsFinalScreen`). |
-
-Continuous: the hand level follows the smoothed tap rate (0.8 / 1.8 / 2.8 / 5 / 8 taps/s): L1 the hand climbs,
-L2 finger at the nostril, L3 to the knuckle, L4 deep with the head thrown back, L5 both fingers with speed
-lines and steam ("דאבל. כמו בטוטו.", then "וואו!"). A slowdown triggers the innocence gag ("לא אני."). Slow
-players get up to three fillers. A booger drips every 6 taps (every 3 in the last 5 s), at most 6 on the glass,
-never over his head; they pile up under the token with name chips on fixed slots (יוסי, מוטי, ציפי, אבי,
-שימי הקטן, מלך הנזלת). The golden booger shows once, seeded.
+| Waiting, every 3.3 s | One of four bits, all four before any repeats (`schedule.ts`): the sneak (the hand sneaks up, caught by your stare, "לא ראית כלום." / "זה לא מה שנראה. זה פילאטיס.", the hand drops, he whistles), the yawn ("נו? יש לי הופעה בבת ים."), the knock (fist, glass cracks, face pressed to the glass, "טוק טוק. יש פה מישהו?"), dozing off ("רק עצמתי עיניים."). Between bits a white hand taps the glass: "הקישו כדי להתחיל!" |
+| Last 5 s of the wait | Red star digits 5..1, faces get impatient, at 2 and 1 his hand starts up by itself, at 2 "טוב. אני מתחיל לבד."; at 0 the auto-start: the finger goes in, "התחלתי בלעדיך. נודר." |
+| First tap | Paparazzi flash, caught with the finger at the nostril, "קליק!", then "צלמו מהצד הטוב." and he carries on |
+| 8 / 18 / 28 / 40 / 54 / 68 / 84 / 120 / 150 taps | A line each, with stars from the nostril and a pop of the token: "צדיק!", "כורה ביטקוין מחולון.", "מחורחר!", "ארכיאולוג. של רשות העתיקות.", "בן פורת יוסף!", "חופר כמו בקו האדום.", "וואו!", "מנהרות הכרמל. בלי אגרה.", "אחשילי." A line stays at least 0.9 s. |
+| Top speed (8/s) held 1.5 s | Speed lines and a tiny shake; "סגרתי קיסריה.", the next time "נודר." |
+| He slows down | The hand drops, he whistles innocently: "לא אני." (1st, 3rd, 5th time); the next tap and he is back at it |
+| Slow player, 2.5 s without a line | Up to three lines, once each: "לאט. / כמו ספא בים המלח.", "צדיק! / אייקונים לא ממהרים.", "קצב של שישי בצהריים. / מי ממהר." |
+| Last 5 s of the sprint | Red star digits 5..1 ("תן הכול!"), the finger stays in, the head rocks harder, a red frame pulses. A milestone here is stars and a pop. |
+| Final frame | A picture per rank under a white flash (under 70 the proud face, 70-129 the finger in, 130-189 eyes shut in bliss, 190+ both hands), the count on a red star, the rank and its line on top: "חוטט מתחיל. / גם ביונסה התחילה ככה.", "חוטט מוסמך. / תעודה ממוסגרת בסלון.", "דוקטור לחטטנות. / מרצה אורח בטכניון.", "האף של המדינה. / מחר בכל המהדורות.", and "תראו לשכן. מחכים לכולם." One small alive gag every 2 s (a nod, a little dig, a bounce). The stage does not cover it (`ownsFinalScreen`). |
 
 ## Where to change things
 
 - **A line**: the `W` object at the top of `index.ts` (the Hebrew words, in the order they appear). Stickers
-  are pre-rendered once in `create()` (`renderSticker` / `renderChip`); a line with a `...Sub` partner is drawn
-  as a sticker with a second, smaller line.
+  are pre-rendered once in `create()` (`renderSticker` / `renderChip`). The voice: `design/punchlines.he.md`.
 - **A rule or a threshold**: `TAP` in `pick.ts` (window / sprint shares, the cap, the hand-level thresholds,
-  `MILESTONES` for the set pieces, `RANKS` for the final ranks). Milestones and ranks are written for a 20 s
+  `MILESTONES` for the lines, `RANKS` for the final ranks). Milestones and ranks are written for a 20 s
   sprint and scaled for test rounds. Run `npx vitest run tests/unit/tap-pick.test.ts` after a change.
-- **Seeded order** (drip kinds, the golden drip, the waiting bits, fillers, final gags): `schedule.ts`.
-- **Sizes and timings of the show**: the tuning block at the top of `index.ts` (live boogers, decals, booger
-  sizes, the last-5 booger, the final-frame gag interval).
-- **Art**: `art.ts` lists every slot; geometry of the head frames is `FRAME_SCALE` / `FRAME_TOP` / `MASK_R`.
+- **How the picking moves**: the tuning block at the top of `index.ts` (`D_RATE`, `D_FOLLOW`, `D_MAX_V`, the
+  jab, the dig, `FADE_S`, `FINAL_D`). The clip itself: `art.ts` (`CLIP_SRC`, `CLIP_KEYS`).
+- **Seeded order** (the waiting bits, the slow-player lines, the final gags): `schedule.ts`.
+- **Art**: `art.ts` lists every slot; the head framing is `FRAME_SCALE` / `FRAME_TOP` / `MASK_R`.
 
 ## Checks
 
-`tests/unit/tap-pick.test.ts` (the engine). Browser scripts, with vite on `QA_BASE` (HMR off:
-`tests/e2e/qa-icy-vite.config.mjs`): `qa-tap-comedy-play.cjs` (scripted players and the round format),
-`qa-tap-stage.cjs` (final frame not covered, crash overlay, reload), `qa-tap-stamp.cjs` (a throttled phone
-loses no honest taps), `qa-tap-comedy-determinism.cjs` (scores = replay through pick.ts at three sizes and
-20 fps), `qa-tap-comedy-freeze.cjs`, `qa-tap-comedy-boundary.cjs`, `qa-tap-comedy-cycles.cjs`,
+`tests/unit/tap-pick.test.ts` (the engine, the schedule, the clip map). Browser scripts, with vite on `QA_BASE`
+(HMR off: `tests/e2e/qa-icy-vite.config.mjs`): `qa-tap-fluent.cjs` (no pops, the depth follows the rate, the
+strip and the 4 s recording; `qa-tap-fluent-strip.py` composes them), `qa-tap-comedy-play.cjs` (scripted players
+and the round format), `qa-tap-stage.cjs` (final frame not covered, crash overlay, reload), `qa-tap-stamp.cjs` (a
+throttled phone loses no honest taps), `qa-tap-comedy-determinism.cjs` (scores = replay through pick.ts at three
+sizes and 20 fps), `qa-tap-comedy-freeze.cjs`, `qa-tap-comedy-boundary.cjs`, `qa-tap-comedy-cycles.cjs`,
 `qa-tap-layout.cjs`, `qa-tap-comedy-perf.cjs`, `qa-tap-comedy-shots.cjs` + `qa-tap-comedy-storyboard.py`,
 `qa-tap-film.cjs` (a frame every 400 ms of a whole round, contact sheets). `window.__tap()` is the read-only
-state for tests.
+state for tests (`depth`, `clip`, `frame`, `still`, `sticker` among others).

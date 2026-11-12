@@ -306,7 +306,7 @@ function GameCards(props: { readonly played: readonly GameId[]; onStart(g: GameI
           <button
             type="button"
             key={id}
-            class={`hs-game ${done ? 'is-done' : ''} ${isNext ? 'is-next' : ''}`}
+            class={`hs-game ${done ? 'is-done' : ''} ${isNext ? 'is-next' : ''} ${introArtUrl(id) !== null ? 'has-art' : ''}`}
             data-testid={`game-${id}`}
             onClick={(e) => {
               e.stopPropagation();

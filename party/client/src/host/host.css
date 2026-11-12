@@ -604,10 +604,20 @@ body {
 }
 /* between rounds the join panel is small; the designed code still gets 420 px of the board */
 .hs-lobby.is-between.has-designed-qr {
-  grid-template-columns: calc(510 * var(--hu)) calc(620 * var(--hu)) minmax(0, 1fr);
+  grid-template-columns: calc(546 * var(--hu)) calc(600 * var(--hu)) minmax(0, 1fr);
 }
 .hs-join.is-compact .hs-qr-card.is-designed {
-  width: calc(456 * var(--hu));
+  width: calc(492 * var(--hu));
+}
+/* the panel gives the picture its height: the late-comer title on one line, the code beside its label */
+.hs-lobby.has-designed-qr .hs-join.is-compact {
+  gap: calc(12 * var(--hu));
+}
+.hs-lobby.has-designed-qr .hs-join.is-compact .hs-join-late {
+  white-space: nowrap;
+}
+.hs-lobby.has-designed-qr .hs-join.is-compact .hs-code-row {
+  flex-direction: row;
 }
 .hs-code-row {
   display: flex;
@@ -1213,11 +1223,18 @@ body {
 .hs-countdown-art.is-pic {
   display: block;
 }
-/* the game's key art: it stands a little out of the top of its tile */
+/* the game's key art: big, standing out of the top of its tile */
 .hs-game-emoji.is-pic {
   width: 100%;
-  height: calc(100 * var(--hu));
-  margin-top: calc(-36 * var(--hu));
+  height: calc(134 * var(--hu));
+  margin-top: calc(-62 * var(--hu));
+}
+/* a tile with a picture: the tag moves to the corner, off the picture */
+.hs-game.has-art .hs-game-tag,
+.hs-game.has-art .hs-game-done {
+  top: calc(-24 * var(--hu));
+  inset-inline-start: calc(-12 * var(--hu));
+  font-size: calc(24 * var(--hu));
 }
 .hs-game-emoji.is-pic > img {
   width: 100%;
@@ -1230,9 +1247,9 @@ body {
   font-size: calc(60 * var(--hu));
 }
 .hs-lobby.is-between .hs-game-emoji.is-pic {
-  width: calc(110 * var(--hu));
-  height: calc(104 * var(--hu));
-  margin-top: 0;
+  width: calc(100 * var(--hu));
+  height: calc(112 * var(--hu));
+  margin-top: calc(-14 * var(--hu));
 }
 /* Motaleh is wide: a two-word title takes two lines */
 .hs-game-title {
@@ -1252,8 +1269,12 @@ body {
   display: none;
 }
 .hs-lobby.is-between .hs-game-title {
+  min-width: 0;
   font-size: calc(40 * var(--hu));
   white-space: nowrap;
+}
+.hs-lobby.is-between .hs-game.has-art .hs-game-title {
+  font-size: calc(34 * var(--hu));
 }
 /* the next one: yellow, and it hops now and then */
 .hs-game.is-next {

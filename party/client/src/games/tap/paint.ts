@@ -1,6 +1,6 @@
 /**
  * Things of "שימי טאפ" painted ONCE into small offscreen canvases (and only blitted in the hot
- * path): the fingerprint, the counter panel, a star, a music note. No gradients, shadows or text measuring per frame.
+ * path): the fingerprint, the counter panel, a music note. No gradients, shadows or text measuring per frame.
  */
 import { roundRectPath } from '../../kit/canvas';
 import { makeLayer, PAL } from './look';
@@ -42,28 +42,6 @@ export function paintFingerprint(): Layer {
       c.moveTo(w / 2 + rx, h / 2 + ry * 0.15);
       c.ellipse(w / 2, h / 2 + ry * 0.15, rx, ry, 0, 0, Math.PI * 1.75);
     }
-    c.stroke();
-  });
-}
-
-/** Five-point yellow star with an ink outline (orbiting stars). */
-export function paintStar(size: number): Layer {
-  return layer(size, size, 2, (c) => {
-    c.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const a = -Math.PI / 2 + (i * Math.PI) / 5;
-      const r = (i % 2 === 0 ? 0.46 : 0.2) * size;
-      const x = size / 2 + Math.cos(a) * r;
-      const y = size / 2 + Math.sin(a) * r;
-      if (i === 0) c.moveTo(x, y);
-      else c.lineTo(x, y);
-    }
-    c.closePath();
-    c.fillStyle = PAL.yel;
-    c.fill();
-    c.lineJoin = 'round';
-    c.lineWidth = Math.max(1.5, size * 0.08);
-    c.strokeStyle = PAL.ink;
     c.stroke();
   });
 }

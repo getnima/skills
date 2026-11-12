@@ -31,7 +31,7 @@ import { HERO_BASELINE, HERO_PIVOT, HERO_STAND, MILESTONE_FLOOR_SLICE, ZONE_FLOO
 import { FLOOR_H, INNER_L, INNER_R, MILESTONE_EVERY, WALL_W, WORLD_W, buildLevel, floorAtOrBelow, isMilestone } from './level';
 import { PAL, blit, createStickerCache, displayFont, loadDisplayFont, makeLayer, renderChip, renderSticker } from './look';
 import { MAX_VX, R, copyBody, createBody, createEvents, stepBody } from './physics';
-import { createScratch, drawIcicles, drawSlicedLedge, stampSticker } from './sprites';
+import { bakeFinish, bakeIcicles, createScratch, drawIcicles, drawSlicedLedge, stampSticker } from './sprites';
 import { BACK_TILE_W, STONE_LOOKS, WALL_TILE_W, ZONE_FLOORS, ZONE_LOOKS, greyCopy, paintBackDeco, paintBackTile, paintHazard, paintPictureTile, paintWallTile, renderFloorSign, renderStar, zoneLook, zoneOfFloor } from './tower';
 
 import type { GameContext, GameInstance, GameModule } from '../types';
@@ -40,7 +40,7 @@ import type { KitPointer } from '../../kit/input';
 import type { FloorSlice, HeroFrame } from './art';
 import type { Sticker } from './look';
 import type { Body } from './physics';
-import type { StickerFinish } from './sprites';
+import type { Baked, BakedIcicles, StickerFinish } from './sprites';
 import type { ZoneLook } from './tower';
 
 /** Test hook (QA bots and e2e): live state plus a predictor that runs the real physics. */
@@ -313,6 +313,9 @@ export const game: GameModule = {
     /** The hero's frames at the size they are drawn (ink outline included), made on first use. */
     const heroSprites = new Map<HeroFrame, HTMLCanvasElement>();
     const scratch = createScratch();
+    /** The ledge pictures with their outline and shadow baked in at the drawn size (per layout): zones 0-3, then the every-10th-floor one. */
+    const bakedLedges: Array<Baked | null> = [null, null, null, null, null];
+    let bakedIcicles: BakedIcicles | null = null;
     /** Grey copies of the wall pictures (coloured per zone), made on first use. */
     let greyWall: HTMLCanvasElement | null = null;
     let greyBg: HTMLCanvasElement | null = null;
@@ -343,6 +346,13 @@ export const game: GameModule = {
       floorSprites.clear();
       for (const c of heroSprites.values()) c.width = 0;
       heroSprites.clear();
+      for (let i = 0; i < bakedLedges.length; i++) {
+        const b = bakedLedges[i];
+        if (b) b.canvas.width = 0;
+        bakedLedges[i] = null;
+      }
+      if (bakedIcicles) for (const c of bakedIcicles.cells) c.canvas.width = 0;
+      bakedIcicles = null;
     }
     function backTile(z: number): HTMLCanvasElement {
       const hit = backTiles[z];
@@ -417,12 +427,25 @@ export const game: GameModule = {
       return l.canvas;
     }
     /** The ledge picture of floor `j` (its zone's, or the every-10th-floor one), or null when it is not dropped in. */
-    function floorPicture(j: number): { pic: Drawable; sl: FloorSlice } | null {
-      if (isMilestone(j)) return art.milestoneFloor ? { pic: art.milestoneFloor, sl: MILESTONE_FLOOR_SLICE } : null;
+    function floorPicture(j: number): { pic: Drawable; sl: FloorSlice; slot: number } | null {
+      if (isMilestone(j)) return art.milestoneFloor ? { pic: art.milestoneFloor, sl: MILESTONE_FLOOR_SLICE, slot: 4 } : null;
       const z = zoneOfFloor(j + LOOK_FLOOR);
       const pic = art.zoneFloors[z];
       const sl = ZONE_FLOOR_SLICES[z];
-      return pic && sl ? { pic, sl } : null;
+      return pic && sl ? { pic, sl, slot: z } : null;
+    }
+    /** A ledge picture with its finish baked in at the drawn size (made once per layout). */
+    function bakedLedge(fp: { pic: Drawable; sl: FloorSlice; slot: number }): Baked {
+      const hit = bakedLedges[fp.slot];
+      if (hit) return hit;
+      const b = bakeFinish(fp.pic.source, fp.sl.w, fp.sl.h, (LEDGE_H * scale) / fp.sl.h, view.dpr, LEDGE_FINISH, scratch);
+      bakedLedges[fp.slot] = b;
+      return b;
+    }
+    function bakedIcicleCells(): BakedIcicles | null {
+      if (!art.icicles) return null;
+      bakedIcicles ??= bakeIcicles(art.icicles, LEDGE_H * scale * 0.5, view.dpr, LEDGE_FINISH.outline * 0.8, scratch);
+      return bakedIcicles;
     }
     function hazardFill(g: CanvasRenderingContext2D): CanvasPattern | string {
       if (!hazard) {
@@ -458,6 +481,12 @@ export const game: GameModule = {
       if (!art.bg.isPlaceholder && looks.some((L) => L.backGrey)) greyBg = greyCopy(art.bg.source);
     }
     if (art.hero) for (const f of ['stand', 'run1', 'run2', 'jump', 'fall', 'ball'] as const) heroSprite(f);
+    art.zoneFloors.forEach((pic, z) => {
+      const sl = ZONE_FLOOR_SLICES[z];
+      if (pic && sl) bakedLedge({ pic, sl, slot: z });
+    });
+    if (art.milestoneFloor) bakedLedge({ pic: art.milestoneFloor, sl: MILESTONE_FLOOR_SLICE, slot: 4 });
+    bakedIcicleCells();
 
     // ── input: which half is held. Several fingers: the last one pressed wins. ──
     const sides = new Map<number, number>(); // insertion order = press order
@@ -1102,22 +1131,24 @@ export const game: GameModule = {
         if (fp) {
           // a ledge picture: caps + repeating middle at this floor's exact width, icicles under
           // the stone and ice ledges, then the ink outline and the hard shadow from its silhouette
+          // (outline and shadow come baked into the picture: this is a few blits)
           const hb = LEDGE_H * scale;
           const zone = zoneOfFloor(j + LOOK_FLOOR);
-          const icy = art.icicles !== null && j > 0 && !isMilestone(j) && zone <= 1;
-          const hang = icy ? hb * (zone === 0 ? 0.66 : 0.42) : 0;
-          const m = SPRITE_MARGIN;
-          const sw = w + 2 * m + LEDGE_FINISH.shadowX + 1;
-          const sh = hb + hang + 2 * m + LEDGE_FINISH.shadowY + 1;
+          const ic = j > 0 && !isMilestone(j) && zone <= 1 ? bakedIcicleCells() : null;
+          const hang = ic ? hb * (zone === 0 ? 0.66 : 0.42) + 2 : 0;
+          const bk = bakedLedge(fp);
+          const k = hb / fp.sl.h;
+          const mL = Math.ceil(bk.padL * k);
+          const mT = Math.ceil(bk.padT * k);
+          const sw = w + mL + Math.ceil(bk.padR * k);
+          const sh = hb + mT + Math.max(Math.ceil(bk.padB * k), hang);
           const l = makeLayer(sw, sh, view.dpr);
           if (l.ctx) {
-            l.ctx.translate(m, m);
-            stampSticker(l.ctx, scratch, w, hb + hang, view.dpr, LEDGE_FINISH, (c) => {
-              if (icy && art.icicles) drawIcicles(c, art.icicles, w, hb, j, zone === 0 ? 0.62 : 0.3, zone === 0 ? 0.6 : 0.38);
-              drawSlicedLedge(c, fp.pic, fp.sl, w, hb, j, view.dpr);
-            });
+            l.ctx.translate(mL, mT);
+            if (ic) drawIcicles(l.ctx, ic, w, hb, j, zone === 0 ? 0.62 : 0.3, zone === 0 ? 0.6 : 0.38);
+            drawSlicedLedge(l.ctx, bk, fp.sl, w, hb, j, view.dpr);
           }
-          sp = { canvas: l.canvas, w: sw, h: sh, ox: m, oy: m };
+          sp = { canvas: l.canvas, w: sw, h: sh, ox: mL, oy: mT };
         } else {
           const h = FLOOR_H * scale * 1.35;
           const l = makeLayer(w + 10, h + 12, view.dpr);
@@ -1843,7 +1874,8 @@ export const game: GameModule = {
         let n = stars.length + stickers.size + signs.size + (hazard ? 1 : 0);
         for (const t of backTiles) if (t) n++;
         for (const t of wallTiles) if (t) n++;
-        return { zone: shownZone, lowQuality, canvases: n + floorSprites.size + heroSprites.size + (greyWall ? 1 : 0) + (greyBg ? 1 : 0), heroX: heroAtX, heroY: heroAtY, heroFrame: heroAtFrame };
+        for (const b of bakedLedges) if (b) n++;
+        return { zone: shownZone, lowQuality, canvases: n + floorSprites.size + heroSprites.size + (greyWall ? 1 : 0) + (greyBg ? 1 : 0) + (bakedIcicles ? bakedIcicles.cells.length : 0), heroX: heroAtX, heroY: heroAtY, heroFrame: heroAtFrame };
       },
     };
     window.__icy = debug;

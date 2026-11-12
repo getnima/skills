@@ -8,7 +8,7 @@
 //   node tests/e2e/qa-tv-timing.cjs
 const { chromium } = require('playwright');
 const path = require('path');
-const { sleep, outDir, checker, openHost, state, waitPhase, waitCut, scriptedPhones, BASE } = require('./qa-tv-lib.cjs');
+const { autoCutscenesOff, sleep, outDir, checker, openHost, state, waitPhase, waitCut, scriptedPhones, BASE } = require('./qa-tv-lib.cjs');
 
 const { check, failures } = checker();
 const dir = outDir('timing');
@@ -46,6 +46,8 @@ async function endRoundNow(page) {
   try {
     let { page, errors, code, ctx } = await openHost(browser);
     await page.mouse.click(960, 8);
+    // (the tap game's automatic cutscene would cover the round when it is ended with E)
+    await autoCutscenesOff(page);
     phones = await scriptedPhones(code, ['דנה', 'Yossi', 'מיכל'], (i, t) => (t / 30) * (i + 1));
     await page.waitForFunction(() => window.__host.state().players.length === 3);
     await sleep(1700);

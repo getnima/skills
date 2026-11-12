@@ -106,7 +106,11 @@ function readmeHas(game, file, w, h) {
         { w, h, transparent, color, label: file, jpg: file.endsWith('.jpg') },
       );
       const dest = path.join(ASSETS, game, file);
-      if (fs.existsSync(dest)) throw new Error(`refusing to overwrite a real file: ${dest}`);
+      // a real file with this exact name stays (it is a real drop-in: the slot is checked as real anyway)
+      if (fs.existsSync(dest)) {
+        console.log(`skip ${game}/${file}: a real file with that name is there, not touching it`);
+        continue;
+      }
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, Buffer.from(dataUrl.split(',')[1], 'base64'));
       written.push(dest);
@@ -144,8 +148,8 @@ function readmeHas(game, file, w, h) {
   } finally {
     for (const f of written) fs.rmSync(f, { force: true });
     console.log('removed', written.length, 'test images');
-    const left = SLOTS.filter(([game, file]) => fs.existsSync(path.join(ASSETS, game, file)));
-    check('no test image left behind', left.length === 0, left.map((s) => s[1]));
+    const left = written.filter((f) => fs.existsSync(f));
+    check('no test image left behind', left.length === 0, left.map((f) => path.relative(ASSETS, f)));
   }
   await browser.close();
   console.log(fails.length ? `\n${fails.length} FAILED` : '\nall ok');

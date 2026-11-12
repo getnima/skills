@@ -286,9 +286,15 @@ export function ResumeOverlay(props: { readonly ctl: PlayerController; readonly 
 
 // ───────────────────────────── After the round ─────────────────────────────
 
-export function SendingScreen(props: { readonly score: number; readonly acked: boolean; readonly gameId: GameId }): JSX.Element {
+export function SendingScreen(props: {
+  readonly score: number;
+  readonly acked: boolean;
+  readonly gameId: GameId;
+  readonly look: string | null;
+}): JSX.Element {
   // An elimination round's raw score is a distance: it says nothing to a guest, so it is not shown.
   const elimination = GAMES[props.gameId].mode === 'elimination';
+  const v = useViewport();
   return (
     <div class="pp-screen pw ps ps-send">
       <header class="pw-bar">
@@ -296,11 +302,11 @@ export function SendingScreen(props: { readonly score: number; readonly acked: b
       </header>
       <div class="pw-stage">
         <StageLight />
+        <div class="ps-hero">
+          <Avatar look={props.look} size={dollPx(v, 0.34, 0.18, 80, 148)} crop="bust" />
+        </div>
         {elimination ? (
-          <>
-            <GameArt id={props.gameId} size="mid" />
-            <div class="pp-title">נחתנו בנתב״ג!</div>
-          </>
+          <div class="pp-title">נחתנו בנתב״ג!</div>
         ) : (
           <>
             <div class="pp-label-big">הניקוד שלך</div>
@@ -345,7 +351,7 @@ export function SuspenseScreen(): JSX.Element {
       <div class="ps-night">
         <div class="pp-spot" aria-hidden="true" />
         <GameArt id="show" emoji="🥁" size="big" class="pp-drum" />
-        <div class="pp-title pp-xl">והפרס הולך ל…</div>
+        <Logo text="והפרס הולך ל…" class="ps-susp-title" />
         <div class="ps-quip">השופטים מתייעצים. בארומה.</div>
         <div class="pp-tv-hint">📺 תסתכלו על הטלוויזיה</div>
       </div>

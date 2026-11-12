@@ -175,7 +175,7 @@
 /* a headline: Motaleh, white, ink outline, hard shadow, a little skewed */
 .ps .pp-title {
   margin: 0;
-  max-width: 100%;
+  max-width: calc(100% - 20px);
   font: 700 clamp(30px, 9.6vw, 42px) / 1.02 var(--disp);
   color: #fff;
   -webkit-text-stroke: 0.1em var(--ink);
@@ -718,17 +718,19 @@
 .is-go .pp-cd-num::after {
   background: var(--red);
 }
+/* each digit pops up from small, overshoots a little and settles (never wider than the screen) */
 @keyframes pp-num {
   0% {
-    transform: scale(2.2) rotate(-8deg);
+    transform: scale(0.3) rotate(-14deg);
     opacity: 0;
   }
-  35% {
-    transform: scale(1) rotate(-3deg);
+  30% {
+    transform: scale(1.08) rotate(-2deg);
     opacity: 1;
   }
+  45%,
   100% {
-    transform: scale(0.94) rotate(-3deg);
+    transform: scale(0.97) rotate(-3deg);
   }
 }
 .pp-cd-sub {
@@ -1069,18 +1071,15 @@
     transform: translateY(-6px) rotate(4deg);
   }
 }
-.ps .pp-xl {
+/* "והפרס / הולך ל…": a logo, a line each */
+.ps-susp-title {
   flex: none;
-  font-size: clamp(58px, 19vw, 86px);
-  -webkit-text-stroke: 0.045em var(--ink);
-  text-shadow:
-    0.05em 0.06em 0 var(--red),
-    0.09em 0.11em 0 var(--ink);
+  font-size: clamp(56px, 18vw, 84px);
   animation: ps-throb 0.9s ease-in-out infinite;
 }
 @keyframes ps-throb {
   50% {
-    transform: skewX(8deg) rotate(-2deg) scale(1.06);
+    transform: skewX(8deg) rotate(-3deg) scale(1.06);
   }
 }
 
@@ -1126,7 +1125,7 @@
 .ps-win-sub {
   flex: none;
   max-width: 100%;
-  margin-top: -4px;
+  margin-top: 4px;
   padding: 4px 16px 6px;
   border-radius: 12px;
   background: var(--red);
@@ -1939,7 +1938,7 @@
   .ps-win-sub,
   .pp-intro-emoji,
   .pp-intro-title,
-  .ps .pp-xl,
+  .ps-susp-title,
   .pp-rotate-phone,
   .pp-final-medal {
     animation: none;

@@ -1,5 +1,5 @@
 // Frame times of the tap game under a CPU throttle, played by a fast two-thumb bot (about
-// 11 taps/s through real CDP touches) for a whole round, so the glass ends at its fullest.
+// 11 taps/s through real CDP touches) for a whole round: the picking at full depth, then the final frame.
 //   QA_BASE=http://localhost:5321 node tests/e2e/qa-tap-comedy-perf.cjs [cpuRate] [durationMs] [label]
 const { chromium, sleep, openGame, pct, tapAt } = require('./qa-tap-lib.cjs');
 
@@ -42,7 +42,7 @@ const RECORD = `(() => {
   await browser.close();
   const all = ft.filter(([, left]) => left > 0 && left < DURATION).map(([d]) => d);
   const busy = ft.filter(([, left]) => left > 0 && left < 15000).map(([d]) => d);
-  // the sprint: the first 20 s of tapping (the bot taps from the start of the round), glass filling up
+  // the sprint: the first 20 s of tapping (the bot taps from the start of the round)
   const sprint = ft.filter(([, left]) => left < DURATION - 1000 && left > DURATION - 20000).map(([d]) => d);
   const late = ft.filter(([, left]) => left < DURATION - 14000 && left > DURATION - 20000).map(([d]) => d);
   console.log(

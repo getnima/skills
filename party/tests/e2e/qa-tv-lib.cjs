@@ -59,6 +59,21 @@ const waitPhase = (page, phase, ms = 40000) =>
 const waitCut = (page, on, ms = 20000) =>
   page.waitForFunction((v) => !!(window.__host && window.__host.state() && window.__host.state().cutscene) === v, on, { timeout: ms });
 
+/**
+ * Turn the automatic cutscenes off from the TV's own cutscene menu (C → the switch → Esc).
+ * For scripts that test something else: the tap game's automatic cutscene (tap_freeze, a few
+ * seconds into the round) covers the screen and the TV ignores keys under a cutscene.
+ */
+async function autoCutscenesOff(page) {
+  if ((await page.evaluate(() => window.__host.state().autoCutscenes)) === false) return;
+  await page.keyboard.press('KeyC');
+  await page.waitForSelector('[data-testid=cutscene-menu]');
+  await page.click('[data-testid=auto-switch]');
+  await page.waitForFunction(() => window.__host.state().autoCutscenes === false, null, { timeout: 5000 });
+  await page.keyboard.press('Escape');
+  await sleep(300);
+}
+
 /** tests/load/bots.ts joined to a room (detached; call .stop()). */
 function spawnBots(code, players, extra = []) {
   const child = spawn('npx', ['tsx', 'tests/load/bots.ts', '--url', SERVER, '--code', code, '--players', String(players), '--quiet', ...extra], {
@@ -240,4 +255,4 @@ async function startScreencast(page, dir, everyMs = 100) {
   };
 }
 
-module.exports = { raceOverlapFrames, startScreencast, ROOT, BASE, SERVER, sleep, outDir, checker, openHost, state, waitPhase, waitCut, spawnBots, scriptedPhones, overlaps, raceGeometry };
+module.exports = { autoCutscenesOff, raceOverlapFrames, startScreencast, ROOT, BASE, SERVER, sleep, outDir, checker, openHost, state, waitPhase, waitCut, spawnBots, scriptedPhones, overlaps, raceGeometry };

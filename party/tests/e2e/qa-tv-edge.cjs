@@ -1,7 +1,7 @@
 // qa-tv-edge: the TV under nasty situations.
 //  A. the lead changes every 250 ms for 12 s: the big effects (screen flash, crown hop,
 //     stickers, commentator lines) stay rate limited and no line repeats in the round;
-//  B. nobody scores all night: the "nobody" round and a podium where everybody shares first;
+//  B. nobody scores all night: the "nobody" round and a podium that still names one champion;
 //  C. the server restarts under the TV: the lost-room banner, one click, a new room.
 //
 //   PARTY_SERVER_PORT=8813 PARTY_TEST_DURATION_MS=20000 npx tsx server/index.ts
@@ -103,7 +103,10 @@ const FX_PROBE = () => {
       await sleep(1500);
       const kicker = await page.textContent('.sh-champ-kicker');
       const names = await page.textContent('.sh-champ-name');
-      check(/תיקו/.test(kicker) && /\+1/.test(names), `everyone on 0: a shared first place, three names and "+1" (${kicker} / ${names})`);
+      // strict ranks (no ties): everyone on 0 is ordered by the server, and the podium still names ONE champion
+      const st0 = await state(page);
+      const first = [...st0.players].sort((a, b) => a.rank - b.rank)[0];
+      check(!/תיקו/.test(kicker) && !/\+\d/.test(names) && names.trim() === first.name, `everyone on 0: one champion, the server's rank 1 (${kicker} / ${names})`);
       await page.screenshot({ path: path.join(dir, 'B-final-all-zero.png') });
       check(errors.length === 0, 'B: no console errors', errors);
       phones.stop();

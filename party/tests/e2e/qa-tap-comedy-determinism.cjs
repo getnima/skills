@@ -3,7 +3,7 @@
 // so each run is checked against an ORACLE: the round times the game stamped its touches with
 // (window.__tap().touchTimes) are replayed through the pure engine (pick.ts, imported in the
 // page) at 60 Hz, and the game's score and the tap counts of its set pieces must equal the
-// replay's. Across the runs the level (seeded gags) and the order of the set pieces must match.
+// replay's. Across the runs the level (seeded gags) and the order of the beats and lines must match.
 // (The engine itself is checked step-exact under any batching in tests/unit/tap-pick.test.ts.)
 //   QA_BASE=http://localhost:5321 node tests/e2e/qa-tap-comedy-determinism.cjs [durationMs]
 const L = require('./qa-tap-comedy-lib.cjs');
@@ -50,7 +50,6 @@ async function run(browser, r) {
     { dur: DUR, times: s.touchTimes },
   );
   await context.close();
-  const milestoneBeats = new Set(['yossi', 'rope', 'ear', 'mini', 'sneeze', 'squeegee', 'king', 'spin', 'cork']);
   return {
     name: r.name,
     fingerprint: s.fingerprint,
@@ -58,9 +57,9 @@ async function run(browser, r) {
     touches: s.touches,
     bounces: s.bounces,
     oracle,
-    beats: s.beats.filter((b) => milestoneBeats.has(b.id)).map((b) => `${b.id}@${b.taps}`),
-    lastMilestones: s.events.filter((e) => e.id.startsWith('milestone-')).map((e) => `${e.id.slice(10)}@${e.taps}`),
-    order: s.beats.filter((b) => !b.id.startsWith('wait-')).map((b) => b.id),
+    // every milestone is a line (an event) at its tap count
+    milestones: s.events.filter((e) => e.id.startsWith('milestone-')).map((e) => `${e.id.slice(10)}@${e.taps}`),
+    order: [...s.beats.filter((b) => !b.id.startsWith('wait-')).map((b) => b.id), ...s.events.filter((e) => e.id.startsWith('milestone-') || e.id === 'last').map((e) => e.id)],
     errors,
   };
 }
@@ -70,17 +69,16 @@ async function run(browser, r) {
   const res = [];
   for (const r of RUNS) res.push(await run(browser, r));
   await browser.close();
-  for (const r of res) console.log(JSON.stringify({ name: r.name, score: r.score, oracle: r.oracle.taps, touches: r.touches, bounces: r.bounces, beats: r.beats, last: r.lastMilestones }));
+  for (const r of res) console.log(JSON.stringify({ name: r.name, score: r.score, oracle: r.oracle.taps, touches: r.touches, bounces: r.bounces, milestones: r.milestones }));
   for (const r of res) {
     L.check(`${r.name}: score = replay of its own touches through pick.ts`, r.score === r.oracle.taps, [r.score, r.oracle.taps]);
-    // a milestone is a set piece before the last 5 s and a "milestone-<id>" event inside them
-    L.check(`${r.name}: every milestone fired at the replay's tap count`, JSON.stringify([...r.beats, ...r.lastMilestones]) === JSON.stringify(r.oracle.milestones), [r.beats, r.lastMilestones, r.oracle.milestones]);
+    L.check(`${r.name}: every milestone fired at the replay's tap count`, JSON.stringify(r.milestones) === JSON.stringify(r.oracle.milestones), [r.milestones, r.oracle.milestones]);
     L.check(`${r.name}: no console errors`, r.errors.length === 0, r.errors.slice(0, 2));
   }
   const a = res[0];
   for (const r of res.slice(1)) {
     L.check(`${r.name} vs ${a.name}: same level (seeded gags)`, r.fingerprint === a.fingerprint);
-    L.check(`${r.name} vs ${a.name}: same order of set pieces`, JSON.stringify(r.order) === JSON.stringify(a.order), [a.order, r.order]);
+    L.check(`${r.name} vs ${a.name}: same order of beats and lines`, JSON.stringify(r.order) === JSON.stringify(a.order), [a.order, r.order]);
   }
   console.log(L.fails.length ? `\n${L.fails.length} FAILED: ${L.fails.join(', ')}` : '\nALL OK');
 })();

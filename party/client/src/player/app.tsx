@@ -197,7 +197,7 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
         if (snap.endedRound === round.index) {
           const sending = performance.now() - snap.endedAt < SENDING_MS || !snap.finalAcked;
           screen = sending ? 'sending' : 'suspense';
-          body = sending ? <SendingScreen score={snap.endedScore} acked={snap.finalAcked} gameId={round.gameId} /> : <SuspenseScreen />;
+          body = sending ? <SendingScreen score={snap.endedScore} acked={snap.finalAcked} gameId={round.gameId} look={myLook} /> : <SuspenseScreen />;
           break;
         }
         const t = roundTime(round, now);
@@ -224,7 +224,7 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
         if (justEnded) {
           hideRound = true;
           screen = 'sending';
-          body = <SendingScreen score={snap.endedScore} acked={snap.finalAcked} gameId={results.gameId} />;
+          body = <SendingScreen score={snap.endedScore} acked={snap.finalAcked} gameId={results.gameId} look={myLook} />;
           break;
         }
         if (now < revealAt || state.cutscene !== null) {

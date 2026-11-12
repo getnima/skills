@@ -1,6 +1,6 @@
-// Freeze checks of the tap game: frozen mid-rise, mid-dig, mid set-piece and with the glass
-// full, nothing moves (same state, same pixels) and touches count for nothing; after the
-// freeze the game continues exactly where it stopped.
+// Freeze checks of the tap game: frozen mid-rise, mid-dig, in the middle of a crossfade to a
+// still face and at the top speed, nothing moves (same state, same pixels) and touches count
+// for nothing; after the freeze the game continues exactly where it stopped.
 //   QA_BASE=http://localhost:5321 node tests/e2e/qa-tap-comedy-freeze.cjs
 const L = require('./qa-tap-comedy-lib.cjs');
 const path = require('path');
@@ -12,8 +12,8 @@ const HIDE = '.pa-veil,.dv-freeze{display:none!important}';
 const CASES = [
   { name: 'mid-rise', hz: 1.6, when: (s) => s.phase === 'sprint' && s.hand === 'rising' && !s.beat && s.taps >= 2 },
   { name: 'mid-dig', hz: 8, when: (s) => s.phase === 'sprint' && s.level >= 4 && !s.beat },
-  { name: 'mid-set-piece', hz: 9, when: (s) => s.beat === 'rope' && s.beatT > 0.45 },
-  { name: 'glass-full', hz: 12, when: (s) => s.phase === 'sprint' && s.sprites.live >= 5 && s.taps > 90 },
+  { name: 'mid-crossfade', hz: 9, when: (s) => s.beat === 'first' && s.beatT > 0.6 && s.still === 'face_caught' && s.stillW > 0.2 && s.stillW < 0.8 },
+  { name: 'top-speed', hz: 12, when: (s) => s.phase === 'sprint' && s.level >= 5 && s.taps > 90 && !s.beat },
 ];
 
 function pick(s) {
@@ -24,11 +24,13 @@ function pick(s) {
     level: s.level,
     hand: s.hand,
     frame: s.frame,
+    depth: +s.depth.toFixed(5),
+    clip: +s.clip.toFixed(4),
+    still: s.still,
+    stillW: +s.stillW.toFixed(4),
     beat: s.beat,
     beatT: +s.beatT.toFixed(4),
     rate: +s.rate.toFixed(4),
-    live: s.sprites.live,
-    pile: s.sprites.pile,
     fx: s.sprites.fx,
   };
 }

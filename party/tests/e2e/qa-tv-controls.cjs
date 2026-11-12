@@ -6,7 +6,7 @@
 //   node tests/e2e/qa-tv-controls.cjs
 const { chromium } = require('playwright');
 const path = require('path');
-const { sleep, outDir, checker, openHost, state, waitPhase, waitCut, scriptedPhones } = require('./qa-tv-lib.cjs');
+const { autoCutscenesOff, sleep, outDir, checker, openHost, state, waitPhase, waitCut, scriptedPhones } = require('./qa-tv-lib.cjs');
 
 const { check, failures } = checker();
 const dir = outDir('controls');
@@ -27,6 +27,8 @@ const dir = outDir('controls');
     await sleep(1300);
     check((await page.$('[data-testid=audio-lock]')) === null, 'banner gone after the first click');
 
+    // (the tap game's automatic cutscene would cover the round right when E is tested)
+    await autoCutscenesOff(page);
     phones = await scriptedPhones(code, ['דנה', 'Yossi', 'מיכל'], (i, t) => (t / 30) * (i + 1));
     await page.waitForFunction(() => window.__host.state().players.length === 3);
     await sleep(1700);

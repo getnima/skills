@@ -4,7 +4,7 @@ Drop a file here with the name below (the same base name with .png / .webp / .jp
 
 Look: a stone tower climbed by the Shimi doll, every picture a glossy hand-painted vinyl toy (the style of `../shimi/doll.png` and `../ninja/food/`), finished by the game with the party style of `../shimi/README.md`: an ink outline and a hard shadow cut from each picture's own silhouette. The ledges change material every 25 floors: snow-capped stone with icicles (floors 0-24), solid ice (25-49), timber planks (50-74), red steel girders under a gold summit light (75 and up); every 10th floor is a gold ledge with rubies, under the game's "קומה N" sign.
 
-Total weight of this folder: about 450 KB (the new pictures are 141 KB of it).
+Total weight of this folder: 416 KB. A round downloads 146 KB of it (the hero frames, the ledges, the walls); the three `face*.png` (262 KB) are fetched only when the hero frames are missing.
 
 ## The hero (full-body sprite frames)
 
@@ -67,7 +67,7 @@ Test flag (dev harness only, looks only): `/dev.html?game=icy&icyLookFloor=50` p
 
 ## How these were made
 
-Generated one picture per request with Higgsfield `nano_banana_2_1` (1k), each a single object as a glossy vinyl toy on a plain backdrop. The hero: the standing pose first with `../shimi/doll.png` as the reference, then every other pose with that standing picture as the reference (run2 also with run1). The ledges: the snow-capped stone ledge first, then the ice / timber / girder / gold ledges with it as the reference; the wall pillar and the back bricks from those too. Untouched originals: `tests/e2e/out/icy-art/originals/` (git-ignored). Cut-outs: the ledges, pillar and bricks locally (`tests/e2e/icy-art-cut.py`, a smooth backdrop model + flood fill), the hero frames with the paid background remover (the `*_rmbg.png` originals). Then:
+Generated one picture per request with Higgsfield `nano_banana_2_1` (1k), each a single object as a glossy vinyl toy on a plain backdrop. The hero: the standing pose first with `../shimi/doll.png` as the reference, then every other pose with that standing picture as the reference (run2 is the run asked for with the other leg and arm forward; it came out in profile, so the script gives it run1's head). The ledges: the snow-capped stone ledge first, then the ice / timber / girder / gold ledges with it as the reference; the wall pillar and the back bricks from those too. Untouched originals: `tests/e2e/out/icy-art/originals/` (git-ignored). Cut-outs: the ledges, pillar and bricks locally (`tests/e2e/icy-art-cut.py`, a smooth backdrop model + flood fill), the hero frames with the paid background remover (the `*_rmbg.png` originals). Then:
 
 - `tests/e2e/icy-art-hero.py <originals> <out>`: hero frames to the 256 x 256 box (scale, anchor, head swap of run2).
 - `tests/e2e/icy-art-floor.py <cut> <out> --body --lcap --rcap --cuts`: a ledge picture + its slice numbers; `--icicles` cuts the icicle strip from the stone ledge.

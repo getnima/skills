@@ -19,26 +19,26 @@ SIZE = sys.argv[2] if len(sys.argv) > 2 else '390x844'
 # (shot, caption) in the order of a round: the wait, the start, the sprint, the final image
 ORDER = [
     ('60-wait-start', 'WAIT 0:01 tap to start'),
+    ('61-wait-sneak-rise', 'WAIT sneak: the hand rises'),
     ('62-wait-sneak-caught', 'WAIT sneak: caught'),
+    ('63-wait-sneak-whistle', 'WAIT sneak: whistle'),
+    ('64-wait-yawn', 'WAIT the yawn'),
     ('65-wait-knock', 'WAIT the knock'),
     ('65c-wait-sleep', 'WAIT dozing off'),
-    ('65e-wait-peek', 'WAIT the shy booger'),
     ('67-countdown-2', 'WAIT countdown 2'),
     ('68-autostart', 'AUTO-START 0:30'),
+    ('69-zero-sprint', 'no taps: "not me"'),
     ('02-first-tap-click', 'FIRST TAP (paparazzi)'),
+    ('03-first-tap-pose', 'first tap: the pose'),
+    ('50-slow-rising', 'slow: the hand rises'),
+    ('51-slow-nostril', 'slow: at the nostril'),
     ('52-slow-knuckle', 'slow: finger in'),
-    ('53-slow-innocent', 'slow: "not me"'),
-    ('10-yossi', 'Yossi'),
-    ('11-rope-stretch', 'the rope'),
-    ('13-ear', 'out of the ear'),
-    ('14-mini-slide', 'Shimi inside Shimi'),
-    ('17-sneeze-burst', 'the sneeze'),
-    ('18-squeegee', 'the squeegee'),
-    ('20-king-pop', 'the king'),
-    ('30-hand-absurd', 'absurd rate: two fingers'),
-    ('22-spin-dizzy', 'bobble overload'),
-    ('24-cork-pop', 'the cork'),
-    ('34-last1', 'last 5 s: the last booger'),
+    ('54-slow-filler', 'slow: a line'),
+    ('55-slow-deep', 'normal: deep, eyes shut'),
+    ('10-line-1', 'fast: a line'),
+    ('30-hand-absurd', 'top speed'),
+    ('31-turbo-line', 'top speed held'),
+    ('34-last1', 'last 5 s'),
     ('40-final', 'FINAL (fast)'),
     ('57-slow-final', 'FINAL (slow)'),
     ('70-zero-final', 'FINAL (never tapped)'),
@@ -71,7 +71,7 @@ try:
     big = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 26)
 except OSError:
     font = big = ImageFont.load_default()
-draw.text((14, 12), f'Shimi tap - one round ({SIZE}): 53 s: wait 30 s, sprint 20 s from the first tap, final image', fill=(255, 210, 31), font=big)
+draw.text((14, 12), f'Shimi tap - one round ({SIZE}): 53 s: wait 30 s, sprint 20 s from the first tap (the faster, the deeper), final image', fill=(255, 210, 31), font=big)
 for i, (path, label) in enumerate(tiles):
     r, c = divmod(i, COLS)
     x = 12 + c * (TW + 12)

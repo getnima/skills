@@ -262,7 +262,12 @@ function spawnBots(code, players, mode, prefix) {
     await waitScreen(C, 'playing');
     await sleep(600);
     const cAfter = await playState(C);
-    check(cAfter && cAfter.leftMs < cBefore.leftMs && cAfter.leftMs > 0, `reload mid-round keeps the round clock (${cBefore.leftMs} → ${cAfter && cAfter.leftMs})`);
+    // In fast test rounds the automatic tap_freeze video can already be on (shared/cutscenes.ts: 8 s of a
+    // 53 s round, scaled): then the clock stands still and the reload must land on exactly the same time.
+    check(
+      cAfter && cAfter.leftMs > 0 && (cAfter.leftMs < cBefore.leftMs || (cBefore.frozen && cAfter.frozen && cAfter.leftMs === cBefore.leftMs)),
+      `reload mid-round keeps the round clock (${cBefore.leftMs}${cBefore.frozen ? ' frozen' : ''} → ${cAfter && cAfter.leftMs}${cAfter && cAfter.frozen ? ' frozen' : ''})`,
+    );
     await tapGame(C, 3);
     await shot(C, '07-playing-after-reload');
 

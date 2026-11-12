@@ -1,8 +1,9 @@
 // qa-tv-tour: the TV host page through every scene, for several head counts, each scene
 // photographed at 1920x1080, 1280x720, 1440x900 (MacBook 16:10) and 3840x2160.
 // Scripted phones (tests/e2e/qa-tv-lib.cjs) so the winner case is exact:
-//   1 → one winner        2 → two-way tie (and a tie for first on the podium)
-//   3 → three-way tie     4 → nobody scored, then a round with a tie for third
+//   1 → one winner        2 → the same score, decided by who got there first
+//   3 → three on the same score   4 → nobody scored, then two on the same score for third
+//   (there are no ties: the server's order is strict, so every stage names one player)
 //   8 → odd names         13 → 5-digit scores, one far ahead
 //   30 → wild jumps       60 → full room
 //
@@ -38,9 +39,9 @@ function scoreFor(n) {
       return (i, t) => t / 50;
     case 2:
     case 3:
-      return (i, t) => Math.floor(t / 400) * 7; // everyone the same: a tie
+      return (i, t) => Math.floor(t / 400) * 7; // everyone the same score: decided by who got there first
     case 4:
-      // round 0: nobody scores; round 1: 100 / 80 / 50 / 50 → a tie for third
+      // round 0: nobody scores; round 1: 100 / 80 / 50 / 50 → two on the same score for third
       return (i, t, r) => (r === 0 ? null : [100, 80, 50, 50][i] * Math.min(1, t / 8000));
     case 13:
       return (i, t) => (i === 0 ? Math.min(99_999, t * 6) : i < 4 ? 0 : (t / 20) * (i % 5));

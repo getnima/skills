@@ -3,14 +3,18 @@
  * client/public/assets/tap/ (see the README there) with a procedural placeholder; the
  * stage backdrop (yellow sunburst + halftone) and the bottom tray are painted once per
  * screen size, so the hot path only calls drawImage.
+ *
+ * The picking is a CLIP: 40 frames cut from one image-to-video take of the doll (the hand
+ * rises, the finger slides into the nostril, the eyes close and roll up), all in the one head
+ * framing. The game maps its picking depth to a clip position and crossfades the two nearest
+ * frames, so the motion never steps (index.ts). A few stills (faces for the waiting bits and
+ * the final frame) are crossfaded over the clip.
  */
 import { facePainter, loadAssets, paintDrawable } from '../../kit/assets';
 import { roundRectPath } from '../../kit/canvas';
-import { BOOGER } from './schedule';
-import { halftone, makeLayer, PAL } from './look';
+import { halftone, PAL } from './look';
 
 import type { Drawable, Painter } from '../../kit/assets';
-import type { BoogerKind } from './schedule';
 
 /**
  * Logical box of a head frame in CSS px (pre-rendered at 2x = 512 px, the size of the files).
@@ -28,200 +32,129 @@ export const FACE_BOX = 256;
 export const FRAME_SCALE = 0.96;
 export const FRAME_TOP = 0.46;
 /**
- * Every head frame is masked once, at load, to this circle (radius as a share of D, centred
- * on the token centre): the porthole costs nothing per frame and survives the spin. It sits
- * just under the ink ring (inner edge 0.465 D), and stays inside the ring's outer edge up to a
- * picture scale of 1.065 (the glass press).
+ * Every head frame is cut once, at load, to this circle (radius as a share of D, centred on
+ * the token centre) and filled with the disc colour behind: a plain drawImage is a perfect,
+ * opaque porthole, so two frames crossfade cleanly. It sits just under the ink ring (inner
+ * edge 0.465 D), and stays inside the ring's outer edge up to a picture scale of 1.065 (the
+ * glass press).
  */
 export const MASK_R = 0.468;
+/** The token's cream disc (also the background colour of the clip). */
+export const DISC = '#FFF6E0';
 
 /** Points of a head frame, as shares of its box (measured on the pictures). */
 export const FRAME = {
   /** The nostril the finger goes into (the doll's left nostril, right on screen). */
   nostrilX: 0.52,
   nostrilY: 0.665,
-  /** The other nostril (the second hand at the absurd rate). */
-  nostril2X: 0.455,
-  nostril2Y: 0.675,
-  /** Fingertip in pick_out (finger just out, strand to the nostril). */
-  outTipX: 0.69,
-  outTipY: 0.7,
-  /** Fingertip in pick_big (finger pulled down to the chin). */
-  bigTipX: 0.56,
-  bigTipY: 0.93,
-  /** Outer edge of the ear on the left of the screen (the fingertip pokes out of it). */
-  earX: 0.185,
-  earY: 0.6,
-  /** Temples (sweat drops) and ears (steam). */
+  /** Temples and the right ear (steam at the absurd rate, the note when he whistles). */
   templeLX: 0.26,
   templeRX: 0.74,
   templeY: 0.42,
   earRX: 0.83,
 } as const;
 
-/** Hand sprite: fingertip position as shares of its box (the forearm runs off the bottom). */
-export const HAND = { w: 69, h: 200, tipX: 0.74, tipY: 0.0 } as const;
+/**
+ * The picking clip: the clip frame (of the 97-frame take, 24 fps) each file pick_NN was cut
+ * from (tests/e2e/tap-fluent-frames.py keeps 40, spaced evenly in how much the picture changes).
+ */
+export const CLIP_SRC: readonly number[] = [0, 5, 8, 10, 12, 13, 15, 17, 18, 21, 24, 28, 32, 36, 40, 45, 48, 50, 52, 54, 56, 58, 61, 63, 65, 68, 70, 72, 73, 75, 77, 78, 80, 82, 83, 85, 87, 89, 92, 96];
+/**
+ * Picking depth d (0..1) -> clip frame number, piecewise linear through these pairs:
+ * 0 the hand is down out of sight, 0.08 the fingertip shows at the chin, 0.35 the fingertip is
+ * at the nostril, 0.62 the finger is in to the knuckle, 0.82 the eyes close in bliss, 1 the
+ * eyes roll up (the head tilts back a little on the way, in the clip itself).
+ */
+export const CLIP_KEYS: readonly number[] = [0, 0, 0.08, 6, 0.35, 24, 0.62, 44, 0.82, 66, 1, 96];
 
-const FACE_COLOR = '#d9a27a';
-
-/** Head frames (indexes into TapArt.frames). */
+/** Still faces (indexes into TapArt.stills). */
 export const FR = {
-  Normal: 0,
-  Happy: 1,
-  Surprised: 2,
-  Angry: 3,
-  Tongue: 4,
-  Wink: 5,
-  Bored: 6,
-  Proud: 7,
-  NosePick: 8,
-  Knuckle: 9,
-  Deep: 10,
-  Out: 11,
-  Big: 12,
-  Whistle: 13,
-  Caught: 14,
-  GlassPress: 15,
-  Dizzy: 16,
-  Squeeze: 17,
-  Double: 18,
+  Surprised: 0,
+  Angry: 1,
+  Bored: 2,
+  Proud: 3,
+  Whistle: 4,
+  Caught: 5,
+  GlassPress: 6,
+  Squeeze: 7,
+  Double: 8,
 } as const satisfies Record<string, number>;
 export type FrameId = (typeof FR)[keyof typeof FR];
 
-export const FRAME_NAMES: readonly string[] = [
-  'face_normal',
-  'face_happy',
-  'face_surprised',
-  'face_angry',
-  'face_tongue',
-  'face_wink',
-  'face_bored',
-  'face_proud',
-  'face_nosepick',
-  'pick_knuckle',
-  'pick_deep',
-  'pick_out',
-  'pick_big',
-  'face_whistle',
-  'face_caught',
-  'face_glass_press',
-  'face_dizzy',
-  'face_squeeze',
-  'pick_double',
-];
+export const STILL_NAMES: readonly string[] = ['face_surprised', 'face_angry', 'face_bored', 'face_proud', 'face_whistle', 'face_caught', 'face_glass_press', 'face_squeeze', 'pick_double'];
+
+/** Stills with the hand in the picture (the others are crossfaded only while the clip's hand is down). */
+export const STILL_HAS_HAND: ReadonlySet<number> = new Set([FR.Caught, FR.Double]);
+
+const FACE_COLOR = '#d9a27a';
 
 export interface TapArt {
-  /** Head frames, by FR. */
-  readonly frames: readonly Drawable[];
-  /** The doll's hand alone, index finger up (the rising hand, the second hand). */
-  readonly hand: Drawable;
-  /** A toy fingertip pointing up (pokes out of the ear). */
-  readonly fingertip: Drawable;
+  /** The picking clip, by CLIP_SRC index. */
+  readonly clip: readonly Drawable[];
+  /** Still faces, by FR. */
+  readonly stills: readonly Drawable[];
   /** The doll's fist, knuckles to the viewer (knocks on the glass while waiting). */
   readonly fist: Drawable;
-  readonly squeegee: Drawable;
-  /** Green slime splat seen from above: the decal under every booger on the glass. */
-  readonly splat: Drawable;
-  /** The round Shimi token (mini Shimi). */
-  readonly mini: Drawable;
-  /** Booger characters, by BoogerKind. */
-  readonly boogers: readonly Drawable[];
   /** Optional stage backdrop file (placeholder = painted sunburst at screen size). */
   readonly background: Drawable;
-  /** The waiting screen's ghost finger (drawn, not a slot): white, ink outline, pointing up. */
+  /** The waiting screen's "tap here" hand (drawn, not a slot): white, ink outline, pointing up. */
   readonly ghost: Drawable;
 }
 
 export async function loadTapArt(): Promise<TapArt> {
-  const [s, sh] = await Promise.all([
+  const clipSlots = CLIP_SRC.map((_, i) => {
+    const n = String(i).padStart(2, '0');
+    return { key: `pick_${n}`, file: `pick_${n}.png`, size: FACE_BOX, placeholder: clipPlaceholder(i / (CLIP_SRC.length - 1)) };
+  });
+  const [clip, s] = await Promise.all([
+    loadAssets('tap', clipSlots),
     loadAssets('tap', [
-      { key: 'face_normal', file: 'face_normal.png', size: FACE_BOX, placeholder: facePainter('normal', FACE_COLOR) },
-      { key: 'face_happy', file: 'face_happy.png', size: FACE_BOX, placeholder: facePainter('laughing', FACE_COLOR) },
       { key: 'face_surprised', file: 'face_surprised.png', size: FACE_BOX, placeholder: facePainter('surprised', FACE_COLOR) },
       { key: 'face_angry', file: 'face_angry.png', size: FACE_BOX, placeholder: facePainter('angry', FACE_COLOR) },
-      { key: 'face_tongue', file: 'face_tongue.png', size: FACE_BOX, placeholder: facePainter('tongue', FACE_COLOR) },
-      { key: 'face_wink', file: 'face_wink.png', size: FACE_BOX, placeholder: facePainter('wink', FACE_COLOR) },
       { key: 'face_bored', file: 'face_bored.png', size: FACE_BOX, placeholder: facePainter('dead', FACE_COLOR) },
       { key: 'face_proud', file: 'face_proud.png', size: FACE_BOX, placeholder: facePainter('happy', FACE_COLOR) },
-      { key: 'face_nosepick', file: 'face_nosepick.png', size: FACE_BOX, placeholder: pickPlaceholder(0) },
-      { key: 'pick_knuckle', file: 'pick_knuckle.png', size: FACE_BOX, placeholder: pickPlaceholder(1) },
-      { key: 'pick_deep', file: 'pick_deep.png', size: FACE_BOX, placeholder: pickPlaceholder(2) },
-      { key: 'pick_out', file: 'pick_out.png', size: FACE_BOX, placeholder: pickPlaceholder(3) },
-      { key: 'pick_big', file: 'pick_big.png', size: FACE_BOX, placeholder: pickPlaceholder(4) },
       { key: 'face_whistle', file: 'face_whistle.png', size: FACE_BOX, placeholder: facePainter('wink', FACE_COLOR) },
-      { key: 'face_caught', file: 'face_caught.png', size: FACE_BOX, placeholder: pickPlaceholder(1) },
+      { key: 'face_caught', file: 'face_caught.png', size: FACE_BOX, placeholder: clipPlaceholder(0.45) },
       { key: 'face_glass_press', file: 'face_glass_press.png', size: FACE_BOX, placeholder: facePainter('laughing', FACE_COLOR) },
-      { key: 'face_dizzy', file: 'face_dizzy.png', size: FACE_BOX, placeholder: facePainter('dead', FACE_COLOR) },
       { key: 'face_squeeze', file: 'face_squeeze.png', size: FACE_BOX, placeholder: facePainter('angry', FACE_COLOR) },
-      { key: 'pick_double', file: 'pick_double.png', size: FACE_BOX, placeholder: pickPlaceholder(2) },
-      { key: 'hand', file: 'hand.png', size: HAND.w, height: HAND.h, placeholder: handPainter },
-      { key: 'fingertip_ear', file: 'fingertip_ear.png', size: 64, placeholder: fingertipPainter },
+      { key: 'pick_double', file: 'pick_double.png', size: FACE_BOX, placeholder: clipPlaceholder(1) },
       { key: 'fist', file: 'fist.png', size: 128, height: 171, placeholder: fistPainter },
-      { key: 'squeegee', file: 'squeegee.png', size: 192, placeholder: squeegeePainter },
-      { key: 'splat', file: 'splat.png', size: 128, placeholder: splatPainter },
-      { key: 'booger_round', file: 'booger_round.png', size: 128, placeholder: boogerPainter(BOOGER.Round) },
-      { key: 'booger_stretchy', file: 'booger_stretchy.png', size: 32, height: 180, placeholder: boogerPainter(BOOGER.Stretchy) },
-      { key: 'booger_googly', file: 'booger_googly.png', size: 128, placeholder: boogerPainter(BOOGER.Googly) },
-      { key: 'booger_hairy', file: 'booger_hairy.png', size: 100, height: 132, placeholder: boogerPainter(BOOGER.Hairy) },
-      { key: 'booger_golden', file: 'booger_golden.png', size: 128, placeholder: boogerPainter(BOOGER.Golden) },
-      { key: 'booger_boss', file: 'booger_boss.png', size: 180, placeholder: boogerPainter(BOOGER.Boss) },
       { key: 'background', file: 'background.jpg', size: 430, height: 932, fit: 'cover', placeholder: (): void => undefined },
     ]),
-    loadAssets('shimi', [{ key: 'mini', file: 'faces_round/normal.png', size: 96, placeholder: facePainter('happy', FACE_COLOR) }]),
   ]);
-  const frames = [
-    s.face_normal,
-    s.face_happy,
-    s.face_surprised,
-    s.face_angry,
-    s.face_tongue,
-    s.face_wink,
-    s.face_bored,
-    s.face_proud,
-    s.face_nosepick,
-    s.pick_knuckle,
-    s.pick_deep,
-    s.pick_out,
-    s.pick_big,
-    s.face_whistle,
-    s.face_caught,
-    s.face_glass_press,
-    s.face_dizzy,
-    s.face_squeeze,
-    s.pick_double,
-  ];
-  for (const f of frames) maskToToken(f.source);
+  const clipFrames = clipSlots.map((slot): Drawable => clip[slot.key] ?? paintDrawable(slot.key, slot.placeholder, FACE_BOX));
+  const stills = [s.face_surprised, s.face_angry, s.face_bored, s.face_proud, s.face_whistle, s.face_caught, s.face_glass_press, s.face_squeeze, s.pick_double];
+  for (const f of [...clipFrames, ...stills]) toToken(f.source);
   return {
-    frames,
-    hand: s.hand,
-    fingertip: s.fingertip_ear,
+    clip: clipFrames,
+    stills,
     fist: s.fist,
-    squeegee: s.squeegee,
-    splat: s.splat,
-    mini: sh.mini,
-    boogers: [s.booger_round, s.booger_stretchy, s.booger_googly, s.booger_hairy, s.booger_golden, s.booger_boss],
     background: s.background,
     ghost: paintDrawable('tap_ghost', ghostPainter, 96, 120),
   };
 }
 
 /**
- * Cut a head frame's canvas (in place, idempotent) to the token circle in frame space, so the
- * game can draw it with a plain drawImage and get a perfect round porthole.
+ * Cut a head frame's canvas (in place, idempotent) to the token circle in frame space and fill
+ * the disc colour behind the picture: an opaque round porthole that a plain drawImage draws,
+ * and that crossfades with any other frame without the one below showing through.
  */
-function maskToToken(c: HTMLCanvasElement): void {
+function toToken(c: HTMLCanvasElement): void {
   const g = c.getContext('2d');
   if (!g || c.width === 0) return;
   g.save();
   g.setTransform(1, 0, 0, 1, 0, 0);
-  g.globalCompositeOperation = 'destination-in';
   g.beginPath();
   g.arc(c.width * 0.5, (c.height * FRAME_TOP) / FRAME_SCALE, (c.width * MASK_R) / FRAME_SCALE, 0, Math.PI * 2);
+  g.globalCompositeOperation = 'destination-in';
+  g.fill();
+  g.globalCompositeOperation = 'destination-over';
+  g.fillStyle = DISC;
   g.fill();
   g.restore();
 }
 
-/** Ghost hand pointing up with the index finger; the fingertip is at (0.5w, 0.04h). */
+/** "Tap here" hand pointing up with the index finger; the fingertip is at (0.5w, 0.04h). */
 const ghostPainter: Painter = (ctx, w, h) => {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
@@ -267,102 +200,15 @@ function drawFinger(ctx: CanvasRenderingContext2D, x: number, y: number, w: numb
   ctx.stroke();
 }
 
-/** Generic face with a finger (enter / knuckle / deep), a strand (out) or a long strand (big). */
-function pickPlaceholder(stage: number): Painter {
-  const base = facePainter('nose-pick', FACE_COLOR);
-  const plain = facePainter(stage === 4 ? 'surprised' : 'wink', FACE_COLOR);
+/** Generic face with the finger at picking depth k (0 = no hand, 0.35 at the nostril, 1 deep). */
+function clipPlaceholder(k: number): Painter {
+  const base = facePainter(k < 0.6 ? 'normal' : 'nose-pick', FACE_COLOR);
   return (ctx, w, h) => {
-    (stage >= 3 ? plain : base)(ctx, w, h);
-    const nx = w * FRAME.nostrilX;
+    base(ctx, w, h);
+    if (k < 0.05) return;
     const ny = h * FRAME.nostrilY;
-    if (stage >= 3) {
-      const tx = w * (stage === 4 ? FRAME.bigTipX : FRAME.outTipX);
-      const ty = h * (stage === 4 ? FRAME.bigTipY : FRAME.outTipY);
-      ctx.strokeStyle = '#8fd13a';
-      ctx.lineCap = 'round';
-      ctx.lineWidth = w * 0.03;
-      ctx.beginPath();
-      ctx.moveTo(nx, ny);
-      ctx.quadraticCurveTo((nx + tx) / 2, ty + h * 0.06, tx, ty);
-      ctx.stroke();
-      drawFinger(ctx, tx, ty, w * 0.09, h);
-      return;
-    }
-    drawFinger(ctx, nx, ny - h * (0.01 + stage * 0.02), w * 0.09, h);
-  };
-}
-
-/** Index finger up + fist + forearm (fingertip at HAND.tipX, top). */
-const handPainter: Painter = (ctx, w, h) => {
-  ctx.lineJoin = 'round';
-  ctx.fillStyle = SKIN;
-  ctx.strokeStyle = PAL.ink;
-  ctx.lineWidth = 3;
-  roundRectPath(ctx, w * 0.12, h * 0.4, w * 0.76, h * 0.7, w * 0.3);
-  ctx.fill();
-  ctx.stroke();
-  roundRectPath(ctx, w * 0.05, h * 0.18, w * 0.9, h * 0.3, w * 0.3);
-  ctx.fill();
-  ctx.stroke();
-  drawFinger(ctx, w * HAND.tipX, h * HAND.tipY + 2, w * 0.24, h * 0.3);
-};
-
-/** Cartoon booger: a green blob with a face; the variants differ in shape and extras. */
-function boogerPainter(kind: BoogerKind): Painter {
-  return (ctx, w, h) => {
-    const gold = kind === BOOGER.Golden;
-    const fill = gold ? '#ffcf3a' : kind === BOOGER.Hairy ? '#8aa53a' : '#86d93a';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = Math.max(2, w * 0.04);
-    ctx.strokeStyle = PAL.ink;
-    ctx.fillStyle = fill;
-    if (kind === BOOGER.Stretchy) {
-      roundRectPath(ctx, w * 0.35, h * 0.02, w * 0.3, h * 0.7, w * 0.15);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(w / 2, h * 0.84, w * 0.46, h * 0.14, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      return;
-    }
-    ctx.beginPath();
-    ctx.ellipse(w / 2, h * 0.58, w * 0.44, h * 0.38, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    const eye = (x: number, r: number): void => {
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(x, h * 0.5, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = PAL.ink;
-      ctx.beginPath();
-      ctx.arc(x + r * 0.3, h * 0.52, r * 0.45, 0, Math.PI * 2);
-      ctx.fill();
-    };
-    const big = kind === BOOGER.Googly || kind === BOOGER.Boss;
-    eye(w * 0.36, w * (big ? 0.12 : 0.06));
-    eye(w * 0.64, w * (big ? 0.12 : 0.06));
-    if (kind === BOOGER.Hairy) {
-      ctx.beginPath();
-      ctx.moveTo(w / 2, h * 0.22);
-      ctx.quadraticCurveTo(w * 0.7, h * 0.1, w * 0.55, h * 0.02);
-      ctx.stroke();
-    }
-    if (kind === BOOGER.Boss) {
-      ctx.fillStyle = '#ffcf3a';
-      ctx.beginPath();
-      ctx.moveTo(w * 0.35, h * 0.24);
-      ctx.lineTo(w * 0.35, h * 0.08);
-      ctx.lineTo(w * 0.43, h * 0.16);
-      ctx.lineTo(w * 0.5, h * 0.05);
-      ctx.lineTo(w * 0.57, h * 0.16);
-      ctx.lineTo(w * 0.65, h * 0.08);
-      ctx.lineTo(w * 0.65, h * 0.24);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
+    const tip = k < 0.35 ? h * 1.05 + (ny - h * 1.05) * (k / 0.35) : ny - h * 0.03 * ((k - 0.35) / 0.65);
+    drawFinger(ctx, w * FRAME.nostrilX, tip, w * 0.09, h);
   };
 }
 
@@ -383,41 +229,6 @@ const fistPainter: Painter = (ctx, w, h) => {
     ctx.lineTo(w * (0.08 + 0.21 * i), h * 0.32);
   }
   ctx.stroke();
-};
-
-/** A fingertip pointing up (nail at the top). */
-const fingertipPainter: Painter = (ctx, w, h) => drawFinger(ctx, w / 2, h * 0.05, w * 0.32, h * 0.9);
-
-/** Yellow handle down, black blade on top. */
-const squeegeePainter: Painter = (ctx, w, h) => {
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = PAL.ink;
-  ctx.fillStyle = PAL.yel;
-  roundRectPath(ctx, w * 0.44, h * 0.2, w * 0.12, h * 0.75, w * 0.05);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#222';
-  roundRectPath(ctx, w * 0.08, h * 0.06, w * 0.84, h * 0.16, w * 0.04);
-  ctx.fill();
-  ctx.stroke();
-};
-
-/** A flat green star-shaped splat. */
-const splatPainter: Painter = (ctx, w, h) => {
-  ctx.fillStyle = '#7ed321';
-  ctx.beginPath();
-  const n = 7;
-  for (let i = 0; i <= n * 2; i++) {
-    const a = (i / (n * 2)) * Math.PI * 2;
-    const r = (i % 2 === 0 ? 0.47 : 0.28) * Math.min(w, h);
-    const x = w / 2 + Math.cos(a) * r;
-    const y = h / 2 + Math.sin(a) * r;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-  ctx.fill();
 };
 
 // ───────────────────────────── Stage backdrop ─────────────────────────────
@@ -501,3 +312,10 @@ export function createBackdrop(bg: Drawable): Backdrop {
   };
 }
 
+/** Free the canvases of the art (they are per game instance): phones release canvas memory late. */
+export function freeTapArt(art: TapArt): void {
+  for (const d of [...art.clip, ...art.stills, art.fist, art.background, art.ghost]) {
+    d.source.width = 0;
+    d.source.height = 0;
+  }
+}

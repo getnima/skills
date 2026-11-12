@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { createTapEngine, MILESTONE_IDS, rankOf, scaledThresholds, TAP, tapTiming } from '../../client/src/games/tap/pick';
-import { BOOGER, boogerOf, buildLevel, GOLDEN_TAPS } from '../../client/src/games/tap/schedule';
+import { buildLevel, IDLE_BITS } from '../../client/src/games/tap/schedule';
+import { CLIP_KEYS, CLIP_SRC } from '../../client/src/games/tap/art';
 
 import type { TapListener } from '../../client/src/games/tap/pick';
 
@@ -343,29 +344,12 @@ describe('tap schedule (seeded gags)', () => {
     expect(a.fingerprint).not.toBe(c.fingerprint);
   });
 
-  it('never drips the same kind twice in a row, roughly at the planned weights', () => {
-    const counts = [0, 0, 0, 0, 0, 0];
-    for (let seed = 1; seed <= 40; seed++) {
+  it('plays every waiting bit once before any repeats', () => {
+    for (let seed = 1; seed <= 30; seed++) {
       const l = buildLevel(seed, 53_000);
-      for (let i = 1; i < l.boogers.length; i++) expect(l.boogers[i]).not.toBe(l.boogers[i - 1]);
-      for (const k of l.boogers) counts[k] = (counts[k] ?? 0) + 1;
-      expect(l.boogers.includes(BOOGER.Golden)).toBe(false);
-      expect(l.boogers.includes(BOOGER.Boss)).toBe(false);
-    }
-    const total = counts.reduce((s, n) => s + n, 0);
-    expect((counts[BOOGER.Round] ?? 0) / total).toBeGreaterThan(0.3);
-    expect((counts[BOOGER.Stretchy] ?? 0) / total).toBeGreaterThan(0.08);
-  });
-
-  it('has exactly one golden drip, between taps 42 and 108', () => {
-    for (let seed = 1; seed <= 60; seed++) {
-      const l = buildLevel(seed, 53_000, 1, 6);
-      const tapOfDrip = (l.goldenDrip + 1) * 6;
-      expect(tapOfDrip).toBeGreaterThanOrEqual(GOLDEN_TAPS[0]);
-      expect(tapOfDrip).toBeLessThanOrEqual(GOLDEN_TAPS[1]);
-      let golden = 0;
-      for (let i = 0; i < 300; i++) if (boogerOf(l, i) === BOOGER.Golden) golden++;
-      expect(golden).toBe(1);
+      for (let r = 0; r + IDLE_BITS <= l.idleBits.length; r += IDLE_BITS) {
+        expect(new Set(l.idleBits.slice(r, r + IDLE_BITS)).size).toBe(IDLE_BITS);
+      }
     }
   });
 
@@ -375,6 +359,21 @@ describe('tap schedule (seeded gags)', () => {
       for (let i = 1; i < l.idleBits.length; i++) expect(l.idleBits[i]).not.toBe(l.idleBits[i - 1]);
       for (let i = 1; i < l.alive.length; i++) expect(l.alive[i]).not.toBe(l.alive[i - 1]);
       expect([...l.fillers].sort()).toEqual([0, 1, 2]);
+    }
+  });
+});
+
+describe('tap picking clip', () => {
+  it('maps the depth 0..1 onto the whole clip, monotone, and every key frame exists', () => {
+    expect(CLIP_SRC[0]).toBe(0);
+    for (let i = 1; i < CLIP_SRC.length; i++) expect(CLIP_SRC[i] ?? 0).toBeGreaterThan(CLIP_SRC[i - 1] ?? 0);
+    expect(CLIP_KEYS[0]).toBe(0);
+    expect(CLIP_KEYS[1]).toBe(0);
+    expect(CLIP_KEYS[CLIP_KEYS.length - 2]).toBe(1);
+    expect(CLIP_KEYS[CLIP_KEYS.length - 1]).toBe(CLIP_SRC[CLIP_SRC.length - 1]);
+    for (let i = 2; i < CLIP_KEYS.length; i += 2) {
+      expect(CLIP_KEYS[i] ?? 0).toBeGreaterThan(CLIP_KEYS[i - 2] ?? 0);
+      expect(CLIP_KEYS[i + 1] ?? 0).toBeGreaterThan(CLIP_KEYS[i - 1] ?? 0);
     }
   });
 });
