@@ -9,6 +9,8 @@ const { chromium } = require('playwright');
     const cdp = await ctx.newCDPSession(page);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.RATE || 4) });
     if (process.env.SLICE) await page.evaluate((v) => { window.__SLICE = v[0]; window.__FLUSH = v[1]; }, [Number(process.env.SLICE), Number(process.env.FLUSH || 120)]);
+    await cdp.send('Performance.enable');
+    const m0 = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map((m) => [m.name, m.value]));
     const r = await page.evaluate(async (mode) => {
       const A = await import('/src/avatar/index.ts');
       await A.preloadAvatarAssets();
@@ -34,7 +36,9 @@ const { chromium } = require('playwright');
       run = false; out.frames = frames;
       return out;
     }, mode);
-    console.log(r);
+    const m1 = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map((m) => [m.name, m.value]));
+    for (const k of ['ScriptDuration', 'LayoutDuration', 'RecalcStyleDuration', 'TaskDuration', 'LayoutCount']) r[k] = +(m1[k] - m0[k]).toFixed(3);
+    console.log(JSON.stringify(r));
     await ctx.close();
   }
   await browser.close();
