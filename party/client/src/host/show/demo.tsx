@@ -3,8 +3,10 @@
  * without a party: fake players, a simulated race, buttons that force each
  * moment, the winner ceremony on demand.
  *
- * URL: ?scene=playing|results|final|standings &players=12 &seed=1 &dur=60000
+ * URL: ?scene=playing|results|final|standings &players=12 &seed=1 &dur=60000 &game=tap|icy|flappy|plotzel|ninja
  *      &bare=1 (scene only, full window) &calm=1 &sim=0 &winner=one|tie|none &lead=8000   (tie = two players on the same raw score: the earlier one wins)
+ * game=flappy is an elimination round: the simulated players drop out one by one and the scene
+ * shows who is still in the air (with the "3 left" finale), as on the TV.
  * Automation: window.__show (see ShowHooks below).
  */
 import { render } from 'preact';
@@ -92,6 +94,14 @@ interface Racer {
   readonly surge: number;
   /** Loses a third of the score once, at this ms (the bomb), or -1. */
   readonly bombAt: number;
+  /** Elimination rounds: crashes at this ms (the last one standing never does). */
+  readonly outAt: number;
+}
+
+/** What the simulated elimination round would tell the scene (the `scores` messages of the real server). */
+interface ElimState {
+  readonly out: readonly string[];
+  readonly active: number;
 }
 
 function makePlayers(count: number): PlayerPublic[] {
@@ -125,12 +135,15 @@ function makeRacers(players: readonly PlayerPublic[], duration: number): Racer[]
   const sleepy = n >= 4 ? rng.int(Math.floor(n / 2), n - 1) : -1;
   const surger = n >= 5 ? rng.int(Math.floor(n / 2), n - 1) : -1;
   const bomber = n >= 2 ? rng.int(0, Math.min(2, n - 1)) : -1;
+  // elimination: everybody crashes somewhere in the first 80% of the round, except one
+  const survivor = n > 0 ? rng.int(0, n - 1) : -1;
   return players.map((p, i) => ({
     id: p.id,
     rate: rng.float(6, 16) * (i < 3 ? 1.25 : 1),
     wakeAt: i === sleepy ? duration * 0.37 : rng.float(0, 2_500),
     surge: i === surger && i !== sleepy ? 4.5 : 1,
     bombAt: i === bomber ? duration * 0.4 : -1,
+    outAt: i === survivor ? Number.POSITIVE_INFINITY : duration * rng.float(0.08, 0.8),
   }));
 }
 
@@ -195,22 +208,27 @@ function Demo(): JSX.Element {
   const [results, setResults] = useState<RoundResults | null>(null);
   const [runId, setRunId] = useState(0);
   const [bare, setBare] = useState(BARE);
+  const [elim, setElim] = useState<ElimState>({ out: [], active: 0 });
 
   const players = useMemo(() => makePlayers(count), [count]);
   const racers = useMemo(() => makeRacers(players, DURATION), [players]);
-  const sim = useRef({ elapsed: 0, scores: new Map<string, number>(), bombed: new Set<string>(), acc: 0, last: performance.now() });
+  const sim = useRef({ elapsed: 0, scores: new Map<string, number>(), bombed: new Set<string>(), out: [] as string[], finaleAt: null as number | null, acc: 0, last: performance.now() });
   const flags = useRef({ running, frozen });
   flags.current = { running, frozen };
   const racersRef = useRef(racers);
   racersRef.current = racers;
+  const elimination = GAMES[gameId].mode === 'elimination';
+  const eliminationRef = useRef(elimination);
+  eliminationRef.current = elimination;
 
   const resetRace = (): void => {
-    sim.current = { elapsed: 0, scores: new Map(racersRef.current.map((r) => [r.id, 0])), bombed: new Set(), acc: 0, last: performance.now() };
+    sim.current = { elapsed: 0, scores: new Map(racersRef.current.map((r) => [r.id, 0])), bombed: new Set(), out: [], finaleAt: null, acc: 0, last: performance.now() };
     setScores(new Map(sim.current.scores));
+    setElim({ out: [], active: racersRef.current.length });
     setRunId((v) => v + 1);
   };
 
-  useEffect(resetRace, [racers]);
+  useEffect(resetRace, [racers, elimination]);
 
   // the race: time advances every frame, scores are published 4 times a second (like the server)
   useEffect(() => {
@@ -225,6 +243,26 @@ function Demo(): JSX.Element {
         if (s.acc >= 250) {
           const step = s.acc / 1000;
           s.acc = 0;
+          if (eliminationRef.current) {
+            // one life: everybody in the air has flown the same distance; who crashes keeps theirs
+            let fell = false;
+            for (const r of racersRef.current) {
+              if (s.out.includes(r.id)) continue;
+              if (s.elapsed >= r.outAt) {
+                s.out.push(r.id);
+                fell = true;
+              } else {
+                s.scores.set(r.id, Math.round(s.elapsed / 6));
+              }
+            }
+            const active = racersRef.current.length - s.out.length;
+            // the finale: three left (or at 75% of the round at the latest), announced 3 s ahead
+            if (s.finaleAt === null && (active <= 3 || s.elapsed >= DURATION * 0.75)) s.finaleAt = s.elapsed + 3_000;
+            if (fell) setElim({ out: [...s.out], active });
+            setScores(new Map(s.scores));
+            raf = requestAnimationFrame(frame);
+            return;
+          }
           const rng = createRng(SEED + Math.floor(s.elapsed / 250)).fork('tick');
           for (const r of racersRef.current) {
             let v = s.scores.get(r.id) ?? 0;
@@ -249,6 +287,7 @@ function Demo(): JSX.Element {
   }, []);
 
   const clock = useRef((): RoundClockSample => ({ leftMs: Math.max(0, DURATION - sim.current.elapsed), frozen: flags.current.frozen }));
+  const finaleInMs = useRef((): number | null => (sim.current.finaleAt === null ? null : sim.current.finaleAt - sim.current.elapsed));
   const now = useRef((): number => Date.now());
 
   const showResults = (kind: WinnerKind, leadMs: number = WINNER_REVEAL_MS): void => {
@@ -399,7 +438,18 @@ function Demo(): JSX.Element {
   const game = GAMES[gameId];
   let stage: JSX.Element;
   if (scene === 'playing') {
-    stage = <PlayingScene key={`play-${runId}`} game={game} roundIndex={2} players={players} scores={scores} clock={clock.current} durationMs={DURATION} />;
+    stage = (
+      <PlayingScene
+        key={`play-${runId}`}
+        game={game}
+        roundIndex={2}
+        players={players}
+        scores={scores}
+        clock={clock.current}
+        durationMs={DURATION}
+        elimination={elimination ? { out: elim.out, active: elim.active, finaleInMs: finaleInMs.current } : undefined}
+      />
+    );
   } else if (scene === 'results' && results) {
     stage = <ResultsScene key={`res-${runId}`} game={game} results={results} now={now.current} active={active} />;
   } else if (scene === 'final') {

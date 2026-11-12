@@ -2,6 +2,10 @@
  * The tower's look: zones (moods by floor), and the painters of the pre-rendered tiles the
  * game blits (inner back wall, side walls, hazard tape, floor-number signs). Pure drawing:
  * nothing here touches the level, the physics or the score.
+ *
+ * Two sets of zone looks: STONE_LOOKS go with the stone tower pictures (wall.png, bg.png, the
+ * ledge pictures: a stone and ice tower whose ledges change material), ZONE_LOOKS are the
+ * painted comic tower shown when none of those pictures is there.
  */
 import { drawText, roundRectPath } from '../../kit/canvas';
 import { PAL, STAR10, displayFont, halftone, makeLayer, stickerShape } from './look';
@@ -22,13 +26,21 @@ export interface ZoneLook {
   readonly backLo: string;
   readonly joint: string;
   /** What hangs on the back wall. */
-  readonly deco: 'window' | 'heart' | 'torch' | 'sun';
+  readonly deco: 'window' | 'heart' | 'torch' | 'sun' | 'frost';
   /** Front face of a normal floor (its top is always paper). */
   readonly face: string;
   /** CSS background outside the tower (landscape / desktop only): flat, the summit a sunburst. */
   readonly sky: string;
   /** Snow colour. */
   readonly snow: string;
+  /**
+   * Stone pictures only. `stone`: colour multiplied over the grey side-wall picture (null = the
+   * picture's own colours). `backTint`: colour multiplied over the back-wall picture (grey when
+   * `backGrey`, else its own colours), which also makes it the darker of the two.
+   */
+  readonly stone?: string | null;
+  readonly backTint?: string;
+  readonly backGrey?: boolean;
 }
 
 export const ZONE_LOOKS: readonly ZoneLook[] = [
@@ -90,8 +102,84 @@ export const ZONE_LOOKS: readonly ZoneLook[] = [
   },
 ];
 
-export function zoneLook(z: number): ZoneLook {
-  return ZONE_LOOKS[Math.max(0, Math.min(ZONE_LOOKS.length - 1, z))] ?? (ZONE_LOOKS[0] as ZoneLook);
+/**
+ * The stone tower (shown with the tower pictures): blue-grey stone at the bottom, an icy
+ * stretch, a warm timber stretch, gold light at the summit. Same shape as ZONE_LOOKS; the
+ * painted colours here are what a missing picture falls back to inside this theme.
+ */
+export const STONE_LOOKS: readonly ZoneLook[] = [
+  {
+    name: '',
+    wall: '#7d95c9',
+    wallHi: '#b4c6ee',
+    wallLo: '#4a5f96',
+    back: '#1d2c66',
+    backHi: '#2b3e86',
+    backLo: '#121c47',
+    joint: 'rgba(22, 18, 14, 0.6)',
+    deco: 'window',
+    face: '#dfe9ff',
+    sky: PAL.cobD,
+    snow: 'rgba(255, 255, 255, 0.8)',
+    stone: null,
+    backTint: '#6f83d6',
+    backGrey: false,
+  },
+  {
+    name: 'קומות קרח!',
+    wall: '#6fd3ee',
+    wallHi: '#c4f1ff',
+    wallLo: '#2f92b8',
+    back: '#0f4763',
+    backHi: '#1a6283',
+    backLo: '#082c40',
+    joint: 'rgba(22, 18, 14, 0.6)',
+    deco: 'frost',
+    face: '#d6f5ff',
+    sky: '#082c40',
+    snow: 'rgba(225, 248, 255, 0.85)',
+    stone: '#8fe2ff',
+    backTint: '#2f78a6',
+    backGrey: true,
+  },
+  {
+    name: 'קומות עץ!',
+    wall: '#c98958',
+    wallHi: '#ecb88a',
+    wallLo: '#8a5530',
+    back: '#43271a',
+    backHi: '#5c3826',
+    backLo: '#2a160d',
+    joint: 'rgba(22, 18, 14, 0.65)',
+    deco: 'torch',
+    face: '#ffdfc0',
+    sky: '#2a160d',
+    snow: 'rgba(255, 214, 150, 0.8)',
+    stone: '#f0b07c',
+    backTint: '#95504a',
+    backGrey: true,
+  },
+  {
+    name: 'הפסגה!',
+    wall: PAL.yel,
+    wallHi: PAL.yel2,
+    wallLo: PAL.org,
+    back: '#6b4a10',
+    backHi: '#8a6218',
+    backLo: '#452e06',
+    joint: 'rgba(22, 18, 14, 0.6)',
+    deco: 'sun',
+    face: '#fff0a8',
+    sky: `repeating-conic-gradient(from 0deg at 50% 40%, ${PAL.yel} 0deg 10deg, ${PAL.yel2} 10deg 20deg)`,
+    snow: 'rgba(255, 255, 255, 0.85)',
+    stone: '#ffd24a',
+    backTint: '#b47a22',
+    backGrey: true,
+  },
+];
+
+export function zoneLook(z: number, looks: readonly ZoneLook[] = ZONE_LOOKS): ZoneLook {
+  return looks[Math.max(0, Math.min(looks.length - 1, z))] ?? (looks[0] as ZoneLook);
 }
 
 /** Zone of floor `j`. */
@@ -221,8 +309,7 @@ function sunWindow(g: CanvasRenderingContext2D, cx: number, cy: number, r: numbe
  * courses with ink joints, highlight / shade edges, halftone shading, a few cracks and the
  * zone's decorations. Tiles vertically (nothing crosses the top or bottom edge).
  */
-export function paintBackTile(g: CanvasRenderingContext2D, w: number, h: number, scale: number, z: number): void {
-  const L = zoneLook(z);
+export function paintBackTile(g: CanvasRenderingContext2D, w: number, h: number, scale: number, z: number, L: ZoneLook = zoneLook(z)): void {
   const ch = COURSE * scale;
   const bw = BRICK * scale;
   const rows = Math.round(BACK_TILE_W / COURSE);
@@ -282,17 +369,23 @@ export function paintBackTile(g: CanvasRenderingContext2D, w: number, h: number,
   }
   g.stroke();
   // decorations (inside the tile, between the side walls)
-  const s = scale;
-  const ww = 18 * s;
+  const ww = 18 * scale;
   const span = w - 2 * ww;
-  const spots: Array<[number, number]> = [
+  paintDeco(g, L, scale, [
     [ww + span * 0.2, ch * 1.2],
     [ww + span * 0.66, ch * 4.1],
-  ];
+  ]);
+}
+
+/** The zone's decorations (lit windows, torches, sun windows) at `spots` (top-left of each, CSS px). */
+function paintDeco(g: CanvasRenderingContext2D, L: ZoneLook, s: number, spots: ReadonlyArray<readonly [number, number]>): void {
   for (const [x, y] of spots) {
     switch (L.deco) {
       case 'window':
         archWindow(g, x, y, 44 * s, 62 * s, PAL.yel, PAL.yel2, s);
+        break;
+      case 'frost':
+        archWindow(g, x, y, 44 * s, 62 * s, '#bdeeff', PAL.white, s);
         break;
       case 'heart':
         archWindow(g, x, y, 44 * s, 62 * s, PAL.pink, '#ffc4de', s);
@@ -318,14 +411,76 @@ export function paintBackTile(g: CanvasRenderingContext2D, w: number, h: number,
   }
 }
 
+// ───────────────────────────── Stone pictures ─────────────────────────────
+
+/** A grey copy of a picture (luminance), for the per-zone colouring. The caller owns the canvas. */
+export function greyCopy(src: HTMLCanvasElement): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  const g = c.getContext('2d');
+  if (!g) return c;
+  g.drawImage(src, 0, 0);
+  try {
+    const img = g.getImageData(0, 0, c.width, c.height);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      // lifted a little: multiplying by the zone colour darkens
+      const l = Math.min(255, ((d[i] ?? 0) * 0.3 + (d[i + 1] ?? 0) * 0.59 + (d[i + 2] ?? 0) * 0.11) * 1.5 + 18);
+      d[i] = l;
+      d[i + 1] = l;
+      d[i + 2] = l;
+    }
+    g.putImageData(img, 0, 0);
+  } catch {
+    // a canvas that cannot be read stays in its own colours
+  }
+  return c;
+}
+
+/**
+ * One tile from a picture: `src` stretched over (0, 0)-(w, h) CSS px (mirrored when `flip`),
+ * then `tint` multiplied over it (null = none). The picture must tile along the tile's height.
+ */
+export function paintPictureTile(g: CanvasRenderingContext2D, src: HTMLCanvasElement, w: number, h: number, tint: string | null, flip = false): void {
+  g.imageSmoothingQuality = 'high';
+  if (flip) {
+    g.save();
+    g.translate(w, 0);
+    g.scale(-1, 1);
+    g.drawImage(src, 0, 0, w, h);
+    g.restore();
+  } else g.drawImage(src, 0, 0, w, h);
+  if (tint) {
+    g.globalCompositeOperation = 'multiply';
+    g.fillStyle = tint;
+    g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'source-over';
+  }
+}
+
+/**
+ * The zone's decorations over a back-wall picture tile of `w` x `h` CSS px: one about every
+ * 130 world units, left and right in turn, none crossing the top or bottom edge.
+ */
+export function paintBackDeco(g: CanvasRenderingContext2D, w: number, h: number, scale: number, L: ZoneLook): void {
+  const ww = 18 * scale;
+  const span = w - 2 * ww;
+  const n = Math.max(1, Math.round(h / scale / 130));
+  const step = h / n;
+  const spots: Array<[number, number]> = [];
+  const xs = [0.16, 0.66, 0.34, 0.74];
+  for (let i = 0; i < n; i++) spots.push([ww + span * (xs[i % xs.length] ?? 0.2), i * step + Math.max(12 * scale, (step - 76 * scale) * 0.5)]);
+  paintDeco(g, L, scale, spots);
+}
+
 // ───────────────────────────── Side walls ─────────────────────────────
 
 /** Height of one side-wall tile in world units (5 blocks). */
 export const WALL_TILE_W = 160;
 
 /** One tile of a side wall (CSS px w x h): big stone / ice blocks you bounce off. `left` = the left wall (light from the right). */
-export function paintWallTile(g: CanvasRenderingContext2D, w: number, h: number, scale: number, z: number, left: boolean): void {
-  const L = zoneLook(z);
+export function paintWallTile(g: CanvasRenderingContext2D, w: number, h: number, scale: number, z: number, left: boolean, L: ZoneLook = zoneLook(z)): void {
   const n = 5;
   const bh = h / n;
   for (let i = 0; i < n; i++) {

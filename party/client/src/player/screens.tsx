@@ -59,14 +59,13 @@ function Live(props: { readonly children: ComponentChildren }): JSX.Element {
 
 /** A game's name as a logo: the first word white, the rest red, a line each (like "פארטי ארנה" on the cover). */
 function Logo(props: { readonly text: string; readonly class: string }): JSX.Element {
-  const words = props.text.split(' ');
+  const cut = props.text.indexOf(' ');
+  const first = cut < 0 ? props.text : props.text.slice(0, cut);
+  const rest = cut < 0 ? '' : props.text.slice(cut + 1);
   return (
     <h1 class={`${props.class} ps-logo`}>
-      {words.map((w, i) => (
-        <span key={i} class={i > 0 ? 'is-red' : ''}>
-          {i < words.length - 1 ? `${w} ` : w}
-        </span>
-      ))}
+      {rest === '' ? first : `${first} `}
+      {rest === '' ? null : <span class="is-red">{rest}</span>}
     </h1>
   );
 }
@@ -357,9 +356,30 @@ function isCutOut(url: string): boolean {
   return /\.(png|webp)$/i.test(url);
 }
 
-export function WinScreen(props: { readonly onDone: () => void; readonly look: string | null }): JSX.Element {
-  const [imgOk, setImgOk] = useState(prizeUrl() !== null);
+/**
+ * The Shimi figurine a round winner takes home: the cut-out standing on a cobalt disc (like
+ * the doll in the dressing room), a framed photo when the picture has a background, an angel
+ * until there is a picture at all.
+ */
+function Prize(): JSX.Element {
   const url = prizeUrl();
+  const [imgOk, setImgOk] = useState(url !== null);
+  const shown = imgOk && url !== null;
+  return (
+    <div class={`pp-prize ${shown && isCutOut(url) ? 'is-cut' : 'is-photo'}`}>
+      {shown ? (
+        <img src={url} alt="הפרס" onError={() => setImgOk(false)} draggable={false} />
+      ) : (
+        <div class="pp-prize-ph">
+          <span>👼</span>
+        </div>
+      )}
+      <span class="pp-prize-shine" />
+    </div>
+  );
+}
+
+export function WinScreen(props: { readonly onDone: () => void; readonly look: string | null }): JSX.Element {
   const v = useViewport();
   useEffect(() => {
     playTrack('victory', { volume: 0.9 });
@@ -367,7 +387,6 @@ export function WinScreen(props: { readonly onDone: () => void; readonly look: s
     vibrate([300, 120, 300, 120, 600, 150, 200, 80, 200]);
     return (): void => stopTrack('victory', 900);
   }, []);
-  const shown = imgOk && url !== null;
   return (
     <div class="pp-screen ps pp-win">
       <div class="pp-rays" aria-hidden="true" />
@@ -375,26 +394,16 @@ export function WinScreen(props: { readonly onDone: () => void; readonly look: s
       <Confetti bursts={5} intensity={1.3} />
       <Burst text="מחורחר!" class="ps-win-burst" />
       <h1 class="pp-win-title ps-logo">
-        <span>זכית </span>
-        <span class="is-red">בשימי אנג׳ל!</span>
+        זכית <span class="is-red">בשימי אנג׳ל!</span>
       </h1>
       <div class="ps-win-show">
         <div class="ps-win-me">
           <span class="pp-crown" aria-hidden="true">
             👑
           </span>
-          <Avatar look={props.look} size={dollPx(v, 0.38, 0.19, 96, 152)} crop="bust" />
+          <Avatar look={props.look} size={dollPx(v, 0.38, 0.19, 96, 160)} crop="bust" />
         </div>
-        <div class={`pp-prize ${shown && isCutOut(url) ? 'is-cut' : 'is-photo'}`}>
-          {shown ? (
-            <img src={url} alt="הפרס" onError={() => setImgOk(false)} draggable={false} />
-          ) : (
-            <div class="pp-prize-ph">
-              <span>👼</span>
-            </div>
-          )}
-          <span class="pp-prize-shine" />
-        </div>
+        <Prize />
       </div>
       <div class="pp-win-go">לכו לקחת את הפרס!</div>
       <button type="button" class="pp-btn pp-btn-ghost" onClick={props.onDone}>
@@ -411,6 +420,7 @@ export function RevealScreen(props: { readonly results: RoundResults; readonly o
   const byTime = winner !== undefined && second !== undefined && second.raw === winner.raw;
   const elimination = GAMES[props.results.gameId].mode === 'elimination';
   const v = useViewport();
+  const size = dollPx(v, 0.44, 0.23, 104, 176);
   useEffect(() => {
     if (winner !== undefined) sfx.cheer();
     else sfx.fail();
@@ -423,14 +433,15 @@ export function RevealScreen(props: { readonly results: RoundResults; readonly o
         {winner !== undefined ? (
           <>
             <div class="pp-label-big">הזוכה בסיבוב</div>
-            <div class="pp-reveal-faces">
+            <div class="pp-reveal-faces" style={{ height: `${size}px` }}>
               <div class="pp-reveal-face ps-hero">
                 <span class="pp-crown" aria-hidden="true">
                   👑
                 </span>
-                <Avatar look={winner.look} size={dollPx(v, 0.46, 0.24, 104, 160)} crop="bust" />
+                <Avatar look={winner.look} size={size} crop="bust" />
                 <Burst text="וואו!" class="ps-hero-burst" />
               </div>
+              <Prize />
             </div>
             <div class="pp-reveal-name">{winner.name}</div>
             <div class="pp-text">
@@ -563,7 +574,10 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
       </div>
       <div class="pw-tray ps-res-tray">
         <div class="pp-panel pp-grow">
-          <div class="pp-panel-title">הטבלה של הסיבוב</div>
+          <div class="pp-panel-title">
+            <span>הטבלה של הסיבוב</span>
+            <span class="ps-legend">{elimination ? 'נקודות לסיבוב' : 'ניקוד במשחק ⭐'}</span>
+          </div>
           <ol class="pp-top3 kit-scroll">
             {byRound.map((r, i) => {
               const mine = r.playerId === props.me;
@@ -580,7 +594,7 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
                       <span class="pp-st-total">{r.raw > 0 ? `+${fmt(r.points)}` : '–'}</span>
                     )
                   ) : (
-                    <span class="pp-st-total">⭐ {fmt(r.raw)}</span>
+                    <span class="pp-st-total">{fmt(r.raw)}</span>
                   )}
                 </li>
               );

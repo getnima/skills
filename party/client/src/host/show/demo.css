@@ -3,7 +3,8 @@
   inset: 0;
   display: flex;
   direction: rtl;
-  background: #07031a;
+  background: #0a1659;
+  font-family: var(--read);
 }
 .dm-stage {
   flex: 1;
@@ -19,7 +20,7 @@
   height: min(100cqh, 100cqw * 9 / 16);
   border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12), 0 20px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 3px #16120e, 8px 10px 0 #16120e;
 }
 .dm--bare .dm-stage {
   padding: 0;
@@ -34,8 +35,8 @@
   flex: none;
   width: 340px;
   padding: 14px 14px 30px;
-  background: #1a0d3f;
-  border-inline-start: 2px solid rgba(255, 255, 255, 0.1);
+  background: var(--cob-d);
+  border-inline-start: 3px solid var(--ink);
   color: #fff;
   font-weight: 700;
 }
@@ -43,12 +44,12 @@
   margin: 0 0 10px;
   font-size: 20px;
   font-weight: 900;
-  color: #ffd23f;
+  color: var(--yel);
 }
 .dm-panel h2 {
   margin: 14px 0 6px;
   font-size: 14px;
-  color: #b9aee0;
+  color: #c9d2ff;
 }
 .dm-panel h2 b {
   color: #fff;
@@ -66,19 +67,21 @@
 .dm-panel button {
   min-height: 44px;
   padding: 6px 8px;
+  border: 2px solid var(--ink);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.1);
+  background: #fff;
+  color: var(--ink);
   font-size: 14px;
   font-weight: 800;
   line-height: 1.15;
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
+  box-shadow: 0 3px 0 var(--ink);
 }
 .dm-panel button:active {
   transform: translateY(2px);
   box-shadow: none;
 }
 .dm-panel button.is-on {
-  background: #ff3d8b;
+  background: var(--yel);
 }
 .dm-panel button:disabled {
   opacity: 0.35;
@@ -86,14 +89,14 @@
 .dm-panel input[type='range'] {
   width: 100%;
   height: 34px;
-  accent-color: #ff3d8b;
+  accent-color: var(--yel);
   touch-action: pan-x;
 }
 .dm-hint {
   margin: 12px 0 0;
   font-size: 12px;
   font-weight: 500;
-  color: #b9aee0;
+  color: #c9d2ff;
   direction: ltr;
   text-align: left;
   -webkit-user-select: text;
@@ -108,8 +111,9 @@
   justify-content: center;
   gap: 2%;
   padding: 3%;
-  background: #150a33;
-  color: #b9aee0;
+  background: var(--yel);
+  color: var(--ink);
+  font-weight: 800;
 }
 .dm-lobby-note {
   font-size: clamp(12px, 1.6cqw, 26px);
@@ -117,6 +121,10 @@
 .dm-lobby-panel {
   width: min(92%, 62vh);
   height: 82%;
+  border: 4px solid var(--ink);
+  border-radius: 28px;
+  overflow: hidden;
+  box-shadow: 6px 8px 0 var(--ink);
 }
 @media (max-aspect-ratio: 1/1) {
   .dm:not(.dm--bare) {

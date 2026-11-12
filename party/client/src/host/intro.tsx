@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { COUNTDOWN_MS } from '../../../shared/protocol';
 import { roundTime } from '../../../shared/round-clock';
 import { sfx } from '../kit/audio';
+import { introArtUrl } from './show/art';
+import { GameArt } from './show/common';
 import { PrizeRelic } from './show/prize';
 import { useServerNow } from './util';
 
@@ -35,24 +37,27 @@ export function IntroScreen(props: IntroProps): JSX.Element {
   const p = Math.min(1, Math.max(0, 1 - (toStart - cd) / span));
   const frozen = roundTime(props.round, now).frozen;
   return (
-    <div class="hs-intro" data-testid="intro">
+    <div class={`hs-intro ${introArtUrl(props.game.id) !== null ? 'has-art' : ''}`} data-testid="intro">
       <div class="hs-intro-round">
         סיבוב <b dir="ltr">{props.round.number}</b>
       </div>
-      <div class="hs-intro-head">
-        <div class="hs-intro-emoji">{props.game.emoji}</div>
-        <h1 class="hs-intro-title">{props.game.title}</h1>
-      </div>
-      <p class="hs-intro-text">{props.game.instructions}</p>
-      <div class="hs-intro-foot">
-        <div class="hs-intro-prize">
-          <span class="hs-prize-mini hs-prize-mini--sm">
-            <PrizeRelic variant="mini" />
-          </span>
-          <span>הפרס: מלאך שימי למנצח</span>
-        </div>
-        <div class="hs-intro-players">
-          📱 <b dir="ltr">{props.players}</b> {props.players === 1 ? 'שחקן מוכן' : 'שחקנים מוכנים'}
+      {/* the game's key art (or its emoji on a disc) beside the title and how to play */}
+      <div class="hs-intro-body">
+        <GameArt id={props.game.id} emoji={props.game.emoji} class="hs-intro-emoji" />
+        <div class="hs-intro-main">
+          <h1 class="hs-intro-title">{props.game.title}</h1>
+          <p class="hs-intro-text">{props.game.instructions}</p>
+          <div class="hs-intro-foot">
+            <div class="hs-intro-prize">
+              <span class="hs-prize-mini hs-prize-mini--sm">
+                <PrizeRelic variant="mini" />
+              </span>
+              <span>הפרס: מלאך שימי למנצח</span>
+            </div>
+            <div class="hs-intro-players">
+              📱 <b dir="ltr">{props.players}</b> {props.players === 1 ? 'שחקן מוכן' : 'שחקנים מוכנים'}
+            </div>
+          </div>
         </div>
       </div>
       <div class={`hs-progress ${frozen ? 'is-frozen' : ''}`}>
@@ -77,7 +82,8 @@ export function CountdownScreen(props: { readonly game: GameMeta; readonly round
   return (
     <div class="hs-countdown" data-testid="countdown">
       <div class="hs-countdown-game">
-        {props.game.emoji} {props.game.title}
+        <GameArt id={props.game.id} emoji={props.game.emoji} class="hs-countdown-art" />
+        <span>{props.game.title}</span>
       </div>
       <div class="hs-countdown-num" key={n} data-testid="countdown-num">
         {n}

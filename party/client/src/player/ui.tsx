@@ -51,11 +51,11 @@ export function useViewport(): Viewport {
 
 /**
  * The side of a big doll: `ofW` of the page's width, at most `ofH` of its height, within
- * [min, max], on a 4 px grid (the avatar pictures are cached per size). At most 160: the
- * avatar cache tops out at 384 px, which is sharp up to there on a 2x screen.
+ * [min, max], on a 4 px grid (the avatar pictures are cached per size). At most 176: the
+ * avatar cache tops out at 384 px, sharp on a 2x screen and only a little soft on a 3x one.
  */
 export function dollPx(v: Viewport, ofW: number, ofH: number, min: number, max: number): number {
-  return Math.round(Math.max(min, Math.min(max, 160, v.w * ofW, v.h * ofH)) / 4) * 4;
+  return Math.round(Math.max(min, Math.min(max, 176, v.w * ofW, v.h * ofH)) / 4) * 4;
 }
 
 // ───────────────────────────── Stickers ─────────────────────────────

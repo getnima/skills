@@ -1,17 +1,18 @@
 /** The lobby: the join QR, the players popping in, the five games, and the standings between rounds. */
 import { create as createQr } from 'qrcode';
-import { useLayoutEffect, useMemo, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { GAME_IDS, GAMES, MAX_PLAYERS } from '../../../shared/protocol';
 import { peekAvatarUrl, useAvatarUrl } from '../avatar';
 import { StandingsPanel } from './show/index';
-import { hostDollUrl } from './show/art';
-import { lookPlateColor, unitPx } from './show/common';
+import { designedQrUrl, hostDollUrl, introArtUrl } from './show/art';
+import { GameArt, lookPlateColor, unitPx } from './show/common';
 import { PrizeRelic } from './show/prize';
 import { prettyUrl, useJoinInfo } from './util';
 
 import type { JSX } from 'preact';
 import type { GameId, PlayerPublic, RoomState } from '../../../shared/protocol';
+import type { JoinInfo } from './util';
 
 // ───────────────────────────── QR ─────────────────────────────
 
@@ -55,14 +56,76 @@ export function QrCode(props: { readonly text: string; readonly class?: string }
   );
 }
 
-function JoinPanel(props: { readonly code: string; readonly compact: boolean }): JSX.Element {
-  const info = useJoinInfo(props.code);
+// ── the designed QR (tools/qr): Shimi's face in the code ──
+//
+// A designed code is a fixed picture, so it encodes a fixed link: <origin>/j, which the server
+// redirects to the room that is on the TV right now. Two optional files next to each other:
+// assets/host/qr.png (the picture) and assets/host/qr.json = { "url": "https://the-host/j" }.
+// A wrong picture would send every guest nowhere, so the TV shows it only when qr.json says
+// the picture encodes exactly THIS page's origin + '/j'. Anything else (no file, another
+// origin, a page opened on localhost or with ?join=) keeps the generated code.
+
+let qrLinkOnce: Promise<string | null> | null = null;
+
+/** The link qr.json vouches for, fetched once (only when qr.png exists; any failure is "no"). */
+function loadQrLink(picture: string): Promise<string | null> {
+  qrLinkOnce ??= (async (): Promise<string | null> => {
+    try {
+      const res = await fetch(picture.replace(/[^/]+$/, 'qr.json'), { cache: 'no-store' });
+      if (!res.ok) return null;
+      const body: unknown = await res.json();
+      if (typeof body !== 'object' || body === null) return null;
+      const url = (body as { url?: unknown }).url;
+      return typeof url === 'string' ? url : null;
+    } catch {
+      return null;
+    }
+  })();
+  return qrLinkOnce;
+}
+
+interface DesignedQr {
+  /** The picture's URL. */
+  readonly picture: string;
+  /** The short link it encodes, without the scheme, for display. */
+  readonly link: string;
+}
+
+function useDesignedQr(info: JoinInfo & { readonly pending: boolean }): DesignedQr | null {
+  const picture = designedQrUrl();
+  const [link, setLink] = useState<string | null>(null);
+  useEffect(() => {
+    if (picture === null) return undefined;
+    let alive = true;
+    void loadQrLink(picture).then((url) => {
+      if (alive) setLink(url);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [picture]);
+  if (picture === null || link === null) return null;
+  const origin = window.location.origin;
+  // strict: the picture's link is this origin's /j, and the generated code would point at this origin too
+  if (link !== `${origin}/j` || info.pending || info.local || info.base !== origin) return null;
+  return { picture, link: prettyUrl(link) };
+}
+
+function JoinPanel(props: { readonly code: string; readonly compact: boolean; readonly info: JoinInfo & { readonly pending: boolean }; readonly designed: DesignedQr | null }): JSX.Element {
+  const { info, designed } = props;
   return (
-    <section class={`hs-join ${props.compact ? 'is-compact' : ''}`} data-testid="join">
+    <section class={`hs-join ${props.compact ? 'is-compact' : ''}`} data-testid="join" data-qr={designed !== null ? 'designed' : 'generated'}>
       {props.compact ? <div class="hs-join-late">עוד לא בפנים? סרקו!</div> : <div class="hs-join-title">סרקו עם המצלמה</div>}
-      <div class="hs-qr-card">
-        <QrCode text={info.url} />
-      </div>
+      {designed !== null ? (
+        // the picture as it is: its own background and quiet margin, never cropped, rounded, tinted or covered
+        <div class="hs-qr-card is-designed">
+          <img class="hs-qr-img" src={designed.picture} alt="QR להצטרפות" draggable={false} data-testid="qr-designed" />
+        </div>
+      ) : (
+        <div class="hs-qr-card">
+          <QrCode text={info.url} />
+        </div>
+      )}
       <div class="hs-code-row">
         <span class="hs-code-label">קוד החדר</span>
         {/* one tile per letter; the element's text is still the plain code */}
@@ -73,7 +136,7 @@ function JoinPanel(props: { readonly code: string; readonly compact: boolean }):
         </span>
       </div>
       <div class="hs-url" dir="ltr" data-testid="join-url">
-        {prettyUrl(info.url)}
+        {designed !== null ? designed.link : prettyUrl(info.url)}
       </div>
       {info.local && !info.pending ? (
         <div class="hs-local-warn" data-testid="local-warn">
@@ -94,6 +157,8 @@ function JoinPanel(props: { readonly code: string; readonly compact: boolean }):
  * smaller doll and the name beside it, which keeps the names readable at 60.
  */
 const CARD_MAX = 24;
+/** From this many guests the lobby's masthead steps back and the dolls get the room. */
+const CROWD_FROM = 14;
 /** The doll's side in design units at scale 1 (host.css: .hs-chip-av). */
 const CARD_DOLL = 132;
 const PILL_DOLL = 62;
@@ -154,6 +219,12 @@ function ChipDoll(props: { readonly look: string; readonly px: number }): JSX.El
   );
 }
 
+/** A longer name is set smaller on its card, so that each of its words stays in one piece. */
+function nameClass(name: string): string {
+  const len = Array.from(name).length;
+  return len > 10 ? 'is-xlong' : len > 6 ? 'is-long' : '';
+}
+
 function PlayerChips(props: { readonly players: readonly PlayerPublic[]; onKick(p: PlayerPublic): void }): JSX.Element {
   const box = useRef<HTMLDivElement>(null);
   const n = props.players.length;
@@ -200,7 +271,7 @@ function PlayerChips(props: { readonly players: readonly PlayerPublic[]; onKick(
             }}
           >
             <ChipDoll look={p.look} px={dollPx} />
-            <span class="hs-chip-name" dir="auto">
+            <span class={`hs-chip-name ${nameClass(p.name)}`} dir="auto">
               {p.name}
             </span>
             {p.connected ? null : <span class="hs-chip-off">💤</span>}
@@ -244,7 +315,7 @@ function GameCards(props: { readonly played: readonly GameId[]; onStart(g: GameI
           >
             {isNext ? <span class="hs-game-tag">הבא בתור</span> : null}
             {done ? <span class="hs-game-done">שיחקנו ✓</span> : null}
-            <span class="hs-game-emoji">{g.emoji}</span>
+            <GameArt id={id} emoji={g.emoji} class="hs-game-emoji" />
             <span class="hs-game-title">{g.title}</span>
             <span class="hs-game-dur">⏱ {secondsLabel(g.durationMs)}</span>
           </button>
@@ -267,9 +338,12 @@ export function Lobby(props: LobbyProps): JSX.Element {
   const between = state.played.length > 0 || state.results !== null;
   const online = state.players.filter((p) => p.connected).length;
   const n = state.players.length;
+  const info = useJoinInfo(state.code);
+  const designed = useDesignedQr(info);
+  const hero = introArtUrl('show');
   return (
-    <div class={`hs-lobby ${between ? 'is-between' : 'is-first'}`} data-testid="lobby">
-      <JoinPanel code={state.code} compact={between} />
+    <div class={`hs-lobby ${between ? 'is-between' : 'is-first'} ${n > CROWD_FROM ? 'is-crowded' : ''} ${designed !== null ? 'has-designed-qr' : ''}`} data-testid="lobby">
+      <JoinPanel code={state.code} compact={between} info={info} designed={designed} />
       {between ? (
         <div class="hs-standings-slot" data-testid="standings">
           <StandingsPanel players={state.players} results={state.results} />
@@ -278,9 +352,13 @@ export function Lobby(props: LobbyProps): JSX.Element {
       <section class="hs-players">
         <header class="hs-players-head">
           {between ? null : (
-            <div class="hs-logo" aria-hidden="true">
-              <span>פארטי</span>
-              <span>ארנה</span>
+            <div class={`hs-masthead ${hero !== null ? 'has-hero' : ''}`} aria-hidden="true">
+              {/* Shimi as the show's host, when the picture exists (assets/intro/show.webp) */}
+              {hero !== null ? <img class="hs-hero" src={hero} alt="" draggable={false} decoding="async" /> : null}
+              <div class="hs-logo">
+                <span>פארטי</span>
+                <span>ארנה</span>
+              </div>
             </div>
           )}
           {between ? null : (

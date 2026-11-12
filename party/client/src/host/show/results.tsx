@@ -10,12 +10,12 @@ import { sfx } from '../../kit/audio';
 import { hasTrackFile, playTrack, stopTrack } from '../../kit/music';
 import { WINNER_REVEAL_MS } from '../../../../shared/protocol';
 import { backdropUrl, lastPlaceArt } from './art';
-import { Avatar, CountUp, formatScore, useFrame, useStage, useTicker } from './common';
+import { Avatar, CountUp, formatScore, GameArt, useFrame, useStage, useTicker } from './common';
 import { useFunnyLayer } from './funny';
 import { PrizeRelic } from './prize';
 
 import type { JSX } from 'preact';
-import type { ResultRow, RoundResults } from '../../../../shared/protocol';
+import type { GameMeta, ResultRow, RoundResults } from '../../../../shared/protocol';
 import type { StageSize } from './common';
 import type { ResultsSceneProps } from './types';
 
@@ -335,7 +335,7 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
       ref={ref}
       style={bg !== null ? { backgroundImage: `linear-gradient(rgba(16,35,140,.82), rgba(16,35,140,.9)), url("${bg}")` } : undefined}
     >
-      {view.phase === 'suspense' || view.phase === 'blackout' ? <Suspense plan={plan} view={view} title={props.game.title} emoji={props.game.emoji} elimination={elimination} /> : null}
+      {view.phase === 'suspense' || view.phase === 'blackout' ? <Suspense plan={plan} view={view} game={props.game} elimination={elimination} /> : null}
       {view.phase === 'standings' ? <Standings plan={plan} view={view} size={size} clockT={() => clock.current.t - plan.ceremonyEnd} /> : null}
       {view.phase === 'blackout' ? <div class="sh-blackout" /> : null}
       {view.phase === 'ceremony' ? (
@@ -360,7 +360,7 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
 
 // ───────────────────────────── suspense ─────────────────────────────
 
-function Suspense(props: { plan: Plan; view: View; title: string; emoji: string; elimination: boolean }): JSX.Element {
+function Suspense(props: { plan: Plan; view: View; game: GameMeta; elimination: boolean }): JSX.Element {
   const { plan, view } = props;
   const revealed = new Set(plan.reveal.slice(0, view.shown).map((r) => r.playerId));
   // display order: best first; the tail (last place) is separated by a gap
@@ -370,9 +370,9 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string;
   return (
     <div class="sh-susp">
       <aside class="sh-aside">
-        <span class="sh-aside-emoji">{props.emoji}</span>
+        <GameArt id={props.game.id} emoji={props.game.emoji} class="sh-aside-emoji" />
         <span class="sh-aside-title">תוצאות הסיבוב</span>
-        <span class="sh-aside-sub">{props.title}</span>
+        <span class="sh-aside-sub">{props.game.title}</span>
       </aside>
       <div class="sh-main">
       <div class="sh-mystery">
@@ -538,7 +538,7 @@ function Standings(props: { plan: Plan; view: View; size: StageSize; clockT(): n
         </span>
         <span class="sh-banner-emoji">🏆</span>
       </div>
-      <div class="sh-tlist" ref={listRef}>
+      <div class="sh-tlist" ref={listRef} style={{ '--rh': `${rowH.toFixed(1)}px` }}>
         {plan.newOrder.map((r) => {
           const slot = slotOf.get(r.playerId) ?? 0;
           const hidden = slot < 0 || slot >= visible || rowH === 0;

@@ -573,6 +573,28 @@ body {
   width: 100%;
   height: 100%;
 }
+/* the designed code (tools/qr): the picture exactly as it was made, on a light frame with
+   square corners. It is never cropped, rounded, tinted or covered: any of that can stop it scanning. */
+.hs-qr-card.is-designed,
+.hs-join.is-compact .hs-qr-card.is-designed {
+  padding: calc(12 * var(--hu));
+  border-radius: calc(10 * var(--hu));
+  background: #fff;
+}
+.hs-qr-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+/* between rounds the join panel is small; the designed code still gets 420 px of the board */
+.hs-lobby.is-between.has-designed-qr {
+  grid-template-columns: calc(510 * var(--hu)) calc(620 * var(--hu)) minmax(0, 1fr);
+}
+.hs-join.is-compact .hs-qr-card.is-designed {
+  width: calc(456 * var(--hu));
+}
 .hs-code-row {
   display: flex;
   align-items: center;
@@ -692,7 +714,26 @@ body {
   gap: calc(22 * var(--hu));
   min-height: calc(150 * var(--hu));
 }
-/* the show's logo, as on the phones' cover */
+/* the masthead: the show's logo as on the phones' cover, and Shimi the host when his picture exists */
+.hs-masthead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: calc(4 * var(--hu));
+}
+.hs-hero {
+  flex: none;
+  width: calc(150 * var(--hu));
+  height: calc(176 * var(--hu));
+  margin-block: calc(-14 * var(--hu));
+  object-fit: contain;
+  pointer-events: none;
+  transform: rotate(4deg);
+}
+.hs-masthead.has-hero .hs-logo {
+  font-size: calc(74 * var(--hu));
+  margin-inline-start: 0;
+}
 .hs-logo {
   flex: none;
   margin-inline-start: calc(10 * var(--hu));
@@ -719,9 +760,9 @@ body {
   flex: none;
   display: flex;
   align-items: center;
-  gap: calc(14 * var(--hu));
+  gap: calc(12 * var(--hu));
   margin-inline-start: auto;
-  padding: calc(8 * var(--hu)) calc(10 * var(--hu)) calc(8 * var(--hu)) calc(26 * var(--hu));
+  padding: calc(7 * var(--hu)) calc(8 * var(--hu)) calc(7 * var(--hu)) calc(22 * var(--hu));
   border: calc(5 * var(--hu)) solid var(--ink);
   border-radius: 999px;
   color: #fff;
@@ -732,12 +773,12 @@ body {
 .hs-count-num {
   display: grid;
   place-items: center;
-  min-width: calc(104 * var(--hu));
-  height: calc(104 * var(--hu));
-  padding: 0 calc(12 * var(--hu));
+  min-width: calc(92 * var(--hu));
+  height: calc(92 * var(--hu));
+  padding: 0 calc(10 * var(--hu));
   border: calc(4.5 * var(--hu)) solid var(--ink);
   border-radius: 999px;
-  font-size: calc(74 * var(--hu));
+  font-size: calc(64 * var(--hu));
   font-weight: 900;
   line-height: 1;
   color: var(--ink);
@@ -747,7 +788,7 @@ body {
 .hs-count-label {
   display: flex;
   flex-direction: column;
-  font: 700 calc(48 * var(--hu)) / 1 var(--disp);
+  font: 700 calc(42 * var(--hu)) / 1 var(--disp);
   white-space: nowrap;
 }
 .hs-count-label small {
@@ -776,9 +817,9 @@ body {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: calc(8 * var(--hu));
+  gap: calc(6 * var(--hu));
   min-height: calc(112 * var(--hu));
-  padding: calc(8 * var(--hu)) calc(8 * var(--hu)) calc(10 * var(--hu)) calc(26 * var(--hu));
+  padding: calc(6 * var(--hu)) calc(6 * var(--hu)) calc(10 * var(--hu)) calc(24 * var(--hu));
   border: calc(4.5 * var(--hu)) solid var(--ink);
   border-radius: calc(26 * var(--hu));
   color: var(--ink);
@@ -811,15 +852,47 @@ body {
   min-width: 0;
 }
 .hs-prize-text b {
-  font: 700 calc(50 * var(--hu)) / 1 var(--disp);
+  font: 700 calc(46 * var(--hu)) / 1 var(--disp);
   color: var(--red);
   white-space: nowrap;
 }
+/* the small print wraps: the ribbon gives way to the logo and the counter */
 .hs-prize-text span {
-  font-size: calc(26 * var(--hu));
+  max-width: calc(330 * var(--hu));
+  font-size: calc(25 * var(--hu));
   font-weight: 700;
-  line-height: 1.15;
-  white-space: nowrap;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+/* a big room: the masthead steps back, the dolls get the room */
+.hs-lobby.is-crowded .hs-players-head {
+  min-height: calc(108 * var(--hu));
+}
+.hs-lobby.is-crowded .hs-logo {
+  font-size: calc(58 * var(--hu));
+}
+.hs-lobby.is-crowded .hs-hero {
+  width: calc(104 * var(--hu));
+  height: calc(120 * var(--hu));
+}
+.hs-lobby.is-crowded .hs-prize-ribbon {
+  min-height: calc(92 * var(--hu));
+}
+.hs-lobby.is-crowded .hs-prize-mini {
+  --u: calc(var(--hu) * 1.12);
+  width: calc(72 * var(--hu));
+  height: calc(76 * var(--hu));
+}
+.hs-lobby.is-crowded .hs-prize-text b {
+  font-size: calc(40 * var(--hu));
+}
+.hs-lobby.is-crowded .hs-prize-text span {
+  font-size: calc(22 * var(--hu));
+}
+.hs-lobby.is-crowded .hs-count-num {
+  min-width: calc(80 * var(--hu));
+  height: calc(80 * var(--hu));
+  font-size: calc(54 * var(--hu));
 }
 
 .hs-chips {
@@ -896,14 +969,13 @@ body {
 .hs-hosts-tag {
   position: absolute;
   z-index: 1;
-  top: calc(-6 * var(--hu));
-  left: 50%;
-  width: calc(150 * var(--hu));
-  height: calc(150 * var(--hu));
-  margin-left: calc(-75 * var(--hu));
+  top: calc(-10 * var(--hu));
+  left: calc(-110 * var(--hu));
+  width: calc(170 * var(--hu));
+  height: calc(170 * var(--hu));
   display: grid;
   place-items: center;
-  transform: rotate(-10deg);
+  transform: rotate(-12deg);
 }
 .hs-hosts-tag::before,
 .hs-hosts-tag::after {
@@ -923,9 +995,9 @@ body {
 .hs-hosts-tag span {
   position: relative;
   z-index: 1;
-  font: 700 calc(34 * var(--hu)) / 0.9 var(--disp);
+  font: 700 calc(42 * var(--hu)) / 0.9 var(--disp);
   color: #fff;
-  -webkit-text-stroke: calc(2.5 * var(--hu)) var(--ink);
+  -webkit-text-stroke: calc(3 * var(--hu)) var(--ink);
   paint-order: stroke fill;
   text-align: center;
   transform: skewX(8deg);
@@ -1002,7 +1074,7 @@ body {
   flex-direction: column;
   justify-content: flex-start;
   gap: calc(9 * var(--hu) * var(--cs));
-  width: calc(158 * var(--hu) * var(--cs));
+  width: calc(154 * var(--hu) * var(--cs));
   height: auto;
   padding: 0;
   border: 0;
@@ -1026,12 +1098,14 @@ body {
   transform: rotate(0deg) scale(1.05);
 }
 .hs-chips.is-cards .hs-chip-name {
-  max-width: 100%;
-  padding: calc(1 * var(--hu) * var(--cs)) calc(12 * var(--hu) * var(--cs)) calc(4 * var(--hu) * var(--cs));
+  flex: none;
+  /* a name may stick out of its card a little: it is what people look for */
+  max-width: 112%;
+  padding: calc(1 * var(--hu) * var(--cs)) calc(11 * var(--hu) * var(--cs)) calc(4 * var(--hu) * var(--cs));
   border: calc(3 * var(--hu) * var(--cs)) solid var(--ink);
   border-radius: calc(12 * var(--hu) * var(--cs));
-  font-size: calc(30 * var(--hu) * var(--cs));
-  line-height: 1.12;
+  font-size: calc(36 * var(--hu) * var(--cs));
+  line-height: 1.1;
   text-align: center;
   background: #fff;
   box-shadow: calc(2.5 * var(--hu) * var(--cs)) calc(3.5 * var(--hu) * var(--cs)) 0 var(--ink);
@@ -1042,6 +1116,13 @@ body {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
+}
+/* a longer name is set smaller, so that each of its words stays whole */
+.hs-chips.is-cards .hs-chip-name.is-long {
+  font-size: calc(28 * var(--hu) * var(--cs));
+}
+.hs-chips.is-cards .hs-chip-name.is-xlong {
+  font-size: calc(22 * var(--hu) * var(--cs));
 }
 .hs-chips.is-cards .hs-chip-off {
   position: absolute;
@@ -1078,8 +1159,8 @@ body {
   justify-content: center;
   gap: calc(2 * var(--hu));
   min-width: 0;
-  height: calc(164 * var(--hu));
-  padding: calc(8 * var(--hu));
+  height: calc(186 * var(--hu));
+  padding: calc(6 * var(--hu));
   border: calc(4.5 * var(--hu)) solid var(--ink);
   border-radius: calc(26 * var(--hu));
   font: inherit;
@@ -1092,7 +1173,9 @@ body {
     box-shadow 80ms ease;
 }
 .hs-lobby.is-between .hs-game {
-  height: calc(140 * var(--hu));
+  flex-direction: row;
+  gap: calc(14 * var(--hu));
+  height: calc(118 * var(--hu));
 }
 .hs-game:hover {
   background: var(--yel-2);
@@ -1102,21 +1185,54 @@ body {
   box-shadow: 0 calc(2 * var(--hu)) 0 var(--ink);
 }
 .hs-game-emoji {
-  font-size: calc(72 * var(--hu));
-  line-height: 1.08;
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: calc(64 * var(--hu));
+  font-size: calc(58 * var(--hu));
+  line-height: 1;
+}
+/* the game's key art: it stands a little out of the top of its tile */
+.hs-game-emoji.is-pic {
+  width: 100%;
+  height: calc(100 * var(--hu));
+  margin-top: calc(-36 * var(--hu));
+}
+.hs-game-emoji.is-pic > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
 }
 .hs-lobby.is-between .hs-game-emoji {
-  font-size: calc(56 * var(--hu));
+  height: calc(70 * var(--hu));
+  font-size: calc(60 * var(--hu));
 }
+.hs-lobby.is-between .hs-game-emoji.is-pic {
+  width: calc(110 * var(--hu));
+  height: calc(104 * var(--hu));
+  margin-top: 0;
+}
+/* Motaleh is wide: a two-word title takes two lines */
 .hs-game-title {
   max-width: 100%;
-  font: 700 calc(42 * var(--hu)) / 1.05 var(--disp);
-  white-space: nowrap;
+  padding-bottom: calc(4 * var(--hu));
+  font: 700 calc(36 * var(--hu)) / 0.96 var(--disp);
+  text-align: center;
+  text-wrap: balance;
 }
 .hs-game-dur {
-  font-size: calc(23 * var(--hu));
+  font-size: calc(20 * var(--hu));
   font-weight: 700;
   color: rgba(22, 18, 14, 0.62);
+}
+/* between rounds the tiles are low and wide: the picture beside the title, no duration */
+.hs-lobby.is-between .hs-game-dur {
+  display: none;
+}
+.hs-lobby.is-between .hs-game-title {
+  font-size: calc(40 * var(--hu));
+  white-space: nowrap;
 }
 /* the next one: yellow, and it hops now and then */
 .hs-game.is-next {
@@ -1133,6 +1249,9 @@ body {
 }
 .hs-game.is-done .hs-game-emoji {
   opacity: 0.55;
+}
+.hs-game.is-done .hs-game-emoji > img {
+  filter: grayscale(1);
 }
 .hs-game-tag,
 .hs-game-done {
@@ -1196,33 +1315,58 @@ body {
 .hs-intro-round b {
   font: 900 calc(44 * var(--hu)) / 1 var(--read);
 }
-.hs-intro-head {
+.hs-intro {
+  gap: calc(26 * var(--hu));
+}
+/* the game's picture beside its title and how to play */
+.hs-intro-body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: calc(34 * var(--hu));
+  gap: calc(50 * var(--hu));
   max-width: 100%;
-  margin-top: calc(22 * var(--hu));
+  min-height: 0;
 }
-/* the game's picture on a cobalt disc */
+.hs-intro-main {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(34 * var(--hu));
+}
+/* no key art yet: the game's emoji on a cobalt disc */
 .hs-intro-emoji {
   flex: none;
   display: grid;
   place-items: center;
-  width: calc(230 * var(--hu));
-  height: calc(230 * var(--hu));
+  animation: hs-settle-pop 520ms cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+.hs-intro-emoji.is-emoji {
+  width: calc(280 * var(--hu));
+  height: calc(280 * var(--hu));
   border: calc(6 * var(--hu)) solid var(--ink);
   border-radius: 50%;
-  font-size: calc(140 * var(--hu));
+  font-size: calc(170 * var(--hu));
   line-height: 1;
   background: var(--cob);
   box-shadow: calc(7 * var(--hu)) calc(9 * var(--hu)) 0 var(--ink);
-  animation: hs-settle-pop 520ms cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+/* the key art: a transparent cut-out, big, standing on the sunburst */
+.hs-intro-emoji.is-pic {
+  width: calc(520 * var(--hu));
+  height: calc(620 * var(--hu));
+}
+.hs-intro-emoji.is-pic > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
 }
 .hs-intro-title {
-  min-width: 0;
+  max-width: 100%;
   margin: 0;
-  padding: 0 calc(20 * var(--hu)) calc(20 * var(--hu));
+  padding: 0 calc(24 * var(--hu)) calc(22 * var(--hu));
   font: 700 calc(176 * var(--hu)) / 1 var(--disp);
   color: #fff;
   -webkit-text-stroke: 0.045em var(--ink);
@@ -1234,12 +1378,15 @@ body {
   transform: skewX(8deg) rotate(-3deg);
   animation: hs-title-in 520ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
+.hs-intro.has-art .hs-intro-title {
+  font-size: calc(150 * var(--hu));
+}
 /* how to play: a white speech box with a red tab; plain Rubik, big */
 .hs-intro-text {
   position: relative;
-  max-width: calc(1560 * var(--hu));
-  margin: calc(40 * var(--hu)) 0 0;
-  padding: calc(34 * var(--hu)) calc(48 * var(--hu)) calc(28 * var(--hu));
+  max-width: calc(1340 * var(--hu));
+  margin: calc(14 * var(--hu)) 0 0;
+  padding: calc(36 * var(--hu)) calc(46 * var(--hu)) calc(28 * var(--hu));
   border: calc(5.5 * var(--hu)) solid var(--ink);
   border-radius: calc(30 * var(--hu));
   font-size: calc(58 * var(--hu));
@@ -1250,6 +1397,10 @@ body {
   box-shadow: calc(8 * var(--hu)) calc(10 * var(--hu)) 0 var(--ink);
   animation: hs-settle 520ms cubic-bezier(0.2, 1.4, 0.4, 1) 100ms both;
   text-wrap: balance;
+}
+.hs-intro.has-art .hs-intro-text {
+  max-width: calc(1120 * var(--hu));
+  font-size: calc(52 * var(--hu));
 }
 .hs-intro-text::before {
   content: 'איך משחקים?';
@@ -1269,7 +1420,6 @@ body {
   display: flex;
   align-items: center;
   gap: calc(28 * var(--hu));
-  margin-top: calc(34 * var(--hu));
   font-size: calc(34 * var(--hu));
   animation: hs-settle 460ms ease 180ms both;
 }
@@ -1328,7 +1478,11 @@ body {
 /* ───────────────────────────── countdown ───────────────────────────── */
 .hs-countdown-game {
   position: absolute;
-  top: calc(44 * var(--hu));
+  z-index: 2;
+  top: calc(36 * var(--hu));
+  display: flex;
+  align-items: center;
+  gap: calc(16 * var(--hu));
   padding: calc(4 * var(--hu)) calc(34 * var(--hu)) calc(12 * var(--hu));
   border: calc(5 * var(--hu)) solid var(--ink);
   border-radius: 999px;
@@ -1337,6 +1491,22 @@ body {
   background: var(--cob);
   box-shadow: calc(5 * var(--hu)) calc(7 * var(--hu)) 0 var(--ink);
   white-space: nowrap;
+}
+.hs-countdown-art {
+  flex: none;
+  display: grid;
+  place-items: center;
+  font: 400 calc(60 * var(--hu)) / 1 var(--read);
+}
+.hs-countdown-art.is-pic {
+  width: calc(96 * var(--hu));
+  height: calc(84 * var(--hu));
+  margin-block: calc(-10 * var(--hu)) calc(-18 * var(--hu));
+}
+.hs-countdown-art.is-pic > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 /* the number: Rubik 900 on a red burst that pops with every second */
 .hs-countdown-num {
@@ -1355,9 +1525,9 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: calc(860 * var(--hu));
-  height: calc(860 * var(--hu));
-  margin: calc(-440 * var(--hu)) 0 0 calc(-430 * var(--hu));
+  width: calc(800 * var(--hu));
+  height: calc(800 * var(--hu));
+  margin: calc(-400 * var(--hu)) 0 0 calc(-400 * var(--hu));
   animation: hs-burst 1s cubic-bezier(0.2, 1.5, 0.4, 1) both;
   pointer-events: none;
 }
@@ -2021,7 +2191,7 @@ body {
     flex-wrap: wrap;
   }
   .hs-brand,
-  .hs-logo,
+  .hs-masthead,
   .hs-root .hs-kbd,
   .hs-strip-tools .hs-btn-label,
   .hs-warn-long,
@@ -2169,6 +2339,8 @@ body {
   }
   .hs-game,
   .hs-lobby.is-between .hs-game {
+    flex-direction: column;
+    gap: calc(2 * var(--hu));
     height: calc(138 * var(--hu));
     padding: calc(4 * var(--hu));
     border-width: calc(3.5 * var(--hu));
@@ -2176,13 +2348,24 @@ body {
   }
   .hs-game-emoji,
   .hs-lobby.is-between .hs-game-emoji {
-    font-size: calc(50 * var(--hu));
+    height: calc(56 * var(--hu));
+    font-size: calc(48 * var(--hu));
   }
-  .hs-game-title {
+  .hs-game-emoji.is-pic,
+  .hs-lobby.is-between .hs-game-emoji.is-pic {
+    height: calc(70 * var(--hu));
+    margin-top: calc(-18 * var(--hu));
+  }
+  .hs-game-title,
+  .hs-lobby.is-between .hs-game-title {
     font-size: calc(22 * var(--hu));
     white-space: normal;
     text-align: center;
     line-height: 1.05;
+  }
+  .hs-game-emoji.is-pic,
+  .hs-lobby.is-between .hs-game-emoji.is-pic {
+    width: 100%;
   }
   .hs-game-dur {
     font-size: calc(15 * var(--hu));
@@ -2198,21 +2381,31 @@ body {
   .hs-countdown {
     padding: calc(40 * var(--hu)) calc(30 * var(--hu)) calc(90 * var(--hu));
   }
-  .hs-intro-head {
+  .hs-intro-body {
     flex-direction: column;
     gap: calc(14 * var(--hu));
   }
-  .hs-intro-emoji {
+  .hs-intro-emoji.is-emoji {
     width: calc(190 * var(--hu));
     height: calc(190 * var(--hu));
     font-size: calc(112 * var(--hu));
   }
-  .hs-intro-title {
+  .hs-intro-emoji.is-pic {
+    width: calc(360 * var(--hu));
+    height: calc(380 * var(--hu));
+  }
+  .hs-intro-title,
+  .hs-intro.has-art .hs-intro-title {
     font-size: calc(96 * var(--hu));
   }
-  .hs-intro-text {
+  .hs-intro-text,
+  .hs-intro.has-art .hs-intro-text {
     padding: calc(30 * var(--hu)) calc(26 * var(--hu)) calc(22 * var(--hu));
     font-size: calc(40 * var(--hu));
+  }
+  .hs-qr-card.is-designed,
+  .hs-join.is-compact .hs-qr-card.is-designed {
+    width: calc(440 * var(--hu));
   }
   .hs-intro-foot {
     flex-direction: column;

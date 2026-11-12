@@ -11,12 +11,14 @@
  * comes from the round seed in screen-independent world units (same tower on
  * every phone), and the art comes from file slots (see art.ts).
  *
- * Look (render-only, never read by the game logic): you are inside a tower. Two DOM canvas
- * layers behind the game canvas hold the inner back wall of the current zone and the next one
- * (pre-rendered once, moved by a compositor transform: parallax at half the floor speed);
- * the side walls are pre-rendered tiles blitted per row; floors, the climber and the effects
- * are a handful of flat fills with ink outlines. The tower changes mood every 25 floors
- * (tower.ts). A quality flag drops snow / wind streaks when frames are slow.
+ * Look (render-only, never read by the game logic): you are inside a stone tower. The inner
+ * back wall of the current zone (and of the next one near its first floor) is a pre-rendered
+ * tile blitted down the shaft at half the floor speed; the side walls are pre-rendered tiles
+ * blitted per row; every floor is a pre-rendered ledge sprite; the hero is a full-body sprite
+ * frame (stand / run / jump / fall / spin) picked from the body's motion. All of them come
+ * from pictures (art.ts, sprites.ts) with a painted fallback (tower.ts and the small drawn
+ * runner here). The ledges change material every 25 floors. A quality flag drops snow / wind
+ * streaks when frames are slow.
  */
 import { GAMES } from '../../../../shared/protocol';
 import { sfx } from '../../kit/audio';
@@ -25,17 +27,21 @@ import { clamp, createFx, ease, lerp } from '../../kit/fx';
 import { haptic } from '../../kit/haptics';
 import { createInput } from '../../kit/input';
 import { STEP_HZ, createLoop } from '../../kit/loop';
-import { loadIcyArt } from './art';
+import { HERO_BASELINE, HERO_PIVOT, HERO_STAND, MILESTONE_FLOOR_SLICE, ZONE_FLOOR_SLICES, loadIcyArt } from './art';
 import { FLOOR_H, INNER_L, INNER_R, MILESTONE_EVERY, WALL_W, WORLD_W, buildLevel, floorAtOrBelow, isMilestone } from './level';
 import { PAL, blit, createStickerCache, displayFont, loadDisplayFont, makeLayer, renderChip, renderSticker } from './look';
 import { MAX_VX, R, copyBody, createBody, createEvents, stepBody } from './physics';
-import { BACK_TILE_W, WALL_TILE_W, ZONE_FLOORS, ZONE_LOOKS, paintBackTile, paintHazard, paintWallTile, renderFloorSign, renderStar, zoneLook, zoneOfFloor } from './tower';
+import { createScratch, drawIcicles, drawSlicedLedge, stampSticker } from './sprites';
+import { BACK_TILE_W, STONE_LOOKS, WALL_TILE_W, ZONE_FLOORS, ZONE_LOOKS, greyCopy, paintBackDeco, paintBackTile, paintHazard, paintPictureTile, paintWallTile, renderFloorSign, renderStar, zoneLook, zoneOfFloor } from './tower';
 
 import type { GameContext, GameInstance, GameModule } from '../types';
 import type { Drawable } from '../../kit/assets';
 import type { KitPointer } from '../../kit/input';
+import type { FloorSlice, HeroFrame } from './art';
 import type { Sticker } from './look';
 import type { Body } from './physics';
+import type { StickerFinish } from './sprites';
+import type { ZoneLook } from './tower';
 
 /** Test hook (QA bots and e2e): live state plus a predictor that runs the real physics. */
 export interface IcyDebug {
@@ -138,6 +144,18 @@ const HEAD_BOX = 2.6;
 /** A round head token (face in a disc) is drawn this big (head radii), its bottom on the neck. */
 const TOKEN_BOX = 2.4;
 const STAR_COLORS = [PAL.yel, PAL.pink, PAL.white, PAL.cobL] as const;
+/** Height of the standing hero sprite in world units (the collision body is physics.ts, untouched). */
+const HERO_H = 76;
+/** World units travelled per stride of the run cycle. */
+const STRIDE = 70;
+/** A ledge picture is drawn this thick (world units), its top edge on the walkable line. */
+const LEDGE_H = 26;
+/** Sticker finish of the picture sprites: ink outline (+ hard shadow under the ledges), CSS px. */
+const LEDGE_FINISH: StickerFinish = { outline: 1.6, shadowX: 4, shadowY: 6, shadowAlpha: 0.42 };
+const HERO_FINISH: StickerFinish = { outline: 1.5, shadowX: 0, shadowY: 0, shadowAlpha: 0 };
+const SPRITE_MARGIN = 3;
+/** Words that fly out of the hero on a big jump inside a combo (the owner's slang). */
+const COMBO_WORDS = ['וואו!', 'צדיק!', 'נודר!'] as const;
 
 // ───────────────────────────── Camera (pure, shared with the predictor) ─────────────────────────────
 
@@ -185,6 +203,21 @@ function advanceCam(c: CamState, runFloor: number, runSteps: number, head: numbe
 function fellOff(b: Body, cam: number): boolean {
   return b.py + 2 * R < cam - 8;
 }
+/** Is this picture fully opaque (sampled at its corners, edge middles and centre)? */
+function isOpaque(c: HTMLCanvasElement): boolean {
+  try {
+    const g = c.getContext('2d');
+    if (!g) return false;
+    const w = c.width - 1;
+    const h = c.height - 1;
+    for (const [u, v] of [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0], [0.5, 1], [0, 0.5], [1, 0.5], [0.5, 0.5]] as const) {
+      if ((g.getImageData(Math.round(u * w), Math.round(v * h), 1, 1).data[3] ?? 0) < 250) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 const DASH: number[] = [10, 8];
 const NO_DASH: number[] = [];
 
@@ -220,6 +253,10 @@ export const game: GameModule = {
     const fx = createFx(260);
     const level = buildLevel(ctx.seed);
     view.canvas.dataset.level = level.hash;
+    // the stone tower theme goes with the tower pictures; with none of them the painted comic tower shows
+    const stone = !art.wall.isPlaceholder || !art.bg.isPlaceholder || art.milestoneFloor !== null || art.zoneFloors.some((d) => d !== null);
+    const looks = stone ? STONE_LOOKS : ZONE_LOOKS;
+    const lookOf = (z: number): ZoneLook => zoneLook(z, looks);
 
     // ── layout (CSS px), recomputed on resize ──
     let top = 0;
@@ -271,10 +308,21 @@ export const game: GameModule = {
     const stars = STAR_COLORS.map((c) => renderStar(26, c));
     const stickers = createStickerCache(24);
     const signs = new Map<number, { canvas: HTMLCanvasElement; w: number; h: number }>();
-    /** Pre-rendered floors (ledge + outline + hard shadow), by floor index; the ones on screen. */
-    const floorSprites = new Map<number, { canvas: HTMLCanvasElement; w: number; h: number }>();
+    /** Pre-rendered floors (ledge + outline + hard shadow), by floor index; the ones on screen. Drawn at (left - ox, top - oy). */
+    const floorSprites = new Map<number, { canvas: HTMLCanvasElement; w: number; h: number; ox: number; oy: number }>();
+    /** The hero's frames at the size they are drawn (ink outline included), made on first use. */
+    const heroSprites = new Map<HeroFrame, HTMLCanvasElement>();
+    const scratch = createScratch();
+    /** Grey copies of the wall pictures (coloured per zone), made on first use. */
+    let greyWall: HTMLCanvasElement | null = null;
+    let greyBg: HTMLCanvasElement | null = null;
+    /** Tile heights in world units: a picture's own shape, else the painted tile. */
+    const wallTileW = art.wall.isPlaceholder ? WALL_TILE_W : (WALL_W * art.wall.height) / art.wall.width;
+    const backTileW = art.bg.isPlaceholder ? BACK_TILE_W : (WORLD_W * art.bg.height) / art.bg.width;
+    /** A back-wall picture with see-through parts needs the play area cleared under it every frame. */
+    const bgClear = !art.bg.isPlaceholder && !isOpaque(art.bg.source);
     /** Altitude where each zone starts. */
-    const zoneAlt = ZONE_LOOKS.map((_, z) => level.alt[z * ZONE_FLOORS] ?? 0);
+    const zoneAlt = looks.map((_, z) => level.alt[z * ZONE_FLOORS] ?? 0);
     function zoneOfAlt(a: number): number {
       let z = 0;
       for (let i = 1; i < zoneAlt.length; i++) if (a >= (zoneAlt[i] ?? Infinity)) z = i;
@@ -293,24 +341,34 @@ export const game: GameModule = {
       }
       for (const sp of floorSprites.values()) sp.canvas.width = 0;
       floorSprites.clear();
+      for (const c of heroSprites.values()) c.width = 0;
+      heroSprites.clear();
     }
     function backTile(z: number): HTMLCanvasElement {
       const hit = backTiles[z];
       if (hit) return hit;
-      const th = BACK_TILE_W * scale;
-      const { canvas, ctx: g } = makeLayer(playW, th, view.dpr);
-      if (g) {
-        if (!art.bg.isPlaceholder) {
-          // a real bg.png: the picture tiled down the wall, tinted per zone
-          const bh = (playW * art.bg.height) / art.bg.width;
-          for (let y = 0; y < th; y += bh) art.bg.draw(g, playW / 2, y + bh / 2, playW, bh);
-          if (z > 0) {
-            g.globalAlpha = 0.3;
-            g.fillStyle = zoneLook(z).back;
-            g.fillRect(0, 0, playW, th);
-            g.globalAlpha = 1;
+      const L = lookOf(z);
+      let canvas: HTMLCanvasElement;
+      if (!art.bg.isPlaceholder) {
+        // a real bg.png: one picture per tile (a whole number of device pixels tall, so the
+        // tiles meet without a line), coloured for the zone, the zone's windows on top
+        const th = Math.max(1, Math.round(backTileW * scale * view.dpr)) / view.dpr;
+        const l = makeLayer(playW, th, view.dpr);
+        canvas = l.canvas;
+        if (l.ctx) {
+          let src = art.bg.source;
+          if (L.backGrey) {
+            greyBg ??= greyCopy(art.bg.source);
+            src = greyBg;
           }
-        } else paintBackTile(g, playW, th, scale, z);
+          paintPictureTile(l.ctx, src, playW, th, L.backTint ?? null);
+          paintBackDeco(l.ctx, playW, th, scale, L);
+        }
+      } else {
+        const th = BACK_TILE_W * scale;
+        const l = makeLayer(playW, th, view.dpr);
+        canvas = l.canvas;
+        if (l.ctx) paintBackTile(l.ctx, playW, th, scale, z, L);
       }
       backTiles[z] = canvas;
       return canvas;
@@ -319,12 +377,52 @@ export const game: GameModule = {
       const k = z * 2 + (left ? 0 : 1);
       const hit = wallTiles[k];
       if (hit) return hit;
+      const L = lookOf(z);
       const ww = WALL_W * scale;
-      const th = WALL_TILE_W * scale;
+      const th = wallTileW * scale;
       const { canvas, ctx: g } = makeLayer(ww, th, view.dpr);
-      if (g) paintWallTile(g, ww, th, scale, z, left);
+      if (g) {
+        if (!art.wall.isPlaceholder) {
+          // a real wall.png: the stone picture, coloured for the zone, mirrored on the right
+          let src = art.wall.source;
+          if (L.stone) {
+            greyWall ??= greyCopy(art.wall.source);
+            src = greyWall;
+          }
+          paintPictureTile(g, src, ww, th, L.stone ?? null, !left);
+        } else paintWallTile(g, ww, th, scale, z, left, L);
+      }
       wallTiles[k] = canvas;
       return canvas;
+    }
+    /** Box of a hero frame in CSS px (the standing figure is HERO_H world units tall). */
+    function heroBox(): number {
+      return (HERO_H / HERO_STAND) * scale;
+    }
+    function heroSprite(f: HeroFrame): HTMLCanvasElement | null {
+      if (!art.hero) return null;
+      const hit = heroSprites.get(f);
+      if (hit) return hit;
+      const box = heroBox();
+      const src = art.hero[f].source;
+      const l = makeLayer(box + 2 * SPRITE_MARGIN, box + 2 * SPRITE_MARGIN, view.dpr);
+      if (l.ctx) {
+        l.ctx.translate(SPRITE_MARGIN, SPRITE_MARGIN);
+        stampSticker(l.ctx, scratch, box, box, view.dpr, HERO_FINISH, (c) => {
+          c.imageSmoothingQuality = 'high';
+          c.drawImage(src, 0, 0, box, box);
+        });
+      }
+      heroSprites.set(f, l.canvas);
+      return l.canvas;
+    }
+    /** The ledge picture of floor `j` (its zone's, or the every-10th-floor one), or null when it is not dropped in. */
+    function floorPicture(j: number): { pic: Drawable; sl: FloorSlice } | null {
+      if (isMilestone(j)) return art.milestoneFloor ? { pic: art.milestoneFloor, sl: MILESTONE_FLOOR_SLICE } : null;
+      const z = zoneOfFloor(j + LOOK_FLOOR);
+      const pic = art.zoneFloors[z];
+      const sl = ZONE_FLOOR_SLICES[z];
+      return pic && sl ? { pic, sl } : null;
     }
     function hazardFill(g: CanvasRenderingContext2D): CanvasPattern | string {
       if (!hazard) {
@@ -455,6 +553,8 @@ export const game: GameModule = {
 
     // ── look-only state (advanced in update so a freeze stands still; never read by the logic) ──
     let runPhase = 0;
+    /** World units run on a floor (drives the hero's stride frames). */
+    let runDist = 0;
     let facing = 1;
     let lowQuality = false;
     let frameEma = 16.7;
@@ -529,7 +629,9 @@ export const game: GameModule = {
     function endCombo(): void {
       if (comboJumps >= 2) {
         const mega = comboFloors >= 20;
-        showBanner(mega ? 'מגה קומבו!' : 'סופר קומבו!', `${comboFloors} קומות · +${comboBonus}`, mega ? PAL.yel : PAL.pink, 1.6);
+        // the bigger the combo, the bigger the word (the owner's slang; looks only)
+        const word = comboFloors >= 25 ? 'מחורחר!' : comboFloors >= 15 ? 'בן פורת יוסף!' : comboFloors >= 8 ? 'צדיק!' : 'וואו!';
+        showBanner(word, `קומבו ${comboFloors} קומות · +${comboBonus}`, mega ? PAL.yel : PAL.pink, 1.6);
         if (mega) {
           fx.confetti({ count: 70, width: view.width, colors: [PAL.yel, PAL.red, PAL.pink, PAL.cobL, PAL.white] });
           sfx.cheer();
@@ -579,6 +681,8 @@ export const game: GameModule = {
         comboTimer = COMBO_WINDOW;
         comboPop = 1;
         addPop(sx, sy - 70 * scale, `+${bonus}`, PAL.yel, 24 + Math.min(14, comboJumps * 2));
+        // a word flies out on a big single jump
+        if (delta >= 4) addPop(sx, sy - 118 * scale, COMBO_WORDS[comboJumps % COMBO_WORDS.length] ?? 'וואו!', PAL.pink, 22);
         fx.burst(sx, sy, { count: 10 + Math.min(14, comboJumps * 2), shape: 'star', colors: [PAL.yel, PAL.red, PAL.white, PAL.pink], speed: 320, size: 6, life: 0.6 });
         sfx.coin(1 + Math.min(10, comboJumps) * 0.07);
         haptic.tap();
@@ -609,7 +713,7 @@ export const game: GameModule = {
       }
       if (!recordShown && runs > 0 && bestBefore > 0 && runScore() > bestBefore) {
         recordShown = true;
-        showBanner('שיא חדש!', 'הריצה הזאת הכי טובה שלך', '#3ddc84', 1.3);
+        showBanner('שיא חדש!', 'נודר, הריצה הכי טובה שלך', '#3ddc84', 1.3);
         sfx.success();
       }
       publish();
@@ -761,14 +865,16 @@ export const game: GameModule = {
       else if (lowQuality && slowSteps <= -90) lowQuality = false;
       if (mode === 'run') {
         if (Math.abs(body.vx) > 30) facing = body.vx < 0 ? -1 : 1;
-        if (body.grounded >= 0) runPhase += (Math.abs(body.vx) * dt) / 15;
-        else runPhase += dt * 9;
+        if (body.grounded >= 0) {
+          runPhase += (Math.abs(body.vx) * dt) / 15;
+          runDist += Math.abs(body.vx) * dt;
+        } else runPhase += dt * 9;
       }
       // a sticker when the player first climbs into a new zone this round
       const z = zoneOfFloor(runFloor);
       if (mode === 'run' && z > zoneShown) {
         zoneShown = z;
-        const L = zoneLook(z);
+        const L = lookOf(z);
         zoneSticker = stickers.get(`z|${z}`, (old) => renderSticker(L.name, { size: 34, fill: z === 3 ? PAL.yel : PAL.white, shadow: L.wall === PAL.yel ? PAL.red : L.wall, burst: z === 3 ? PAL.red : PAL.yel }, old));
         zoneAge = 0;
         zoneLife = Math.round(1.9 * STEP_HZ);
@@ -865,8 +971,8 @@ export const game: GameModule = {
       if (outside) {
         if (z !== skyZone) {
           skyZone = z;
-          skyA.style.background = zoneLook(z).sky;
-          skyB.style.background = zoneLook(z + 1).sky;
+          skyA.style.background = lookOf(z).sky;
+          skyB.style.background = lookOf(z + 1).sky;
         }
         if (mix !== skyMix) {
           skyMix = mix;
@@ -885,10 +991,10 @@ export const game: GameModule = {
       const hd = view.height * d;
       g.save();
       g.setTransform(1, 0, 0, 1, 0, 0);
-      if (!art.bg.isPlaceholder) g.clearRect(ox, 0, tile.width, hd);
+      if (bgClear) g.clearRect(ox, 0, tile.width, hd);
       for (let y = Math.round(off) - th; y < hd; y += th) g.drawImage(tile, ox, y);
       if (mix > 0) {
-        const next = backTile(Math.min(ZONE_LOOKS.length - 1, z + 1));
+        const next = backTile(Math.min(looks.length - 1, z + 1));
         g.globalAlpha = mix;
         for (let y = Math.round(off) - th; y < hd; y += th) g.drawImage(next, ox, y);
         g.globalAlpha = 1;
@@ -904,26 +1010,17 @@ export const game: GameModule = {
       g.fillStyle = 'rgba(22, 18, 14, 0.38)';
       g.fillRect(offX + ww, 0, Math.max(4, 7 * scale), view.height);
       g.fillRect(offX + playW - ww - Math.max(2, 3 * scale), 0, Math.max(2, 3 * scale), view.height);
-      if (!art.wall.isPlaceholder) {
-        const th = (ww * art.wall.height) / art.wall.width;
-        let y0 = (c * scale) % th;
-        if (y0 < 0) y0 += th;
-        for (let y = y0 - th; y < view.height; y += th) {
-          art.wall.draw(g, offX + ww / 2, y + th / 2, ww, th);
-          art.wall.draw(g, offX + playW - ww / 2, y + th / 2, ww, th);
-        }
-      } else {
-        // rows in world altitude, each in the zone of its altitude
-        const minA = la - (view.height - bottom) / scale - WALL_TILE_W;
-        const maxA = la + bottom / scale + WALL_TILE_W;
-        const th = WALL_TILE_W * scale;
-        for (let k = Math.floor(minA / WALL_TILE_W); k * WALL_TILE_W < maxA; k++) {
-          const a = k * WALL_TILE_W;
-          const z = zoneOfAlt(a);
-          const yTop = bottom - (a + WALL_TILE_W - la) * scale;
-          g.drawImage(wallTile(z, true), offX, yTop, ww, th + 0.5);
-          g.drawImage(wallTile(z, false), offX + playW - ww, yTop, ww, th + 0.5);
-        }
+      // rows in world altitude, each in the zone of its altitude (pre-rendered tiles: the stone picture or the painted blocks)
+      const tw = wallTileW;
+      const minA = la - (view.height - bottom) / scale - tw;
+      const maxA = la + bottom / scale + tw;
+      const th = tw * scale;
+      for (let k = Math.floor(minA / tw); k * tw < maxA; k++) {
+        const a = k * tw;
+        const z = zoneOfAlt(a);
+        const yTop = bottom - (a + tw - la) * scale;
+        g.drawImage(wallTile(z, true), offX, yTop, ww, th + 0.5);
+        g.drawImage(wallTile(z, false), offX + playW - ww, yTop, ww, th + 0.5);
       }
       // the bounce faces
       g.fillStyle = PAL.ink;
@@ -943,6 +1040,21 @@ export const game: GameModule = {
       if (gy > view.height + 10) return;
       const ww = WALL_W * scale;
       const h = FLOOR_H * scale;
+      if (floorPicture(0)) {
+        // stone foundation under the ground ledge (the first zone's ledge picture, full width)
+        const L = lookOf(0);
+        g.fillStyle = L.backLo;
+        g.fillRect(offX + ww, gy + h * 0.5, playW - 2 * ww, view.height - gy + 2);
+        g.fillStyle = 'rgba(22, 18, 14, 0.5)';
+        const bw0 = 60 * scale;
+        for (let r = 0; r < 4; r++) {
+          const y = gy + LEDGE_H * scale + r * 34 * scale;
+          g.fillRect(offX + ww, y + 34 * scale - 2, playW - 2 * ww, 2);
+          for (let x = offX + ww + (r % 2) * bw0 * 0.5; x < offX + playW - ww; x += bw0) g.fillRect(x, y, 2, 34 * scale);
+        }
+        drawFloor(0, gy);
+        return;
+      }
       // foundation: cobalt block slab with a paper top
       g.fillStyle = PAL.cobD;
       g.fillRect(offX + ww, gy, playW - 2 * ww, view.height - gy + 2);
@@ -976,16 +1088,38 @@ export const game: GameModule = {
           }
         }
         const w = half * 2 * scale;
-        const h = FLOOR_H * scale * 1.35;
-        const l = makeLayer(w + 10, h + 12, view.dpr);
-        if (l.ctx) {
-          l.ctx.translate(2, 2);
-          paintFloor(l.ctx, j, 0, 0);
+        const fp = floorPicture(j);
+        if (fp) {
+          // a ledge picture: caps + repeating middle at this floor's exact width, icicles under
+          // the stone and ice ledges, then the ink outline and the hard shadow from its silhouette
+          const hb = LEDGE_H * scale;
+          const zone = zoneOfFloor(j + LOOK_FLOOR);
+          const icy = art.icicles !== null && j > 0 && !isMilestone(j) && zone <= 1;
+          const hang = icy ? hb * (zone === 0 ? 0.66 : 0.42) : 0;
+          const m = SPRITE_MARGIN;
+          const sw = w + 2 * m + LEDGE_FINISH.shadowX + 1;
+          const sh = hb + hang + 2 * m + LEDGE_FINISH.shadowY + 1;
+          const l = makeLayer(sw, sh, view.dpr);
+          if (l.ctx) {
+            l.ctx.translate(m, m);
+            stampSticker(l.ctx, scratch, w, hb + hang, view.dpr, LEDGE_FINISH, (c) => {
+              if (icy && art.icicles) drawIcicles(c, art.icicles, w, hb, j, zone === 0 ? 0.62 : 0.3, zone === 0 ? 0.6 : 0.38);
+              drawSlicedLedge(c, fp.pic, fp.sl, w, hb, j, view.dpr);
+            });
+          }
+          sp = { canvas: l.canvas, w: sw, h: sh, ox: m, oy: m };
+        } else {
+          const h = FLOOR_H * scale * 1.35;
+          const l = makeLayer(w + 10, h + 12, view.dpr);
+          if (l.ctx) {
+            l.ctx.translate(2, 2);
+            paintFloor(l.ctx, j, 0, 0);
+          }
+          sp = { canvas: l.canvas, w: w + 10, h: h + 12, ox: 2, oy: 2 };
         }
-        sp = { canvas: l.canvas, w: w + 10, h: h + 12 };
         floorSprites.set(j, sp);
       }
-      g.drawImage(sp.canvas, left - 2, sy - 2, sp.w, sp.h);
+      g.drawImage(sp.canvas, left - sp.ox, sy - sp.oy, sp.w, sp.h);
       if (isMilestone(j)) {
         const s = floorSign(j);
         g.drawImage(s.canvas, offX + WALL_W * scale + 10, sy - s.h - 10 * scale, s.w, s.h);
@@ -1013,7 +1147,7 @@ export const game: GameModule = {
         for (let tx = left - (phase / 64) * tw; tx < left + w; tx += tw) tile.draw(g, tx + tw / 2, sy + h / 2, tw, h);
         g.restore();
       } else {
-        const L = zoneLook(zoneOfFloor(j + LOOK_FLOOR));
+        const L = lookOf(zoneOfFloor(j + LOOK_FLOOR));
         // front face, then the walkable top surface
         g.fillStyle = milestone ? PAL.red : L.face;
         roundRectPath(g, left, sy, w, h, r);
@@ -1088,9 +1222,48 @@ export const game: GameModule = {
       return body.vy > 0 ? art.faceJump : art.face;
     }
 
+    /** The hero's sprite frame for the body's motion (looks only). */
+    function heroFrame(): HeroFrame {
+      if (mode === 'dead') return 'fall';
+      if (body.grounded >= 0) {
+        if (Math.abs(body.vx) < 45) return 'stand';
+        return Math.floor(runDist / STRIDE) % 2 === 0 ? 'run1' : 'run2';
+      }
+      // a big combo jump: tucked into a ball, spinning
+      if (superAir) return 'ball';
+      // a long drop, or the bottom edge is close: arms flailing
+      if (body.vy < -1100 || body.py + R < cam.cam + 70) return 'fall';
+      // going up: fists in the air, knees tucked; over the top and coming down: legs out to land
+      return body.vy > 140 ? 'jump' : 'stand';
+    }
+
     /**
-     * The climber, feet at (x, feet), head radius k px: legs, jacket, arms, scarf and the
-     * big head from the face slot. `air`: +1 rising (tuck) .. -1 falling (stretch), 0 = on a floor.
+     * The hero sprite, feet at (x, feet): squash / stretch about the feet, lean with the speed,
+     * `spin` about the middle of the body, mirrored when facing left. `mul` scales the sprite.
+     */
+    function drawHero(g: CanvasRenderingContext2D, x: number, feet: number, sx: number, sy: number, spin: number, lean: number, frame: HeroFrame, mul: number): void {
+      const sprite = heroSprite(frame);
+      if (!sprite) return;
+      const box = heroBox() * mul;
+      const m = SPRITE_MARGIN * mul;
+      g.save();
+      g.translate(x, feet);
+      if (lean !== 0) g.rotate(lean);
+      g.scale(sx, sy);
+      if (spin !== 0) {
+        const pivot = HERO_PIVOT * box;
+        g.translate(0, -pivot);
+        g.rotate(spin);
+        g.translate(0, pivot);
+      }
+      if (facing < 0) g.scale(-1, 1);
+      g.drawImage(sprite, -box / 2 - m, -HERO_BASELINE * box - m, box + 2 * m, box + 2 * m);
+      g.restore();
+    }
+
+    /**
+     * The small drawn runner (shown when the hero sprites are missing), feet at (x, feet), head
+     * radius k px: legs, jacket, arms, scarf and the big head from the face slot. `air`: +1 rising (tuck) .. -1 falling (stretch), 0 = on a floor.
      */
     function drawClimber(g: CanvasRenderingContext2D, x: number, feet: number, k: number, sx: number, sy: number, spin: number, lean: number, air: number, run: number, vxs: number, vys: number, head: Drawable, onFloor: boolean): void {
       const f = facing;
@@ -1320,7 +1493,8 @@ export const game: GameModule = {
       const lean = (body.vx / MAX_VX) * 0.22;
       const air = body.grounded >= 0 ? 0 : clamp(body.vy / 650, -1, 1);
       const run = clamp(Math.abs(body.vx) / 380, 0, 1);
-      drawClimber(g, px, feet, k, sx, sy, rot, lean, air, run, body.vx * scale, -body.vy * scale, headFor(), body.grounded >= 0);
+      if (art.hero) drawHero(g, px, feet, sx, sy, rot, lean * 0.5, heroFrame(), 1);
+      else drawClimber(g, px, feet, k, sx, sy, rot, lean, air, run, body.vx * scale, -body.vy * scale, headFor(), body.grounded >= 0);
     }
 
     function drawStreaks(): void {
@@ -1456,7 +1630,7 @@ export const game: GameModule = {
     function drawSnow(c: number): void {
       if (lowQuality) return;
       const g = view.ctx;
-      g.fillStyle = zoneLook(zoneOfAlt(lookAlt(c) + visH * 0.5)).snow;
+      g.fillStyle = lookOf(zoneOfAlt(lookAlt(c) + visH * 0.5)).snow;
       g.beginPath();
       for (let i = 0; i < SNOW; i++) {
         const sx = ((snowX[i] ?? 0) * view.width + Math.sin(snowP[i] ?? 0) * 12 + view.width) % view.width;
@@ -1489,15 +1663,19 @@ export const game: GameModule = {
         const cy = top + 44 * ui;
         const s = (0.82 + comboPop * 0.4) * ui;
         blit(g, st, cx, cy, s);
-        const bw = 92 * ui;
+        // the combo meter: full on every combo jump, drains until the combo is lost
+        const bw = 118 * ui;
+        const bh = 10;
         const by = cy + st.h * 0.42 * s + 2;
         const frac = clamp(comboTimer / COMBO_WINDOW, 0, 1);
         g.fillStyle = PAL.ink;
-        g.fillRect(cx - bw / 2 - 2, by - 2, bw + 4, 11);
+        g.fillRect(cx - bw / 2 - 2.5, by - 2.5, bw + 5 + 3, bh + 5 + 3);
         g.fillStyle = PAL.paper;
-        g.fillRect(cx - bw / 2, by, bw, 7);
-        g.fillStyle = frac < 0.3 ? PAL.red : PAL.yel;
-        g.fillRect(cx - bw / 2, by, bw * frac, 7);
+        g.fillRect(cx - bw / 2, by, bw, bh);
+        g.fillStyle = comboPop > 0.55 ? PAL.white : frac < 0.3 ? PAL.red : PAL.yel;
+        g.fillRect(cx - bw / 2, by, bw * frac, bh);
+        g.fillStyle = PAL.ink;
+        for (let i = 1; i < 4; i++) g.fillRect(cx - bw / 2 + (bw * i) / 4 - 1, by, 2, bh);
       }
 
       // zone sticker
@@ -1561,7 +1739,8 @@ export const game: GameModule = {
       if (mode === 'dead') {
         const py0 = bottom - lerp(prevPopY, popY, alpha);
         const k = R * scale * 1.2;
-        drawClimber(g, wx(deathX), py0 + 1.5 * k, k, 1, 1, deadSteps * 0.12, 0, -1, 0, 0, 400, art.faceFall, false);
+        if (art.hero) drawHero(g, wx(deathX), py0 + HERO_PIVOT * heroBox() * 1.2, 1, 1, deadSteps * 0.12, 0, 'fall', 1.2);
+        else drawClimber(g, wx(deathX), py0 + 1.5 * k, k, 1, 1, deadSteps * 0.12, 0, -1, 0, 0, 400, art.faceFall, false);
       }
       drawDanger();
       drawHeldGlow();
@@ -1651,7 +1830,7 @@ export const game: GameModule = {
         let n = stars.length + stickers.size + signs.size + (hazard ? 1 : 0);
         for (const t of backTiles) if (t) n++;
         for (const t of wallTiles) if (t) n++;
-        return { zone: shownZone, lowQuality, canvases: n + floorSprites.size };
+        return { zone: shownZone, lowQuality, canvases: n + floorSprites.size + heroSprites.size + (greyWall ? 1 : 0) + (greyBg ? 1 : 0) };
       },
     };
     window.__icy = debug;
@@ -1685,7 +1864,12 @@ export const game: GameModule = {
         hazard = null;
         hazardPattern = null;
         // the art of this round (kit drawables made by loadIcyArt for this round only)
-        for (const d of [art.face, art.faceJump, art.faceFall, art.platform, art.milestone, art.wall, art.bg, art.shirt, art.finger]) d.source.width = 0;
+        for (const d of art.all) d.source.width = 0;
+        scratch.dispose();
+        if (greyWall) greyWall.width = 0;
+        if (greyBg) greyBg.width = 0;
+        greyWall = null;
+        greyBg = null;
         if (window.__icy === debug) delete window.__icy;
       },
     };

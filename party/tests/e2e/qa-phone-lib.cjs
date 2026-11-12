@@ -215,7 +215,9 @@ async function audit(page) {
       if (el.tagName !== 'INPUT' && el.scrollWidth > el.clientWidth + 2 && getComputedStyle(el).textOverflow !== 'ellipsis' && getComputedStyle(el).overflow !== 'visible') {
         out.inner.push(`${el.className} ${el.scrollWidth}>${el.clientWidth}`);
       }
-      if ((el.textContent || '').trim() !== '' || isCtl) leaves.push({ el, r, rs: [...el.getClientRects()] });
+      // a star sticker (.pw-burst) is pinned over a corner of what it decorates: on purpose, so it is
+      // checked for being on the screen (above) but not for overlapping the text next to it
+      if (((el.textContent || '').trim() !== '' || isCtl) && !el.closest('.pw-burst')) leaves.push({ el, r, rs: [...el.getClientRects()] });
     }
     // screens that cut their own content (overflow hidden)
     for (const s of document.querySelectorAll('.pp-screen, .pp-join-card, .pp-res-card, .pp-panel:not(.pp-grow)')) {

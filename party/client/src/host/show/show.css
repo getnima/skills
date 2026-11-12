@@ -447,16 +447,16 @@
   font-size: calc(60 * var(--u));
   color: #fff;
 }
-/* the crown sits on the leader's doll (slot 0); it hops over when the leader changes */
+/* the crown hangs on the corner of the leader's doll (slot 0); it hops over when the leader changes */
 .sh-crown {
-  --cw: max(calc(74 * var(--u)), calc((var(--rh) - 17 * var(--u)) * 0.62));
+  --cw: max(calc(70 * var(--u)), calc((var(--rh) - 17 * var(--u)) * 0.56));
   position: absolute;
   z-index: 3;
-  top: calc(var(--cw) * -0.4);
-  right: calc(98 * var(--u) + (var(--rh) - 17 * var(--u)) / 2 - var(--cw) * 0.36);
+  top: calc(var(--cw) * -0.26);
+  right: calc(96 * var(--u) + (var(--rh) - 17 * var(--u)) - var(--cw) * 0.78);
   width: var(--cw);
   height: var(--cw);
-  rotate: 16deg;
+  rotate: -20deg;
   object-fit: contain;
   pointer-events: none;
   transition: opacity 300ms;
@@ -474,13 +474,16 @@
   justify-content: flex-end;
   padding-inline-end: calc(10 * var(--u));
 }
+/* two words the whole room reads twelve times over: Rubik, not the display face */
 .sh-in-mark,
 .sh-out-mark {
   display: inline-block;
-  padding: 0 calc(22 * var(--u)) calc(0.12em);
+  padding: 0 calc(22 * var(--u)) calc(0.06em);
   border: calc(3.5 * var(--u)) solid var(--ink);
   border-radius: calc(14 * var(--u));
-  font: 700 clamp(calc(40 * var(--u)), calc(var(--rh, 84px) * 0.42), calc(72 * var(--u))) / 1.25 var(--disp);
+  font-size: clamp(calc(36 * var(--u)), calc(var(--rh, 84px) * 0.38), calc(66 * var(--u)));
+  font-weight: 900;
+  line-height: 1.3;
   white-space: nowrap;
 }
 .sh-in-mark {
@@ -517,9 +520,12 @@
 .sh-playing .sh-row.is-out .sh-name {
   color: rgba(22, 18, 14, 0.5);
 }
+.sh-playing .sh-row.is-out .sh-avatar {
+  background-color: #a9a493 !important;
+}
 .sh-playing .sh-row.is-out .sh-avatar > img {
   filter: grayscale(1);
-  opacity: 0.6;
+  opacity: 0.62;
 }
 .sh-playing .sh-row.is-out .sh-rank {
   color: rgba(22, 18, 14, 0.62);
@@ -643,14 +649,32 @@
   max-width: 100%;
 }
 .sh-game-emoji {
+  flex: none;
+  display: grid;
+  place-items: center;
   font-size: calc(96 * var(--u));
   line-height: 1.1;
   animation: sh-hop 2.4s cubic-bezier(0.3, 0, 0.3, 1) infinite;
 }
+/* the game's key art instead of its emoji, when the picture exists */
+.sh-game-emoji.is-pic {
+  width: calc(240 * var(--u));
+  height: calc(170 * var(--u));
+  margin-bottom: calc(-6 * var(--u));
+}
+.sh-playing.is-elimination .sh-game-emoji.is-pic {
+  height: calc(120 * var(--u));
+}
+.sh-game-emoji.is-pic > img,
+.sh-aside-emoji.is-pic > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
 .sh-game-title {
   max-width: 100%;
   padding: 0 calc(12 * var(--u)) calc(10 * var(--u));
-  font: 700 calc(72 * var(--u)) / 1.05 var(--disp);
+  font: 700 calc(62 * var(--u)) / 1.05 var(--disp);
   color: #fff;
   -webkit-text-stroke: calc(3.5 * var(--u)) var(--ink);
   paint-order: stroke fill;
@@ -828,6 +852,12 @@
 [data-orient='portrait'] .sh-game-emoji {
   font-size: calc(54 * var(--u));
 }
+[data-orient='portrait'] .sh-game-emoji.is-pic,
+[data-orient='portrait'].is-elimination .sh-game-emoji.is-pic {
+  width: calc(84 * var(--u));
+  height: calc(70 * var(--u));
+  margin: 0;
+}
 [data-orient='portrait'] .sh-game-title {
   font-size: calc(48 * var(--u));
 }
@@ -921,8 +951,8 @@
   padding: 0 calc(12 * var(--u)) calc(3 * var(--u));
 }
 [data-orient='portrait'] .sh-crown {
-  --cw: calc(56 * var(--u));
-  right: calc(74 * var(--u));
+  --cw: calc(54 * var(--u));
+  right: calc(100 * var(--u));
 }
 [data-orient='portrait'] .sh-divider {
   font-size: calc(22 * var(--u));
@@ -1091,9 +1121,16 @@
   text-align: center;
 }
 .sh-aside-emoji {
+  flex: none;
+  display: grid;
+  place-items: center;
   font-size: calc(140 * var(--u));
   line-height: 1.12;
   animation: sh-hop 2.4s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+}
+.sh-aside-emoji.is-pic {
+  width: calc(300 * var(--u));
+  height: calc(230 * var(--u));
 }
 .sh-aside-title {
   padding: 0 calc(10 * var(--u)) calc(12 * var(--u));
@@ -1908,6 +1945,10 @@
 }
 [data-orient='portrait'] .sh-aside-emoji {
   font-size: calc(48 * var(--u));
+}
+[data-orient='portrait'] .sh-aside-emoji.is-pic {
+  width: calc(76 * var(--u));
+  height: calc(64 * var(--u));
 }
 [data-orient='portrait'] .sh-aside-title {
   font-size: calc(46 * var(--u));

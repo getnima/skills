@@ -6,6 +6,7 @@
  */
 import { assetFileUrl, crownPainter, drawFace, paintDrawable } from '../../kit/assets';
 
+import type { GameId } from '../../../../shared/protocol';
 import type { FaceExpression, Painter } from '../../kit/assets';
 
 const GROUP = 'host';
@@ -196,6 +197,43 @@ export function prizeArt(): PrizeArt {
   if (url === null) return { url: painted('prize', angelPainter, 300, 400), cutout: true };
   const photo = /\.jpe?g($|\?)/i.test(url);
   return { url, cutout: !photo };
+}
+
+export type IntroArtId = GameId | 'show';
+
+/**
+ * The key art that announces a game: client/public/assets/intro/<gameId>.webp (any picture
+ * extension works, the base name is what counts) and show.webp, Shimi as the show's host.
+ * Transparent cut-outs, longest side 768 px. Null while the file is not there: the kit knows
+ * the file list at build time, so a missing picture costs no request and no 404, and the
+ * screen shows the game's emoji instead.
+ */
+export function introArtUrl(id: IntroArtId): string | null {
+  return assetFileUrl('intro', `${id}.webp`);
+}
+
+let introArtWarm = false;
+
+/** Fetch the pictures that exist once, ahead of the first intro, so none pops in late. */
+export function preloadIntroArt(): void {
+  if (introArtWarm) return;
+  introArtWarm = true;
+  for (const id of ['show', 'tap', 'icy', 'flappy', 'plotzel', 'ninja'] as const) {
+    const url = introArtUrl(id);
+    if (url === null) continue;
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = url;
+  }
+}
+
+/**
+ * The designed QR code (tools/qr): client/public/assets/host/qr.png, a fixed picture of the
+ * short join link. Null when the file is not there. The lobby shows it only after qr.json
+ * next to it vouches that it encodes this very origin (lobby.tsx).
+ */
+export function designedQrUrl(): string | null {
+  return assetFileUrl(GROUP, 'qr.png');
 }
 
 /** Optional decoration on the podium block of place 1 / 2 / 3. */

@@ -5,7 +5,7 @@ import { roundTime } from '../../../../shared/round-clock';
 import { sfx } from '../../kit/audio';
 import { roundFeed } from '../../net/round-feed';
 import { backdropUrl, crownUrl, lastPlaceArt } from './art';
-import { Avatar, avatarColor, CountUp, useFrame, useStage, useTicker } from './common';
+import { Avatar, avatarColor, CountUp, GameArt, useFrame, useStage, useTicker } from './common';
 import { useFunnyLayer } from './funny';
 import { createMomentEngine } from './moments';
 
@@ -469,13 +469,12 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
             ref={crownRef}
             src={crownUrl()}
             alt=""
-            style={{ top: `${(rowH * 0.5).toFixed(1)}px` }}
           />
         </div>
       </div>
       <aside class="sh-side">
         <div class="sh-game">
-          <span class="sh-game-emoji">{props.game.emoji}</span>
+          <GameArt id={props.game.id} emoji={props.game.emoji} class="sh-game-emoji" />
           <span class="sh-game-title">{props.game.title}</span>
         </div>
         <div class="sh-roundno">

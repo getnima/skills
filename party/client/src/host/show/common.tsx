@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { plateColor, useAvatarUrl } from '../../avatar';
+import { introArtUrl } from './art';
 
 import type { JSX } from 'preact';
+import type { IntroArtId } from './art';
 
 /**
  * Player palette: PlayerPublic.avatar is an index into it (wraps around). The colours of the
@@ -99,6 +101,28 @@ export function Avatar(props: AvatarProps): JSX.Element {
   return (
     <span class={`sh-avatar ${props.class ?? ''}`} style={{ backgroundColor: avatarColor(props.avatar) }}>
       {initialOf(props.name)}
+    </span>
+  );
+}
+
+/**
+ * A game's key art (assets/intro/<id>.webp), or its emoji while the file is not there or
+ * fails to load. The caller's class names the box (the same box for both, so scenes are laid
+ * out once); `is-pic` / `is-emoji` tell the stylesheet which one is inside.
+ */
+export function GameArt(props: { readonly id: IntroArtId; readonly emoji: string; readonly class: string }): JSX.Element {
+  const [broken, setBroken] = useState(false);
+  const url = introArtUrl(props.id);
+  if (url !== null && !broken) {
+    return (
+      <span class={`${props.class} is-pic`} data-art={props.id} aria-hidden="true">
+        <img src={url} alt="" draggable={false} decoding="async" onError={() => setBroken(true)} />
+      </span>
+    );
+  }
+  return (
+    <span class={`${props.class} is-emoji`} data-art="" aria-hidden="true">
+      {props.emoji}
     </span>
   );
 }

@@ -3,6 +3,7 @@
  * Avatar, name, overall place ("מקום 5 מתוך 12") and total. Before the first scored round it
  * says "מוכנים?". When the place changes it rolls old → new with ▲ / ▼ and the total counts up.
  * It stays mounted across screens (app.tsx) so it remembers what it showed last.
+ * The name and every number are in Rubik; only the words on the chip are Motaleh (player.css).
  */
 import { useRef } from 'preact/hooks';
 
@@ -89,7 +90,7 @@ export function MeBar(props: { readonly standing: MeStanding | null; readonly vi
     >
       <MeBarAvatar standing={s} />
       <span class="pp-mb-who">
-        <bdi class="pp-mb-name">{s.name}</bdi>
+        <bdi class={`pp-mb-name ${Array.from(s.name).length > 9 ? 'is-long' : ''}`}>{s.name}</bdi>
         {total !== null ? (
           <span class="pp-mb-total">
             <span class="pp-mb-star">⭐</span>
@@ -105,7 +106,9 @@ export function MeBar(props: { readonly standing: MeStanding | null; readonly vi
           {rank === 1 ? <span class="pp-mb-crown">👑</span> : null}
           <span class="pp-mb-word">מקום</span>
           <Roll change={c} rank={rank} />
-          <span class="pp-mb-of">מתוך {s.count}</span>
+          <span class="pp-mb-of">
+            מתוך <b>{s.count}</b>
+          </span>
           {moved !== 0 ? (
             <span class={`pp-mb-move ${moved < 0 ? 'is-up' : 'is-down'}`} key={c?.key} dir="ltr">
               {moved < 0 ? `▲${-moved}` : `▼${moved}`}
