@@ -1,0 +1,34 @@
+/* <Avatar />: a square plate with the composed picture. Fixed box, so nothing shifts when the picture arrives. */
+.av {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--av-size, 48px);
+  height: var(--av-size, 48px);
+  border-radius: 24%;
+  background: var(--av-bg, #ffd21f);
+  overflow: hidden;
+  vertical-align: middle;
+  line-height: 0;
+  -webkit-user-select: none;
+  user-select: none;
+  /* isolates the rounded clip on old Safari */
+  transform: translateZ(0);
+}
+.av > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.av.av-ring {
+  border: max(2px, calc(var(--av-size, 48px) * 0.045)) solid #16120e;
+  box-shadow: max(1.5px, calc(var(--av-size, 48px) * 0.04)) max(1.5px, calc(var(--av-size, 48px) * 0.04)) 0 #16120e;
+}
+.av.av-round {
+  border-radius: 50%;
+}

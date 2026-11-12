@@ -36,6 +36,14 @@ const SIZES = process.env.SIZES ? process.env.SIZES.split(',').map((s) => s.spli
 const SECTIONS = process.argv.slice(2);
 const on = (s) => SECTIONS.length === 0 || SECTIONS.includes(s);
 
+/** GAMES.plotzel.maxRaw, read from shared/protocol.ts here in node (vite's root is client/). */
+const MAX_RAW = (() => {
+  const esbuild = require(path.join(__dirname, '..', '..', 'node_modules', 'esbuild'));
+  const out = esbuild.buildSync({ entryPoints: [path.join(__dirname, '..', '..', 'shared', 'protocol.ts')], bundle: true, format: 'cjs', platform: 'node', write: false, logLevel: 'silent' });
+  const m = { exports: {} };
+  new Function('module', 'exports', 'require', out.outputFiles[0].text)(m, m.exports, require);
+  return m.exports.GAMES.plotzel.maxRaw;
+})();
 const fails = [];
 let oks = 0;
 function check(name, ok, extra) {
@@ -143,6 +151,7 @@ const lad = (page, what, arg) =>
       const m = await import('/src/games/plotzel/ladder.ts');
       const L = m.getLadder();
       const p = window.__plotzel;
+      if (!p) return null; // the round is over
       const words = p.words.map(m.norm);
       const cur = words[words.length - 1];
       if (what === 'nonword') {
@@ -169,7 +178,7 @@ const lad = (page, what, arg) =>
       return null;
     },
     { what, arg },
-  );
+  ).catch(() => null);
 
 async function layoutIssues(page) {
   return page.evaluate(() => {
@@ -378,7 +387,7 @@ async function botRun(browser, w, h, kind, seed) {
   ended = true;
   await watcher;
   const final = (await party(page)).score;
-  const maxRaw = await page.evaluate(async () => (await import('/shared/protocol.ts')).GAMES.plotzel.maxRaw).catch(() => null);
+  const maxRaw = MAX_RAW;
   // the score from the bot's own ledger and the table above
   let expected = 0;
   const solvedLedger = kind === 'expert' ? ledger : ledger.filter((l) => l.solved);

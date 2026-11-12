@@ -10,6 +10,13 @@
  * All gameplay time is fixed steps of the kit loop (freeze-safe), the tower
  * comes from the round seed in screen-independent world units (same tower on
  * every phone), and the art comes from file slots (see art.ts).
+ *
+ * Look (render-only, never read by the game logic): you are inside a tower. Two DOM canvas
+ * layers behind the game canvas hold the inner back wall of the current zone and the next one
+ * (pre-rendered once, moved by a compositor transform: parallax at half the floor speed);
+ * the side walls are pre-rendered tiles blitted per row; floors, the climber and the effects
+ * are a handful of flat fills with ink outlines. The tower changes mood every 25 floors
+ * (tower.ts). A quality flag drops snow / wind streaks when frames are slow.
  */
 import { GAMES } from '../../../../shared/protocol';
 import { sfx } from '../../kit/audio';
@@ -18,13 +25,16 @@ import { clamp, createFx, ease, lerp } from '../../kit/fx';
 import { haptic } from '../../kit/haptics';
 import { createInput } from '../../kit/input';
 import { STEP_HZ, createLoop } from '../../kit/loop';
-import { COLORS, PARTY_COLORS, font } from '../../kit/theme';
-import { HEAD_SHARE, drawBgPattern, loadIcyArt } from './art';
-import { FLOOR_H, INNER_L, INNER_R, WALL_W, WORLD_W, buildLevel, floorAtOrBelow, isMilestone } from './level';
+import { loadIcyArt } from './art';
+import { FLOOR_H, INNER_L, INNER_R, MILESTONE_EVERY, WALL_W, WORLD_W, buildLevel, floorAtOrBelow, isMilestone } from './level';
+import { PAL, blit, createStickerCache, displayFont, loadDisplayFont, makeLayer, renderChip, renderSticker } from './look';
 import { MAX_VX, R, copyBody, createBody, createEvents, stepBody } from './physics';
+import { BACK_TILE_W, WALL_TILE_W, ZONE_FLOORS, ZONE_LOOKS, paintBackTile, paintHazard, paintWallTile, renderFloorSign, renderStar, zoneLook, zoneOfFloor } from './tower';
 
 import type { GameContext, GameInstance, GameModule } from '../types';
+import type { Drawable } from '../../kit/assets';
 import type { KitPointer } from '../../kit/input';
+import type { Sticker } from './look';
 import type { Body } from './physics';
 
 /** Test hook (QA bots and e2e): live state plus a predictor that runs the real physics. */
@@ -59,6 +69,8 @@ export interface IcyDebug {
    * whether the face would fall off the bottom (camera modelled as in the game).
    */
   predict(plan: ReadonlyArray<readonly [number, number]>, maxSteps: number): { landings: Array<{ step: number; floor: number; x: number }>; deadAt: number; x: number; py: number; vx: number; margin: number };
+  /** Look only (tests): zone shown, quality flag, offscreen canvases held. */
+  readonly look: { zone: number; lowQuality: boolean; canvases: number };
 }
 
 declare global {
@@ -106,7 +118,24 @@ const TRAIL = 10;
 const SNOW = 34;
 const BANNER_POP = 12;
 
-const INK = '#2b1436';
+// ── look only ──
+const STREAKS = 16;
+const POPS = 8;
+const PUFFS = 4;
+/** Look-only test flag (?icyLookFloor=N): paint the tower as if the camera were at floor N. Gameplay is untouched. */
+const LOOK_FLOOR = ((): number => {
+  try {
+    const v = Number(new URLSearchParams(window.location.search).get('icyLookFloor'));
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+  } catch {
+    return 0;
+  }
+})();
+/** Frame time (ms, moving average) above which snow and wind streaks are dropped, and below which they come back. */
+const SLOW_FRAME_MS = 30;
+const FAST_FRAME_MS = 21;
+const HEAD_BOX = 2.25;
+const STAR_COLORS = [PAL.yel, PAL.pink, PAL.white, PAL.cobL] as const;
 
 // ───────────────────────────── Camera (pure, shared with the predictor) ─────────────────────────────
 
@@ -157,21 +186,8 @@ function fellOff(b: Body, cam: number): boolean {
 const DASH: number[] = [10, 8];
 const NO_DASH: number[] = [];
 
-const ZONES: ReadonlyArray<readonly [string, string]> = [
-  ['#16337f', '#5ab8ff'], // icy day
-  ['#3a1c78', '#ff7e6b'], // sunset
-  ['#120a3d', '#7a2fb8'], // violet night
-  ['#04121f', '#14857f'], // aurora
-  ['#1a0530', '#ff3d8b'], // party sky
-];
-const ZONE_LEN = 4600;
-
-const F_BANNER = font(40, 900);
-const F_SUB = font(19, 800);
-const F_COMBO = font(30, 900);
-const F_COMBO_LABEL = font(14, 800);
-const F_PILL = font(16, 800);
-const F_HINT = font(19, 800);
+const F_HINT_PX = 22;
+const BANNER_PX = 40;
 
 type Mode = 'run' | 'dead';
 
@@ -183,10 +199,20 @@ interface Banner {
   life: number;
 }
 
+interface Pop {
+  active: boolean;
+  sticker: Sticker | null;
+  x: number;
+  y: number;
+  age: number;
+  life: number;
+  rise: number;
+}
+
 export const game: GameModule = {
   id: 'icy',
   async create(ctx: GameContext): Promise<GameInstance> {
-    const art = await loadIcyArt();
+    const [art] = await Promise.all([loadIcyArt(), loadDisplayFont()]);
     const view = createGameCanvas(ctx.root);
     const input = createInput(view.canvas);
     const fx = createFx(260);
@@ -215,31 +241,143 @@ export const game: GameModule = {
       visH = playH / scale;
       follow = Math.min(CAM_FOLLOW_WORLD, visH * CAM_FOLLOW_MAX_SHARE);
       ui = clamp(Math.min(playW / 360, playH / 560), 0.62, 1.1);
+      invalidateLook();
     }
-    layout();
-    const offResize = view.onResize(layout);
 
-    // ── the sky: two static CSS gradient layers behind the transparent canvas (the
-    // current zone and the next one fading in), so the browser composites them
-    // instead of the canvas filling a full-screen gradient every frame ──
+    // ── the tower's DOM layers, behind the transparent canvas: the sky outside the tower
+    // (landscape / desktop only) and two pre-rendered back-wall canvases (this zone, the next
+    // one fading in) that the compositor moves; no full-screen fill on the canvas per frame ──
     const skyA = document.createElement('div');
     const skyB = document.createElement('div');
     for (const el of [skyA, skyB]) el.style.cssText = 'position:absolute;inset:0;pointer-events:none';
-    ctx.root.prepend(skyA, skyB);
+    const backEls = [document.createElement('canvas'), document.createElement('canvas')] as const;
+    for (const el of backEls) el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;will-change:transform;opacity:1';
+    backEls[1].style.opacity = '0';
+    ctx.root.prepend(skyA, skyB, backEls[0], backEls[1]);
     let skyZone = -1;
     let skyMix = -1;
-    // held-side glows: above the canvas, below the stage HUD, never catch touches
+    const backZone = [-1, -1];
+    let backY = Number.NaN;
+    let backMix = -1;
+    // held-side markers: flat bars above the canvas, below the stage HUD, never catch touches
     const glowEls = [document.createElement('div'), document.createElement('div')] as const;
-    glowEls[0].style.cssText =
-      'position:absolute;left:0;top:0;bottom:0;width:min(140px,30%);pointer-events:none;opacity:0;background:linear-gradient(to right, rgba(45,226,230,0.45), rgba(45,226,230,0))';
-    glowEls[1].style.cssText =
-      'position:absolute;right:0;top:0;bottom:0;width:min(140px,30%);pointer-events:none;opacity:0;background:linear-gradient(to left, rgba(255,61,139,0.45), rgba(255,61,139,0))';
+    glowEls[0].style.cssText = `position:absolute;left:0;top:0;bottom:0;width:9px;pointer-events:none;opacity:0;background:${PAL.yel};border-right:3px solid ${PAL.ink}`;
+    glowEls[1].style.cssText = `position:absolute;right:0;top:0;bottom:0;width:9px;pointer-events:none;opacity:0;background:${PAL.pink};border-left:3px solid ${PAL.ink}`;
     ctx.root.append(glowEls[0], glowEls[1]);
     let glowShown = 0;
-    const zoneCss = (z: number): string => {
-      const zone = ZONES[Math.min(ZONES.length - 1, z)] ?? ZONES[0];
-      return zone ? `linear-gradient(to bottom, ${zone[0]}, ${zone[1]})` : '';
-    };
+
+    // ── pre-rendered look (rebuilt on resize) ──
+    const backTiles: Array<HTMLCanvasElement | null> = [null, null, null, null];
+    const wallTiles: Array<HTMLCanvasElement | null> = [null, null, null, null, null, null, null, null];
+    let hazard: HTMLCanvasElement | null = null;
+    let hazardPattern: CanvasPattern | null = null;
+    const stars = STAR_COLORS.map((c) => renderStar(26, c));
+    const stickers = createStickerCache(24);
+    const signs = new Map<number, { canvas: HTMLCanvasElement; w: number; h: number }>();
+    /** Altitude where each zone starts. */
+    const zoneAlt = ZONE_LOOKS.map((_, z) => level.alt[z * ZONE_FLOORS] ?? 0);
+    function zoneOfAlt(a: number): number {
+      let z = 0;
+      for (let i = 1; i < zoneAlt.length; i++) if (a >= (zoneAlt[i] ?? Infinity)) z = i;
+      return z;
+    }
+    function invalidateLook(): void {
+      for (let i = 0; i < backTiles.length; i++) {
+        const t = backTiles[i];
+        if (t) t.width = 0;
+        backTiles[i] = null;
+      }
+      for (let i = 0; i < wallTiles.length; i++) {
+        const t = wallTiles[i];
+        if (t) t.width = 0;
+        wallTiles[i] = null;
+      }
+      backZone[0] = -1;
+      backZone[1] = -1;
+      backY = Number.NaN;
+    }
+    function backTile(z: number): HTMLCanvasElement {
+      const hit = backTiles[z];
+      if (hit) return hit;
+      const th = BACK_TILE_W * scale;
+      const { canvas, ctx: g } = makeLayer(playW, th, view.dpr);
+      if (g) {
+        if (!art.bg.isPlaceholder) {
+          // a real bg.png: the picture tiled down the wall, tinted per zone
+          const bh = (playW * art.bg.height) / art.bg.width;
+          for (let y = 0; y < th; y += bh) art.bg.draw(g, playW / 2, y + bh / 2, playW, bh);
+          if (z > 0) {
+            g.globalAlpha = 0.3;
+            g.fillStyle = zoneLook(z).back;
+            g.fillRect(0, 0, playW, th);
+            g.globalAlpha = 1;
+          }
+        } else paintBackTile(g, playW, th, scale, z);
+      }
+      backTiles[z] = canvas;
+      return canvas;
+    }
+    function paintBackLayer(i: 0 | 1, z: number): void {
+      const el = backEls[i];
+      const th = BACK_TILE_W * scale;
+      const h = view.height + th + 2;
+      const d = view.dpr;
+      const pw = Math.round(playW * d);
+      const ph = Math.round(h * d);
+      if (el.width !== pw || el.height !== ph) {
+        el.width = pw;
+        el.height = ph;
+      }
+      el.style.width = `${playW}px`;
+      el.style.height = `${h}px`;
+      el.style.left = `${offX}px`;
+      const g = el.getContext('2d');
+      if (!g) return;
+      const tile = backTile(z);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      const tpx = tile.height;
+      for (let y = 0; y < ph; y += tpx) g.drawImage(tile, 0, y);
+      backZone[i] = z;
+    }
+    function wallTile(z: number, left: boolean): HTMLCanvasElement {
+      const k = z * 2 + (left ? 0 : 1);
+      const hit = wallTiles[k];
+      if (hit) return hit;
+      const ww = WALL_W * scale;
+      const th = WALL_TILE_W * scale;
+      const { canvas, ctx: g } = makeLayer(ww, th, view.dpr);
+      if (g) paintWallTile(g, ww, th, scale, z, left);
+      wallTiles[k] = canvas;
+      return canvas;
+    }
+    function hazardFill(g: CanvasRenderingContext2D): CanvasPattern | string {
+      if (!hazard) {
+        const l = makeLayer(48, 24, 1);
+        if (l.ctx) paintHazard(l.ctx, 48, 24);
+        hazard = l.canvas;
+        hazardPattern = null;
+      }
+      hazardPattern ??= g.createPattern(hazard, 'repeat-x');
+      return hazardPattern ?? PAL.red;
+    }
+    function floorSign(n: number): { canvas: HTMLCanvasElement; w: number; h: number } {
+      const hit = signs.get(n);
+      if (hit) return hit;
+      if (signs.size >= 6) {
+        const oldest = signs.keys().next().value;
+        if (oldest !== undefined) {
+          const o = signs.get(oldest);
+          if (o) o.canvas.width = 0;
+          signs.delete(oldest);
+        }
+      }
+      const s = renderFloorSign(n, 15);
+      signs.set(n, s);
+      return s;
+    }
+
+    layout();
+    const offResize = view.onResize(layout);
 
     // ── input: which half is held. Several fingers: the last one pressed wins. ──
     const sides = new Map<number, number>(); // insertion order = press order
@@ -339,7 +477,31 @@ export const game: GameModule = {
       snowP[i] = Math.random() * 6.28;
     }
 
-    const banner: Banner = { text: '', sub: '', color: COLORS.yellow, age: 0, life: 0 };
+    // ── look-only state (advanced in update so a freeze stands still; never read by the logic) ──
+    let runPhase = 0;
+    let facing = 1;
+    let lowQuality = false;
+    let frameEma = 16.7;
+    let lastFrameAt = 0;
+    let slowSteps = 0;
+    let zoneShown = 0;
+    let zoneAge = 0;
+    let zoneLife = 0;
+    let zoneSticker: Sticker | null = null;
+    const streakX = new Float64Array(STREAKS);
+    const streakY = new Float64Array(STREAKS);
+    const streakL = new Float64Array(STREAKS);
+    const streakV = new Float64Array(STREAKS);
+    let streakOn = 0;
+    const pops: Pop[] = Array.from({ length: POPS }, () => ({ active: false, sticker: null, x: 0, y: 0, age: 0, life: 1, rise: 60 }));
+    let popCursor = 0;
+    const puffX = new Float64Array(PUFFS);
+    const puffA = new Float64Array(PUFFS);
+    const puffAge = new Float64Array(PUFFS).fill(1);
+    const puffK = new Float64Array(PUFFS);
+    let puffCursor = 0;
+
+    const banner: Banner = { text: '', sub: '', color: PAL.yel, age: 0, life: 0 };
     function showBanner(text: string, sub: string, color: string, seconds = 1.4): void {
       banner.text = text;
       banner.sub = sub;
@@ -348,13 +510,27 @@ export const game: GameModule = {
       banner.life = Math.round(seconds * STEP_HZ);
     }
 
-    // cached UI strings (rebuilt only when the number changes)
-    let floorLabel = 'קומה 0';
-    let floorLabelN = 0;
-    let bestLabel = '';
-    let bestLabelN = 0;
-    let comboLabel = '×1';
-    let comboLabelN = 1;
+    /** Floating "+points" sticker at world px (x, y) (look only). */
+    function addPop(x: number, y: number, text: string, color: string, px: number): void {
+      const p = pops[popCursor];
+      popCursor = (popCursor + 1) % POPS;
+      if (!p) return;
+      p.active = true;
+      p.sticker = stickers.get(`p|${text}|${color}|${px}`, (old) => renderSticker(text, { size: px, fill: color }, old));
+      p.x = x;
+      p.y = y;
+      p.age = 0;
+      p.life = 0.9;
+      p.rise = 70;
+    }
+
+    function addPuff(x: number, a: number, k: number): void {
+      puffX[puffCursor] = x;
+      puffA[puffCursor] = a;
+      puffAge[puffCursor] = 0;
+      puffK[puffCursor] = k;
+      puffCursor = (puffCursor + 1) % PUFFS;
+    }
 
     // ── world <-> screen ──
     const wx = (v: number): number => offX + v * scale;
@@ -377,9 +553,9 @@ export const game: GameModule = {
     function endCombo(): void {
       if (comboJumps >= 2) {
         const mega = comboFloors >= 20;
-        showBanner(mega ? 'מגה קומבו!' : 'סופר קומבו!', `${comboFloors} קומות · +${comboBonus}`, mega ? COLORS.yellow : COLORS.pink, 1.6);
+        showBanner(mega ? 'מגה קומבו!' : 'סופר קומבו!', `${comboFloors} קומות · +${comboBonus}`, mega ? PAL.yel : PAL.pink, 1.6);
         if (mega) {
-          fx.confetti({ count: 70, width: view.width });
+          fx.confetti({ count: 70, width: view.width, colors: [PAL.yel, PAL.red, PAL.pink, PAL.cobL, PAL.white] });
           sfx.cheer();
         } else sfx.success();
         haptic.success();
@@ -398,7 +574,7 @@ export const game: GameModule = {
       sfx.jump(0.85 + power / 1600);
       fx.burst(wx(body.x), fy(body.py), {
         count: superAir ? 14 : 6,
-        colors: ['#ffffff', '#cfefff', COLORS.cyan],
+        colors: [PAL.white, PAL.paper, PAL.yel],
         speed: superAir ? 300 : 170,
         size: 3.5,
         life: 0.45,
@@ -417,6 +593,7 @@ export const game: GameModule = {
       squashV = 0;
       const sx = wx(body.x);
       const sy = fy(level.alt[j] ?? 0);
+      addPuff(body.x, level.alt[j] ?? 0, Math.min(1.6, 0.6 + impact / 1800));
       if (delta >= 2) {
         comboJumps++;
         comboFloors += delta;
@@ -425,15 +602,15 @@ export const game: GameModule = {
         runBonus += bonus;
         comboTimer = COMBO_WINDOW;
         comboPop = 1;
-        fx.text(sx, sy - 70 * scale, `+${bonus}`, { color: COLORS.yellow, size: 24 + Math.min(14, comboJumps * 2), rise: 70 });
-        fx.burst(sx, sy, { count: 10 + Math.min(14, comboJumps * 2), shape: 'star', speed: 320, size: 6, life: 0.6 });
+        addPop(sx, sy - 70 * scale, `+${bonus}`, PAL.yel, 24 + Math.min(14, comboJumps * 2));
+        fx.burst(sx, sy, { count: 10 + Math.min(14, comboJumps * 2), shape: 'star', colors: [PAL.yel, PAL.red, PAL.white, PAL.pink], speed: 320, size: 6, life: 0.6 });
         sfx.coin(1 + Math.min(10, comboJumps) * 0.07);
         haptic.tap();
       } else {
         if (comboJumps > 0) endCombo();
         fx.burst(sx, sy, {
           count: 5,
-          colors: ['#ffffff', '#d8f3ff'],
+          colors: [PAL.white, PAL.paper],
           speed: 140,
           size: 3,
           life: 0.35,
@@ -447,16 +624,16 @@ export const game: GameModule = {
         runFloor = j;
         if (Math.floor(j / 10) > before && j >= 10) {
           const m = Math.floor(j / 10) * 10;
-          showBanner(`קומה ${m}!`, m % 50 === 0 ? 'אגדה של קרח 🧊' : '', COLORS.yellow, 1.3);
+          showBanner(`קומה ${m}!`, m % 50 === 0 ? 'אגדה של קרח 🧊' : '', PAL.yel, 1.3);
           const ma = level.alt[m] ?? body.py;
-          fx.confetti({ x: view.width / 2, y: fy(ma) });
+          fx.confetti({ x: view.width / 2, y: fy(ma), colors: [PAL.yel, PAL.red, PAL.pink, PAL.cobL, PAL.white] });
           sfx.success();
           haptic.success();
         }
       }
       if (!recordShown && runs > 0 && bestBefore > 0 && runScore() > bestBefore) {
         recordShown = true;
-        showBanner('שיא חדש!', 'הריצה הזאת הכי טובה שלך', COLORS.green, 1.3);
+        showBanner('שיא חדש!', 'הריצה הזאת הכי טובה שלך', '#3ddc84', 1.3);
         sfx.success();
       }
       publish();
@@ -475,7 +652,7 @@ export const game: GameModule = {
       popY = -30;
       prevPopY = popY;
       popV = 1250;
-      showBanner('נפלת!', `קומה ${runFloor} · שיא ${bestFloor}`, COLORS.red, 1.1);
+      showBanner('נפלת!', `קומה ${runFloor} · שיא ${bestFloor}`, PAL.red, 1.1);
       fx.shake(12, 380);
       sfx.fall();
       haptic.fail();
@@ -500,7 +677,7 @@ export const game: GameModule = {
       prevCam = cam.cam;
       lowFloor = 0;
       trailLen = 0;
-      fx.burst(wx(body.x), fy(body.py + R), { count: 18, shape: 'star', speed: 260, life: 0.5 });
+      fx.burst(wx(body.x), fy(body.py + R), { count: 18, shape: 'star', colors: [PAL.yel, PAL.red, PAL.white, PAL.pink], speed: 260, life: 0.5 });
       sfx.pop(1.2);
     }
 
@@ -517,7 +694,7 @@ export const game: GameModule = {
       const r = advanceCam(cam, runFloor, runSteps, body.py + 2 * R, follow, dt);
       if (r === CAM_STARTED) sfx.whoosh(0.8);
       else if (r === CAM_FASTER) {
-        showBanner('מהר יותר!', '', COLORS.cyan, 1.1);
+        showBanner('מהר יותר!', '', PAL.cobL, 1.1);
         sfx.whoosh(1.3);
       }
     }
@@ -544,7 +721,7 @@ export const game: GameModule = {
           const sx = wx(ev.wall < 0 ? INNER_L : INNER_R);
           fx.burst(sx, fy(body.py + R), {
             count: 8,
-            colors: ['#ffffff', COLORS.cyan],
+            colors: [PAL.white, PAL.yel],
             speed: 240,
             size: 3.5,
             life: 0.35,
@@ -599,6 +776,59 @@ export const game: GameModule = {
       if (deadSteps >= DEAD_STEPS) restart();
     }
 
+    /** Look-only bookkeeping, one fixed step (reads the game state, never writes it). */
+    function updateLooks(dt: number): void {
+      // the quality flag follows the measured frame time (it changes only here, so a frozen frame never changes)
+      if (frameEma > SLOW_FRAME_MS) slowSteps = Math.min(120, slowSteps + 1);
+      else if (frameEma < FAST_FRAME_MS) slowSteps = Math.max(-120, slowSteps - 1);
+      if (!lowQuality && slowSteps >= 90) lowQuality = true;
+      else if (lowQuality && slowSteps <= -90) lowQuality = false;
+      if (mode === 'run') {
+        if (Math.abs(body.vx) > 30) facing = body.vx < 0 ? -1 : 1;
+        if (body.grounded >= 0) runPhase += (Math.abs(body.vx) * dt) / 15;
+        else runPhase += dt * 9;
+      }
+      // a sticker when the player first climbs into a new zone this round
+      const z = zoneOfFloor(runFloor);
+      if (mode === 'run' && z > zoneShown) {
+        zoneShown = z;
+        const L = zoneLook(z);
+        zoneSticker = stickers.get(`z|${z}`, (old) => renderSticker(L.name, { size: 34, fill: z === 3 ? PAL.yel : PAL.white, shadow: L.wall === PAL.yel ? PAL.red : L.wall, burst: z === 3 ? PAL.red : PAL.yel }, old));
+        zoneAge = 0;
+        zoneLife = Math.round(1.9 * STEP_HZ);
+        fx.confetti({ count: 40, width: view.width, colors: [L.wall, L.wallHi, PAL.yel, PAL.white] });
+      }
+      if (zoneLife > 0) {
+        zoneAge++;
+        if (zoneAge >= zoneLife) zoneLife = 0;
+      }
+      for (const p of pops) {
+        if (!p.active) continue;
+        p.age += dt;
+        if (p.age >= p.life) p.active = false;
+      }
+      for (let i = 0; i < PUFFS; i++) if ((puffAge[i] ?? 1) < 1) puffAge[i] = (puffAge[i] ?? 0) + dt * 3.2;
+      // wind streaks while climbing fast (screen space, cosmetic randomness)
+      const fast = mode === 'run' && !lowQuality && (body.vy > 950 || (cam.camOn && camSpeed(cam.camT) > 230 && body.grounded < 0));
+      for (let i = 0; i < STREAKS; i++) {
+        const l = streakL[i] ?? 0;
+        if (l > 0) {
+          const y = (streakY[i] ?? 0) + (streakV[i] ?? 0) * dt;
+          streakY[i] = y;
+          if (y - l > view.height) {
+            streakL[i] = 0;
+            streakOn--;
+          }
+        } else if (fast && streakOn < STREAKS && Math.random() < 0.18) {
+          streakX[i] = 0.06 + Math.random() * 0.88;
+          streakY[i] = top - 40;
+          streakL[i] = 40 + Math.random() * 90;
+          streakV[i] = 1100 + Math.random() * 900;
+          streakOn++;
+        }
+      }
+    }
+
     const loop = createLoop({
       update(dt: number): void {
         steps++;
@@ -618,11 +848,12 @@ export const game: GameModule = {
         if (hintSteps < HINT_STEPS) hintSteps++;
         if (!lastTenShown && ctx.timeLeftMs() <= 10_000 && ctx.timeLeftMs() > 0 && steps > 60) {
           lastTenShown = true;
-          showBanner('10 שניות אחרונות!', 'עוד קפיצה אחת גדולה', COLORS.orange, 1.5);
+          showBanner('10 שניות אחרונות!', 'עוד קפיצה אחת גדולה', PAL.org, 1.5);
           sfx.beep();
         }
         updateSnow(dt);
         fx.update(dt);
+        updateLooks(dt);
       },
       render(alpha: number): void {
         draw(alpha);
@@ -631,51 +862,85 @@ export const game: GameModule = {
 
     // ───────────────────────────── drawing ─────────────────────────────
 
+    /** Camera altitude used for the look (the test flag shifts the look only). */
+    function lookAlt(c: number): number {
+      return LOOK_FLOOR > 0 ? c + (level.alt[LOOK_FLOOR] ?? 0) : c;
+    }
+
+    /** The DOM layers: sky outside the tower and the parallax back wall (zone crossfade). */
     function drawBackground(c: number): void {
       const g = view.ctx;
-      const zf = Math.max(0, c) / ZONE_LEN;
-      const z = Math.min(ZONES.length - 1, Math.floor(zf));
-      const frac = zf - Math.floor(zf);
+      const la = lookAlt(c);
+      const mid = la + visH * 0.5;
+      const z = zoneOfAlt(mid);
+      // the next zone fades in over the last 260 world units below its first floor
+      const nextAt = zoneAlt[z + 1];
+      const mix = nextAt === undefined ? 0 : Math.round(clamp((mid - (nextAt - 260)) / 260, 0, 1) * 40) / 40;
       if (z !== skyZone) {
         skyZone = z;
-        skyA.style.background = zoneCss(z);
-        skyB.style.background = zoneCss(z + 1);
+        skyA.style.background = zoneLook(z).sky;
+        skyB.style.background = zoneLook(z + 1).sky;
       }
-      const mix = z + 1 < ZONES.length && frac > 0.7 ? Math.round(((frac - 0.7) / 0.3) * 50) / 50 : 0;
       if (mix !== skyMix) {
         skyMix = mix;
         skyB.style.opacity = String(mix);
       }
-      g.clearRect(0, 0, view.width, view.height);
-      // parallax layer, tiled vertically. The placeholder is drawn as vectors (cheap);
-      // a real bg.png is blitted (one more full-screen layer: fine on a phone GPU)
-      const bw = view.width;
-      const bh = (bw * art.bg.height) / art.bg.width;
-      let y0 = (c * scale * 0.25) % bh;
-      if (y0 < 0) y0 += bh;
-      for (let y = y0 - bh; y < view.height; y += bh) {
-        if (art.bg.isPlaceholder) {
-          g.save();
-          g.translate(0, y);
-          drawBgPattern(g, bw, bh);
-          g.restore();
-        } else art.bg.draw(g, bw / 2, y + bh / 2, bw, bh);
+      if (backZone[0] !== z) paintBackLayer(0, z);
+      if (mix > 0 && backZone[1] !== z + 1) paintBackLayer(1, Math.min(ZONE_LOOKS.length - 1, z + 1));
+      if (mix !== backMix) {
+        backMix = mix;
+        backEls[1].style.opacity = String(mix);
       }
+      // parallax: half the floor speed
+      const th = BACK_TILE_W * scale;
+      let off = (la * scale * 0.5) % th;
+      if (off < 0) off += th;
+      const y = Math.round((off - th) * view.dpr) / view.dpr;
+      if (y !== backY) {
+        backY = y;
+        const t = `translate3d(0,${y}px,0)`;
+        backEls[0].style.transform = t;
+        backEls[1].style.transform = t;
+      }
+      g.clearRect(0, 0, view.width, view.height);
     }
 
     function drawWalls(c: number): void {
       const g = view.ctx;
       const ww = WALL_W * scale;
-      const th = (ww * art.wall.height) / art.wall.width;
-      let y0 = (c * scale) % th;
-      if (y0 < 0) y0 += th;
-      for (let y = y0 - th; y < view.height; y += th) {
-        art.wall.draw(g, offX + ww / 2, y + th / 2, ww, th);
-        art.wall.draw(g, offX + playW - ww / 2, y + th / 2, ww, th);
+      const la = lookAlt(c);
+      // hard shadows the walls cast on the back wall
+      g.fillStyle = 'rgba(22, 18, 14, 0.38)';
+      g.fillRect(offX + ww, 0, Math.max(4, 7 * scale), view.height);
+      g.fillRect(offX + playW - ww - Math.max(2, 3 * scale), 0, Math.max(2, 3 * scale), view.height);
+      if (!art.wall.isPlaceholder) {
+        const th = (ww * art.wall.height) / art.wall.width;
+        let y0 = (c * scale) % th;
+        if (y0 < 0) y0 += th;
+        for (let y = y0 - th; y < view.height; y += th) {
+          art.wall.draw(g, offX + ww / 2, y + th / 2, ww, th);
+          art.wall.draw(g, offX + playW - ww / 2, y + th / 2, ww, th);
+        }
+      } else {
+        // rows in world altitude, each in the zone of its altitude
+        const minA = la - (view.height - bottom) / scale - WALL_TILE_W;
+        const maxA = la + bottom / scale + WALL_TILE_W;
+        const th = WALL_TILE_W * scale;
+        for (let k = Math.floor(minA / WALL_TILE_W); k * WALL_TILE_W < maxA; k++) {
+          const a = k * WALL_TILE_W;
+          const z = zoneOfAlt(a);
+          const yTop = bottom - (a + WALL_TILE_W - la) * scale;
+          g.drawImage(wallTile(z, true), offX, yTop, ww, th + 0.5);
+          g.drawImage(wallTile(z, false), offX + playW - ww, yTop, ww, th + 0.5);
+        }
       }
+      // the bounce faces
+      g.fillStyle = PAL.ink;
+      g.fillRect(offX + ww - 1.5, 0, 3, view.height);
+      g.fillRect(offX + playW - ww - 1.5, 0, 3, view.height);
       // outside the tower (landscape / desktop)
       if (offX > 0.5) {
-        g.fillStyle = 'rgba(8, 4, 30, 0.55)';
+        g.fillStyle = 'rgba(8, 4, 30, 0.35)';
         g.fillRect(0, 0, offX, view.height);
         g.fillRect(offX + playW, 0, offX + 1, view.height);
       }
@@ -685,21 +950,23 @@ export const game: GameModule = {
       const g = view.ctx;
       const gy = bottom - (0 - c) * scale;
       if (gy > view.height + 10) return;
-      // distant snowy hills behind the start
-      g.fillStyle = 'rgba(220, 240, 255, 0.55)';
-      g.beginPath();
-      g.moveTo(offX, gy);
-      g.quadraticCurveTo(offX + playW * 0.22, gy - 120 * scale, offX + playW * 0.45, gy - 30 * scale);
-      g.quadraticCurveTo(offX + playW * 0.7, gy - 150 * scale, offX + playW, gy - 20 * scale);
-      g.lineTo(offX + playW, gy);
-      g.closePath();
-      g.fill();
-      g.fillStyle = '#eaf7ff';
-      g.fillRect(offX, gy, playW, view.height - gy + 2);
-      g.fillStyle = '#bfe3ff';
-      g.fillRect(offX, gy + 10 * scale, playW, 3);
-      g.fillStyle = '#ffffff';
-      g.fillRect(offX, gy - 2, playW, 5);
+      const ww = WALL_W * scale;
+      const h = FLOOR_H * scale;
+      // foundation: cobalt block slab with a paper top
+      g.fillStyle = PAL.cobD;
+      g.fillRect(offX + ww, gy, playW - 2 * ww, view.height - gy + 2);
+      g.fillStyle = PAL.paper;
+      g.fillRect(offX + ww, gy, playW - 2 * ww, h * 0.55);
+      g.fillStyle = PAL.ink;
+      g.fillRect(offX + ww, gy - 1.5, playW - 2 * ww, 3);
+      g.fillRect(offX + ww, gy + h * 0.55, playW - 2 * ww, 2.5);
+      g.fillStyle = 'rgba(22, 18, 14, 0.5)';
+      const bw = 60 * scale;
+      for (let r = 0; r < 4; r++) {
+        const y = gy + h * 0.55 + r * 34 * scale;
+        g.fillRect(offX + ww, y + 34 * scale - 2, playW - 2 * ww, 2);
+        for (let x = offX + ww + (r % 2) * bw * 0.5; x < offX + playW - ww; x += bw) g.fillRect(x, y, 2, 34 * scale);
+      }
     }
 
     function drawFloor(j: number, sy: number): void {
@@ -710,46 +977,45 @@ export const game: GameModule = {
       const w = half * 2 * scale;
       const h = FLOOR_H * scale;
       const tile = milestone ? art.milestone : art.platform;
-      // shadow
-      g.fillStyle = 'rgba(10, 20, 60, 0.28)';
-      roundRectPath(g, left + 3, sy + 4, w, h, h * 0.45);
-      g.fill();
-      g.save();
-      roundRectPath(g, left, sy, w, h, h * 0.45);
-      g.clip();
-      const tw = (h * tile.width) / tile.height;
-      const phase = (j * 37) % 64;
-      for (let tx = left - (phase / 64) * tw; tx < left + w; tx += tw) tile.draw(g, tx + tw / 2, sy + h / 2, tw, h);
-      g.restore();
-      // icicles (placeholder look only)
-      if (tile.isPlaceholder) {
-        g.fillStyle = milestone ? 'rgba(255, 236, 170, 0.85)' : 'rgba(210, 240, 255, 0.85)';
-        g.beginPath();
-        const n = Math.max(2, Math.floor(w / (26 * scale)));
+      const r = Math.min(h * 0.4, 6);
+      // hard shadow on the back wall
+      g.fillStyle = 'rgba(22, 18, 14, 0.42)';
+      g.fillRect(left + 4, sy + 6, w, h);
+      if (!tile.isPlaceholder) {
+        g.save();
+        roundRectPath(g, left, sy, w, h, r);
+        g.clip();
+        const tw = (h * tile.width) / tile.height;
+        const phase = (j * 37) % 64;
+        for (let tx = left - (phase / 64) * tw; tx < left + w; tx += tw) tile.draw(g, tx + tw / 2, sy + h / 2, tw, h);
+        g.restore();
+      } else {
+        const L = zoneLook(zoneOfFloor(j));
+        // front face, then the walkable top surface
+        g.fillStyle = milestone ? PAL.red : L.face;
+        roundRectPath(g, left, sy, w, h, r);
+        g.fill();
+        g.fillStyle = milestone ? PAL.yel : PAL.paper;
+        g.fillRect(left + 1.5, sy + 1.5, w - 3, h * 0.42);
+        // ice shine on the face
+        g.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        const n = Math.max(1, Math.floor(w / (70 * scale)));
         for (let k = 0; k < n; k++) {
-          const ix = left + ((k + 0.5) / n) * w + (((j * 13 + k * 7) % 9) - 4) * scale;
-          const il = (6 + ((j * 7 + k * 11) % 9)) * scale;
-          g.moveTo(ix - 3 * scale, sy + h - 1);
-          g.lineTo(ix + 3 * scale, sy + h - 1);
-          g.lineTo(ix, sy + h + il);
+          const ix = left + ((k + 0.3) / n) * w + ((j * 13 + k * 7) % 9) * scale;
+          g.fillRect(ix, sy + h * 0.6, 10 * scale, 2.2);
         }
-        g.fill();
       }
+      g.lineWidth = 2.5;
+      g.strokeStyle = PAL.ink;
+      roundRectPath(g, left, sy, w, h, r);
+      g.stroke();
+      g.fillStyle = PAL.ink;
+      g.fillRect(left + 2, sy + h * 0.44, w - 4, 1.5);
       if (milestone) {
-        const cx = left + w / 2;
-        g.font = F_PILL;
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        const label = `קומה ${j}`;
-        const lw = g.measureText(label).width + 22;
-        g.fillStyle = INK;
-        roundRectPath(g, cx - lw / 2, sy - 30, lw, 26, 13);
-        g.fill();
-        g.strokeStyle = COLORS.yellow;
-        g.lineWidth = 2;
-        g.stroke();
-        g.fillStyle = COLORS.yellow;
-        drawText(g, label, cx, sy - 16.5);
+        const s = floorSign(j);
+        const sx = offX + WALL_W * scale + 10;
+        const syy = sy - s.h - 10 * scale;
+        g.drawImage(s.canvas, sx, syy, s.w, s.h);
       }
     }
 
@@ -759,88 +1025,308 @@ export const game: GameModule = {
       const sy = bottom - (a - c) * scale - 6;
       if (sy < top - 10 || sy > view.height + 10) return;
       const g = view.ctx;
-      g.strokeStyle = 'rgba(61, 220, 132, 0.9)';
-      g.lineWidth = 3;
+      g.strokeStyle = PAL.ink;
+      g.lineWidth = 5;
       g.setLineDash(DASH);
       g.beginPath();
       g.moveTo(offX + WALL_W * scale, sy);
       g.lineTo(offX + playW - WALL_W * scale, sy);
       g.stroke();
+      g.strokeStyle = '#3ddc84';
+      g.lineWidth = 3;
+      g.stroke();
       g.setLineDash(NO_DASH);
-      g.font = F_PILL;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.fillStyle = COLORS.green;
-      roundRectPath(g, offX + WALL_W * scale + 6, sy - 13, 56, 26, 13);
-      g.fill();
-      g.fillStyle = INK;
-      drawText(g, 'שיא', offX + WALL_W * scale + 34, sy);
+      const chip = stickers.get('best', (old) => renderChip('שיא', 15, '#3ddc84', PAL.ink, old));
+      g.drawImage(chip.canvas, offX + WALL_W * scale + 6, sy - chip.h / 2, chip.w, chip.h);
     }
 
-    function faceFor(): typeof art.face {
+    function headFor(): Drawable {
       if (mode === 'dead') return art.faceFall;
       if (body.grounded >= 0) return art.face;
       if (body.vy < -1100 || body.py + R < cam.cam + 70) return art.faceFall;
       return body.vy > 0 ? art.faceJump : art.face;
     }
 
+    /**
+     * The climber, feet at (x, feet), head radius k px: legs, jacket, arms, scarf and the
+     * big head from the face slot. `air`: +1 rising (tuck) .. -1 falling (stretch), 0 = on a floor.
+     */
+    function drawClimber(g: CanvasRenderingContext2D, x: number, feet: number, k: number, sx: number, sy: number, spin: number, lean: number, air: number, run: number, vxs: number, vys: number, head: Drawable, onFloor: boolean): void {
+      const f = facing;
+      g.save();
+      g.translate(x, feet);
+      g.rotate(lean);
+      g.scale(sx, sy);
+      if (spin !== 0) {
+        g.translate(0, -1.5 * k);
+        g.rotate(spin);
+        g.translate(0, 1.5 * k);
+      }
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      const tuck = Math.max(0, air);
+      const stretch = Math.max(0, -air);
+      const hipY = -0.62 * k;
+      // legs: ink outline then trousers, shoes
+      for (let side = -1; side <= 1; side += 2) {
+        const ph = runPhase + (side < 0 ? 0 : Math.PI);
+        let footX: number;
+        let footY: number;
+        let kneeX: number;
+        let kneeY: number;
+        if (onFloor) {
+          footX = f * Math.sin(ph) * 0.46 * k * run + side * 0.17 * k * (1 - run);
+          footY = -Math.max(0, -Math.cos(ph)) * 0.3 * k * run;
+          kneeX = footX * 0.5 + f * 0.14 * k * run;
+          kneeY = hipY * 0.5 + footY * 0.5;
+        } else {
+          footX = side * (0.2 * k) + f * 0.12 * k * tuck + side * 0.08 * k * stretch;
+          footY = -0.34 * k * tuck + 0.1 * k * stretch;
+          kneeX = side * 0.2 * k + f * 0.36 * k * tuck;
+          kneeY = hipY * 0.5 - 0.3 * k * tuck + 0.08 * k * stretch;
+        }
+        const hx = side * 0.16 * k;
+        g.beginPath();
+        g.moveTo(hx, hipY);
+        g.lineTo(kneeX, kneeY);
+        g.lineTo(footX, footY);
+        g.strokeStyle = PAL.ink;
+        g.lineWidth = 0.38 * k;
+        g.stroke();
+        g.strokeStyle = PAL.cobD;
+        g.lineWidth = 0.2 * k;
+        g.stroke();
+        g.beginPath();
+        g.ellipse(footX + f * 0.08 * k, footY - 0.04 * k, 0.2 * k, 0.12 * k, 0, 0, Math.PI * 2);
+        g.fillStyle = PAL.red;
+        g.fill();
+        g.lineWidth = 0.08 * k;
+        g.strokeStyle = PAL.ink;
+        g.stroke();
+      }
+      // jacket (or the shirt slot picture)
+      const tw = 0.82 * k;
+      const tTop = -1.24 * k;
+      const tH = 0.7 * k;
+      if (!art.shirt.isPlaceholder) {
+        art.shirt.draw(g, 0, tTop + tH / 2, tw * 1.25, tH * 1.25);
+      } else {
+        roundRectPath(g, -tw / 2, tTop, tw, tH, 0.22 * k);
+        g.fillStyle = PAL.red;
+        g.fill();
+        g.lineWidth = 0.1 * k;
+        g.strokeStyle = PAL.ink;
+        g.stroke();
+        g.fillStyle = PAL.yel;
+        g.fillRect(-0.05 * k, tTop + 0.1 * k, 0.1 * k, tH - 0.16 * k);
+      }
+      // the head (bobs while running)
+      const hs = HEAD_BOX * k;
+      const bob = onFloor ? Math.abs(Math.sin(runPhase)) * 0.08 * k * run : 0;
+      const tilt = onFloor ? Math.sin(runPhase) * 0.05 * run : air * 0.06 * f;
+      head.draw(g, 0, -1.2 * k - hs * 0.38 - bob, hs, hs, tilt);
+      // scarf: a wrap at the neck and a tail trailing against the motion
+      const sp = Math.hypot(vxs, vys);
+      let tx = -f * 0.3 * k;
+      let ty = 0.38 * k;
+      if (sp > 120) {
+        const len = (0.55 + Math.min(1, sp / 900) * 0.95) * k;
+        tx = (-vxs / sp) * len;
+        ty = (-vys / sp) * len;
+      }
+      const wave = Math.sin(runPhase * 1.7) * 0.14 * k * Math.min(1, sp / 500);
+      const nx = -f * 0.18 * k;
+      const ny = -1.2 * k;
+      g.beginPath();
+      g.moveTo(nx, ny);
+      g.quadraticCurveTo(nx + tx * 0.5 - ty * 0.25 + wave, ny + ty * 0.5 + tx * 0.25, nx + tx, ny + ty + wave);
+      g.strokeStyle = PAL.ink;
+      g.lineWidth = 0.32 * k;
+      g.stroke();
+      g.strokeStyle = PAL.yel;
+      g.lineWidth = 0.18 * k;
+      g.stroke();
+      roundRectPath(g, -0.38 * k, -1.32 * k, 0.76 * k, 0.2 * k, 0.1 * k);
+      g.fillStyle = PAL.yel;
+      g.fill();
+      g.lineWidth = 0.08 * k;
+      g.strokeStyle = PAL.ink;
+      g.stroke();
+      // arms (in front)
+      for (let side = -1; side <= 1; side += 2) {
+        const ph = runPhase + (side < 0 ? Math.PI : 0);
+        const shx = side * 0.36 * k;
+        const shy = -1.08 * k;
+        let hx: number;
+        let hy: number;
+        if (onFloor) {
+          hx = shx + f * -Math.sin(ph) * 0.38 * k * run + side * 0.08 * k;
+          hy = shy + 0.48 * k - Math.max(0, Math.sin(ph) * f) * 0.1 * k * run;
+        } else {
+          hx = side * (0.5 + 0.2 * stretch) * k;
+          hy = -1.62 * k * tuck + (-1.55 * k + Math.sin(runPhase * 2 + side) * 0.12 * k) * stretch + (shy + 0.3 * k) * (1 - tuck - stretch);
+        }
+        const ex = (shx + hx) / 2 + side * 0.12 * k;
+        const ey = (shy + hy) / 2;
+        g.beginPath();
+        g.moveTo(shx, shy);
+        g.lineTo(ex, ey);
+        g.lineTo(hx, hy);
+        g.strokeStyle = PAL.ink;
+        g.lineWidth = 0.3 * k;
+        g.stroke();
+        g.strokeStyle = PAL.red;
+        g.lineWidth = 0.15 * k;
+        g.stroke();
+        g.beginPath();
+        g.arc(hx, hy, 0.13 * k, 0, Math.PI * 2);
+        g.fillStyle = PAL.paper;
+        g.fill();
+        g.lineWidth = 0.07 * k;
+        g.strokeStyle = PAL.ink;
+        g.stroke();
+      }
+      g.restore();
+    }
+
     function drawPlayer(c: number, alpha: number): void {
       const g = view.ctx;
       const px = wx(lerp(prevX, body.x, alpha));
       const feet = bottom - (lerp(prevPy, body.py, alpha) - c) * scale;
-      const box = (2 * R * scale) / (2 * HEAD_SHARE);
+      const k = R * scale;
       const stretch = body.grounded < 0 ? clamp(body.vy / 3200, -0.14, 0.16) : 0;
       const sq = clamp(squash, -0.4, 0.45);
-      const sw = box * (1 + sq) * (1 - stretch * 0.5);
-      const sh = box * (1 - sq) * (1 + stretch);
-      const cy = feet - R * scale * (sh / box);
+      const sx = (1 + sq) * (1 - stretch * 0.5);
+      const sy = (1 - sq) * (1 + stretch);
+      const cy = feet - 1.5 * k * sy;
 
-      // streak afterimages
+      // afterimage trail on combos: star stickers
       if (trailLen > 0) {
-        for (let k = 0; k < trailLen; k++) {
-          const idx = (trailHead - 1 - k + TRAIL * 2) % TRAIL;
-          const t = 1 - k / TRAIL;
+        for (let i = 0; i < trailLen; i++) {
+          const idx = (trailHead - 1 - i + TRAIL * 2) % TRAIL;
+          const t = 1 - i / TRAIL;
           const tx = wx(trailX[idx] ?? 0);
           const ty = bottom - ((trailA[idx] ?? 0) + R - c) * scale;
-          g.globalAlpha = 0.5 * t;
-          art.glow.draw(g, tx, ty, box * 1.5 * t + 6, box * 1.5 * t + 6);
-          g.globalAlpha = 0.22 * t;
-          const color = PARTY_COLORS[(k + (steps >> 2)) % PARTY_COLORS.length] ?? COLORS.pink;
-          g.fillStyle = color;
-          g.beginPath();
-          g.arc(tx, ty, R * scale * (0.6 + 0.4 * t), 0, Math.PI * 2);
-          g.fill();
+          const st = stars[(i + (steps >> 2)) % stars.length];
+          if (!st) continue;
+          const s = (14 + 20 * t) * Math.min(1.3, scale);
+          g.globalAlpha = 0.35 + 0.6 * t;
+          g.drawImage(st, tx - s / 2, ty - s / 2, s, s);
         }
         g.globalAlpha = 1;
       }
 
-      // speed lines
+      // speed lines behind the runner
       const speed = Math.abs(body.vx);
       if (speed > 560) {
         const back = -Math.sign(body.vx);
-        g.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-        g.lineWidth = 3;
+        const len = (speed - 480) * 0.11 * scale;
         g.lineCap = 'round';
         g.beginPath();
-        const len = (speed - 480) * 0.09 * scale;
-        for (let k = -1; k <= 1; k++) {
-          const ly = cy + k * R * 0.6 * scale;
-          const lx = px + back * (R + 6 + Math.abs(k) * 6) * scale;
+        for (let i = -1; i <= 1; i++) {
+          const ly = cy + i * 0.55 * k;
+          const lx = px + back * (0.9 * k + Math.abs(i) * 6 * scale);
           g.moveTo(lx, ly);
-          g.lineTo(lx + back * len, ly);
+          g.lineTo(lx + back * len * (1 - Math.abs(i) * 0.3), ly);
         }
+        g.strokeStyle = PAL.ink;
+        g.lineWidth = 5;
+        g.stroke();
+        g.strokeStyle = PAL.white;
+        g.lineWidth = 2.5;
         g.stroke();
       }
 
-      // shadow on the floor below while standing
+      // frost puffs where it landed
+      for (let i = 0; i < PUFFS; i++) {
+        const a = puffAge[i] ?? 1;
+        if (a >= 1) continue;
+        const ppx = wx(puffX[i] ?? 0);
+        const ppy = bottom - ((puffA[i] ?? 0) - c) * scale;
+        const e = ease.outCubic(a);
+        const r = (6 + 16 * e) * scale * (puffK[i] ?? 1);
+        g.globalAlpha = 1 - a;
+        g.fillStyle = PAL.white;
+        g.strokeStyle = PAL.ink;
+        g.lineWidth = 2;
+        for (let s = -1; s <= 1; s += 2) {
+          g.beginPath();
+          g.ellipse(ppx + s * (0.6 * k + r), ppy - r * 0.45, r, r * 0.6, 0, 0, Math.PI * 2);
+          g.fill();
+          g.stroke();
+        }
+        g.globalAlpha = 1;
+      }
+
+      // contact shadow while standing
       if (body.grounded >= 0) {
-        g.fillStyle = 'rgba(10, 20, 60, 0.25)';
+        g.fillStyle = 'rgba(22, 18, 14, 0.4)';
         g.beginPath();
-        g.ellipse(px, feet + 2, R * scale * (1 + sq), 4 * scale + 2, 0, 0, Math.PI * 2);
+        g.ellipse(px + 3, feet + 2, k * (0.75 + sq * 0.5), 3.5 * scale + 1.5, 0, 0, Math.PI * 2);
         g.fill();
       }
-      const lean = (body.vx / MAX_VX) * 0.2;
-      faceFor().draw(g, px, cy, sw, sh, rot + lean);
+      const lean = (body.vx / MAX_VX) * 0.22;
+      const air = body.grounded >= 0 ? 0 : clamp(body.vy / 650, -1, 1);
+      const run = clamp(Math.abs(body.vx) / 380, 0, 1);
+      drawClimber(g, px, feet, k, sx, sy, rot, lean, air, run, body.vx * scale, -body.vy * scale, headFor(), body.grounded >= 0);
+    }
+
+    function drawStreaks(): void {
+      if (streakOn <= 0) return;
+      const g = view.ctx;
+      g.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+      g.lineWidth = 2;
+      g.lineCap = 'round';
+      g.beginPath();
+      for (let i = 0; i < STREAKS; i++) {
+        const l = streakL[i] ?? 0;
+        if (l <= 0) continue;
+        const x = offX + (streakX[i] ?? 0) * playW;
+        const y = streakY[i] ?? 0;
+        g.moveTo(x, y - l);
+        g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+
+    function drawPops(): void {
+      const g = view.ctx;
+      for (const p of pops) {
+        if (!p.active || !p.sticker) continue;
+        const t = p.age / p.life;
+        const k = t < 0.15 ? ease.outBack(t / 0.15) : 1;
+        g.globalAlpha = t > 0.7 ? (1 - t) / 0.3 : 1;
+        blit(g, p.sticker, p.x, p.y - p.rise * ease.outCubic(t), k);
+      }
+      g.globalAlpha = 1;
+    }
+
+    /** Hazard tape rising at the bottom when the floors are about to catch the player. */
+    function drawDanger(): void {
+      if (mode !== 'run' || !cam.camOn) return;
+      const margin = body.py + 2 * R - cam.cam;
+      const k = clamp(1 - (margin - 10) / 130, 0, 1);
+      if (k <= 0) return;
+      const g = view.ctx;
+      const pulse = 0.75 + 0.25 * Math.sin(steps * (0.25 + k * 0.25));
+      const h = (8 + 22 * k) * pulse;
+      const yb = view.height;
+      const y0 = bottom - h;
+      // stepped flat red bands above the tape (no gradient)
+      g.fillStyle = PAL.red;
+      for (let i = 1; i <= 3; i++) {
+        g.globalAlpha = 0.16 * k * (4 - i) * 0.5;
+        g.fillRect(offX, y0 - i * 12 * k, playW, 12 * k);
+      }
+      g.globalAlpha = 0.55 + 0.45 * k;
+      g.save();
+      g.translate(offX - ((steps * 2) % 48), y0);
+      g.fillStyle = hazardFill(g);
+      g.fillRect(0, 0, playW + 48, yb - y0);
+      g.restore();
+      g.globalAlpha = 1;
+      g.fillStyle = PAL.ink;
+      g.fillRect(offX, y0 - 1.5, playW, 3);
     }
 
     function drawHint(): void {
@@ -853,38 +1339,46 @@ export const game: GameModule = {
       const side = Math.floor(t / phaseLen) % 2 === 0 ? 1 : -1;
       const pt = (t % phaseLen) / phaseLen;
       // the two halves
-      g.globalAlpha = 0.16 * fade;
-      g.fillStyle = side < 0 ? COLORS.cyan : '#ffffff';
+      g.globalAlpha = 0.18 * fade;
+      g.fillStyle = side < 0 ? PAL.yel : '#ffffff';
       g.fillRect(0, top, half, playH);
-      g.fillStyle = side > 0 ? COLORS.pink : '#ffffff';
+      g.fillStyle = side > 0 ? PAL.pink : '#ffffff';
       g.fillRect(half, top, half, playH);
-      g.globalAlpha = 0.5 * fade;
-      g.fillStyle = '#ffffff';
-      g.fillRect(half - 1, top + 20, 2, playH - 40);
+      g.globalAlpha = 0.6 * fade;
+      g.fillStyle = PAL.ink;
+      g.fillRect(half - 1.5, top + 20, 3, playH - 40);
       // arrows
       const ay = top + playH * 0.55;
       const as = Math.min(46, view.width * 0.11);
       for (let s = -1; s <= 1; s += 2) {
         const on = s === side;
         const ax = half + s * view.width * 0.25 + (on ? s * 8 * Math.sin(pt * Math.PI) : 0);
-        g.globalAlpha = (on ? 0.95 : 0.4) * fade;
-        g.fillStyle = s < 0 ? COLORS.cyan : COLORS.pink;
-        g.strokeStyle = INK;
+        g.globalAlpha = (on ? 0.95 : 0.45) * fade;
+        g.lineJoin = 'round';
         g.lineWidth = 4;
+        g.strokeStyle = PAL.ink;
+        g.beginPath();
+        g.moveTo(ax + s * as + 4, ay + 5);
+        g.lineTo(ax - s * as * 0.4 + 4, ay - as * 0.8 + 5);
+        g.lineTo(ax - s * as * 0.4 + 4, ay + as * 0.8 + 5);
+        g.closePath();
+        g.fillStyle = PAL.ink;
+        g.fill();
+        g.fillStyle = s < 0 ? PAL.yel : PAL.pink;
         g.beginPath();
         g.moveTo(ax + s * as, ay);
         g.lineTo(ax - s * as * 0.4, ay - as * 0.8);
         g.lineTo(ax - s * as * 0.4, ay + as * 0.8);
         g.closePath();
-        g.stroke();
         g.fill();
+        g.stroke();
       }
       // ghost finger pressing the active side
       const press = pt < 0.25 ? ease.outCubic(pt / 0.25) : 1;
       const fxp = half + side * view.width * 0.25;
       const fyp = ay + as * 1.6 + (1 - press) * -26;
       g.globalAlpha = fade * 0.9 * press;
-      g.strokeStyle = '#ffffff';
+      g.strokeStyle = PAL.white;
       g.lineWidth = 3;
       g.beginPath();
       g.arc(fxp, fyp + 26, 12 + pt * 30, 0, Math.PI * 2);
@@ -892,19 +1386,12 @@ export const game: GameModule = {
       g.globalAlpha = fade;
       art.finger.draw(g, fxp + 10, fyp, 64, 64, -0.25 * side);
       // one short line
-      g.globalAlpha = fade;
-      g.font = F_HINT;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.lineWidth = 6;
-      g.lineJoin = 'round';
-      g.strokeStyle = INK;
-      g.fillStyle = '#ffffff';
-      drawText(g, 'החזיקו צד כדי לרוץ ולקפוץ', half, top + playH * 0.3, true);
+      const line = stickers.get('hint', (old) => renderSticker('החזיקו צד כדי לרוץ ולקפוץ', { size: Math.round(F_HINT_PX * Math.min(1, ui + 0.1)), fill: PAL.white, shadow: PAL.cob }, old));
+      blit(g, line, half, top + playH * 0.3, Math.min(1, (view.width - 16) / line.w));
       g.globalAlpha = 1;
     }
 
-    /** Show which half is pushed: a glow on that edge (CSS, so it costs no canvas fill). */
+    /** Show which half is pushed: a flat bar on that edge (CSS, so it costs no canvas fill). */
     function drawHeldGlow(): void {
       // the side that pushes now (the newest finger), so two fingers never light both
       const d = mode === 'run' ? heldDir() : 0;
@@ -914,9 +1401,10 @@ export const game: GameModule = {
       glowEls[1].style.opacity = d > 0 ? '1' : '0';
     }
 
-    function drawSnow(): void {
+    function drawSnow(c: number): void {
+      if (lowQuality) return;
       const g = view.ctx;
-      g.fillStyle = 'rgba(255, 255, 255, 0.75)';
+      g.fillStyle = zoneLook(zoneOfAlt(lookAlt(c) + visH * 0.5)).snow;
       g.beginPath();
       for (let i = 0; i < SNOW; i++) {
         const sx = ((snowX[i] ?? 0) * view.width + Math.sin(snowP[i] ?? 0) * 12 + view.width) % view.width;
@@ -930,70 +1418,44 @@ export const game: GameModule = {
 
     function drawUi(): void {
       const g = view.ctx;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      // floor pill (top left, under the HUD)
-      if (runFloor !== floorLabelN) {
-        floorLabelN = runFloor;
-        floorLabel = `קומה ${runFloor}`;
-      }
-      g.font = F_PILL;
-      const pw = g.measureText(floorLabel).width + 26;
-      // outside the tower when there is room (landscape / desktop), else inside its left wall
-      const pxl = offX > pw + 16 ? offX - pw - 10 : offX + WALL_W * scale + 8;
-      g.fillStyle = 'rgba(20, 10, 50, 0.6)';
-      roundRectPath(g, pxl, top + 8, pw, 30, 15);
-      g.fill();
-      g.fillStyle = '#ffffff';
-      drawText(g, floorLabel, pxl + pw / 2, top + 23.5);
+      // floor chip (top left, under the HUD)
+      const fl = stickers.get(`f|${runFloor}`, (old) => renderChip(`קומה ${runFloor}`, 17, PAL.paper, PAL.ink, old));
+      const pxl = offX > fl.w + 16 ? offX - fl.w - 10 : offX + WALL_W * scale + 8;
+      g.drawImage(fl.canvas, pxl, top + 8, fl.w, fl.h);
       // best floor of the round so far (after the first fall)
       if (bestFloor > 0) {
-        if (bestFloor !== bestLabelN) {
-          bestLabelN = bestFloor;
-          bestLabel = `שיא ${bestFloor}`;
-        }
-        const bw = g.measureText(bestLabel).width + 22;
-        const bx = offX > pw + 16 ? offX - bw - 10 : offX + WALL_W * scale + 8;
-        g.fillStyle = 'rgba(20, 10, 50, 0.6)';
-        roundRectPath(g, bx, top + 44, bw, 26, 13);
-        g.fill();
-        g.fillStyle = COLORS.green;
-        drawText(g, bestLabel, bx + bw / 2, top + 57.5);
+        const bl = stickers.get(`b|${bestFloor}`, (old) => renderChip(`שיא ${bestFloor}`, 14, '#3ddc84', PAL.ink, old));
+        const bx = offX > bl.w + 16 ? offX - bl.w - 10 : offX + WALL_W * scale + 8;
+        g.drawImage(bl.canvas, bx, top + 12 + fl.h, bl.w, bl.h);
       }
 
-      // combo meter (top center)
+      // combo meter (top center): a red star-burst sticker and its clock
       if (comboJumps > 0) {
-        if (comboJumps !== comboLabelN) {
-          comboLabelN = comboJumps;
-          comboLabel = `×${comboJumps}`;
-        }
+        const n = Math.min(comboJumps, 99);
+        const st = stickers.get(`c|${n}`, (old) => renderSticker(`×${n}`, { size: 34, fill: PAL.yel, shadow: PAL.ink, sub: 'קומבו', burst: PAL.red, skew: 0.1, tilt: -0.05 }, old));
         const cx = view.width / 2;
-        const cy = top + 40 * ui;
-        const s = (1 + comboPop * 0.45) * ui;
-        g.save();
-        g.translate(cx, cy);
-        g.scale(s, s);
-        g.fillStyle = COLORS.pink;
-        roundRectPath(g, -52, -26, 104, 52, 18);
-        g.fill();
-        g.strokeStyle = '#ffffff';
-        g.lineWidth = 3;
-        g.stroke();
-        g.fillStyle = '#ffffff';
-        g.font = F_COMBO;
-        drawText(g, comboLabel, 0, -5);
-        g.font = F_COMBO_LABEL;
-        drawText(g, 'קומבו', 0, 16);
-        g.restore();
+        const cy = top + 44 * ui;
+        const s = (0.82 + comboPop * 0.4) * ui;
+        blit(g, st, cx, cy, s);
         const bw = 92 * ui;
-        const by = cy + 32 * ui;
+        const by = cy + st.h * 0.42 * s + 2;
         const frac = clamp(comboTimer / COMBO_WINDOW, 0, 1);
-        g.fillStyle = 'rgba(255, 255, 255, 0.25)';
-        roundRectPath(g, cx - bw / 2, by, bw, 7, 3.5);
-        g.fill();
-        g.fillStyle = frac < 0.3 ? COLORS.red : COLORS.yellow;
-        roundRectPath(g, cx - bw / 2, by, bw * frac, 7, 3.5);
-        g.fill();
+        g.fillStyle = PAL.ink;
+        g.fillRect(cx - bw / 2 - 2, by - 2, bw + 4, 11);
+        g.fillStyle = PAL.paper;
+        g.fillRect(cx - bw / 2, by, bw, 7);
+        g.fillStyle = frac < 0.3 ? PAL.red : PAL.yel;
+        g.fillRect(cx - bw / 2, by, bw * frac, 7);
+      }
+
+      // zone sticker
+      if (zoneLife > 0 && zoneSticker) {
+        const a = zoneAge;
+        const pop = a < BANNER_POP ? ease.outBack(a / BANNER_POP) : 1;
+        g.globalAlpha = Math.min(1, (zoneLife - a) / 14);
+        const fit = Math.min(ui, (view.width - 16) / zoneSticker.w);
+        blit(g, zoneSticker, view.width / 2, top + playH * 0.5, pop * fit);
+        g.globalAlpha = 1;
       }
 
       // banner
@@ -1003,61 +1465,53 @@ export const game: GameModule = {
         const fade = Math.min(1, (banner.life - a) / 14);
         const cx = view.width / 2;
         const cy = top + Math.max(playH * 0.3, 150 * ui);
-        g.save();
+        const b = banner;
+        const st = stickers.get(`n|${b.text}|${b.sub}|${b.color}`, (old) => renderSticker(b.text, { size: BANNER_PX, fill: b.color, shadow: b.color === PAL.red ? PAL.yel : PAL.red, sub: b.sub || undefined }, old));
+        const fit = Math.min(ui, (Math.min(view.width, playW + 120) - 16) / Math.max(1, st.w));
         g.globalAlpha = fade;
-        g.translate(cx, cy);
-        g.font = F_BANNER;
-        const tw = g.measureText(banner.text).width;
-        const fit = Math.min(ui, (Math.min(view.width, playW + 120) - 32) / Math.max(1, tw));
-        g.scale(pop * fit, pop * fit);
-        g.rotate(-0.04);
-        g.lineJoin = 'round';
-        g.lineWidth = 10;
-        g.strokeStyle = INK;
-        g.fillStyle = banner.color;
-        drawText(g, banner.text, 0, 0, true);
-        if (banner.sub) {
-          g.font = F_SUB;
-          g.lineWidth = 6;
-          g.fillStyle = '#ffffff';
-          drawText(g, banner.sub, 0, 38, true);
-        }
-        g.restore();
+        blit(g, st, cx, cy, pop * fit);
+        g.globalAlpha = 1;
       }
     }
 
     function draw(alpha: number): void {
       if (destroyed) return;
+      const now = performance.now();
+      if (lastFrameAt > 0) frameEma = frameEma * 0.9 + Math.min(100, now - lastFrameAt) * 0.1;
+      lastFrameAt = now;
       const g = view.ctx;
       const c = lerp(prevCam, cam.cam, alpha);
       drawBackground(c);
-      drawSnow();
+      drawSnow(c);
       g.save();
       fx.applyShake(g);
       drawWalls(c);
       drawGround(c);
       // floors on screen
       const minAlt = c - (view.height - bottom) / scale - FLOOR_H - 40;
-      const maxAlt = c + (bottom / scale) + 40;
+      const maxAlt = c + bottom / scale + 40;
       if (lowFloor > 0 && (level.alt[lowFloor] ?? 0) > minAlt) lowFloor = Math.max(0, floorAtOrBelow(level, minAlt));
       while (lowFloor < level.count - 1 && (level.alt[lowFloor + 1] ?? 0) < minAlt) lowFloor++;
       for (let j = Math.max(1, lowFloor); j < level.count; j++) {
         const a = level.alt[j] ?? 0;
-        if (a > maxAlt) break;
+        if (a > maxAlt + 60) break;
         drawFloor(j, bottom - (a - c) * scale);
       }
       drawBestLine(c);
+      drawStreaks();
       if (mode === 'run') drawPlayer(c, alpha);
       g.save();
       g.translate(0, bottom + c * scale);
       fx.draw(g);
+      drawPops();
       g.restore();
       g.restore();
       if (mode === 'dead') {
         const py0 = bottom - lerp(prevPopY, popY, alpha);
-        const box = (2 * R * scale) / (2 * HEAD_SHARE);
-        art.faceFall.draw(g, wx(deathX), py0, box * 1.25, box * 1.25, deadSteps * 0.12);
+        const k = R * scale * 1.2;
+        drawClimber(g, wx(deathX), py0 + 1.5 * k, k, 1, 1, deadSteps * 0.12, 0, -1, 0, 0, 400, art.faceFall, false);
       }
+      drawDanger();
       drawHeldGlow();
       drawHint();
       drawUi();
@@ -1089,9 +1543,7 @@ export const game: GameModule = {
         };
       },
       get art() {
-        const out: Record<string, boolean> = {};
-        for (const [k, d] of Object.entries(art)) out[k] = !d.isPlaceholder;
-        return out;
+        return { ...art.real };
       },
       floors(from: number, n: number) {
         const out: Array<{ i: number; alt: number; x: number; half: number }> = [];
@@ -1143,6 +1595,12 @@ export const game: GameModule = {
         }
         return { landings, deadAt, x: simBody.x, py: simBody.py, vx: simBody.vx, margin };
       },
+      get look() {
+        let n = stars.length + stickers.size + signs.size + 2 + (hazard ? 1 : 0);
+        for (const t of backTiles) if (t) n++;
+        for (const t of wallTiles) if (t) n++;
+        return { zone: skyZone, lowQuality, canvases: n };
+      },
     };
     window.__icy = debug;
 
@@ -1165,6 +1623,20 @@ export const game: GameModule = {
         skyB.remove();
         glowEls[0].remove();
         glowEls[1].remove();
+        // release every offscreen canvas this round made
+        invalidateLook();
+        for (const el of backEls) {
+          el.width = 0;
+          el.height = 0;
+          el.remove();
+        }
+        for (const s of stars) s.width = 0;
+        stickers.dispose();
+        for (const s of signs.values()) s.canvas.width = 0;
+        signs.clear();
+        if (hazard) hazard.width = 0;
+        hazard = null;
+        hazardPattern = null;
         if (window.__icy === debug) delete window.__icy;
       },
     };

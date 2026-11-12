@@ -74,10 +74,14 @@ Try things at `/dev.html` (games), `/dev.html?game=demo` (the example below), `/
 - Building blocks for custom sounds: `tone({ freq, to?, dur, type?, vol?, at?, attack?, vibrato?, lowpass? })`, `noise({ dur, vol?, at?, filter? })`, `midiHz(note)`, `getAudioContext()`, `getAudioOutput()`, `whenAudioReady(fn)`, `playFanfare(at?)`
 
 ### music.ts (song slots; not game time, keeps playing through a freeze)
-- `playTrack(name, { loop?, volume?, fallback?: 'victory' | 'fanfare' | 'none' })` plays `client/public/audio/<name>.mp3` (or .m4a / .ogg / .wav) when it exists, else the synth fallback (default: 'victory' for names starting with "victory", 'fanfare' for "fanfare…", else 'none'). Restarts when already playing. Never throws.
+- `playTrack(name, { loop?, volume?, fallback?: 'victory' | 'fanfare' | 'none', startAt? })` plays `client/public/audio/<name>.mp3` (or .m4a / .ogg / .wav / .webm) when it exists, else the synth fallback (default: 'victory' for names starting with "victory", 'fanfare' for "fanfare…", else 'none'). Restarts when already playing. Never throws. `startAt` (seconds, or a function returning seconds) is read when the sound really begins (after loading, and after the first click when autoplay was blocked); a looped track wraps it around the file's length, a one-shot that would start past its end stays silent.
 - `stopTrack(name?, fadeMs = 400)` no name = all
-- `isTrackPlaying(name)` / `hasTrackFile(name)`
-- **The victory song**: drop the real one at `client/public/audio/victory.mp3`.
+- `isTrackPlaying(name)` / `hasTrackFile(name)` / `findTrackFile(name)` (the real file name, e.g. `'tap.ogg'`, or null)
+- `pauseTrack(name, fadeMs = 200)` / `resumeTrack(name, fadeMs = 200)` pause where it is and continue from the same position. Independent of the page-hidden pause: a track paused here is not resumed by the page becoming visible, and one resumed while the page is hidden waits for it to be visible.
+- `setTrackVolume(name, volume, fadeMs = 400)` ramps the level (a paused track takes it when it resumes)
+- `getTrackInfo(name)` → `{ source, playing, paused, hidden, time, duration, volume, level, loop, muted, stopping }` or null
+- Tests: `window.__partyMusic` → `started`, `playing(name)`, `info(name)`, `live()` (fading tracks too), `stats()` (tracks / elements / pending timers, for leak checks)
+- **The victory song**: drop the real one at `client/public/audio/victory.mp3`. The TV's per-game songs and their levels: `client/public/audio/README.md`.
 
 ### haptics.ts
 - `haptic.tap() bump() heavy() success() fail()` / `vibrate(pattern)` / `setHapticsEnabled(bool)` (no-op on iPhone)

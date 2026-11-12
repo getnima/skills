@@ -448,3 +448,27 @@ export function canStack(look: AvatarLook, id: number): boolean {
 }
 
 if (AVATAR_BGS.length !== AVATAR_BG_COUNT) throw new Error('avatar: AVATAR_BGS and AVATAR_BG_COUNT disagree');
+
+/**
+ * Tap on a shelf item with the catalog's rules (what the dressing room should call):
+ * worn -> taken off; a hat goes on top of the tower, or replaces the top hat when the tower is
+ * full or the top hat cannot carry; other slots replace what they hold.
+ */
+export function tapItem(look: AvatarLook, id: number): AvatarLook {
+  const l = normalizeLook(look);
+  const it = BY_ID.get(id);
+  if (it === undefined) return l;
+  if (it.slot !== 'HEAD') {
+    const field = it.slot === 'EYES' ? 'eyes' : it.slot === 'EARS' ? 'ears' : it.slot === 'FACE' ? 'face' : 'neck';
+    l[field] = l[field] === id ? null : id;
+    return l;
+  }
+  if (l.head.includes(id)) {
+    l.head = l.head.filter((h) => h !== id);
+    return normalizeLook(l);
+  }
+  const top = l.head[l.head.length - 1];
+  if (top !== undefined && (l.head.length >= AVATAR_MAX_TOWER || !canCarry(top))) l.head[l.head.length - 1] = id;
+  else l.head.push(id);
+  return l;
+}

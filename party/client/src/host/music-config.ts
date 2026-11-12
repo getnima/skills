@@ -28,7 +28,7 @@ export const MUSIC: Readonly<Record<MusicSlot, SongTuning>> = {
   /** lobby.mp3: guests joining and between rounds. Quiet. */
   lobby: { startSec: 0, volume: 0.4, introVolume: 0.4 },
   /** One song per game: from its intro to the end of play. */
-  tap: { startSec: 5, volume: 0.6, introVolume: 0.3 },
+  tap: { startSec: 0, volume: 0.6, introVolume: 0.3 },
   icy: { startSec: 0, volume: 0.6, introVolume: 0.3 },
   flappy: { startSec: 0, volume: 0.6, introVolume: 0.3 },
   plotzel: { startSec: 0, volume: 0.6, introVolume: 0.3 },
