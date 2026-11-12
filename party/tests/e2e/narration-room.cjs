@@ -47,7 +47,8 @@ function installSampler() {
     ['.sh-trow:not(.is-hidden) .sh-trow-in', 'standings row'],
     ['.sh-banner', 'winner banner'],
     ['.sh-cer-name', "winner's name"],
-    ['.sh-cer-won', "winner's doll and line"],
+    ['.sh-cer-won .sh-avatar', "winner's doll"],
+    ['.sh-cer-says > *', "winner's line"],
     ['.sh-champ-name', "champion's name"],
     ['.sh-pod-who', 'podium name'],
     ['.sh-ftable', 'final table'],
@@ -56,7 +57,8 @@ function installSampler() {
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) return null;
     const cs = getComputedStyle(el);
-    if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) return null;
+    // half-transparent = still popping in or fading out (the 3-2-1 pops in from 2.4x, invisible)
+    if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.5) return null;
     return r;
   };
   const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 4 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 4;
@@ -91,7 +93,11 @@ function installSampler() {
           for (const el of document.querySelectorAll(sel)) {
             if (nr.contains(el)) continue;
             const r = vis(el);
-            if (r && mine.some((m) => hit(m, r))) s.covered.push(label);
+            if (r && mine.some((m) => hit(m, r))) {
+              s.covered.push(label);
+              const box = (q) => [q.left, q.top, q.right, q.bottom].map(Math.round).join(',');
+              if ((window.__nrCoverInfo = window.__nrCoverInfo || []).length < 8) window.__nrCoverInfo.push(`${s.nr.moment} ${label} [${box(r)}] vs [${mine.map(box).join(' | ')}]`);
+            }
           }
         }
       }
@@ -146,9 +152,9 @@ async function join(page, code, name) {
         const el = document.querySelector('[data-testid=narrator]');
         return el && el.dataset.moment === x && !el.classList.contains('is-leaving');
       }, m, { timeout: ms, polling: 50 });
-    const shotMoment = async (m, name, settle = 900) => {
+    const shotMoment = async (m, name, settle = 900, ms = 20000) => {
       try {
-        await waitMoment(m);
+        await waitMoment(m, ms);
         await sleep(settle);
         await shot(name);
       } catch {
@@ -165,9 +171,10 @@ async function join(page, code, name) {
       const p = await openPhone(browser, `phone${i + 1}`);
       phones.push(p);
       await join(p, code, name);
-      if (i === 0) await shotMoment('arrive', '02-arrive', 1000);
     }
-    await sleep(4500);
+    // the first guests: said once the cards leave room under them (with three in, the cards shrink)
+    await shotMoment('arrive', '02-arrive', 1000);
+    await sleep(3000);
     await shot('03-lobby-3');
 
     // ── tap: the intro, the 3-2-1, GO ──
@@ -199,7 +206,7 @@ async function join(page, code, name) {
     await shot('14-cutscene');
     await tv.waitForFunction(() => !window.__host.state().cutscene, null, { timeout: 60000 });
     await shotMoment('resume', '15-resume', 600);
-    await shotMoment('final10', '16-final10', 900);
+    await shotMoment('final10', '16-final10', 900, 45000);
     await waitPhase('results', 60000);
     tapping = false;
     await tapLoop;
@@ -229,7 +236,8 @@ async function join(page, code, name) {
     await sleep(4500);
 
     // ── the verdict ──
-    const out = await tv.evaluate(() => ({ log: window.__narrator.log(), dropped: window.__narrator.dropped(), samples: window.__nrSamples }));
+    const out = await tv.evaluate(() => ({ log: window.__narrator.log(), dropped: window.__narrator.dropped(), samples: window.__nrSamples, cover: window.__nrCoverInfo || [] }));
+    if (out.cover.length > 0) console.log('cover:', out.cover.join('\n       '));
     fs.writeFileSync(path.join(OUT, 'narration.json'), JSON.stringify({ log: out.log, dropped: out.dropped }, null, 1));
     const takes = [];
     for (const b of out.log) {

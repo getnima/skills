@@ -55,10 +55,9 @@
   filter: drop-shadow(calc(6 * var(--nu)) calc(8 * var(--nu)) 0 rgba(22, 18, 14, 0.45));
   animation: nr-bob 0.9s ease-in-out 700ms infinite alternate;
 }
-/* no pose picture: the head, a little smaller, sitting at the bottom of the figure's box */
-.nr.is-head .nr-pic {
-  inset: auto 0 0;
-  height: 62%;
+/* no pose picture: the head, a little smaller, and the bubble follows it down */
+.nr.is-head .nr-fig {
+  height: calc(var(--fh) * 0.62);
 }
 
 .nr-bubble {
@@ -123,16 +122,41 @@
 
 /* ── the slots ── */
 
-/* the first lobby: on the games strip, left of the QR; the bubble at the host's feet line */
+/*
+ * The first lobby: on the games strip, left of the QR. Under the guests' cards (the measured band
+ * --bh) the bubble is one line at the host's feet, the guest's name inline, its type sized to the
+ * band; in the empty lobby (is-roomy) it stands at the host's head.
+ */
 .nr--lobby {
-  --fh: calc(430 * var(--nu));
-  --fs: calc(42 * var(--nu));
+  --fh: var(--fig, calc(430 * var(--nu)));
+  --fs: clamp(calc(30 * var(--nu)), calc((var(--bh) - 50 * var(--nu)) / 1.2), calc(42 * var(--nu)));
   --bmax: calc(var(--bw) - var(--fh) * 0.56 - 90 * var(--nu));
   left: calc(var(--bx) + 26 * var(--nu));
   bottom: calc(var(--bb) + 2 * var(--nu));
 }
 .nr--lobby .nr-bubble {
-  margin-bottom: calc(14 * var(--nu));
+  display: flex;
+  align-items: center;
+  gap: calc(14 * var(--nu));
+  margin-bottom: calc(10 * var(--nu));
+  padding-top: calc(16 * var(--nu));
+  padding-bottom: calc(14 * var(--nu));
+}
+.nr--lobby .nr-name {
+  position: static;
+  flex: none;
+  font-size: calc(var(--fs) * 0.72);
+}
+.nr--lobby.is-roomy {
+  --fs: calc(44 * var(--nu));
+  align-items: flex-start;
+}
+.nr--lobby.is-roomy .nr-bubble {
+  margin: calc(50 * var(--nu)) 0 0;
+}
+.nr--lobby.is-roomy .nr-bubble::before {
+  bottom: auto;
+  top: calc(36 * var(--nu));
 }
 
 /* intro and countdown: the top-left corner */
@@ -183,6 +207,12 @@
   border-width: calc(4 * var(--nu));
 }
 
+/* the flappy finale in the side column's title block: the label steps aside while the host is there */
+:has(> .nr-layer .nr.is-title:not(.is-leaving)) .sh-playing .sh-side > :is(.sh-game, .sh-roundno) {
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
 /* results: the left column, the bubble standing on the host's head */
 .nr--aside {
   --fh: calc(350 * var(--nu));
@@ -203,16 +233,22 @@
   transform: rotate(-45deg) skew(8deg, 8deg);
 }
 
-/* the winner: the empty band at the bottom of the text column, right of the prize */
+/*
+ * The winner: the empty band at the bottom of the text column (.sh-cer-text keeps 196 units free
+ * there), right of the prize. One line: the bubble is wide enough for every reveal line.
+ */
 .nr--ceremony {
-  --fh: calc(300 * var(--nu));
-  --fs: calc(44 * var(--nu));
-  --bmax: calc(820 * var(--nu));
+  --fh: calc(290 * var(--nu));
+  --fs: calc(40 * var(--nu));
+  --bmax: calc(1000 * var(--nu));
   left: calc(650 * var(--nu));
   bottom: 0;
 }
 .nr--ceremony .nr-bubble {
-  margin-bottom: calc(46 * var(--nu));
+  margin-bottom: calc(30 * var(--nu));
+  padding-top: calc(16 * var(--nu));
+  padding-bottom: calc(14 * var(--nu));
+  white-space: nowrap;
 }
 
 /*

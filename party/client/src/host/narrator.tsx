@@ -55,6 +55,12 @@ interface Box {
   readonly height: number;
   /** From the box's bottom edge to the layer's bottom edge. */
   readonly below: number;
+  /** The lobby with nobody in it yet: the bubble may stand at the host's head. */
+  readonly roomy?: boolean;
+  /** The lobby: the host's height (px), so the figure stays left of the guests' cards. */
+  readonly figure?: number;
+  /** A round: the host stands in the side column's title block (the flappy finale). */
+  readonly inTitle?: boolean;
 }
 
 interface Shown {
@@ -145,10 +151,32 @@ function measureSide(root: HTMLElement, unit: number): Box | null {
 }
 
 /**
+ * The flappy finale only: an elimination round's side column has no empty margin (the "left in
+ * the air" card and the timer fill it), so the finale line takes the column's title block (the
+ * game's art, name and round number: a label nobody watches during play), above the first thing
+ * that is watched. Never the race, the count, the timer or the finale banner.
+ */
+function measureSideTop(root: HTMLElement, unit: number): Box | null {
+  const side = (root.parentElement ?? document).querySelector('.sh-playing .sh-side');
+  if (side === null || !visible(side)) return null;
+  const s = side.getBoundingClientRect();
+  let ceiling = s.bottom;
+  for (const sel of ['.sh-left', '.sh-ring']) {
+    const el = side.querySelector(sel);
+    if (el !== null && visible(el)) ceiling = Math.min(ceiling, el.getBoundingClientRect().top - 8 * unit);
+  }
+  const base = root.getBoundingClientRect();
+  const pad = 10 * unit;
+  const top = s.top + pad;
+  const box = { left: s.left + pad - base.left, top: top - base.top, width: s.width - pad * 2, height: ceiling - top, below: base.bottom - ceiling, inTitle: true };
+  return box.height >= SIDE_MIN_H * unit && box.width >= 300 * unit ? box : null;
+}
+
+/**
  * The first lobby: the space between the guests (their lowest card) and the games strip, left of
  * the join panel (QR and room code). The host stands on the games strip at its left end.
  */
-function measureLobby(root: HTMLElement): Box | null {
+function measureLobby(root: HTMLElement, unit: number): Box | null {
   const scope = root.parentElement ?? document;
   const games = scope.querySelector('[data-testid=games]');
   if (games === null || !visible(games)) return null;
@@ -157,8 +185,22 @@ function measureLobby(root: HTMLElement): Box | null {
   const join = scope.querySelector('[data-testid=join]');
   const right = join !== null && visible(join) ? join.getBoundingClientRect().left : base.right;
   let top = base.top;
-  for (const chip of Array.from(scope.querySelectorAll('[data-testid=chip]'))) top = Math.max(top, chip.getBoundingClientRect().bottom);
-  return { left: 0, top: top - base.top, width: Math.max(0, right - base.left - 16), height: Math.max(0, g.top - top), below: base.bottom - g.top };
+  let left = Number.POSITIVE_INFINITY;
+  const chips = Array.from(scope.querySelectorAll('[data-testid=chip]'));
+  // a card still popping in is not where it will be: wait until the guests have settled
+  if (chips.some((chip) => chip.getAnimations().some((a) => a.playState === 'running'))) return null;
+  for (const chip of chips) {
+    const r = chip.getBoundingClientRect();
+    top = Math.max(top, r.bottom + 6 * unit);
+    left = Math.min(left, r.left);
+  }
+  const height = Math.max(0, g.top - top);
+  // the bubble (one line, the name inline) needs about 95 units under the guests' cards
+  if (chips.length > 0 && height < 95 * unit) return null;
+  // the host stands left of the leftmost card (narrower than 0.56 of its height), or not at all
+  const figure = Math.min(430 * unit, chips.length > 0 ? (left - base.left - 40 * unit) / 0.56 : Number.POSITIVE_INFINITY);
+  if (figure < 230 * unit) return null;
+  return { left: 0, top: top - base.top, width: Math.max(0, right - base.left - 16), height, below: base.bottom - g.top, roomy: chips.length === 0, figure };
 }
 
 function stageUnit(el: HTMLElement): { unit: number; portrait: boolean } {
@@ -223,16 +265,19 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
   };
 
   /** Where the beat goes now, with its measured box; null: nowhere to stand on this screen. */
-  const place = (): { slot: NarrationSlot; box: Box | null } | null => {
+  const place = (moment: NarrationMoment): { slot: NarrationSlot; box: Box | null } | null => {
     const root = rootRef.current;
     const slot = slotFor(stateRef.current);
     if (root === null || slot === null) return null;
     const { unit } = stageUnit(root);
     if (slot === 'side') {
-      const box = measureSide(root, unit);
+      const box = measureSide(root, unit) ?? (moment === 'finale' ? measureSideTop(root, unit) : null);
       return box === null ? null : { slot, box };
     }
-    if (slot === 'lobby') return { slot, box: measureLobby(root) };
+    if (slot === 'lobby') {
+      const box = measureLobby(root, unit);
+      return box === null ? null : { slot, box };
+    }
     return { slot, box: null };
   };
 
@@ -273,7 +318,7 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     const live = e.live;
     if (live === null) return;
     const beat = live.take[live.beat];
-    const where = place();
+    const where = place(live.cue.moment);
     if (beat === undefined || where === null || blocked() || (live.cue.valid !== undefined && !live.cue.valid())) {
       if (beat !== undefined) e.dropped.push({ id: `${live.cue.id}#${live.beat}`, reason: where === null ? 'no place' : 'gone' });
       finish(0);
@@ -282,7 +327,10 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     live.slot = where.slot;
     e.key++;
     setNarratorSpeaking(beat.host);
-    setShown({ key: e.key, moment: live.cue.moment, host: beat.host, pose: beat.pose, text: beat.text, name: live.cue.name ?? null, slot: where.slot, box: where.box, leaving: false });
+    // the first guests: the tag names whoever came in last, at the moment it is said
+    const players = stateRef.current?.players ?? [];
+    const name = live.cue.moment === 'arrive' ? (players[players.length - 1]?.name ?? null) : (live.cue.name ?? null);
+    setShown({ key: e.key, moment: live.cue.moment, host: beat.host, pose: beat.pose, text: beat.text, name, slot: where.slot, box: where.box, leaving: false });
     e.log.push({ moment: live.cue.moment, host: beat.host, pose: beat.pose, text: beat.text, slot: where.slot, at: Date.now() });
     live.timer = setTimeout(() => {
       live.timer = null;
@@ -314,19 +362,23 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
       schedule(500);
       return;
     }
+    const first = e.queue.peek(now);
+    if (first === null) return;
+    const priority = first.priority ?? NARRATION[first.moment].priority;
+    if (isShowCalm() && priority < CALM_MIN_PRIORITY) {
+      e.queue.next(now);
+      e.dropped.push({ id: first.id, reason: 'calm' });
+      schedule(0);
+      return;
+    }
+    // nowhere to stand on this screen right now (no margin in a round, no room under the guests):
+    // the cue waits, until the screen makes room or its time is up
+    if (place(first.moment) === null) {
+      schedule(500);
+      return;
+    }
     const cue = e.queue.next(now);
     if (cue === null) return;
-    const priority = cue.priority ?? NARRATION[cue.moment].priority;
-    if (isShowCalm() && priority < CALM_MIN_PRIORITY) {
-      e.dropped.push({ id: cue.id, reason: 'calm' });
-      schedule(0);
-      return;
-    }
-    if (place() === null) {
-      e.dropped.push({ id: cue.id, reason: 'no place' });
-      schedule(0);
-      return;
-    }
     const picked = e.picker.pick(cue.moment);
     if (picked === null || picked.take.length === 0) {
       schedule(0);
@@ -370,6 +422,22 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     };
   }, []);
 
+  /** Cues offered a little later (a guest's card pops in first); cleared on unmount. */
+  const later = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(
+    () => () => {
+      for (const t of later.current) clearTimeout(t);
+    },
+    [],
+  );
+  const offerLater = (cue: SceneCue, ms: number): void => {
+    const t = setTimeout(() => {
+      later.current.delete(t);
+      offerRef.current(cue);
+    }, ms);
+    later.current.add(t);
+  };
+
   // ── the room's own moments, from the state ──
   const s = props.state;
   const code = s?.code ?? '';
@@ -391,8 +459,9 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
       sawEmpty.current = code;
       offer({ id: `opening:${code}`, moment: 'opening', ttlMs: 8_000, valid: () => stillFirst() && (stateRef.current?.players.length ?? 0) <= 2 });
     } else if (sawEmpty.current === code) {
-      const newest = s?.players[s.players.length - 1]?.name;
-      offer({ id: `arrive:${code}`, moment: 'arrive', ttlMs: 9_000, name: newest, valid: stillFirst });
+      // after the first card has popped in and the lobby has laid itself out again
+      // (with one or two guests the cards fill the lobby down to the games: it waits for room, up to 25 s)
+      offerLater({ id: `arrive:${code}`, moment: 'arrive', ttlMs: 25_000, valid: stillFirst }, 1_100);
     }
   }, [firstLobby, guests > 0, code, cutscene !== null]);
 
@@ -437,6 +506,10 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
   useEffect(() => {
     if (cutscene === null) schedule(300);
   }, [cutscene !== null]);
+  // a guest comes in (or leaves) under a host in the lobby: the cards move, the host steps off
+  useEffect(() => {
+    if (live !== null && live.slot === 'lobby') leave(false);
+  }, [guests]);
   useEffect(() => {
     const root = rootRef.current;
     if (root === null || typeof ResizeObserver === 'undefined') return undefined;
@@ -459,6 +532,11 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
   );
 }
 
+/** The owner's multi-word exclamations never break across two lines of a bubble. */
+function keepTogether(text: string): string {
+  return text.replace(/בן פורת יוסף/g, 'בן\u00a0פורת\u00a0יוסף').replace(/דוז פואה/g, 'דוז\u00a0פואה');
+}
+
 /** One host on screen: the pose (or the head when the picture is missing) and the bubble. */
 function Speaker(props: { readonly shown: Shown }): JSX.Element {
   const { shown } = props;
@@ -474,11 +552,12 @@ function Speaker(props: { readonly shown: Shown }): JSX.Element {
     style['--bw'] = `${shown.box.width.toFixed(1)}px`;
     style['--bh'] = `${shown.box.height.toFixed(1)}px`;
     style['--bb'] = `${shown.box.below.toFixed(1)}px`;
+    if (shown.box.figure !== undefined) style['--fig'] = `${shown.box.figure.toFixed(1)}px`;
   }
   return (
     <div
       key={shown.key}
-      class={`nr nr--${shown.slot} nr--${shown.host} ${shown.leaving ? 'is-leaving' : ''} ${isHead ? 'is-head' : ''}`}
+      class={`nr nr--${shown.slot} nr--${shown.host} ${shown.leaving ? 'is-leaving' : ''} ${isHead ? 'is-head' : ''} ${shown.box?.roomy === true ? 'is-roomy' : ''} ${shown.box?.inTitle === true ? 'is-title' : ''}`}
       style={style}
       data-testid="narrator"
       data-moment={shown.moment}
@@ -493,7 +572,7 @@ function Speaker(props: { readonly shown: Shown }): JSX.Element {
             <bdi>{shown.name}</bdi>
           </span>
         ) : null}
-        <span class="nr-text">{shown.text}</span>
+        <span class="nr-text">{keepTogether(shown.text)}</span>
       </div>
     </div>
   );

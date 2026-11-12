@@ -144,6 +144,19 @@ describe('the queue', () => {
     expect(q.next(100)).toBeNull();
   });
 
+  it('lets the best cue wait in the queue (peek) until there is room for it', () => {
+    const q = createNarrationQueue();
+    q.offer(cue('arrive', 'arrive', 0, { ttlMs: 25_000 }), 0);
+    expect(q.peek(1_000)?.id).toBe('arrive');
+    expect(q.peek(5_000)?.id).toBe('arrive');
+    expect(q.size()).toBe(1);
+    expect(q.next(6_000)?.id).toBe('arrive');
+    expect(q.peek(6_000)).toBeNull();
+    // and it still expires
+    q.offer(cue('late', 'arrive', 0, { ttlMs: 2_000 }), 0);
+    expect(q.peek(2_500)).toBeNull();
+  });
+
   it('keeps at most a few cues, dropping the least important', () => {
     const q = createNarrationQueue(3);
     q.offer(cue('a', 'standings', 0), 0); // 5

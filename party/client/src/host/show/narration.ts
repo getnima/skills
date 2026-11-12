@@ -249,6 +249,8 @@ export interface NarrationQueue {
   offer(cue: NarrationCue, now: number): boolean;
   /** Removes and returns the cue to say now: the highest priority, then the oldest. Stale and invalid cues are dropped on the way. */
   next(now: number): NarrationCue | null;
+  /** The cue `next` would return, left in the queue (it may wait for room on the screen). */
+  peek(now: number): NarrationCue | null;
   /** Cues waiting (stale ones included until the next `next`/`prune`). */
   size(): number;
   /** Drops what is stale or no longer valid. */
@@ -280,6 +282,18 @@ export function createNarrationQueue(maxWaiting = 4, onDrop?: (cue: NarrationCue
     }
   }
 
+  function bestIndex(now: number): number {
+    prune(now);
+    let best = -1;
+    for (let i = 0; i < waiting.length; i++) {
+      const c = waiting[i];
+      const w = best >= 0 ? waiting[best] : undefined;
+      if (c === undefined) continue;
+      if (w === undefined || priorityOf(c) > priorityOf(w) || (priorityOf(c) === priorityOf(w) && c.at < w.at)) best = i;
+    }
+    return best;
+  }
+
   return {
     offer(cue, now) {
       if (offered.has(cue.id)) return false;
@@ -304,17 +318,14 @@ export function createNarrationQueue(maxWaiting = 4, onDrop?: (cue: NarrationCue
       return true;
     },
     next(now) {
-      prune(now);
-      let best = -1;
-      for (let i = 0; i < waiting.length; i++) {
-        const c = waiting[i];
-        const w = best >= 0 ? waiting[best] : undefined;
-        if (c === undefined) continue;
-        if (w === undefined || priorityOf(c) > priorityOf(w) || (priorityOf(c) === priorityOf(w) && c.at < w.at)) best = i;
-      }
+      const best = bestIndex(now);
       if (best < 0) return null;
       const [cue] = waiting.splice(best, 1);
       return cue ?? null;
+    },
+    peek(now) {
+      const best = bestIndex(now);
+      return best < 0 ? null : (waiting[best] ?? null);
     },
     size: () => waiting.length,
     prune,

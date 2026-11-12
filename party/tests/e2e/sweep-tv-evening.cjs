@@ -98,6 +98,12 @@ const MUSIC_SAMPLER = () => {
   window.__audTimer = window.setInterval(tick, 250);
 };
 
+const cutInfo = (tv) =>
+  tv.evaluate(() => {
+    const c = document.querySelector('[data-testid=cutscene]');
+    const v = document.querySelector('[data-testid=cutscene-video]');
+    return { mode: c ? c.getAttribute('data-mode') : null, vsrc: v ? v.getAttribute('data-src') : null };
+  });
 const tvState = (tv) => tv.evaluate(() => window.__host.state());
 const tvNow = (tv) => tv.evaluate(() => window.__host.now());
 const waitTv = (tv, fn, arg, ms = 60000) => tv.waitForFunction(fn, arg, { timeout: ms, polling: 200 });
@@ -485,7 +491,7 @@ async function remoteBig(r, expectAction) {
           check(st.round.gameId === game, `${label}: the next game is ${game}`, st.round.gameId);
           // a cutscene before the instructions (ninja)
           if (st.cutscene) {
-            const { mode } = await cutInfo();
+            const { mode } = await cutInfo(tv);
             report.cutscenes.push({ at: L.stamp(), id: st.cutscene.id, phase: st.phase, round: label, mode });
             await L.sleep(1200);
             await musicCheck(tv, `${label} cutscene ${st.cutscene.id} (before the game)`, null, undefined, label);
@@ -511,12 +517,6 @@ async function remoteBig(r, expectAction) {
           if (!st.cutscene && st.phase === 'playing') await musicCheck(tv, `${label} playing`, game, VOL.game, label);
 
           // the cutscenes of this round: tap_freeze (auto), joker_1 from the remote (c1 icy), joker_2 from the TV (c2 plotzel)
-          const cutInfo = () =>
-            tv.evaluate(() => {
-              const c = document.querySelector('[data-testid=cutscene]');
-              const v = document.querySelector('[data-testid=cutscene-video]');
-              return { mode: c ? c.getAttribute('data-mode') : null, vsrc: v ? v.getAttribute('data-src') : null };
-            });
           const handleCut = async (why) => {
             const s0 = await tvState(tv);
             const id = s0.cutscene.id;
@@ -524,7 +524,7 @@ async function remoteBig(r, expectAction) {
             const leftAt = s0.round ? roundTime(s0.round, s0.round.frozenAt).leftMs : null;
             await L.sleep(700);
             const aud = await audible(tv);
-            const { mode, vsrc } = await cutInfo();
+            const { mode, vsrc } = await cutInfo(tv);
             const tp = Date.now();
             const phonesFrozen = await Promise.all(
               phones.map((p) => Promise.race([p.page.evaluate(() => window.__player && window.__player.cutscene).catch(() => null), L.sleep(5000).then(() => 'slow')])),
