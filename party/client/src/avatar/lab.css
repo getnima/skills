@@ -70,7 +70,7 @@ body {
 .lab-row { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
 .lab-cell { display: grid; justify-items: center; gap: 4px; font: 600 11px/1.1 var(--ui); direction: ltr; }
 .lab-cell b { font: 700 16px/1 var(--disp); direction: rtl; }
-.lab-items { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); }
+.lab-items { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(900px, 1fr)); }
 .lab-wall { display: flex; flex-wrap: wrap; gap: 6px; direction: ltr; }
 .lab-wall.tv { background: var(--cob-d); padding: 12px; border-radius: 12px; border: 3px solid var(--ink); }
 .lab-note { margin: 0 0 10px; font: 500 13px/1.4 var(--ui); }
@@ -78,8 +78,8 @@ body {
 .lab-room { max-width: 430px; height: 760px; margin: 0 auto; border: 4px solid var(--ink); border-radius: 26px; overflow: hidden; background: var(--yel); position: relative; box-shadow: 6px 6px 0 var(--ink); }
 .lab-empty { display: grid; place-items: center; height: 100%; text-align: center; font: 700 30px/1.1 var(--disp); color: var(--red); padding: 20px; }
 /* the source page's own way of dressing the doll, rebuilt in DOM for comparison */
-.src-box { position: relative; overflow: hidden; background: var(--white); border: 2px solid var(--ink); }
+.src-box { position: relative; overflow: hidden; background: var(--white); outline: 2px solid var(--ink); }
 .src-doll { position: absolute; }
 .src-doll img { position: absolute; display: block; max-width: none; }
-.proof-pair { display: flex; gap: 6px; direction: ltr; }
-.proof-pair canvas { border: 2px solid var(--ink); background: var(--white); display: block; }
+.proof-pair { display: flex; gap: 10px; padding: 2px; direction: ltr; }
+.proof-pair canvas { outline: 2px solid var(--ink); background: var(--white); display: block; }

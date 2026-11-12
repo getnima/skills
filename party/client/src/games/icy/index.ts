@@ -134,7 +134,7 @@ const LOOK_FLOOR = ((): number => {
 /** Frame time (ms, moving average) above which snow and wind streaks are dropped, and below which they come back. */
 const SLOW_FRAME_MS = 30;
 const FAST_FRAME_MS = 21;
-const HEAD_BOX = 2.25;
+const HEAD_BOX = 2.6;
 const STAR_COLORS = [PAL.yel, PAL.pink, PAL.white, PAL.cobL] as const;
 
 // ───────────────────────────── Camera (pure, shared with the predictor) ─────────────────────────────
@@ -990,7 +990,7 @@ export const game: GameModule = {
         for (let tx = left - (phase / 64) * tw; tx < left + w; tx += tw) tile.draw(g, tx + tw / 2, sy + h / 2, tw, h);
         g.restore();
       } else {
-        const L = zoneLook(zoneOfFloor(j));
+        const L = zoneLook(zoneOfFloor(j + LOOK_FLOOR));
         // front face, then the walkable top surface
         g.fillStyle = milestone ? PAL.red : L.face;
         roundRectPath(g, left, sy, w, h, r);
@@ -1066,7 +1066,7 @@ export const game: GameModule = {
       g.lineJoin = 'round';
       const tuck = Math.max(0, air);
       const stretch = Math.max(0, -air);
-      const hipY = -0.62 * k;
+      const hipY = -0.52 * k;
       // legs: ink outline then trousers, shoes
       for (let side = -1; side <= 1; side += 2) {
         const ph = runPhase + (side < 0 ? 0 : Math.PI);
@@ -1106,8 +1106,8 @@ export const game: GameModule = {
       }
       // jacket (or the shirt slot picture)
       const tw = 0.82 * k;
-      const tTop = -1.24 * k;
-      const tH = 0.7 * k;
+      const tTop = -1.12 * k;
+      const tH = 0.68 * k;
       if (!art.shirt.isPlaceholder) {
         art.shirt.draw(g, 0, tTop + tH / 2, tw * 1.25, tH * 1.25);
       } else {
@@ -1120,11 +1120,6 @@ export const game: GameModule = {
         g.fillStyle = PAL.yel;
         g.fillRect(-0.05 * k, tTop + 0.1 * k, 0.1 * k, tH - 0.16 * k);
       }
-      // the head (bobs while running)
-      const hs = HEAD_BOX * k;
-      const bob = onFloor ? Math.abs(Math.sin(runPhase)) * 0.08 * k * run : 0;
-      const tilt = onFloor ? Math.sin(runPhase) * 0.05 * run : air * 0.06 * f;
-      head.draw(g, 0, -1.2 * k - hs * 0.38 - bob, hs, hs, tilt);
       // scarf: a wrap at the neck and a tail trailing against the motion
       const sp = Math.hypot(vxs, vys);
       let tx = -f * 0.3 * k;
@@ -1136,7 +1131,7 @@ export const game: GameModule = {
       }
       const wave = Math.sin(runPhase * 1.7) * 0.14 * k * Math.min(1, sp / 500);
       const nx = -f * 0.18 * k;
-      const ny = -1.2 * k;
+      const ny = -1.1 * k;
       g.beginPath();
       g.moveTo(nx, ny);
       g.quadraticCurveTo(nx + tx * 0.5 - ty * 0.25 + wave, ny + ty * 0.5 + tx * 0.25, nx + tx, ny + ty + wave);
@@ -1146,7 +1141,12 @@ export const game: GameModule = {
       g.strokeStyle = PAL.yel;
       g.lineWidth = 0.18 * k;
       g.stroke();
-      roundRectPath(g, -0.38 * k, -1.32 * k, 0.76 * k, 0.2 * k, 0.1 * k);
+      // the head (bobs while running), in front of the scarf tail
+      const hs = HEAD_BOX * k;
+      const bob = onFloor ? Math.abs(Math.sin(runPhase)) * 0.08 * k * run : 0;
+      const tilt = onFloor ? Math.sin(runPhase) * 0.05 * run : air * 0.06 * f;
+      head.draw(g, 0, -1.12 * k - hs * 0.43 - bob, hs, hs, tilt);
+      roundRectPath(g, -0.36 * k, -1.2 * k, 0.72 * k, 0.18 * k, 0.09 * k);
       g.fillStyle = PAL.yel;
       g.fill();
       g.lineWidth = 0.08 * k;
@@ -1156,15 +1156,15 @@ export const game: GameModule = {
       for (let side = -1; side <= 1; side += 2) {
         const ph = runPhase + (side < 0 ? Math.PI : 0);
         const shx = side * 0.36 * k;
-        const shy = -1.08 * k;
+        const shy = -0.98 * k;
         let hx: number;
         let hy: number;
         if (onFloor) {
           hx = shx + f * -Math.sin(ph) * 0.38 * k * run + side * 0.08 * k;
           hy = shy + 0.48 * k - Math.max(0, Math.sin(ph) * f) * 0.1 * k * run;
         } else {
-          hx = side * (0.5 + 0.2 * stretch) * k;
-          hy = -1.62 * k * tuck + (-1.55 * k + Math.sin(runPhase * 2 + side) * 0.12 * k) * stretch + (shy + 0.3 * k) * (1 - tuck - stretch);
+          hx = side * (0.5 + 0.28 * tuck + 0.3 * stretch) * k;
+          hy = -1.42 * k * tuck + (-1.5 * k + Math.sin(runPhase * 2 + side) * 0.14 * k) * stretch + (shy + 0.3 * k) * (1 - tuck - stretch);
         }
         const ex = (shx + hx) / 2 + side * 0.12 * k;
         const ey = (shy + hy) / 2;
