@@ -333,6 +333,51 @@ describe('computeRoundScores', () => {
     }
   });
 
+  it('a runaway leader squeezing the rest to a few points still leaves no two totals equal (the TV round of 14:12Z)', () => {
+    // [name, raw, totalBefore] in round order: before the fix דנה and מיכל both ended on 187
+    const seen: Array<[string, number, number]> = [
+      ['נועה', 100000, 0], ['בוט 12', 5945, 610], ['בוט 3', 4615, 1100], ['בוט 24', 4602, 855], ['בוט 8', 4582, 172],
+      ['בוט 18', 4521, 913], ['בוט 10', 4248, 614], ['בוט 25', 4175, 434], ['בוט 22', 3983, 652], ['בוט 17', 3852, 621],
+      ['בוט 19', 3625, 545], ['בוט 5', 3323, 834], ['בוט 21', 3273, 970], ['בוט 1', 3136, 800], ['בוט 9', 2821, 279],
+      ['בוט 23', 2609, 634], ['בוט 20', 2604, 266], ['בוט 14', 2097, 559], ['בוט 11', 2071, 686], ['בוט 15', 1964, 755],
+      ['בוט 7', 1584, 745], ['בוט 6', 1275, 238], ['בוט 16', 1162, 283], ['בוט 2', 1073, 717], ['בוט 4', 1047, 214],
+      ['Yossi', 328, 186], ['מיכל', 276, 184], ['דנה', 192, 185], ['עדי', 50, 0], ['בוט 13', 0, 0],
+    ];
+    const list: RoundEntry[] = seen.map(([id, raw, totalBefore], i) => ({ id, raw, reachedAt: raw > 0 ? 1_000 + i : null, joinOrder: i, totalBefore }));
+    const s = computeRoundScores(list);
+    const totals = list.map((e) => (e.totalBefore ?? 0) + (s.get(e.id)?.points ?? 0)).filter((t) => t > 0);
+    expect(new Set(totals).size).toBe(totals.length);
+    const pts = list.filter((e) => e.raw > 0).map((e) => s.get(e.id)!.points);
+    for (let i = 1; i < pts.length; i++) expect(pts[i]!).toBeLessThan(pts[i - 1]!);
+    expect(pts[pts.length - 1]!).toBeGreaterThanOrEqual(1);
+  });
+
+  it('property: 400 evenings of 30 guests where one guest scores 20x / 50x / 100x the rest in 30% of rounds never share a total', () => {
+    const bad: string[] = [];
+    for (const mult of [20, 50, 100]) {
+      const rnd = mulberry32(4242 + mult);
+      for (let ev = 0; ev < 400; ev++) {
+        const totals = new Array<number>(30).fill(0);
+        for (let round = 0; round < 10; round++) {
+          const star = rnd() < 0.3 ? Math.floor(rnd() * 30) : -1;
+          const list: RoundEntry[] = totals.map((totalBefore, i) => {
+            const raw = rnd() < 0.07 ? 0 : Math.round(1_000 * (0.1 + 0.9 * rnd()) * (i === star ? mult : 1));
+            return { id: String(i), raw, reachedAt: raw > 0 ? Math.floor(rnd() * 60_000) : null, joinOrder: i, totalBefore };
+          });
+          const s = computeRoundScores(list);
+          const pts = orderRound(list)
+            .filter((e) => e.raw > 0)
+            .map((e) => s.get(e.id)?.points ?? 0);
+          if (pts.some((p, i) => p < 1 || (i > 0 && p >= pts[i - 1]!))) bad.push(`${mult}x evening ${ev} round ${round + 1}: points not strictly decreasing`);
+          totals.forEach((_, i) => (totals[i]! += s.get(String(i))?.points ?? 0));
+          const nonZero = totals.filter((t) => t > 0);
+          if (new Set(nonZero).size !== nonZero.length) bad.push(`${mult}x evening ${ev} round ${round + 1}: two guests on one total`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
   it('property: 300 random competitions of 5 rounds never leave two scorers on the same total', () => {
     const rnd = mulberry32(77);
     for (let comp = 0; comp < 300; comp++) {

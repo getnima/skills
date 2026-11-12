@@ -124,6 +124,23 @@ describe('http', () => {
     expect(res.headers.get('location')).toBe(`/?room=${host.code}`);
   });
 
+  it('GET /j stays on the party room when a second /host page opens, and after the party TV re-attaches', async () => {
+    const where = async (): Promise<string | null> => (await fetch(`${url}/j`, { redirect: 'manual' })).headers.get('location');
+    const party = await newHost();
+    await newPlayer(party.code, 'דנה');
+    await newPlayer(party.code, 'מיכל');
+    expect(await where()).toBe(`/?room=${party.code}`);
+    // the owner opens /host on his phone by mistake: a new, empty room with a newer TV attach
+    const stray = await newHost();
+    expect(stray.code).not.toBe(party.code);
+    expect(await where()).toBe(`/?room=${party.code}`);
+    // the party TV reloads (same room, same host key)
+    party.s.close();
+    const back = track(await connect());
+    expect(await call(back.s, 'host:create', { code: party.code, hostKey: party.hostKey })).toMatchObject({ ok: true, code: party.code });
+    expect(await where()).toBe(`/?room=${party.code}`);
+  });
+
   it('GET /healthz answers and unknown paths are a plain 404', async () => {
     const health = (await (await fetch(`${url}/healthz`)).json()) as { ok: boolean };
     expect(health.ok).toBe(true);

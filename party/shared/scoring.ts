@@ -16,7 +16,10 @@
  * 3. Totals. When the totals before the round are given, a scorer whose new
  *    total would land exactly on somebody else's total gets one point less (or
  *    as many as it takes), so two players never stand on the same total unless
- *    neither has ever scored.
+ *    neither has ever scored. When every number between the scorer above and
+ *    the room the scorers below need is taken (a runaway leader squeezes the
+ *    rest down to a few points each), the scorer climbs to the first free total
+ *    above and the scorers above it move up just as far as the order needs.
  * 4. Overall rank (strict): total, then round wins, then best single round,
  *    then position in the most recent round, then join order.
  */
@@ -72,32 +75,47 @@ export function computeRoundScores(entries: readonly RoundEntry[]): Map<string, 
   for (const e of order) {
     if (cleanRaw(e.raw) <= 0 && e.totalBefore !== undefined) taken.add(e.totalBefore);
   }
+  const isFree = (e: RoundEntry, p: number): boolean => e.totalBefore === undefined || !taken.has(e.totalBefore + p);
+  const take = (e: RoundEntry, p: number): void => {
+    if (e.totalBefore !== undefined) taken.add(e.totalBefore + p);
+  };
 
-  const out = new Map<string, RoundScore>();
-  let above = Number.POSITIVE_INFINITY;
-  order.forEach((e, i) => {
-    if (i >= scorers.length) {
-      out.set(e.id, { points: 0, roundRank: i + 1 });
-      return;
-    }
+  /** Points of the scorers, in the strict order (a later scorer may still move the ones above it up). */
+  const pts: number[] = [];
+  scorers.forEach((e, i) => {
     // Enough room below for every remaining scorer to get a different, positive number.
     const floor = scorers.length - i;
     const target = Math.round((MAX_ROUND_POINTS * cleanRaw(e.raw)) / best) + (PODIUM_BONUS[i] ?? 0);
-    const ceil = above - 1;
+    const ceil = i === 0 ? Number.POSITIVE_INFINITY : pts[i - 1]! - 1;
     let points = Math.min(ceil, Math.max(target, floor));
-    if (e.totalBefore !== undefined) {
-      const before = e.totalBefore;
+    if (!isFree(e, points)) {
       let free: number | null = null;
-      for (let p = points; p >= floor && free === null; p--) if (!taken.has(before + p)) free = p;
-      for (let p = points + 1; p <= ceil && p <= points + scorers.length && free === null; p++) {
-        if (!taken.has(before + p)) free = p;
+      for (let p = points - 1; p >= floor && free === null; p--) if (isFree(e, p)) free = p;
+      for (let p = points + 1; p <= ceil && p <= points + scorers.length && free === null; p++) if (isFree(e, p)) free = p;
+      if (free !== null) {
+        points = free;
+      } else {
+        // Every total in reach is taken: climb past the scorer above to the first free total,
+        // then move the scorers above up, each to its first free total over the one below it.
+        // The leader has no ceiling, so this always ends.
+        points = Number.isFinite(ceil) ? ceil + 1 : points + 1;
+        while (!isFree(e, points)) points++;
       }
-      if (free !== null) points = free;
-      taken.add(before + points);
     }
-    above = points;
-    out.set(e.id, { points, roundRank: i + 1 });
+    pts.push(points);
+    take(e, points);
+    for (let j = i - 1; j >= 0 && pts[j]! <= pts[j + 1]!; j--) {
+      const up = scorers[j]!;
+      if (up.totalBefore !== undefined) taken.delete(up.totalBefore + pts[j]!);
+      let q = pts[j + 1]! + 1;
+      while (!isFree(up, q)) q++;
+      pts[j] = q;
+      take(up, q);
+    }
   });
+
+  const out = new Map<string, RoundScore>();
+  order.forEach((e, i) => out.set(e.id, { points: i < scorers.length ? pts[i]! : 0, roundRank: i + 1 }));
   return out;
 }
 

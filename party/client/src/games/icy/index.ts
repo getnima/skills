@@ -203,17 +203,31 @@ function advanceCam(c: CamState, runFloor: number, runSteps: number, head: numbe
 function fellOff(b: Body, cam: number): boolean {
   return b.py + 2 * R < cam - 8;
 }
+/**
+ * The alpha of a few pixels of a picture, in ONE readback of a tiny copy: the picture itself is
+ * never read back (no "multiple readback" console warnings, and it stays on the GPU for the frames).
+ */
+function alphaAt(src: HTMLCanvasElement, points: ReadonlyArray<readonly [number, number]>): number[] | null {
+  const probe = document.createElement('canvas');
+  probe.width = points.length;
+  probe.height = 1;
+  const g = probe.getContext('2d', { willReadFrequently: true });
+  if (!g) return null;
+  points.forEach(([x, y], i) => g.drawImage(src, x, y, 1, 1, i, 0, 1, 1));
+  const d = g.getImageData(0, 0, points.length, 1).data;
+  return points.map((_, i) => d[i * 4 + 3] ?? 0);
+}
+
 /** Is this picture fully opaque (sampled at its corners, edge middles and centre)? */
 function isOpaque(c: HTMLCanvasElement): boolean {
   try {
-    const g = c.getContext('2d');
-    if (!g) return false;
     const w = c.width - 1;
     const h = c.height - 1;
-    for (const [u, v] of [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0], [0.5, 1], [0, 0.5], [1, 0.5], [0.5, 0.5]] as const) {
-      if ((g.getImageData(Math.round(u * w), Math.round(v * h), 1, 1).data[3] ?? 0) < 250) return false;
-    }
-    return true;
+    const points = ([[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0], [0.5, 1], [0, 0.5], [1, 0.5], [0.5, 0.5]] as const).map(
+      ([u, v]) => [Math.round(u * w), Math.round(v * h)] as const,
+    );
+    const alpha = alphaAt(c, points);
+    return alpha !== null && alpha.every((a) => a >= 250);
   } catch {
     return false;
   }
@@ -1263,14 +1277,13 @@ export const game: GameModule = {
       if (hit !== undefined) return hit;
       let round = false;
       try {
-        const c = d.source.getContext('2d');
-        if (c) {
-          const w = d.source.width;
-          const h = d.source.height;
-          const edge = c.getImageData(Math.round(w * 0.025), Math.round(h * 0.5), 1, 1).data[3] ?? 0;
-          const corner = c.getImageData(Math.round(w * 0.04), Math.round(h * 0.04), 1, 1).data[3] ?? 255;
-          round = edge > 180 && corner < 40;
-        }
+        const w = d.source.width;
+        const h = d.source.height;
+        const alpha = alphaAt(d.source, [
+          [Math.round(w * 0.025), Math.round(h * 0.5)],
+          [Math.round(w * 0.04), Math.round(h * 0.04)],
+        ]);
+        if (alpha !== null) round = (alpha[0] ?? 0) > 180 && (alpha[1] ?? 255) < 40;
       } catch {
         round = false;
       }

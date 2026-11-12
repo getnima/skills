@@ -126,7 +126,7 @@
 }
 .sh-head-sub {
   font-family: var(--read);
-  font-size: calc(30 * var(--u));
+  font-size: calc(32 * var(--u));
   font-weight: 800;
   color: var(--yel);
 }
@@ -416,7 +416,7 @@
   align-items: center;
   justify-content: center;
   gap: calc(28 * var(--u));
-  font-size: calc(28 * var(--u));
+  font-size: calc(31 * var(--u));
   font-weight: 800;
   color: var(--yel);
   white-space: nowrap;
@@ -2448,7 +2448,7 @@
 .sh-frow .sh-rank {
   width: calc(56 * var(--u));
   height: calc(46 * var(--u));
-  font-size: calc(30 * var(--u));
+  font-size: calc(32 * var(--u));
 }
 .sh-frow.is-top1 .sh-rank {
   color: #fff;
@@ -2571,7 +2571,7 @@
   white-space: nowrap;
 }
 .sh-panel-count {
-  font: 800 calc(28 * var(--u)) / 1.2 var(--read);
+  font: 800 calc(30 * var(--u)) / 1.2 var(--read);
   color: #fff;
   -webkit-text-stroke: 0;
   text-shadow: none;
@@ -2623,7 +2623,7 @@
 .sh-prow .sh-move {
   width: auto;
   min-width: calc(62 * var(--u));
-  font-size: calc(26 * var(--u));
+  font-size: calc(30 * var(--u));
 }
 .sh-prow .sh-total {
   width: auto;

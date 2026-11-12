@@ -21,6 +21,8 @@ export function createScratch(): Scratch {
   const a = document.createElement('canvas');
   const b = document.createElement('canvas');
   a.width = a.height = b.width = b.height = 1;
+  // `a` is read back once per bake (bakeFinish's silhouette): say so on its first context, which fixes the attributes
+  a.getContext('2d', { willReadFrequently: true });
   return {
     a,
     b,

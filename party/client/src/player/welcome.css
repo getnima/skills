@@ -236,6 +236,12 @@
 }
 
 /* short screens, and above all the on-screen keyboard: the form always keeps the field and the button */
+/* the room's code field too (a typed link, a QR of another room) on a short Safari (iPhone 14: 390x664): the line under the logo goes */
+@container (max-height: 700px) {
+  .pw-join:has(.pp-code-input) .pp-sub {
+    display: none;
+  }
+}
 @container (max-height: 640px) {
   .pw-cover {
     gap: 8px;
@@ -270,9 +276,12 @@
   }
 }
 @container (max-height: 430px) {
-  .pw-cover,
-  .pw-join .pp-label {
+  /* the keyboard is up: the band above the form keeps a small one-line logo, the field keeps its question */
+  .pw-join .pp-room-chip {
     display: none;
+  }
+  .pw-join .pp-brand {
+    font-size: clamp(28px, 9vw, 36px);
   }
   .pw-join .pp-input {
     height: 52px;
@@ -286,6 +295,18 @@
   .pw-join .pp-btn-go {
     min-height: 56px;
     font-size: 28px;
+  }
+}
+/* two fields under the keyboard: the form takes the whole height */
+@container (max-height: 330px) {
+  .pw-join:has(.pp-code-input) .pw-cover {
+    display: none;
+  }
+}
+@container (max-height: 250px) {
+  .pw-cover,
+  .pw-join .pp-label {
+    display: none;
   }
 }
 

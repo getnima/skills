@@ -688,7 +688,7 @@ body {
 }
 .hs-join.is-compact .hs-url {
   padding: calc(3 * var(--hu)) calc(12 * var(--hu)) calc(4 * var(--hu));
-  font-size: calc(21 * var(--hu));
+  font-size: calc(28 * var(--hu));
 }
 .hs-local-warn {
   display: flex;
@@ -1269,8 +1269,9 @@ body {
   text-align: center;
   text-wrap: balance;
 }
+/* 28 px at 1080p: the smallest text the room reads from the sofa */
 .hs-game-dur {
-  font-size: calc(20 * var(--hu));
+  font-size: calc(28 * var(--hu));
   font-weight: 700;
   color: rgba(22, 18, 14, 0.62);
 }

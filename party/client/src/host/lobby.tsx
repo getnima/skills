@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 
 import { GAME_IDS, GAMES, MAX_PLAYERS } from '../../../shared/protocol';
 import { peekAvatarUrl, useAvatarUrl } from '../avatar';
+import { findPublicFile } from '../kit/files';
 import { StandingsPanel } from './show/index';
 import { designedQrUrl, hostDollUrl, introArtUrl } from './show/art';
 import { narratorSpeaking, onNarratorSpeaking } from './show/narrator-bus';
@@ -71,6 +72,8 @@ let qrLinkOnce: Promise<string | null> | null = null;
 /** The link qr.json vouches for, fetched once (only when qr.png exists; any failure is "no"). */
 function loadQrLink(picture: string): Promise<string | null> {
   qrLinkOnce ??= (async (): Promise<string | null> => {
+    // the build knows whether qr.json was dropped in: no blind request, no 404 in the TV's console
+    if (findPublicFile('/assets/host/qr.json', []) === null) return null;
     try {
       const res = await fetch(picture.replace(/[^/]+$/, 'qr.json'), { cache: 'no-store' });
       if (!res.ok) return null;

@@ -11,7 +11,7 @@ import { Avatar } from '../avatar';
 import { haptic } from '../kit/haptics';
 import { keepAwake } from '../kit/mobile';
 import { findAction } from '../host/actions';
-import { askFor, bigButton, connectedCount, defaultPick, phaseText, roundClockText, secondaryActions, topFive } from './logic';
+import { askFor, bigButton, connectedCount, defaultPick, liveCountText, phaseText, roundClockText, secondaryActions, topFive } from './logic';
 import { useRemoteLink } from './link';
 
 import type { ComponentChildren, JSX } from 'preact';
@@ -46,6 +46,11 @@ interface Flash {
 }
 
 const press = (): void => haptic.tap();
+
+/** The big button takes no second press within this long of the last one (a double tap is one decision). */
+const BIG_AGAIN_MS = 1_000;
+/** ...nor within this long of the screen or its next step changing (the second tap would land on the new screen). */
+const BIG_AFTER_SCREEN_MS = 700;
 
 /** Re-render every `ms` while `on`. */
 function useEvery(ms: number, on: boolean): void {
@@ -277,29 +282,39 @@ function Picker(props: {
 
 function LiveTop(props: { readonly link: RemoteLink }): JSX.Element {
   const { link } = props;
-  const rows = topFive(link.state, link.scores);
+  const gameId = link.state?.round?.gameId;
+  const elimination = gameId !== undefined && GAMES[gameId].mode === 'elimination';
+  const rows = topFive(link.state, link.scores, elimination ? link.out : null);
   const looks = new Map((link.state?.players ?? []).map((p) => [p.id, p.look]));
-  const { online, total } = connectedCount(link.state);
   return (
     <section class="rm-live" data-testid="live">
       <div class="rm-sec-title">
         <span>🔴 בשידור חי</span>
         <span class="rm-live-count" data-testid="live-connected">
-          {online} מתוך {total} מחוברים
+          {liveCountText(link.state, link.active)}
         </span>
       </div>
       <ol class="rm-top5" data-testid="top5">
         {rows.length === 0 ? <li class="rm-top5-empty">עוד אין נקודות…</li> : null}
         {rows.map((r) => (
-          <li key={r.id} class={`rm-top5-row ${r.place === 1 ? 'is-first' : ''} ${r.connected ? '' : 'is-away'}`} data-testid="top5-row">
-            <span class="rm-place">{r.place}</span>
+          <li
+            key={r.id}
+            class={`rm-top5-row ${r.place === 1 && !r.out ? 'is-first' : ''} ${r.connected ? '' : 'is-away'} ${r.out ? 'is-out' : ''}`}
+            data-testid="top5-row"
+          >
+            {/* like the TV: in an elimination round a place means something only once you are out */}
+            <span class="rm-place">{elimination && !r.out && gameId !== undefined ? GAMES[gameId].emoji : r.place}</span>
             <Avatar look={looks.get(r.id)} size={26} ring />
             <span class="rm-name" dir="auto">
               {r.name}
             </span>
-            <span class="rm-score" dir="ltr">
-              {r.score.toLocaleString('he-IL')}
-            </span>
+            {elimination ? (
+              <span class={`rm-status ${r.out ? 'is-out' : 'is-in'}`}>{r.out ? 'בחוץ' : 'באוויר'}</span>
+            ) : (
+              <span class="rm-score" dir="ltr">
+                {r.score.toLocaleString('he-IL')}
+              </span>
+            )}
           </li>
         ))}
       </ol>
@@ -538,6 +553,21 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
     setSelected(null);
     setLockedKey(null);
   }, [key]);
+  // The TV's new model lands ~20 ms after a press, so the second tap of a double tap would be a fresh
+  // press of the NEW screen's big button (skip the video, start the next game). Stamped during render,
+  // like the TV's own key guard, so the very render that shows the new screen is already guarded.
+  const lastBigAt = useRef(0);
+  const screenAt = useRef(0);
+  const screen = `${key}|${model?.primary ?? ''}|${s?.cutscene?.startedAt ?? ''}`;
+  const lastScreen = useRef(screen);
+  if (lastScreen.current !== screen) {
+    lastScreen.current = screen;
+    screenAt.current = Date.now();
+  }
+  const sinceBig = Date.now() - lastBigAt.current;
+  const sinceScreen = Date.now() - screenAt.current;
+  const bigCooling = sinceBig < BIG_AGAIN_MS || sinceScreen < BIG_AFTER_SCREEN_MS;
+  useEvery(150, bigCooling);
   // a cutscene / a new screen closes what was open under it
   useEffect(() => {
     setAsk(null);
@@ -584,6 +614,9 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
   const bigLocked = lockedKey !== null && lockedKey.key === lockId && Date.now() < lockedKey.until;
   const pressBig = (): void => {
     if (big === null || !big.enabled || bigLocked || model === null) return;
+    const t = Date.now();
+    if (t - lastBigAt.current < BIG_AGAIN_MS || t - screenAt.current < BIG_AFTER_SCREEN_MS) return;
+    lastBigAt.current = t;
     press();
     const a = findAction(model, big.id);
     if (a === undefined) return;
@@ -681,7 +714,7 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
         <button
           type="button"
           class={`rm-big ${big?.kind === 'danger' ? 'rm-big--danger' : big?.ask !== null && big?.ask !== undefined ? 'rm-big--ask' : ''}`}
-          disabled={big === null || !big.enabled || bigLocked}
+          disabled={big === null || !big.enabled || bigLocked || bigCooling}
           data-testid="big"
           data-action={big?.id ?? ''}
           onClick={pressBig}

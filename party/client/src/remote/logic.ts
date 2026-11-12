@@ -46,20 +46,38 @@ export interface TopRow {
   readonly name: string;
   readonly score: number;
   readonly connected: boolean;
+  /** Elimination round: this one is out (false for everyone still in the air, and in other games). */
+  readonly out: boolean;
 }
 
-/** The first five of the live `scores` broadcast (already in the strict live order). */
-export function topFive(state: RoomState | null, scores: ReadonlyArray<readonly [string, number]>): TopRow[] {
+/**
+ * The first five of the live `scores` broadcast (already in the strict live order). In an
+ * elimination round (`outIds` given) the ones still in the air come first and the raw number
+ * means nothing to the owner: the rows say who is in and who is out, like the TV.
+ */
+export function topFive(state: RoomState | null, scores: ReadonlyArray<readonly [string, number]>, outIds: readonly string[] | null = null): TopRow[] {
   if (state === null) return [];
   const byId = new Map(state.players.map((p) => [p.id, p]));
-  const out: TopRow[] = [];
-  for (const [id, score] of scores) {
+  const isOut = new Set(outIds ?? []);
+  const ordered = outIds === null ? scores : [...scores.filter(([id]) => !isOut.has(id)), ...scores.filter(([id]) => isOut.has(id))];
+  const rows: TopRow[] = [];
+  for (const [id, score] of ordered) {
     const p = byId.get(id);
     if (p === undefined) continue;
-    out.push({ place: out.length + 1, id, name: p.name, score, connected: p.connected });
-    if (out.length === 5) break;
+    rows.push({ place: rows.length + 1, id, name: p.name, score, connected: p.connected, out: isOut.has(id) });
+    if (rows.length === 5) break;
   }
-  return out;
+  return rows;
+}
+
+/** The live top's count line: "N באוויר" in an elimination round, else who is connected. */
+export function liveCountText(state: RoomState | null, active: number | null): string {
+  const gameId = state?.round?.gameId;
+  if (gameId !== undefined && GAMES[gameId].mode === 'elimination' && active !== null && state?.phase === 'playing') {
+    return `${active} באוויר`;
+  }
+  const { online, total } = connectedCount(state);
+  return `${online} מתוך ${total} מחוברים`;
 }
 
 export function connectedCount(state: RoomState | null): { readonly online: number; readonly total: number } {

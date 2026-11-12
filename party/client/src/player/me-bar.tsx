@@ -65,6 +65,11 @@ export function MeBar(props: { readonly standing: MeStanding | null; readonly vi
   // same values never restarts the animation).
   const shown = useRef<Shown | null>(null);
   const change = useRef<Change | null>(null);
+  // Hidden (the game itself) is display:none, and showing it again restarts every CSS animation: a
+  // move that was already told must not replay during a freeze or on the "sending" screen.
+  const wasVisible = useRef(props.visible);
+  if (wasVisible.current && !props.visible) change.current = null;
+  wasVisible.current = props.visible;
   if (s !== null) {
     const prev = shown.current;
     if (prev === null) shown.current = { rank, total };
@@ -90,7 +95,10 @@ export function MeBar(props: { readonly standing: MeStanding | null; readonly vi
     >
       <MeBarAvatar standing={s} />
       <span class="pp-mb-who">
-        <bdi class={`pp-mb-name ${Array.from(s.name).length > 9 ? 'is-long' : ''}`}>{s.name}</bdi>
+        {/* rtl like every other place on the phone: "Dana 2 דנה" reads the same here and in the lists */}
+        <bdi class={`pp-mb-name ${Array.from(s.name).length > 9 ? 'is-long' : ''}`} dir="rtl">
+          {s.name}
+        </bdi>
         {total !== null ? (
           <span class="pp-mb-total">
             <span class="pp-mb-star">⭐</span>

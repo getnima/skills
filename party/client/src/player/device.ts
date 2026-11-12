@@ -85,6 +85,42 @@ export function goFullscreen(): void {
   void enterFullscreen().then(lockPortrait);
 }
 
+const GUARD_KEY = 'partyBackGuard';
+let guardOn = false;
+let guardReady = false;
+
+function isGuardEntry(state: unknown): boolean {
+  return typeof state === 'object' && state !== null && (state as Record<string, unknown>)[GUARD_KEY] === true;
+}
+
+function pushGuard(): void {
+  try {
+    if (!isGuardEntry(window.history.state)) window.history.pushState({ [GUARD_KEY]: true }, '', window.location.href);
+  } catch {
+    // a browser that refuses: back leaves the page, as before
+  }
+}
+
+/**
+ * Android's back gesture is the OS's own edge swipe (no touch handler can claim it), and iOS
+ * Safari's edge swipe is a history back too: one swipe while slicing in ninja or holding a side
+ * in icy would leave the game. While `on` (the guest is in the room: the waiting room, a game,
+ * the results) the page keeps one history entry of its own on top; a back only pops that entry,
+ * and it is put back at once, so the guest stays where they are. Turned off, the entry is left
+ * behind (harmless: one more back to leave).
+ */
+export function guardBack(on: boolean): void {
+  if (typeof window === 'undefined') return;
+  guardOn = on;
+  if (!guardReady) {
+    guardReady = true;
+    window.addEventListener('popstate', () => {
+      if (guardOn) pushGuard();
+    });
+  }
+  if (on) pushGuard();
+}
+
 let reentryReady = false;
 
 /**

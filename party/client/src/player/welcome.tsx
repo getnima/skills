@@ -21,7 +21,7 @@ import { haptic } from '../kit/haptics';
 import { isStandalone, keepAwake } from '../kit/mobile';
 import { goFullscreen } from './device';
 import { dressStepEnabled } from './dressing-state';
-import { dismissTip, isTipDismissed } from './identity';
+import { cutName, dismissTip, isTipDismissed } from './identity';
 import { BootScreen, Dots, Movement } from './screens';
 import { Avatar, fmt, medal, standings } from './ui';
 
@@ -61,18 +61,6 @@ function loadDressingRoom(): Promise<RoomComponent> {
 
 /** Three dolls on the cover: what a guest is about to make. Only the 17 original accessories. */
 const COVER_LOOKS: readonly string[] = ['1.5.3.0.0.11.0', '1.8.8-17.9.0.0.7', '1.2.12.5.0.0.15'];
-
-/** Grapheme-safe cut: an emoji (or a letter with niqqud) is never split in half. */
-function cutName(raw: string): string {
-  try {
-    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-    const parts = Array.from(seg.segment(raw), (x) => x.segment);
-    return parts.length > NAME_MAX_LEN ? parts.slice(0, NAME_MAX_LEN).join('') : raw;
-  } catch {
-    const cps = Array.from(raw);
-    return cps.length > NAME_MAX_LEN ? cps.slice(0, NAME_MAX_LEN).join('') : raw;
-  }
-}
 
 function isIphoneSafari(): boolean {
   const ua = navigator.userAgent;
@@ -211,7 +199,8 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
             autocorrect="off"
             spellcheck={false}
             enterKeyHint="go"
-            dir="auto"
+            // rtl like the name everywhere else on the phone (a Latin-first mixed name keeps one order)
+            dir="rtl"
           />
         </label>
         {snap.joinError !== null ? (

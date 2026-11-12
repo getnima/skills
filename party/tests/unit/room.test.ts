@@ -129,6 +129,17 @@ describe('joining', () => {
     expect(h.state().players[1]?.name).toBe('א'.repeat(NAME_MAX_LEN));
   });
 
+  it('never stores half an emoji (a lone surrogate from a cut name)', () => {
+    const h = makeRoom();
+    h.join('א🎉🍕🐱🌈🔥🎈\ud83e');
+    expect(h.state().players[0]?.name).toBe('א🎉🍕🐱🌈🔥🎈');
+    expect(h.room.join('c-x', { name: '🥳'.slice(1) }).ok).toBe(false);
+    // the 400-unit slice cuts a pair in half: the half is dropped too
+    const long = `${'ב'.repeat(399)}🎉`;
+    expect(h.room.join('c-y', { name: long }).ok).toBe(true);
+    expect(h.state().players.every((p) => !/\p{Cs}/u.test(p.name))).toBe(true);
+  });
+
   it('rejects empty and non-string names', () => {
     const h = makeRoom();
     for (const name of ['', '    ', '\u0000\n\t', 42, null, undefined, {}]) {
@@ -509,6 +520,36 @@ describe('round lifecycle', () => {
     h.room.score(a, 0, 10);
     vi.advanceTimersByTime(5 * SCORE_BROADCAST_INTERVAL_MS);
     expect(h.scores).toHaveLength(2);
+  });
+
+  it('a TV or a phone that comes back mid-round gets the live race at once, not at the next score change', () => {
+    const h = makeRoom();
+    const a = h.join('a');
+    const b = h.join('b');
+    h.room.start('tap');
+    h.toPlaying();
+    h.room.score(a, 0, 7);
+    h.room.score(b, 0, 7);
+    vi.advanceTimersByTime(5 * SCORE_BROADCAST_INTERVAL_MS);
+    expect(h.scores).toHaveLength(1);
+    // the TV reloads: nobody's score changes, the race goes out again (same strict order)
+    h.room.disconnect('host-conn');
+    h.room.attachHost('host-conn-2');
+    vi.advanceTimersByTime(SCORE_BROADCAST_INTERVAL_MS);
+    expect(h.scores).toHaveLength(2);
+    expect(h.scores[1]).toEqual(h.scores[0]);
+    // a phone that reloads gets it too
+    h.room.disconnect('c-b');
+    const res = h.room.join('c-b2', { name: 'b', playerId: b, secret: 'tok4' });
+    expect(res.ok).toBe(true);
+    vi.advanceTimersByTime(SCORE_BROADCAST_INTERVAL_MS);
+    expect(h.scores).toHaveLength(3);
+    // outside a round a re-attach sends nothing
+    h.room.endRound();
+    const n = h.scores.length;
+    h.room.attachHost('host-conn-3');
+    vi.advanceTimersByTime(5 * SCORE_BROADCAST_INTERVAL_MS);
+    expect(h.scores).toHaveLength(n);
   });
 });
 
@@ -995,6 +1036,35 @@ describe('registry and config', () => {
     vi.advanceTimersByTime(1);
     expect(registry.sweep(5_000)).toBe(1);
     expect(registry.get(room.code)).toBeUndefined();
+  });
+
+  it('the /j short link keeps the party room when a second TV page opens an empty one', () => {
+    const registry = new RoomRegistry({ sinkFor });
+    expect(registry.shortLinkRoom()).toBeNull();
+    const party = registry.create()!;
+    party.attachHost('tv');
+    expect(registry.shortLinkRoom()).toBe(party.code);
+    party.join('p1', { name: 'דנה' });
+    party.join('p2', { name: 'מיכל' });
+    vi.advanceTimersByTime(1_000);
+    // the owner opens /host on his phone by mistake: a newer TV attach, nobody in it
+    const stray = registry.create()!;
+    stray.attachHost('stray-tv');
+    expect(registry.shortLinkRoom()).toBe(party.code);
+    // the party TV re-attaches after a Wi-Fi blip: still the party
+    vi.advanceTimersByTime(1_000);
+    party.disconnect('tv');
+    party.attachHost('tv-2');
+    expect(registry.shortLinkRoom()).toBe(party.code);
+    // a room with no TV attached is never the link, however full
+    party.disconnect('tv-2');
+    expect(registry.shortLinkRoom()).toBe(stray.code);
+    // two TVs, both empty: the one that attached last
+    party.disconnect('p1');
+    party.disconnect('p2');
+    vi.advanceTimersByTime(1_000);
+    party.attachHost('tv-3');
+    expect(registry.shortLinkRoom()).toBe(party.code);
   });
 
   it('reads the test timing from the environment', () => {

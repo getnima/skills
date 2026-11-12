@@ -12,6 +12,8 @@
  * - A reload / a stall longer than REJOIN_AFTER_MS: the bird is put back at the live point
  *   of the course, in the middle of the next gap, hanging and untouchable for
  *   PHYS.rejoinGraceMs or until the first tap (shorter than the time between two obstacles).
+ *   A game that comes up late but still inside the start hover (a slow phone) catches the
+ *   hover up exactly instead: it is the same on every phone, so the same play scores the same.
  *   A phone that was already out comes back out (ctx.field().outRaw): never a second life.
  */
 import { paintDrawable, starPainter } from '../../kit/assets';
@@ -595,6 +597,11 @@ export const game: GameModule = {
       fx.tween({ ms: 380, from: 0.2, to: 1, ease: ease.outBack, update: (v) => (birdScale = v) });
     }
 
+    /** Hanging at the start, never tapped, never rejoined: every phone is in exactly this state until the hover ends. */
+    function inStartHover(): boolean {
+      return bird.hover && rejoins === 0 && graceLeft === 0 && !flapQueued && simStep * STEP_MS < PHYS.hoverMs;
+    }
+
     /** One fixed step of round time while in the air. */
     function flyStep(): void {
       const wantFlap = flapQueued || (pilot && simStep < pilotUntil && pilotFlap(flight, simStep, bird, 0));
@@ -663,7 +670,10 @@ export const game: GameModule = {
 
       if (mode === 'fly') {
         const behind = clockStep - simStep;
-        if (behind * STEP_MS > REJOIN_AFTER_MS) rejoin(clockStep);
+        // A game that came up late (a slow phone building its first frame) is still in the start hover, which
+        // is the same on every phone: catch it up exactly instead of rejoining mid-gap with another score.
+        if (inStartHover() && clockStep * STEP_MS <= PHYS.hoverMs) for (let k = behind; k > 0 && mode === 'fly'; k--) flyStep();
+        else if (behind * STEP_MS > REJOIN_AFTER_MS) rejoin(clockStep);
         else for (let k = Math.min(behind, MAX_CATCHUP); k > 0 && mode === 'fly'; k--) flyStep();
         if (mode === 'fly') {
           // the server counted this phone out (away for longer than the grace)
@@ -1279,7 +1289,8 @@ export const game: GameModule = {
       hintAlpha = 0;
       ctx.setScore(finalRaw);
       ctx.finish();
-    } else if (elapsedMs() > REJOIN_AFTER_MS) {
+    } else if (elapsedMs() > Math.max(REJOIN_AFTER_MS, PHYS.hoverMs)) {
+      // (inside the start hover the first step catches up exactly instead)
       syncFinale();
       rejoin(Math.floor(elapsedMs() / STEP_MS));
     }

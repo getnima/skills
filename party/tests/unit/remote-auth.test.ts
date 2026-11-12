@@ -135,7 +135,7 @@ describe('cleanRelayData', () => {
 });
 
 describe('room choice', () => {
-  const room = (code: string, screen: boolean, activeAt: number) => ({ code, screen, activeAt });
+  const room = (code: string, screen: boolean, activeAt: number) => ({ code, screen, activeAt, players: 0 });
 
   it('no rooms, or no TV anywhere: none (open the TV page first)', () => {
     expect(chooseRoom([], null)).toEqual({ kind: 'none', rooms: [] });

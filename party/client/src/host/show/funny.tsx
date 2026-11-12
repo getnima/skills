@@ -35,6 +35,12 @@ export interface SayOptions {
   readonly valid?: () => boolean;
 }
 
+/** A band of the scene (px from the layer's left edge) where a sticker that stays put may land. */
+export interface StickerZone {
+  readonly left: number;
+  readonly right: number;
+}
+
 export interface FunnyLayer {
   say(text: string, mood: MascotMood, opts?: SayOptions): void;
   /** Pick a line from a pool (no repeats) and say it. */
@@ -105,7 +111,11 @@ const MOMENT_MOOD: Readonly<Record<MomentType, MascotMood>> = {
   streak: 'happy',
 };
 
-export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
+/**
+ * `stayZone`: where a 'zoom' sticker (the one that stays put for a second) may land, or null for
+ * anywhere. A round's race keeps it off the numbers: "announcements never cover the play".
+ */
+export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () => StickerZone | null = () => null): FunnyLayer {
   const rng = createRng(seed).fork('funny');
   const random = (): number => rng.next();
   const picker = createLinePicker(random);
@@ -336,8 +346,20 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
         ];
         timing = { duration: 2_100, easing: 'linear' };
       } else if (style === 'zoom') {
-        const x = W * (0.3 + random() * 0.4) - half;
-        const y = H * (0.22 + random() * 0.3) - half;
+        let x = W * (0.3 + random() * 0.4) - half;
+        let y = H * (0.22 + random() * 0.3) - half;
+        const zone = stayZone();
+        if (zone !== null) {
+          // the whole sticker stays inside the zone, its last swell (x1.6, fading) included
+          const wide = zone.right - zone.left;
+          const fit = Math.min(size, wide / 1.6);
+          if (a.kind === 'img') {
+            el.style.width = `${fit}px`;
+            el.style.height = `${fit}px`;
+          } else el.style.fontSize = `${fit * 0.82}px`;
+          x = zone.left + fit * 0.3 + random() * (wide - fit * 1.6);
+          y = H * (0.22 + random() * 0.3) - fit / 2;
+        }
         const tilt = (random() - 0.5) * 30;
         frames = [
           { transform: `translate3d(${x}px, ${y}px, 0) scale(0.05) rotate(${tilt - 40}deg)`, opacity: 0 },
@@ -529,13 +551,15 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
  * Mount the funny layer inside a scene: render `node` as the LAST child of the
  * scene root and call `layer()` from effects / frame callbacks.
  */
-export function useFunnyLayer(seed: number): { node: JSX.Element; layer(): FunnyLayer | null } {
+export function useFunnyLayer(seed: number, stayZone?: () => StickerZone | null): { node: JSX.Element; layer(): FunnyLayer | null } {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const layerRef = useRef<FunnyLayer | null>(null);
+  const zoneRef = useRef(stayZone);
+  zoneRef.current = stayZone;
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return undefined;
-    const layer = createFunnyLayer(host, seed);
+    const layer = createFunnyLayer(host, seed, () => zoneRef.current?.() ?? null);
     layerRef.current = layer;
     return () => {
       layer.dispose();

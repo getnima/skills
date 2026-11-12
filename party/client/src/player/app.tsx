@@ -6,6 +6,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { roundTime } from '../../../shared/round-clock';
+import { guardBack } from './device';
 import { preloadIntroArt } from './intro-art';
 import { MeBar } from './me-bar';
 import { meStanding } from './me-standing';
@@ -147,6 +148,8 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
   useEffect(() => {
     if (inside) preloadIntroArt();
   }, [inside]);
+  // in the room, the back gesture (an Android edge swipe mid-game) does not leave the page
+  useEffect(() => guardBack(inside), [inside]);
 
   let screen: ScreenName = 'boot';
   let body: JSX.Element = <BootScreen />;

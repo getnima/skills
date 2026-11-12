@@ -663,6 +663,24 @@ body {
   font: 900 17px/1 var(--ui);
   font-variant-numeric: tabular-nums;
 }
+/* elimination round: who is still in, not a distance */
+.rm-status {
+  flex: none;
+  padding: 3px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  font: 900 14px/1 var(--ui);
+}
+.rm-status.is-in {
+  background: var(--yel);
+}
+.rm-status.is-out {
+  background: var(--paper);
+  color: var(--ink);
+}
+.rm-top5-row.is-out {
+  background: var(--paper);
+}
 
 /* ───────────── main: the tray ───────────── */
 .rm-tray {

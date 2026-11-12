@@ -178,8 +178,24 @@ export function saveLastLook(look: string): void {
   write(LAST_LOOK_KEY, look);
 }
 
+/**
+ * A name cut to NAME_MAX_LEN visible characters, grapheme-safe like the server's: an emoji (or a
+ * letter with niqqud) is never split in half, and a lone surrogate (half an emoji) is dropped.
+ */
+export function cutName(raw: string): string {
+  const text = raw.replace(/\p{Cs}/gu, '');
+  try {
+    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    const parts = Array.from(seg.segment(text), (x) => x.segment);
+    return parts.length > NAME_MAX_LEN ? parts.slice(0, NAME_MAX_LEN).join('') : text;
+  } catch {
+    const cps = Array.from(text);
+    return cps.length > NAME_MAX_LEN ? cps.slice(0, NAME_MAX_LEN).join('') : text;
+  }
+}
+
 export function loadLastName(): string {
-  return (read(LAST_NAME_KEY) ?? '').slice(0, NAME_MAX_LEN);
+  return cutName(read(LAST_NAME_KEY) ?? '');
 }
 
 export function loadLastRoom(): string {

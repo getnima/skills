@@ -275,6 +275,13 @@ export class Room {
     return this.players.size;
   }
 
+  /** Players with a phone attached right now. */
+  get connectedPlayerCount(): number {
+    let n = 0;
+    for (const p of this.players.values()) if (p.conns.size > 0) n++;
+    return n;
+  }
+
   get connectionCount(): number {
     return this.hostConns.size + this.playerConns.size;
   }
@@ -334,6 +341,8 @@ export class Room {
     this.emptySince = null;
     // the TV hides its controls while a remote is attached: tell it
     if (this.remoteCount !== remotesBefore) this.broadcast();
+    // a TV (or remote) that re-attaches mid-round gets the live race right after the ack, not at the next score change
+    if (this.phase === 'playing' && this.round !== null) this.markScoresDirty();
     return this.snapshot();
   }
 
@@ -359,7 +368,8 @@ export class Room {
       existing.goneAt = null;
       this.playerConns.set(connId, existing.id);
       this.emptySince = null;
-      if (this.phase === 'playing' && this.round?.participants.has(existing.id) === true) this.markScoresDirty();
+      // a phone back mid-round gets the live race now (the head count and who is out included)
+      if (this.phase === 'playing' && this.round !== null) this.markScoresDirty();
       this.broadcast();
       return { ok: true, playerId: existing.id, secret: existing.secret, state: this.snapshot() };
     }

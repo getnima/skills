@@ -18,7 +18,7 @@ import {
   screenKey,
   toRelay,
 } from '../../client/src/host/actions';
-import { askFor, bigButton, defaultPick, phaseText, roundClockText, secondaryActions, topFive } from '../../client/src/remote/logic';
+import { askFor, bigButton, defaultPick, liveCountText, phaseText, roundClockText, secondaryActions, topFive } from '../../client/src/remote/logic';
 
 import type { CutsceneDef } from '../../shared/cutscenes';
 import type { GameId, RoomState } from '../../shared/protocol';
@@ -366,6 +366,27 @@ describe('remote helpers', () => {
       [5, 'ב'],
     ]);
     expect(topFive(s, [['ghost', 5]])).toEqual([]);
+  });
+
+  it('an elimination round: who is in the air first, then who is out; the count line says how many are flying', () => {
+    const { room, clock } = makeRoom();
+    const ids = ['א', 'ב', 'ג', 'ד'].map((n) => join(room, n));
+    // the strict order puts ב (out, 900) above ג (in the air, 850: its phone reported a moment ago)
+    const scores = [[ids[0]!, 950], [ids[1]!, 900], [ids[2]!, 850], [ids[3]!, 400]] as const;
+    const top = topFive(room.snapshot(), scores, [ids[1]!, ids[3]!]);
+    expect(top.map((r) => [r.place, r.name, r.out])).toEqual([
+      [1, 'א', false],
+      [2, 'ג', false],
+      [3, 'ב', true],
+      [4, 'ד', true],
+    ]);
+    expect(topFive(room.snapshot(), scores).every((r) => !r.out)).toBe(true);
+    expect(liveCountText(room.snapshot(), 2)).toBe('4 מתוך 4 מחוברים');
+    room.start('flappy');
+    clock.advance(2_100);
+    expect(room.snapshot().phase).toBe('playing');
+    expect(liveCountText(room.snapshot(), 2)).toBe('2 באוויר');
+    expect(liveCountText(room.snapshot(), null)).toBe('4 מתוך 4 מחוברים');
   });
 });
 

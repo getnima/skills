@@ -11,6 +11,7 @@ import { createMomentEngine } from './moments';
 import { cueNarration } from './narrator-bus';
 
 import type { JSX } from 'preact';
+import type { StickerZone } from './funny';
 import type { Moment, RaceEntry } from './moments';
 import type { PlayingSceneProps } from './types';
 
@@ -64,6 +65,33 @@ function sameOrder(a: readonly string[], b: readonly string[]): boolean {
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
 }
+/**
+ * Where a sticker that stays put may land during a race (landscape): over the bars, between the side
+ * column and the scores; in an elimination round, between the "in the air / out" marks and the names.
+ * Never on a number or a name (the owner: announcements never cover the play). Null: anywhere.
+ */
+function stickerZone(root: HTMLElement | null): StickerZone | null {
+  if (root === null || root.dataset.orient !== 'landscape') return null;
+  const fx = root.querySelector('.sh-fx');
+  if (fx === null) return null;
+  const base = fx.getBoundingClientRect().left;
+  const score = root.querySelector('.sh-row .sh-score');
+  const side = root.querySelector('.sh-side');
+  let left = 0;
+  let right = 0;
+  if (score !== null && side !== null) {
+    left = side.getBoundingClientRect().right - base;
+    right = score.getBoundingClientRect().left - base;
+  } else {
+    const mark = root.querySelector('.sh-row .sh-in-mark, .sh-row .sh-out-mark');
+    const name = root.querySelector('.sh-row .sh-name');
+    if (mark === null || name === null) return null;
+    left = mark.getBoundingClientRect().right - base;
+    right = name.getBoundingClientRect().left - base;
+  }
+  return right - left >= 120 ? { left, right } : null;
+}
+
 const RING_R = 44;
 const RING_LEN = 2 * Math.PI * RING_R;
 
@@ -75,7 +103,7 @@ function formatClock(leftMs: number): string {
 
 export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const { ref, size } = useStage();
-  const funny = useFunnyLayer(props.roundIndex * 7919 + 17);
+  const funny = useFunnyLayer(props.roundIndex * 7919 + 17, () => stickerZone(rootRef.current));
   const tick = useTicker(300);
   const engine = useMemo(() => createMomentEngine(), [props.roundIndex, props.game.id]);
 
@@ -90,7 +118,8 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const activeCount = preview !== undefined ? preview.active : feed.active;
   const elimination = useMemo((): Elimination | null => (eliminationOn ? { out: new Set(outKey === '' ? [] : outKey.split(',')), active: activeCount } : null), [eliminationOn, outKey, activeCount]);
 
-  // ── ranking: by score, ties keep their previous order so rows never flicker ──
+  // ── ranking: the server's strict order (scores arrive sorted by score, then who got there first,
+  //    then join order), so a tie has the same leader as the ceremony, even right after a reload ──
   const prevOrder = useRef(new Map<string, number>());
   const racers = useMemo((): Racer[] => {
     const list: Racer[] = [];
@@ -98,6 +127,9 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
       const score = props.scores.get(p.id);
       if (score !== undefined) list.push({ id: p.id, name: p.name, avatar: p.avatar, look: p.look, score, out: elimination?.out.has(p.id) ?? false });
     }
+    const serverPos = new Map<string, number>();
+    for (const id of props.scores.keys()) serverPos.set(id, serverPos.size);
+    const strict = (a: Racer, b: Racer): number => (serverPos.get(a.id) ?? 1e9) - (serverPos.get(b.id) ?? 1e9) || a.name.localeCompare(b.name, 'he');
     const before = prevOrder.current;
     if (elimination !== null) {
       // Everybody in the air is at the same point of the same course: they share one distance
@@ -110,13 +142,13 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
         (a, b) =>
           Number(a.out === true) - Number(b.out === true) ||
           (a.out === true ? b.score - a.score : 0) ||
-          (before.get(a.id) ?? 1e9) - (before.get(b.id) ?? 1e9) ||
-          a.name.localeCompare(b.name, 'he'),
+          (a.out === true ? 0 : (before.get(a.id) ?? 1e9) - (before.get(b.id) ?? 1e9)) ||
+          strict(a, b),
       );
       prevOrder.current = new Map(flat.map((r, i) => [r.id, i]));
       return flat;
     }
-    list.sort((a, b) => b.score - a.score || (before.get(a.id) ?? 1e9) - (before.get(b.id) ?? 1e9) || a.name.localeCompare(b.name, 'he'));
+    list.sort((a, b) => b.score - a.score || strict(a, b));
     prevOrder.current = new Map(list.map((r, i) => [r.id, i]));
     return list;
   }, [props.players, props.scores, elimination]);
@@ -196,14 +228,14 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
     if (leaderId !== null && lastLeader.current !== null && leaderId !== lastLeader.current && t - lastHop.current >= CROWN_HOP_GAP_MS) {
       lastHop.current = t;
       // the crown hops over to the new leader
-      // (it starts on the old leader, now one row down, and loops through the middle of the screen)
+      // (it starts on the old leader, now one row down, and loops over the names: never over a score)
       const u = sizeRef.current.u;
-      const dx = -520 * u;
+      const dx = -230 * u;
       const dy = Math.max(rowHRef.current, 60 * u);
       crownRef.current?.animate(
         [
           { transform: `translate3d(0, ${dy}px, 0) rotate(0deg) scale(1)`, easing: 'cubic-bezier(0.2, 0.7, 0.4, 1)' },
-          { transform: `translate3d(${dx}px, ${dy * 1.6}px, 0) rotate(-200deg) scale(3.2)`, offset: 0.45, easing: 'cubic-bezier(0.6, 0, 0.8, 0.5)' },
+          { transform: `translate3d(${dx}px, ${dy * 0.35}px, 0) rotate(-200deg) scale(2.2)`, offset: 0.45, easing: 'cubic-bezier(0.6, 0, 0.8, 0.5)' },
           { transform: 'translate3d(0, 0, 0) rotate(-360deg) scale(1)', offset: 0.86 },
           { transform: 'translate3d(0, 6%, 0) rotate(-360deg) scale(1.25, 0.75)', offset: 0.93 },
           { transform: 'translate3d(0, 0, 0) rotate(-360deg) scale(1)' },

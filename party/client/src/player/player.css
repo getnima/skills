@@ -1830,6 +1830,13 @@
     transform: translate(-50%, -80px);
   }
 }
+/* in a game it hangs under the HUD (66 px, HUD_ROW_PX in play/stage.ts): score, place and chase line stay readable */
+.pp-on-playing > .pp-banner,
+.pp-on-countdown > .pp-banner {
+  top: calc(var(--sat) + 66px + 8px);
+  height: 30px;
+  font-size: 15px;
+}
 .pp-app:has(> .pp-banner) .pw-bar .pw-live {
   visibility: hidden;
 }

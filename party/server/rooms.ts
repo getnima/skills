@@ -92,9 +92,26 @@ export class RoomRegistry {
     }
   }
 
-  /** Every room as a remote sees it when choosing one (codes and TV presence only). */
+  /** Every room as a remote or the /j link sees it when choosing one (codes, TV presence, head count). */
   candidates(): RoomCandidate[] {
-    return [...this.rooms.values()].map((room) => ({ code: room.code, screen: room.screenConnected, activeAt: room.lastScreenAt }));
+    return [...this.rooms.values()].map((room) => ({
+      code: room.code,
+      screen: room.screenConnected,
+      activeAt: room.lastScreenAt,
+      players: room.connectedPlayerCount,
+    }));
+  }
+
+  /**
+   * The room the /j short link opens: of the rooms with a TV attached, the one with the most guests
+   * connected, then the TV that attached last. A stray second /host page (an empty room) never takes
+   * the party's link; a party TV that re-attaches after a Wi-Fi blip keeps it.
+   */
+  shortLinkRoom(): string | null {
+    const live = this.candidates()
+      .filter((c) => c.screen)
+      .sort((a, b) => b.players - a.players || b.activeAt - a.activeAt || (a.code < b.code ? -1 : 1));
+    return live[0]?.code ?? null;
   }
 
   stats(): { rooms: number; players: number } {

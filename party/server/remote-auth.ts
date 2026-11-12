@@ -167,6 +167,8 @@ export interface RoomCandidate {
   readonly screen: boolean;
   /** Last time a TV page attached (server ms). */
   readonly activeAt: number;
+  /** Players with a phone connected right now. */
+  readonly players: number;
 }
 
 export type RoomChoice =

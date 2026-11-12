@@ -280,6 +280,14 @@ nobody scored): that is who gets the figurine. The
 TV builds suspense for 8 s, reveals the winner with the prize and the victory
 song, then shows the standings. Phones hide their own result until the reveal.
 
+**The two hosts** (toy figurines in a pose, a speech bubble, no audio) narrate the TV: the
+opening, each game, GO, the last ten seconds, the reveal, the podium. During a round they
+talk the race through with the guests' names, in pairs: who took the lead, who passed whom,
+the ninja bomb, the flappy crash, still on zero, and a jab at somebody whenever the race goes
+quiet, always in the margin under the timer, never over the race. Every line, and the rules
+for the trash talk, are in [design/narration.he.md](design/narration.he.md). Calm mode keeps
+only the big moments.
+
 **Host keys** on the TV page: `Space`/`Enter` main action (next game, continue),
 `N` next game, `E` end the round now, `C` cutscene menu, `S` skip the video,
 `R` replay, `M` mute, `F` fullscreen.
@@ -315,7 +323,8 @@ new video = file here + one entry in `shared/cutscenes.ts`.
 
 Preview without a party:
 - **`/show.html`** (TV control room): race, results, the winner ceremony with the
-  prize and `victory.mp3`, standings, podium, with simulated players.
+  prize and `victory.mp3`, standings, podium, with simulated players
+  (`/show.html?narrator=1`: with the two hosts talking, as on the TV).
 - **`/dev.html`** (game harness): `/dev.html?game=tap&seed=1&duration=20000`
   plays one game on a phone-sized page (`&freezeAt=5000&freezeMs=4000` tests a
   freeze); `/dev.html?kit=1` shows every placeholder and plays every sound.

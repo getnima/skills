@@ -250,7 +250,12 @@ async function join(page, code, name) {
     console.log('dropped:', JSON.stringify(out.dropped));
     const count = {};
     for (const t of takes) count[t.moment] = (count[t.moment] || 0) + 1;
-    check(Object.values(count).every((n) => n === 1), 'each moment fires once', count);
+    // the round's banter (show/banter.ts) is the one moment said again and again
+    const once = Object.entries(count).filter(([m]) => m !== 'race');
+    check(once.every(([, n]) => n === 1), 'each moment fires once', count);
+    const banter = out.log.filter((b) => b.moment === 'race');
+    check(banter.length >= 4, `the hosts talk the round through (${banter.length} banter lines)`, banter.map((b) => b.text));
+    check(banter.some((b) => /נועה|איתי|מאיה/.test(b.text)) && new Set(banter.map((b) => b.host)).size === 2, "both hosts, with the guests' names", banter.slice(0, 4).map((b) => `${b.host}: ${b.text}`));
     const expected = ['opening', 'arrive', 'intro_tap', 'go', 'resume', 'final10', 'timeup', 'suspense', 'reveal', 'standings', 'podium', 'champion', 'goodbye'];
     const missing = expected.filter((m) => !count[m]);
     check(missing.length === 0, `every moment of this run was narrated (${expected.length})`, missing);

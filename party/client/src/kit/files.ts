@@ -6,7 +6,7 @@
  * request and logs no 404. Vite's dev server picks up a newly dropped file on
  * reload; a production build must be re-run after files are added.
  */
-const assetKeys = Object.keys(import.meta.glob('../../public/assets/**/*.{png,webp,jpg,jpeg,svg,gif,PNG,JPG,JPEG,WEBP}'));
+const assetKeys = Object.keys(import.meta.glob('../../public/assets/**/*.{png,webp,jpg,jpeg,svg,gif,json,PNG,JPG,JPEG,WEBP,JSON}'));
 const audioKeys = Object.keys(import.meta.glob('../../public/audio/**/*.{mp3,m4a,ogg,wav,webm,MP3,M4A}'));
 
 /** lower-cased public URL → real public URL */

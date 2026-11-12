@@ -78,6 +78,9 @@ export interface RemoteLink {
   readonly rooms: readonly string[];
   readonly state: RoomState | null;
   readonly scores: ReadonlyArray<readonly [string, number]>;
+  /** Of the same scores message: participants still playing (null before the first one) and who is out (elimination). */
+  readonly active: number | null;
+  readonly out: readonly string[];
   readonly model: ControlModel | null;
   readonly clock: ServerClock;
   unlock(password: string): void;
@@ -121,6 +124,8 @@ export function useRemoteLink(): RemoteLink {
   const [rooms, setRooms] = useState<readonly string[]>([]);
   const [state, setState] = useState<RoomState | null>(null);
   const [scores, setScores] = useState<ReadonlyArray<readonly [string, number]>>([]);
+  const [active, setActive] = useState<number | null>(null);
+  const [out, setOut] = useState<readonly string[]>([]);
   const [model, setModel] = useState<ControlModel | null>(null);
 
   const pw = useRef<string | null>(read(PW_KEY));
@@ -254,14 +259,20 @@ export function useRemoteLink(): RemoteLink {
     const onState = (s: RoomState): void => {
       if (stateRef.current !== null && s.code !== stateRef.current.code) return;
       const prevRound = stateRef.current?.round?.index ?? null;
-      if ((s.round?.index ?? null) !== prevRound) setScores([]);
+      if ((s.round?.index ?? null) !== prevRound) {
+        setScores([]);
+        setActive(null);
+        setOut([]);
+      }
       stateRef.current = s;
       clock.hint(s.serverNow);
       setState(s);
     };
-    const onScores = (msg: { round: number; scores: ReadonlyArray<readonly [string, number]> }): void => {
+    const onScores = (msg: { round: number; scores: ReadonlyArray<readonly [string, number]>; active?: number; out?: readonly string[] }): void => {
       if (stateRef.current?.round?.index !== msg.round) return;
       setScores(msg.scores);
+      setActive(typeof msg.active === 'number' ? msg.active : null);
+      setOut(Array.isArray(msg.out) ? msg.out : []);
     };
     // somebody's doll changed: a small patch, not a whole state
     const onLooks = (msg: { looks: ReadonlyArray<readonly [string, string]> }): void => {
@@ -360,6 +371,8 @@ export function useRemoteLink(): RemoteLink {
     rooms,
     state,
     scores,
+    active,
+    out,
     model,
     clock,
     unlock: (password: string): void => {

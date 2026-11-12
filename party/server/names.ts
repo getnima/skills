@@ -7,7 +7,7 @@ function graphemes(text: string): string[] {
 }
 
 /**
- * Normalises a display name: control and bidi-override characters removed,
+ * Normalises a display name: control and bidi-override characters and lone surrogates removed,
  * whitespace collapsed, trimmed, cut to NAME_MAX_LEN user-visible characters
  * (grapheme clusters, so an emoji or a Hebrew letter with niqqud counts once).
  * Returns null when nothing printable is left.
@@ -16,6 +16,8 @@ export function cleanName(input: unknown): string | null {
   if (typeof input !== 'string') return null;
   const stripped = input
     .slice(0, 400)
+    // half an emoji (a lone surrogate, also what the 400-unit slice can leave) is not a character
+    .replace(/\p{Cs}/gu, '')
     .normalize('NFC')
     .replace(/[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩﻿]/g, ' ')
     .replace(/\s+/g, ' ')

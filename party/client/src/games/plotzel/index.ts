@@ -672,7 +672,7 @@ export const game: GameModule = {
     // ── input ──
     let downKey: HTMLElement | null = null;
     const onKbDown = (e: PointerEvent): void => {
-      e.preventDefault(); // no focus, no selection, no ghost click
+      if (e.cancelable) e.preventDefault(); // no focus, no selection, no ghost click
       if (destroyed || isPaused()) return;
       const target = e.target instanceof Element ? e.target.closest<HTMLElement>('.pz-key') : null;
       if (!target) return;
@@ -689,11 +689,16 @@ export const game: GameModule = {
       downKey?.classList.remove('is-down');
       downKey = null;
     };
+    /** The skip button is drawn 92x36 (32 on a short phone); it answers to the bar's whole height and a finger's width more: a 44+ px target. */
+    const nearSkip = (e: PointerEvent): boolean => {
+      const r = skipBtn.getBoundingClientRect();
+      const bar = tools.getBoundingClientRect();
+      return e.clientX >= r.left - 12 && e.clientX <= r.right + 12 && e.clientY >= bar.top && e.clientY <= bar.bottom;
+    };
     const onToolDown = (e: PointerEvent): void => {
-      e.preventDefault();
+      if (e.cancelable) e.preventDefault();
       const target = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]') : null;
-      if (!target) return;
-      if (target.dataset.act === 'skip') skip();
+      if (target?.dataset.act === 'skip' || nearSkip(e)) skip();
     };
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
