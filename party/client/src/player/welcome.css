@@ -1,0 +1,770 @@
+/*
+ * The way in: the join screen (the name) and the waiting room, in the party design system
+ * (client/public/assets/shimi/README.md) and in the same frame as the dressing room between
+ * them (client/src/avatar/dressing.css): a cobalt-dark bar, the yellow sunburst stage, a
+ * cobalt tray. Flat colours, ink borders, hard shadows, Motaleh for Hebrew display text.
+ * Everything is scoped under .pw; the hooks the end-to-end scripts use (.pp-name-input,
+ * .pp-btn-go, .pp-me-name, .pp-chips ...) keep their names.
+ * (@font-face 'Motaleh' is declared in player.css.)
+ */
+.pw {
+  --yel: #ffd21f;
+  --yel-2: #ffe45a;
+  --org: #ff9f0a;
+  --red: #f2361b;
+  --red-d: #b5200a;
+  --cob: #1e3fd8;
+  --cob-d: #10238c;
+  --cob-l: #4f6cff;
+  --ink: #16120e;
+  --paper: #fff8e6;
+  --pink: #ff7eb6;
+  --disp: 'Motaleh', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
+  --star14: polygon(
+    50% 0%, 58.7% 12%, 71.7% 5%, 74.3% 19.5%, 89.1% 18.8%, 85.1% 33.1%, 98.7% 38.9%, 89% 50%, 98.7% 61.1%, 85.1% 66.9%,
+    89.1% 81.2%, 74.3% 80.5%, 71.7% 95%, 58.7% 88%, 50% 100%, 41.3% 88%, 28.3% 95%, 25.7% 80.5%, 10.9% 81.2%, 14.9% 66.9%,
+    1.3% 61.1%, 11% 50%, 1.3% 38.9%, 14.9% 33.1%, 10.9% 18.8%, 25.7% 19.5%, 28.3% 5%, 41.3% 12%
+  );
+}
+
+/* the frame: the screen is the bar + the stage + the tray, edge to edge */
+.pp-screen.pw {
+  padding: 0;
+  gap: 0;
+  background: var(--cob-d);
+  color: #fff;
+}
+/* with the me bar under it (the waiting room): the tray ends where the bar begins */
+.pp-app.has-mebar .pp-screen.pw {
+  padding-bottom: calc(var(--sab) + var(--pp-mebar-h));
+}
+
+.pw-bar {
+  flex: none;
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: calc(56px + var(--sat));
+  padding: var(--sat) calc(10px + var(--sar)) 0 calc(10px + var(--sal));
+  background: var(--cob-d);
+  border-bottom: 3px solid var(--ink);
+}
+/* the red "live" chip (the dressing room's .dr-live) */
+.pw-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px 0 11px;
+  border-radius: 7px;
+  background: var(--red);
+  border: 2.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  color: #fff;
+  font: 700 17px/1 var(--disp);
+  white-space: nowrap;
+  transform: rotate(-1.5deg);
+}
+.pw-live i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  animation: pw-blink 1.1s steps(1) infinite;
+}
+@keyframes pw-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* the sunburst stage: rays in two yellows from the middle, orange towards the edges, halftone dots */
+.pw-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px calc(14px + var(--sar)) 12px calc(14px + var(--sal));
+  color: var(--ink);
+  text-align: center;
+  background-color: var(--yel);
+  background-image: repeating-conic-gradient(from 0deg at 50% 44%, var(--yel) 0deg 7.5deg, var(--yel-2) 7.5deg 15deg);
+}
+.pw-glow,
+.pw-dots {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+.pw-glow {
+  inset: 0;
+  background:
+    radial-gradient(closest-side at 50% 44%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.3) 40%, rgba(255, 255, 255, 0) 72%),
+    radial-gradient(farthest-corner at 50% 44%, rgba(255, 159, 10, 0) 45%, rgba(255, 120, 10, 0.42) 100%);
+}
+.pw-dots {
+  inset: auto 0 0 0;
+  height: 40%;
+  opacity: 0.5;
+  background: radial-gradient(circle, rgba(242, 54, 27, 0.55) 1.2px, transparent 1.8px) 0 0 / 9px 9px;
+  -webkit-mask-image: linear-gradient(to top, #000, transparent);
+  mask-image: linear-gradient(to top, #000, transparent);
+}
+
+/* the cobalt tray (the dressing room's .dr-tray) */
+.pw-tray {
+  flex: none;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px calc(14px + var(--sar)) calc(14px + var(--sab)) calc(14px + var(--sal));
+  background-color: var(--cob);
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.09) 1.2px, transparent 1.8px);
+  background-size: 10px 10px;
+  border-top: 3px solid var(--ink);
+}
+.pp-app.has-mebar .pw-tray {
+  padding-bottom: 12px;
+}
+
+/* a pill button: white with cobalt text (secondary) */
+.pw-btn {
+  flex: none;
+  min-height: 46px;
+  padding: 3px 20px 5px;
+  border-radius: 999px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  color: var(--cob);
+  box-shadow: 0 5px 0 var(--ink);
+  font: 700 19px/1 var(--disp);
+  white-space: nowrap;
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s;
+}
+.pw-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 var(--ink);
+}
+
+/* ───────────────────────── 1. the join screen ───────────────────────── */
+
+.pw-join {
+  container-type: size;
+  justify-content: flex-end;
+}
+.pw-cover {
+  padding-top: calc(var(--sat) + 12px);
+  gap: 12px;
+}
+.pw-join .pp-room-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px 3px 12px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2.5px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  font: 700 17px/1 var(--disp);
+  color: var(--ink);
+}
+.pw-join .pp-room-chip b {
+  padding: 5px 10px 5px 12px;
+  border-radius: 999px;
+  background: var(--cob);
+  color: #fff;
+  font: 900 17px/1 var(--font);
+  letter-spacing: 3px;
+}
+.pw-join .pp-brand {
+  margin: 0;
+  font: 700 clamp(48px, 17vw, 70px) / 0.92 var(--disp);
+  color: #fff;
+  -webkit-text-stroke: 0.045em var(--ink);
+  paint-order: stroke fill;
+  text-shadow:
+    0.05em 0.06em 0 var(--red),
+    0.09em 0.11em 0 var(--ink);
+  transform: skewX(8deg) rotate(-3deg);
+  white-space: nowrap;
+}
+.pw-join .pp-brand span {
+  color: var(--red);
+  text-shadow: 0.06em 0.08em 0 var(--ink);
+}
+.pw-cover-dolls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
+  padding: 4px 0 2px;
+}
+.pw-cd-a {
+  transform: rotate(7deg);
+}
+.pw-cd-b {
+  transform: rotate(-3deg);
+  animation: pw-hop 2.4s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+}
+.pw-cd-c {
+  transform: rotate(-8deg);
+}
+@keyframes pw-hop {
+  0%,
+  70%,
+  100% {
+    transform: rotate(-3deg) translateY(0);
+  }
+  80% {
+    transform: rotate(2deg) translateY(-9px) scale(1.04, 0.97);
+  }
+  90% {
+    transform: rotate(-3deg) translateY(0) scale(0.97, 1.03);
+  }
+}
+.pw-join .pp-sub {
+  padding: 6px 13px 7px;
+  border-radius: 999px;
+  background: var(--cob-d);
+  border: 2.5px solid var(--ink);
+  color: #fff;
+  font: 700 15px/1.1 var(--disp);
+  white-space: nowrap;
+}
+
+.pw-join .pp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pw-join .pp-label {
+  padding: 0 4px;
+  font: 700 20px/1.1 var(--disp);
+  color: #fff;
+}
+.pw-join .pp-input {
+  width: 100%;
+  height: 58px;
+  padding: 0 16px;
+  border-radius: 16px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  caret-color: var(--red);
+  font-size: 24px;
+  font-weight: 800;
+  outline: none;
+  box-shadow: 0 4px 0 var(--ink);
+}
+.pw-join .pp-input::placeholder {
+  color: rgba(22, 18, 14, 0.34);
+}
+.pw-join .pp-input:focus {
+  background: #fff;
+  box-shadow:
+    0 4px 0 var(--ink),
+    0 0 0 3px var(--yel);
+}
+.pw-join .pp-code-input {
+  text-align: center;
+  letter-spacing: 10px;
+  text-transform: uppercase;
+  font-size: 28px;
+}
+.pw-join .pp-error {
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 2.5px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  color: var(--red-d);
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1.25;
+  animation: pw-shake 0.4s;
+}
+@keyframes pw-shake {
+  20%,
+  60% {
+    transform: translateX(-8px);
+  }
+  40%,
+  80% {
+    transform: translateX(8px);
+  }
+}
+/* the one button: a red pill, Motaleh, pressed = down by its shadow */
+.pw-join .pp-btn-go {
+  min-height: 64px;
+  width: 100%;
+  margin: 2px 0 6px;
+  padding: 0 20px 4px;
+  border-radius: 999px;
+  border: 3px solid var(--ink);
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 6px 0 var(--ink);
+  font: 700 34px/1 var(--disp);
+  letter-spacing: 0;
+  -webkit-text-stroke: 1.4px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 2px 3px 0 var(--ink);
+  transition:
+    transform 0.08s,
+    box-shadow 0.08s;
+}
+.pw-join .pp-btn-go:active {
+  transform: translateY(5px);
+  box-shadow: 0 1px 0 var(--ink);
+}
+.pw-join .pp-btn-go.is-busy {
+  filter: none;
+  background: var(--red-d);
+  font-size: 26px;
+}
+.pw-next {
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #d5dcff;
+}
+.pw-join .pp-tip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: var(--paper);
+  border: 2.5px dashed var(--ink);
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.3;
+  font-weight: 600;
+  text-align: right;
+}
+.pw-join .pp-tip-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pw-join .pp-tip b {
+  color: var(--cob);
+}
+.pw-join .pp-tip-icon {
+  font-size: 18px;
+}
+.pw-join .pp-tip-x {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
+}
+
+/* short screens, and above all the on-screen keyboard: the form always keeps the field and the button */
+@container (max-height: 640px) {
+  .pw-cover {
+    gap: 8px;
+  }
+  .pw-join:has(.pp-tip) .pw-cover-dolls,
+  .pw-join:has(.pp-code-input) .pp-sub {
+    display: none;
+  }
+  /* an error needs the room more than the tip (iPhone SE: code field + name + error) */
+  .pw-join:has(.pp-error) .pp-tip,
+  .pw-join:has(.pp-error) .pp-sub,
+  .pw-join:has(.pp-error) .pw-next {
+    display: none;
+  }
+}
+@container (max-height: 540px) {
+  .pw-cover-dolls,
+  .pw-join .pp-sub,
+  .pw-join .pp-tip,
+  .pw-next {
+    display: none;
+  }
+  .pw-join .pp-brand {
+    font-size: 40px;
+  }
+}
+@container (max-height: 430px) {
+  .pw-cover,
+  .pw-join .pp-label {
+    display: none;
+  }
+  .pw-join .pp-input {
+    height: 52px;
+  }
+  .pw-join .pw-tray {
+    gap: 8px;
+    padding-top: 10px;
+    padding-bottom: calc(8px + var(--sab));
+    border-top: 0;
+  }
+  .pw-join .pp-btn-go {
+    min-height: 56px;
+    font-size: 28px;
+  }
+}
+
+/* ───────────────────────── 2. the dressing room ───────────────────────── */
+
+/* the room fills the screen; it handles the side and bottom safe areas itself, the notch is ours */
+.pp-screen.pw-dress {
+  padding-top: var(--sat);
+}
+.pw-dress-room {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+
+/* ───────────────────────── 3. the waiting room ───────────────────────── */
+
+.pw-wait .pp-mute {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 19px;
+  line-height: 1;
+}
+.pw-wait .pp-mute:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+.pw-me-stage {
+  flex: 1 1 46%;
+  gap: 7px;
+  border-bottom: 0;
+}
+/* "בפנים!": a star sticker (the dressing room's "מסיבה!") */
+.pw-burst {
+  position: absolute;
+  top: 10px;
+  left: calc(12px + var(--sal));
+  width: clamp(64px, 19vw, 86px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  filter: drop-shadow(3px 4px 0 rgba(22, 18, 14, 0.28));
+  transform: rotate(-12deg);
+  animation: pw-pulse 1.6s ease-in-out infinite;
+}
+.pw-burst::before,
+.pw-burst::after {
+  content: '';
+  position: absolute;
+  clip-path: var(--star14);
+}
+.pw-burst::before {
+  inset: -4px;
+  background: var(--ink);
+}
+.pw-burst::after {
+  inset: 0;
+  background: var(--pink);
+}
+.pw-burst span {
+  position: relative;
+  z-index: 1;
+  font: 700 clamp(15px, 4.6vw, 20px) / 1 var(--disp);
+  color: #fff;
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+  transform: skewX(8deg);
+}
+@keyframes pw-pulse {
+  50% {
+    transform: rotate(-12deg) scale(1.07);
+  }
+}
+.pw-me-doll {
+  flex: none;
+  line-height: 0;
+  transform: rotate(-2deg);
+  animation: pw-bob 2.6s ease-in-out infinite;
+}
+@keyframes pw-bob {
+  50% {
+    transform: rotate(2deg) translateY(-5px);
+  }
+}
+/* the guest's name on a sticker (the dressing room's .dr-name) */
+.pw-wait .pp-me-name {
+  flex: none;
+  max-width: 100%;
+  padding: 5px 14px 7px;
+  border-radius: 10px;
+  background: #fff;
+  border: 3px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  font: 700 clamp(22px, 7vw, 28px) / 1.05 var(--disp);
+  color: var(--red);
+  text-align: center;
+  transform: rotate(-2deg);
+  /* a long own name wraps (two lines at most) instead of losing its end */
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.pw-wait .pp-me-in {
+  flex: none;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.pw-wait .pp-me-stats {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.pw-wait .pp-pill {
+  padding: 4px 11px 5px;
+  background: #fff;
+  border: 2.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  color: var(--ink);
+  font: 700 16px/1.1 var(--disp);
+}
+.pw-wait .pp-pill-yellow {
+  background: var(--yel);
+}
+.pw-redress {
+  margin-top: 3px;
+  margin-bottom: 5px;
+}
+
+.pw-wait-tray {
+  flex: 1 1 54%;
+  min-height: 0;
+  padding-top: 10px;
+  gap: 8px;
+}
+.pw-wait .pp-panel {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.pw-wait .pp-panel-title {
+  flex: none;
+  margin: 0 2px 8px;
+  gap: 8px;
+  font: 700 19px/1 var(--disp);
+  color: #fff;
+}
+.pw-wait .pp-count {
+  min-width: 26px;
+  padding: 2px 8px 3px;
+  border-radius: 999px;
+  background: var(--yel);
+  border: 2px solid var(--ink);
+  color: var(--ink);
+  font: 700 16px/1 var(--disp);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.pw-wait .pp-empty {
+  margin: auto;
+  padding: 12px;
+  text-align: center;
+  color: #d5dcff;
+  font-weight: 700;
+}
+/* who else is here: white chips, each with its own dressed doll */
+.pw-wait .pp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px 7px;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 1px 2px 6px 4px;
+}
+.pw-wait .pp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  height: 40px;
+  padding: 0 4px 0 12px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2.5px solid var(--ink);
+  box-shadow: 2px 3px 0 var(--ink);
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 15px;
+  animation: pp-pop 0.4s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+.pw-wait .pp-chip > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pw-wait .pp-chip .av.av-ring {
+  box-shadow: none;
+  border-width: 2px;
+}
+.pw-wait .pp-chip.is-off {
+  opacity: 0.5;
+}
+/* the table between rounds */
+.pw-wait .pp-standings {
+  gap: 6px;
+  padding: 1px 2px 6px 4px;
+}
+.pw-wait .pp-standings li {
+  flex: none;
+  min-height: 46px;
+  padding: 3px 10px 3px 12px;
+  border-radius: 14px;
+  background: #fff;
+  border: 2.5px solid var(--ink);
+  box-shadow: 2px 3px 0 var(--ink);
+  color: var(--ink);
+}
+.pw-wait .pp-standings li.is-me {
+  background: var(--yel);
+  box-shadow: 2px 3px 0 var(--ink);
+}
+.pw-wait .pp-standings .av.av-ring {
+  box-shadow: none;
+  border-width: 2px;
+}
+.pw-wait .pp-st-rank {
+  font: 700 19px/1 var(--disp);
+}
+.pw-wait .pp-st-total {
+  color: var(--cob);
+  font: 700 18px/1 var(--disp);
+}
+.pw-wait .pp-move.is-same {
+  color: rgba(22, 18, 14, 0.4);
+}
+.pw-wait .pp-waiting {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 24px;
+  font: 700 18px/1.1 var(--disp);
+  color: #fff;
+}
+.pw-wait .pp-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 20px;
+}
+.pw-wait .pp-eq i {
+  width: 5px;
+  border-radius: 2px;
+  background: var(--yel);
+  animation: pw-eq 0.9s ease-in-out infinite;
+}
+.pw-wait .pp-eq i:nth-child(2) {
+  background: var(--pink);
+  animation-delay: -0.3s;
+}
+.pw-wait .pp-eq i:nth-child(3) {
+  background: #fff;
+  animation-delay: -0.6s;
+}
+.pw-wait .pp-eq i:nth-child(4) {
+  background: var(--red);
+  animation-delay: -0.15s;
+}
+@keyframes pw-eq {
+  0%,
+  100% {
+    height: 5px;
+  }
+  50% {
+    height: 20px;
+  }
+}
+
+/* between rounds the table is what matters: the stage is a strip */
+.pw-wait.is-between .pw-me-stage {
+  flex: 0 1 auto;
+  padding-top: 8px;
+  padding-bottom: 10px;
+}
+.pw-wait.is-between .pw-wait-tray {
+  flex: 1 1 auto;
+}
+.pw-wait.is-between .pp-me-name {
+  font-size: clamp(20px, 6vw, 24px);
+}
+
+/* short phones (320 x 568 with the me bar): everything a little tighter */
+@media (max-height: 620px) {
+  .pw-bar {
+    height: calc(50px + var(--sat));
+  }
+  .pw-me-stage {
+    gap: 5px;
+    padding-top: 6px;
+    padding-bottom: 8px;
+  }
+  .pw-wait .pp-me-in {
+    font-size: 13px;
+  }
+  .pw-btn {
+    min-height: 44px;
+    font-size: 18px;
+  }
+  .pw-wait-tray {
+    padding-top: 8px;
+  }
+  .pw-wait .pp-panel-title {
+    margin-bottom: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pw-live i,
+  .pw-cd-b,
+  .pw-burst,
+  .pw-me-doll,
+  .pw-wait .pp-eq i {
+    animation: none;
+  }
+}
