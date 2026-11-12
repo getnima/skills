@@ -243,6 +243,8 @@ interface Goo {
   sneeze: boolean;
   /** Drag offset along the squeegee blade. */
   drag: number;
+  /** Seconds left of the close-up (the first booger of each kind is shown big). */
+  intro: number;
 }
 
 interface PileMember {
@@ -523,11 +525,12 @@ export const game: GameModule = {
       geoKey = k;
       const top = ctx.hudHeight;
       const bottom = h - ctx.safeBottom;
-      const areaH = Math.max(200, bottom - top);
-      const stickerBand = clamp(0.16 * areaH, 56, 110);
-      const pileBand = clamp(0.1 * areaH, 34, 80);
-      const counterH = 56;
-      const D = clamp(Math.min(w - 36, areaH - stickerBand - pileBand - counterH - 8), 180, 420);
+      const areaH = Math.max(120, bottom - top);
+      // a very short screen (a phone on its side): no sticker band, a smaller token
+      const stickerBand = areaH < 300 ? 0 : clamp(0.16 * areaH, 56, 110);
+      const pileBand = areaH < 300 ? clamp(0.14 * areaH, 26, 50) : clamp(0.14 * areaH, 56, 110);
+      const counterH = areaH < 300 ? 44 : 56;
+      const D = clamp(Math.min(w - 36, areaH - stickerBand - pileBand - counterH - 8), 60, 420);
       geo.w = w;
       geo.h = h;
       geo.top = top;
@@ -551,12 +554,12 @@ export const game: GameModule = {
       geo.bandTop = Math.max(top, geo.bandBottom - stickerBand);
       rebuildLayers();
     }
-    /** Frame point (u, v of a head frame) in CSS px. */
+    /** Frame point (u, v of a head frame) in CSS px (the frame is FRAME_SCALE * D wide, its top FRAME_TOP * D above the centre). */
     function fx_(u: number): number {
-      return geo.cx + (u - 0.5) * 0.94 * geo.D;
+      return geo.cx + (u - 0.5) * FRAME_SCALE * geo.D;
     }
     function fy_(v: number): number {
-      return geo.cy + 0.01 * geo.D + (v - 0.5) * 0.94 * geo.D;
+      return geo.cy - FRAME_TOP * geo.D + v * FRAME_SCALE * geo.D;
     }
     const REST_U = 0.66;
     const REST_V = 1.12;
@@ -571,72 +574,103 @@ export const game: GameModule = {
       return lerp(REST_V, TIP_V, k);
     }
 
+    /** The splat decal with a hard 2.5 px ink outline (opaque, the look's sticker style), painted once. */
+    function paintOutlinedSplat(): Layer {
+      const S = 96;
+      const o = 3;
+      const sil = makeLayer(S + o * 2, S + o * 2, 2);
+      const out = makeLayer(S + o * 2, S + o * 2, 2);
+      if (sil.ctx && out.ctx) {
+        art.splat.draw(sil.ctx, S / 2 + o, S / 2 + o, S, S);
+        sil.ctx.globalCompositeOperation = 'source-in';
+        sil.ctx.fillStyle = PAL.ink;
+        sil.ctx.fillRect(0, 0, S + o * 2, S + o * 2);
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          out.ctx.drawImage(sil.canvas, Math.cos(a) * o * 0.85, Math.sin(a) * o * 0.85, S + o * 2, S + o * 2);
+        }
+        art.splat.draw(out.ctx, S / 2 + o, S / 2 + o, S, S);
+      }
+      sil.canvas.width = 0;
+      sil.canvas.height = 0;
+      return { canvas: out.canvas, w: S + o * 2, h: S + o * 2 };
+    }
+    /** A white steam cloud with an ink outline, painted once. */
+    function paintCloud(): Layer {
+      const w = 44;
+      const h = 30;
+      const l = makeLayer(w, h, 2);
+      const c = l.ctx;
+      if (c) {
+        const blobs: Array<[number, number, number]> = [
+          [14, 18, 10],
+          [24, 12, 11],
+          [32, 19, 9],
+        ];
+        c.fillStyle = PAL.ink;
+        for (const [x, y, r] of blobs) {
+          c.beginPath();
+          c.arc(x, y, r + 2.5, 0, Math.PI * 2);
+          c.fill();
+        }
+        c.fillStyle = PAL.white;
+        for (const [x, y, r] of blobs) {
+          c.beginPath();
+          c.arc(x, y, r, 0, Math.PI * 2);
+          c.fill();
+        }
+      }
+      return { canvas: l.canvas, w, h };
+    }
+
     // ── pre-rendered layers (per size) ──
     let counter: Layer | null = null;
-    let fog: Layer | null = null;
-    let digits: Layer[] = [];
-    let digitPx = 0;
     const print = paintFingerprint();
     const note = paintNote(NOTE_COLOR_SIZE);
     const star = paintStar(22);
+    const splat = paintOutlinedSplat();
+    const cloud = paintCloud();
+    /** The backdrop at the screen size (one blit per frame). */
     let glass: HTMLCanvasElement | null = null;
-    let glassCtx: CanvasRenderingContext2D | null = null;
-    /** The decals over the token (the full-screen glass holds the backdrop + the decals off the token). */
-    let tokenGlass: HTMLCanvasElement | null = null;
-    let tokenCtx: CanvasRenderingContext2D | null = null;
-    let tokenGlassUsed = false;
-    const glassOps: GlassOp[] = [];
     let pileCanvas: HTMLCanvasElement | null = null;
     let pileCtx: CanvasRenderingContext2D | null = null;
     let pileDirty = true;
-    const PILE_EXTRA = 0;
+    /** Splat decals on the glass: a ring of DECALS_N, drawn live (opaque, outlined), never baked. */
+    const decals: Array<{ live: boolean; x: number; y: number; s: number; rot: number }> = [];
+    for (let i = 0; i < DECALS_N; i++) decals.push({ live: false, x: 0, y: 0, s: 0, rot: 0 });
+    let decalNext = 0;
+    let decalSerial = 0;
+    function addDecal(x: number, y: number, size: number): void {
+      const d = decals[decalNext];
+      decalNext = (decalNext + 1) % decals.length;
+      if (!d) return;
+      d.live = true;
+      d.x = x;
+      d.y = y;
+      d.s = size;
+      d.rot = (seeded(ctx.seed, 3, decalSerial++) - 0.5) * 3;
+    }
 
-    /** The pile layer only as tall as the pile can get: two rows of boogers and the name chips. */
+    /** The pile layer only as tall as the pile can get: two rows of boogers. */
     function pileLayerH(): number {
-      return Math.ceil(0.12 * geo.D + 0.045 * geo.D + 34 + PILE_EXTRA);
+      return Math.ceil(0.12 * geo.D + 0.045 * geo.D + 8);
     }
     function rebuildLayers(): void {
       const scale = Math.min(2, view.dpr);
       freeLayer(counter);
       counter = paintCounter(geo.w, geo.counterH + ctx.safeBottom, scale);
-      if (!fog) fog = paintFog();
-      const px = Math.round(geo.D * 0.2);
-      if (px !== digitPx) {
-        for (const d of digits) freeLayer(d);
-        digits = paintDigits(px);
-        digitPx = px;
-      }
       // where the fingertip path crosses the rim
       const ry = geo.cy + geo.R - geo.ring;
       const y0 = fy_(REST_V);
       const y1 = fy_(TIP_V);
       kRim = clamp((y0 - ry) / Math.max(1, y0 - y1), 0.05, 0.6);
-      // glass (decals) at the screen size, replayed from the op log
       if (glass) {
         glass.width = 0;
         glass.height = 0;
       }
-      // one full-screen layer = the backdrop + the mess off the token (one blit per frame)
       const gl = makeLayer(geo.w, geo.h, scale);
       glass = gl.canvas;
-      glassCtx = gl.ctx;
-      if (glassCtx) {
-        backdrop.draw(glassCtx, geo.w, geo.h, scale, geo.cx, geo.cy);
-        glassCtx.setTransform(scale, 0, 0, scale, 0, 0);
-        glassCtx.fillStyle = PAL.ink;
-        glassCtx.beginPath();
-        glassCtx.arc(geo.cx + 5, geo.cy + 6, geo.R, 0, Math.PI * 2);
-        glassCtx.fill();
-      }
-      if (tokenGlass) {
-        tokenGlass.width = 0;
-        tokenGlass.height = 0;
-      }
-      const tl = makeLayer(geo.D, geo.D, scale);
-      tokenGlass = tl.canvas;
-      tokenCtx = tl.ctx;
-      tokenGlassUsed = false;
-      for (const op of glassOps) paintGlassOp(op);
+      if (gl.ctx) backdrop.draw(gl.ctx, geo.w, geo.h, scale, geo.cx, geo.cy);
       if (pileCanvas) {
         pileCanvas.width = 0;
         pileCanvas.height = 0;
@@ -647,151 +681,6 @@ export const game: GameModule = {
       pileDirty = true;
     }
 
-    // ── the glass: decals, trails, smears and baked boogers painted incrementally ──
-    /** Bounding box of a glass op (CSS px): x0, y0, x1, y1. */
-    const opBox = [0, 0, 0, 0];
-    function boxOf(op: GlassOp): void {
-      const { cx, cy, D } = geo;
-      let x0: number;
-      let y0: number;
-      let x1: number;
-      let y1: number;
-      switch (op.k) {
-        case 'decal': {
-          const hw = op.s * D * Math.max(1, op.sx) * 0.75;
-          x0 = cx + op.u * D - hw;
-          x1 = cx + op.u * D + hw;
-          y0 = cy + op.v * D - hw;
-          y1 = cy + op.v * D + hw;
-          break;
-        }
-        case 'trail':
-          x0 = cx + op.u * D - op.wd * D;
-          x1 = cx + op.u * D + op.wd * D;
-          y0 = cy + op.v * D - 2;
-          y1 = cy + op.v * D + op.len * D + op.wd * D;
-          break;
-        case 'sprite': {
-          const hw = op.s * D * 1.1;
-          x0 = cx + op.u * D - hw;
-          x1 = cx + op.u * D + hw;
-          y0 = cy + op.v * D - hw;
-          y1 = cy + op.v * D + hw;
-          break;
-        }
-        case 'smear': {
-          const a = cx + op.u0 * D;
-          const b = cx + op.u1 * D;
-          const e = cy + op.v0 * D;
-          const f = cy + op.v1 * D;
-          x0 = Math.min(a, b) - 0.03 * D;
-          x1 = Math.max(a, b) + 0.03 * D;
-          y0 = Math.min(e, f) - 0.03 * D;
-          y1 = Math.max(e, f) + 0.03 * D;
-          break;
-        }
-        default: {
-          const never: never = op;
-          throw new Error(`Unhandled glass op ${JSON.stringify(never)}`);
-        }
-      }
-      opBox[0] = x0;
-      opBox[1] = y0;
-      opBox[2] = x1;
-      opBox[3] = y1;
-    }
-    function paintGlassOp(op: GlassOp): void {
-      const { cx, cy, D, R } = geo;
-      boxOf(op);
-      const [x0, y0, x1, y1] = opBox as [number, number, number, number];
-      // where the box is relative to the circle: all outside, all inside, or across the edge
-      const nearX = clamp(cx, x0, x1);
-      const nearY = clamp(cy, y0, y1);
-      const touches = Math.hypot(nearX - cx, nearY - cy) < R;
-      const farX = Math.max(Math.abs(x0 - cx), Math.abs(x1 - cx));
-      const farY = Math.max(Math.abs(y0 - cy), Math.abs(y1 - cy));
-      const inside = Math.hypot(farX, farY) <= R;
-      for (let pass = 0; pass < 2; pass++) {
-        if (pass === 0 && inside) continue;
-        if (pass === 1 && !touches) continue;
-        const c = pass === 0 ? glassCtx : tokenCtx;
-        if (!c) continue;
-        c.save();
-        if (pass === 1) {
-          c.translate(-(cx - R), -(cy - R));
-          tokenGlassUsed = true;
-        }
-        if (touches && !inside) {
-          // a round clip only across the edge, and only over the op's box (small mask)
-          c.beginPath();
-          c.rect(x0, y0, x1 - x0, y1 - y0);
-          c.clip();
-          c.beginPath();
-          if (pass === 0) {
-            c.rect(x0, y0, x1 - x0, y1 - y0);
-            c.arc(cx, cy, R, 0, Math.PI * 2, true);
-          } else c.arc(cx, cy, R, 0, Math.PI * 2);
-          c.clip();
-        }
-        const sprite = op.k === 'sprite';
-        c.globalAlpha = pass === 0 ? (sprite ? 0.9 : 0.5) : sprite ? 0.55 : 0.2;
-        switch (op.k) {
-          case 'decal': {
-            const s = op.s * D;
-            art.splat.draw(c, cx + op.u * D, cy + op.v * D, s * op.sx, s, op.rot);
-            break;
-          }
-          case 'trail': {
-            // a short drip under the decal (never a long bar: those read as glitches)
-            const x = cx + op.u * D;
-            const y = cy + op.v * D;
-            const len = op.len * D;
-            c.fillStyle = '#7ed321';
-            c.beginPath();
-            c.moveTo(x - op.wd * D * 0.5, y);
-            c.lineTo(x + op.wd * D * 0.5, y);
-            c.lineTo(x + op.wd * D * 0.25, y + len);
-            c.lineTo(x - op.wd * D * 0.25, y + len);
-            c.closePath();
-            c.fill();
-            c.beginPath();
-            c.arc(x, y + len, op.wd * D * 0.6, 0, Math.PI * 2);
-            c.fill();
-            break;
-          }
-          case 'sprite': {
-            const d = art.boogers[op.kind];
-            if (d) {
-              const s = op.s * D;
-              const dims = boogerDims(op.kind, s, 1);
-              d.draw(c, cx + op.u * D, cy + op.v * D, dims.w, dims.h, op.rot);
-            }
-            break;
-          }
-          case 'smear': {
-            c.strokeStyle = '#6fbf2a';
-            c.lineCap = 'round';
-            c.lineWidth = 0.04 * D;
-            c.globalAlpha = pass === 0 ? 0.28 : 0.07;
-            c.beginPath();
-            c.moveTo(cx + op.u0 * D, cy + op.v0 * D);
-            c.lineTo(cx + op.u1 * D, cy + op.v1 * D);
-            c.stroke();
-            break;
-          }
-          default: {
-            const never: never = op;
-            throw new Error(`Unhandled glass op ${JSON.stringify(never)}`);
-          }
-        }
-        c.restore();
-      }
-    }
-    function glassOp(op: GlassOp): void {
-      glassOps.push(op);
-      if (glassOps.length > GLASS_OPS_CAP) glassOps.shift();
-      paintGlassOp(op);
-    }
     const nu = (x: number): number => (x - geo.cx) / Math.max(1, geo.D);
     const nv = (y: number): number => (y - geo.cy) / Math.max(1, geo.D);
 
@@ -870,7 +759,7 @@ export const game: GameModule = {
     let innoT = 0;
 
     const goos: Goo[] = [];
-    const mkGoo = (): Goo => ({ live: false, kind: BOOGER.Round, st: 0, t: 0, age: 0, x0: 0, y0: 0, x: 0, y: 0, tx: 0, ty: 0, size: 0, rot: 0, vrot: 0, life: 3, vy: 0, stretch: 1, serial: 0, name: -1, yossi: false, sneeze: false, drag: 0 });
+    const mkGoo = (): Goo => ({ live: false, kind: BOOGER.Round, st: 0, t: 0, age: 0, x0: 0, y0: 0, x: 0, y: 0, tx: 0, ty: 0, size: 0, rot: 0, vrot: 0, life: 3, vy: 0, stretch: 1, serial: 0, name: -1, yossi: false, sneeze: false, drag: 0, intro: 0 });
     for (let i = 0; i < MAX_LIVE + SNEEZE_N + 2; i++) goos.push(mkGoo());
     const bits: Bit[] = [];
     for (let i = 0; i < CORK_N; i++) bits.push({ live: false, kind: BOOGER.Round, x: 0, y: 0, vx: 0, vy: 0, rot: 0, vr: 0, t: 0, size: 0 });
@@ -987,6 +876,7 @@ export const game: GameModule = {
       out.y = clamp(y, geo.top + m, geo.pileTop - size * 0.4);
     }
     const spot = { x: 0, y: 0 };
+    const kindsSeen = new Set<BoogerKind>();
     function throwBooger(kind: BoogerKind, i: number, fromX: number, fromY: number, opts: { name?: number; yossi?: boolean; sneeze?: boolean; tx?: number; ty?: number; size?: number } = {}): Goo | null {
       if (!opts.sneeze) {
         // cap: the oldest one on the glass bakes into the pile at once
@@ -1000,7 +890,7 @@ export const game: GameModule = {
       const g = freeGoo();
       if (!g) return null;
       const tr = boogerTraits(ctx.seed, i);
-      const size = opts.size ?? geo.D * (0.09 + 0.04 * tr.size);
+      const size = opts.size ?? geo.D * (GOO_MIN + GOO_SPAN * tr.size);
       if (opts.tx !== undefined && opts.ty !== undefined) {
         spot.x = opts.tx;
         spot.y = opts.ty;
@@ -1027,6 +917,11 @@ export const game: GameModule = {
       g.yossi = opts.yossi === true;
       g.sneeze = opts.sneeze === true;
       g.drag = 0;
+      g.intro = 0;
+      if (!opts.sneeze && !opts.yossi && !kindsSeen.has(kind)) {
+        kindsSeen.add(kind);
+        g.intro = INTRO_S;
+      }
       return g;
     }
 
@@ -1094,8 +989,6 @@ export const game: GameModule = {
     function toPile(g: Goo): void {
       g.live = false;
       pileTotal++;
-      // its splat decal is on the glass already; a short trail under it
-      glassOp({ k: 'trail', u: nu(g.tx), v: nv(g.ty + g.size * 0.3), len: 0.05, wd: 0.012 + g.size / geo.D / 12 });
       if (g.yossi) {
         yossi.st = 2;
         yossi.slot = namedSlot(g.x);
@@ -1123,6 +1016,7 @@ export const game: GameModule = {
       for (const g of goos) {
         if (!g.live) continue;
         g.t += dt;
+        if (g.intro > 0 && g.st !== GOO_FLY) g.intro = Math.max(0, g.intro - dt);
         switch (g.st) {
           case GOO_FLY: {
             const k = Math.min(1, g.t / FLY_S);
@@ -1135,7 +1029,7 @@ export const game: GameModule = {
               g.t = 0;
               g.x = g.tx;
               g.y = g.ty;
-              glassOp({ k: 'decal', u: nu(g.x), v: nv(g.y), s: (g.size / geo.D) * 1.25, rot: (seeded(ctx.seed, 3, g.serial) - 0.5) * 3, sx: 1 });
+              addDecal(g.x, g.y, g.size * 1.25);
               splatSound(0.8 + (g.serial % 5) * 0.08);
             }
             break;
@@ -1149,9 +1043,11 @@ export const game: GameModule = {
             break;
           case GOO_STUCK:
             g.age += dt;
-            if (g.sneeze && g.age >= 1) {
-              glassOp({ k: 'sprite', kind: g.kind, u: nu(g.x), v: nv(g.y), s: g.size / geo.D, rot: g.rot });
-              g.live = false;
+            // a sneeze booger sticks 1 s, then slides to the pile like any other
+            if (g.sneeze && g.age >= 1 && finalT < 0) {
+              g.st = GOO_SLIDE;
+              g.t = 0;
+              g.vy = Math.max(60, (geo.pileBottom - g.size * 0.5 - g.y) / 1.6);
             }
             break;
           case GOO_ACT: {
@@ -1198,7 +1094,6 @@ export const game: GameModule = {
                 yossi.slot = namedSlot(g.x);
                 if (yossi.slot < 0) yossi.slot = Math.max(0, nearestFree(0, g.x));
                 pileTotal++;
-                glassOp({ k: 'trail', u: nu(g.tx), v: nv(g.ty + g.size * 0.3), len: 0.05, wd: 0.02 });
               } else toPile(g);
             }
             break;
@@ -1665,7 +1560,7 @@ export const game: GameModule = {
       hanger.y0 = fy_(FRAME.bigTipY);
       hanger.x = geo.w - 0.07 * geo.D;
       hanger.y = geo.top + 6;
-      glassOp({ k: 'decal', u: nu(hanger.x), v: nv(hanger.y + 0.02 * geo.D), s: 0.1, rot: 0.4, sx: 1 });
+      addDecal(hanger.x, hanger.y + 0.02 * geo.D, 0.12 * geo.D);
     }
 
     function beatEar(): Beat {
