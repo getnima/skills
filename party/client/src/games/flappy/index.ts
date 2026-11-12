@@ -175,7 +175,7 @@ export const game: GameModule = {
       myLook = null;
     }
     const lookNow = myLook;
-    const headMod: Promise<HeadModule | null> =
+    const loadHead = (): Promise<HeadModule | null> =>
       lookNow === null
         ? Promise.resolve(null)
         : import('./head').then(
@@ -185,6 +185,11 @@ export const game: GameModule = {
             },
             () => null,
           );
+    // Before GO (the countdown: the round clock is frozen) the head loads with the art and the game
+    // starts with it. After GO (a reload mid-round, the dev harness) it loads only once the game is
+    // up, so it can never delay the boot (a late boot puts the bird back on the live course).
+    const beforeGo = elapsedMs() <= 0;
+    const headEarly = beforeGo ? loadHead() : null;
     const [art] = await Promise.all([loadFlappyArt(), loadDisplayFont()]);
     const view = createGameCanvas(ctx.root);
     const input = createInput(view.canvas);
@@ -297,15 +302,16 @@ export const game: GameModule = {
     // ── the bird's head: the guest's dressed doll, made once at the size it is drawn at ──
     // (no look, or a look that cannot be drawn whole: the game's own round token, as before)
     let head: HeadSprite | null = null;
-    if (lookNow !== null) {
+    function makeHead(mod: Promise<HeadModule | null>): Promise<HeadSprite | null> {
+      if (lookNow === null) return Promise.resolve(null);
       const headPx = PHYS.radius * L.U * 2.18 * HEAD_OF_TOKEN * view.dpr;
-      const made = headMod.then((m) => (m === null ? null : m.makeHeadSprite(lookNow, headPx)));
+      const made = mod.then((m) => (m === null ? null : m.makeHeadSprite(lookNow, headPx)));
       void made.then((h) => {
         if (!destroyed) head = h;
       });
-      // before GO there is time: start with the head (the clock is frozen until GO)
-      if (elapsedMs() <= 0) await Promise.race([made, new Promise((r) => setTimeout(r, HEAD_WAIT_MS))]);
+      return made;
     }
+    if (headEarly !== null) await Promise.race([makeHead(headEarly), new Promise((r) => setTimeout(r, HEAD_WAIT_MS))]);
 
     const feathers: Feather[] = [];
     for (let i = 0; i < MAX_FEATHERS; i++) {
@@ -1092,6 +1098,7 @@ export const game: GameModule = {
     };
 
     loop.start();
+    if (headEarly === null) void makeHead(loadHead());
 
     return {
       destroy(): void {

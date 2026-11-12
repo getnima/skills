@@ -5,6 +5,9 @@
 //   PARTY_CLIENT_PORT=5381 npx vite --config tests/e2e/qa-icy-vite.config.mjs
 //   QA_BASE=http://localhost:5381 node tests/e2e/qa-flappy-look-same.cjs record <label> [look]
 //   node tests/e2e/qa-flappy-look-same.cjs compare <labelA> <labelB>
+// The flights run one at a time (QA_PARALLEL=1: all at once). The dev harness's clock runs while the
+// page loads, so a page that boots late (a busy machine) is put back on the live course (a rejoin) and
+// its flight differs: such a run is flagged "harness rejoin" and should be recorded again.
 // Files: tests/e2e/out/qa-flappy-look/same-<label>.json
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -49,10 +52,12 @@ async function flight(browser, run, look) {
 async function record(label, look) {
   const browser = await chromium.launch();
   try {
-    const results = await Promise.all(RUNS.map((run) => flight(browser, run, look)));
+    const results = [];
+    if (process.env.QA_PARALLEL === '1') results.push(...(await Promise.all(RUNS.map((run) => flight(browser, run, look)))));
+    else for (const run of RUNS) results.push(await flight(browser, run, look));
     const file = path.join(OUT, `same-${label}.json`);
     fs.writeFileSync(file, JSON.stringify(results));
-    for (const r of results) console.log(`${r.seed} ${r.size} ${r.q}: steps ${r.traced.length}, passed ${r.run}, raw ${r.raw}, stage score ${r.score}, errors ${r.errors.length}`);
+    for (const r of results) console.log(`${r.seed} ${r.size} ${r.q}: steps ${r.traced.length}, passed ${r.run}, raw ${r.raw}, stage score ${r.score}, errors ${r.errors.length}${rejoined(r) ? ', HARNESS REJOIN (record again on a quieter machine)' : ''}`);
     console.log('wrote', file);
     const bad = results.filter((r) => r.errors.length > 0);
     if (bad.length) {
@@ -62,6 +67,14 @@ async function record(label, look) {
   } finally {
     await browser.close();
   }
+}
+
+/** The page booted late or stalled: the flight was put back on the live course (first step not 1, or a jump). */
+function rejoined(r) {
+  const t = r.traced;
+  if (t.length === 0 || t[0][0] !== 1) return true;
+  for (let k = 1; k < t.length; k++) if (t[k][0] !== t[k - 1][0] + 1) return true;
+  return false;
 }
 
 function compare(a, b) {
@@ -77,7 +90,8 @@ function compare(a, b) {
     const sameScore = x.raw === y.raw && x.run === y.run && x.score === y.score;
     const ok = sameTrace && sameCourse && sameScore;
     if (!ok) fails++;
-    console.log(`${ok ? 'ok  ' : 'FAIL'} ${tag}: trace ${sameTrace ? 'same' : 'DIFFERENT'} (${x.traced.length}/${y.traced.length} steps), course ${sameCourse ? 'same' : 'DIFFERENT'}, raw ${x.raw}/${y.raw}, passed ${x.run}/${y.run}`);
+    const why = !ok && (rejoined(x) || rejoined(y)) ? ' (harness rejoin: record again)' : '';
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${tag}${why}: trace ${sameTrace ? 'same' : 'DIFFERENT'} (${x.traced.length}/${y.traced.length} steps), course ${sameCourse ? 'same' : 'DIFFERENT'}, raw ${x.raw}/${y.raw}, passed ${x.run}/${y.run}`);
   }
   console.log(fails === 0 ? `ok   ${a} and ${b}: identical flights, courses and scores` : `FAIL ${fails} flight(s) differ`);
   process.exitCode = fails === 0 ? 0 : 1;
