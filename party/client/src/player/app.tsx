@@ -141,7 +141,14 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
     state !== null &&
     round !== null &&
     (state.phase === 'countdown' || (state.phase === 'playing' && roundTime(round, now).elapsedMs < 0));
-  useTick(200, timed || beforeGo);
+  // The 3-2-1 starts on the server clock (at startAt - round.countdownMs), not when the `countdown`
+  // state arrives: in the intro the phone watches the clock every frame for the last moments
+  // before that instant, and switches on it, together with the TV and every other phone.
+  const introClock = state?.phase === 'intro' && round !== null ? roundTime(round, now) : null;
+  const toCount = introClock === null || introClock.frozen || round === null ? null : -introClock.elapsedMs - round.countdownMs;
+  const counting = toCount !== null && toCount <= 0;
+  const nearCount = toCount !== null && toCount > 0 && toCount < 1_500;
+  useTick(nearCount ? 0 : 200, timed || beforeGo || nearCount || counting);
 
   // The games' intro pictures (the ones that exist): fetched once this phone is in a room, ahead of the first intro.
   const inside = snap.status === 'in';
@@ -172,7 +179,10 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
     body = <ClosedScreen onRestart={() => ctl.restart()} />;
   } else if (snap.status === 'in' && state !== null) {
     const participant = round !== null && ctl.isParticipant(round.index);
-    switch (state.phase) {
+    // the intro's last 3 s are the 3-2-1 by the clock: the same screen (the game under the
+    // countdown) the `countdown` phase shows, so the phase message arriving changes nothing
+    const screenPhase: typeof state.phase = counting ? 'countdown' : state.phase;
+    switch (screenPhase) {
       case 'lobby':
         // Nothing is being played: a guest who has not dressed yet (or asked to) is in the dressing room.
         // A round that starts changes the phase, so it takes this screen over at once.
@@ -187,7 +197,7 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
       case 'intro':
         if (round === null) break;
         screen = participant ? 'intro' : 'late';
-        body = participant ? <IntroScreen round={round} /> : <LateScreen round={round} look={myLook} />;
+        body = participant ? <IntroScreen round={round} ctl={ctl} /> : <LateScreen round={round} look={myLook} />;
         break;
       case 'countdown':
       case 'playing': {
@@ -257,7 +267,7 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
         body = <FinalScreen state={state} me={me} active={state.cutscene === null} look={myLook} />;
         break;
       default: {
-        const never: never = state.phase;
+        const never: never = screenPhase;
         throw new Error(`Unhandled phase: ${String(never)}`);
       }
     }

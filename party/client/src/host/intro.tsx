@@ -1,13 +1,20 @@
-/** Intro (title + instructions), the 3-2-1 before a round, the GO splash and the 3-2-1 after a cutscene. */
+/**
+ * Intro (title + how to play), the 3-2-1 before a round, the GO splash and the 3-2-1 after a cutscene.
+ *
+ * Locked to the server clock: the intro turns into the 3-2-1 at `startAt - round.countdownMs` by the
+ * clock (not when the phase message arrives), every digit is read from the clock, and the TV's
+ * beeps and start gong are scheduled on the audio clock for those exact instants
+ * (useCountdownCues). The phones draw the same digits from the same clock, silently.
+ */
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { COUNTDOWN_MS } from '../../../shared/protocol';
 import { roundTime } from '../../../shared/round-clock';
-import { sfx } from '../kit/audio';
+import { scheduleCue, sfx } from '../kit/audio';
 import { introArtUrl } from './show/art';
 import { GameArt } from './show/common';
 import { PrizeRelic } from './show/prize';
 import { useServerNow } from './util';
+import './intro.css';
 
 import type { JSX } from 'preact';
 import type { GameMeta, RoundPublic } from '../../../shared/protocol';
@@ -15,6 +22,95 @@ import type { ServerClock } from '../net/connection';
 
 function msToStart(round: RoundPublic, now: number): number {
   return Math.max(0, -roundTime(round, now).elapsedMs);
+}
+
+// ───────────────────────────── the countdown, heard ─────────────────────────────
+
+/** Rounds whose start gong is already on the audio clock (the GO splash then stays quiet). */
+const startGongs = new Set<number>();
+/** Resumes ("<round>:<resumeAt>") whose GO is already on the audio clock. */
+const resumeGos = new Set<string>();
+
+export function startGongScheduled(roundIndex: number): boolean {
+  return startGongs.has(roundIndex);
+}
+
+export function markStartGong(roundIndex: number): void {
+  startGongs.add(roundIndex);
+}
+
+export function resumeGoScheduled(key: string): boolean {
+  return resumeGos.has(key);
+}
+
+export function markResumeGo(key: string): void {
+  resumeGos.add(key);
+}
+
+/** The cues are put on the audio clock this long before the first beep (with the clock just re-measured). */
+const CUE_LEAD_MS = 800;
+
+/**
+ * The TV's 3-2-1, heard: a beep at T-3 s and T-2 s, a high beep at T-1 s and the end cue at T (the
+ * gong at a round's start, 'go' after a cutscene), scheduled on the audio clock a moment ahead
+ * from the server clock, so they land on the very instants every screen shows the digits.
+ * `target` is server time, or null while there is nothing to count down to (a cutscene covers the
+ * screen, the round is gone). A moved target (a cutscene shifted the start) is rescheduled; a cue
+ * still ahead is cancelled when its target goes away, one already sounding is never cut.
+ */
+export function useCountdownCues(target: number | null, end: 'gong' | 'go', clock: ServerClock, onScheduled?: () => void, countdownMs = 3_000): void {
+  const onRef = useRef(onScheduled);
+  onRef.current = onScheduled;
+  useEffect(() => {
+    if (target === null) return undefined;
+    // a beep on every whole second the 3-2-1 shows (T-3, T-2, the high one at T-1), then the end cue
+    const plan: (readonly [at: number, kind: 'beep' | 'beepHigh' | 'gong' | 'go'])[] = [];
+    for (let k = Math.floor(countdownMs / 1_000); k >= 1; k--) plan.push([target - k * 1_000, k === 1 ? 'beepHigh' : 'beep']);
+    plan.push([target, end]);
+    const first = plan[0]?.[0] ?? target;
+    const queued: { at: number; stop: () => void }[] = [];
+    let done = false;
+    const tick = (): void => {
+      if (done) return;
+      const now = clock.now();
+      if (now > target + 200) {
+        done = true;
+        return;
+      }
+      if (now < first - CUE_LEAD_MS) return;
+      let any = false;
+      for (const [at, kind] of plan) {
+        if (at < now - 20) continue;
+        const stop = scheduleCue(kind, at - now);
+        if (stop !== null) {
+          queued.push({ at, stop });
+          any = true;
+        }
+      }
+      // audio still locked: try again on the next tick, for the cues still ahead
+      if (any) {
+        done = true;
+        onRef.current?.();
+      }
+    };
+    tick();
+    const id = setInterval(tick, 100);
+    return () => {
+      clearInterval(id);
+      const now = clock.now();
+      for (const q of queued) if (q.at - now > 40) q.stop();
+    };
+  }, [target, end, clock, countdownMs]);
+}
+
+/**
+ * The TV between a game's start and its first frame: how to play, then the 3-2-1, chosen by the
+ * server clock (one element through both phases, so the phase message arriving never re-mounts it).
+ */
+export function PreRoundScreen(props: IntroProps): JSX.Element {
+  const now = useServerNow(props.clock, !props.covered);
+  const counting = msToStart(props.round, now) <= props.round.countdownMs && !roundTime(props.round, now).frozen;
+  return counting ? <CountdownScreen game={props.game} round={props.round} clock={props.clock} covered={props.covered} /> : <IntroScreen {...props} />;
 }
 
 export interface IntroProps {
@@ -32,10 +128,11 @@ export function IntroScreen(props: IntroProps): JSX.Element {
   // The intro runs until the countdown; its length is whatever was left when it appeared.
   const total = useRef<number | null>(null);
   if (total.current === null || toStart > total.current) total.current = toStart;
-  const cd = Math.min(COUNTDOWN_MS, total.current / 2);
+  const cd = Math.min(props.round.countdownMs, total.current / 2);
   const span = Math.max(1, total.current - cd);
   const p = Math.min(1, Math.max(0, 1 - (toStart - cd) / span));
   const frozen = roundTime(props.round, now).frozen;
+  const secs = Math.max(1, Math.ceil(toStart / 1000));
   // the DJ air horn as the show switches to the next game: once per round (the screen is keyed by
   // the round), and not when the TV only reconnects in the last moments of an intro
   useEffect(() => {
@@ -51,8 +148,21 @@ export function IntroScreen(props: IntroProps): JSX.Element {
         <GameArt id={props.game.id} emoji={props.game.emoji} class="hs-intro-emoji" />
         <div class="hs-intro-main">
           <h1 class="hs-intro-title">{props.game.title}</h1>
-          <p class="hs-intro-text">{props.game.instructions}</p>
+          {/* how to play: ultra concise, the same steps as on every phone, in Rubik */}
+          <ol class="hs-howto" aria-label="איך משחקים">
+            {props.game.howTo.map(([icon, text], i) => (
+              <li class="hs-howto-step" key={text} style={{ animationDelay: `${160 + i * 150}ms` }}>
+                <span class="hs-howto-icon" dir="ltr" aria-hidden="true">
+                  {icon}
+                </span>
+                <span class="hs-howto-text">{text}</span>
+              </li>
+            ))}
+          </ol>
           <div class="hs-intro-foot">
+            <div class={`hs-intro-start ${frozen ? 'is-frozen' : ''}`} data-testid="intro-start">
+              מתחילים בעוד <b dir="ltr">{secs}</b>
+            </div>
             <div class="hs-intro-prize">
               <span class="hs-prize-mini hs-prize-mini--sm">
                 <PrizeRelic variant="mini" />
@@ -75,15 +185,8 @@ export function IntroScreen(props: IntroProps): JSX.Element {
 export function CountdownScreen(props: { readonly game: GameMeta; readonly round: RoundPublic; readonly clock: ServerClock; readonly covered: boolean }): JSX.Element {
   const now = useServerNow(props.clock, !props.covered);
   const toStart = msToStart(props.round, now);
-  const n = Math.max(1, Math.ceil(toStart / 1000));
-  const last = useRef<number | null>(null);
-  useEffect(() => {
-    if (props.covered) return;
-    if (last.current !== n) {
-      if (last.current !== null || toStart > 200) sfx.tick(1 + (3 - Math.min(3, n)) * 0.18);
-      last.current = n;
-    }
-  }, [n, props.covered]);
+  // the digit is read from the server clock every frame; its beep is already on the audio clock
+  const n = Math.max(1, Math.min(3, Math.ceil(toStart / 1000)));
   return (
     <div class="hs-countdown" data-testid="countdown">
       <div class="hs-countdown-game">
@@ -99,11 +202,17 @@ export function CountdownScreen(props: { readonly game: GameMeta; readonly round
   );
 }
 
-/** "יאללה!" for a moment when the round starts. Plays the GO sound once: the gong when a round starts (`gong`), a beep after a pause. */
-export function GoSplash(props: { readonly text?: string; readonly gong?: boolean }): JSX.Element | null {
+/**
+ * "יאללה!" for a moment when the round starts. Plays the GO sound once (the gong when a round
+ * starts, `gong`; a beep after a pause), unless `quiet`: the countdown already put it on the
+ * audio clock for the exact moment.
+ */
+export function GoSplash(props: { readonly text?: string; readonly gong?: boolean; readonly quiet?: boolean }): JSX.Element | null {
   const [gone, setGone] = useState(false);
   useEffect(() => {
-    if (props.gong === true) sfx.gong();
+    if (props.quiet === true) {
+      // the scheduled cue sounded on the moment
+    } else if (props.gong === true) sfx.gong();
     else sfx.go();
     const t = setTimeout(() => setGone(true), 1_000);
     return () => clearTimeout(t);
@@ -123,11 +232,16 @@ export function ResumeOverlay(props: { readonly round: RoundPublic; readonly clo
   const n = Math.ceil(rt.resumeInMs / 1000);
   const last = useRef(0);
   const [goKey, setGoKey] = useState(0);
+  const resumeKey = `${props.round.index}:${props.round.resumeAt ?? 0}`;
+  const quietRef = useRef(false);
   useEffect(() => {
     if (props.covered) return;
     if (n !== last.current) {
-      if (n > 0) sfx.tick(1 + (3 - Math.min(3, n)) * 0.18);
-      else if (last.current > 0) setGoKey((k) => k + 1);
+      // the beeps are on the audio clock (useCountdownCues in app.tsx); only the GO splash is drawn here
+      if (n <= 0 && last.current > 0) {
+        quietRef.current = resumeGoScheduled(resumeKey);
+        setGoKey((k) => k + 1);
+      }
       last.current = n;
     }
   }, [n, props.covered]);
@@ -145,5 +259,5 @@ export function ResumeOverlay(props: { readonly round: RoundPublic; readonly clo
       </div>
     );
   }
-  return goKey > 0 ? <GoSplash key={goKey} /> : null;
+  return goKey > 0 ? <GoSplash key={goKey} quiet={quietRef.current} /> : null;
 }

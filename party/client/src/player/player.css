@@ -611,10 +611,73 @@
   box-shadow: 0 5px 0 var(--ink);
   color: var(--ink);
 }
-.pp-intro-text {
+/* how to play: the game's two or three steps (the same as on the TV), an emoji badge and a few words of Rubik */
+.ps-howto {
   margin: 0;
-  font: 700 clamp(16.5px, 4.9vw, 20px) / 1.4 var(--read);
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.ps-howto-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: ps-pop 0.45s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+.ps-howto-step:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.ps-howto-step:nth-child(3) {
+  animation-delay: 0.24s;
+}
+.ps-howto-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 5px;
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--yel);
+  font-size: 22px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.ps-howto-text {
+  min-width: 0;
+  font: 800 clamp(18px, 5.4vw, 23px) / 1.2 var(--read);
   text-align: start;
+}
+/* the seconds to the start, on the server clock like the TV's */
+.ps-intro-start {
+  align-self: center;
+  margin: 14px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: fit-content;
+  padding: 5px 16px 6px;
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--red);
+  box-shadow: 0 3px 0 var(--ink);
+  color: #fff;
+  font: 800 17px/1 var(--read);
+  white-space: nowrap;
+}
+.ps-intro-start .num,
+.ps-intro-start b {
+  color: var(--yel);
+  font-size: 22px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.ps-intro-start.is-frozen {
+  background: #777;
 }
 
 /* ───────────────────────── 3-2-1 and "we go on" ───────────────────────── */
@@ -1873,9 +1936,19 @@
   .ps-say {
     padding: 15px 12px 10px;
   }
-  .pp-intro-text {
-    font-size: 16px;
-    line-height: 1.34;
+  .ps-howto {
+    gap: 6px;
+  }
+  .ps-howto-icon {
+    min-width: 34px;
+    height: 34px;
+    font-size: 19px;
+  }
+  .ps-howto-text {
+    font-size: 17px;
+  }
+  .ps-intro-start {
+    margin-top: 10px;
   }
   .ps-late-stage,
   .ps-send .pw-stage,

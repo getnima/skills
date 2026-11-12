@@ -226,6 +226,7 @@ describe('round lifecycle', () => {
       gameId: 'tap',
       seed: 0xdeadbeef,
       startAt: T0 + INTRO_MS + COUNTDOWN_MS,
+      countdownMs: COUNTDOWN_MS,
       endAt: T0 + INTRO_MS + COUNTDOWN_MS + TAP_MS,
       frozenAt: null,
       resumeAt: null,

@@ -236,7 +236,7 @@ async function rooms(browser, sizeName, vp, shot) {
     await waitPhase(page, 'intro');
     await sleep(650);
     await shot(page, '10-intro-tap');
-    const intro = { title: await px1080(page, '.hs-intro-title'), text: await px1080(page, '.hs-intro-text') };
+    const intro = { title: await px1080(page, '.hs-intro-title'), text: await px1080(page, '.hs-howto-text') };
     check(intro.title >= 120 && intro.text >= 48, 'intro: a huge title and instructions of 48 px or more', intro);
     if (EXPECT_ART) check((await page.locator('.hs-intro-emoji.is-pic img').count()) === 1, 'intro: the key art is shown');
     await waitPhase(page, 'countdown');

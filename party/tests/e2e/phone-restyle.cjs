@@ -153,7 +153,7 @@ const call = (s, ev, req) =>
       await shotAll(`${num()}-intro-${gameId}`);
       // `before` (the late joiner's tour) runs alongside: the late screen stays up for the whole round
       // 3-2-1: one phone per digit, then GO
-      await Promise.all(phones.map((p) => L.waitScreen(p.page, ['countdown', 'late'], 12000)));
+      await Promise.all(phones.map((p) => L.waitScreen(p.page, ['countdown', 'late'], 35000))); // the 27 s how-to first
       /** The digit on screen once it has popped in (full opacity, no zoom left), else ''. */
       const digit = (p) =>
         p.page.evaluate(() => {

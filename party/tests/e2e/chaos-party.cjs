@@ -878,7 +878,7 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
       const introPhones = await Promise.all(roundPhones.map((p) => screenOf(p)));
       check(introPhones.every((s) => s === 'intro'), `round ${n}: every phone shows the intro`, introPhones);
       await shot(`r${n}-intro`, [TV, R, phones[0]]);
-      await waitObs((s) => s.phase === 'countdown', 15000, 'countdown');
+      await waitObs((s) => s.phase === 'countdown', 35000, 'countdown'); // the 27 s how-to first
       await sleep(1200);
       await shot(`r${n}-countdown`, [TV, phones[0], phones[2]]);
       await waitObs((s) => s.phase === 'playing', 10000, 'playing');

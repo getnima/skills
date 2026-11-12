@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CUTSCENES } from '../../shared/cutscenes';
 import {
+  COUNTDOWN_MS,
   CUTSCENE_MAX_MS,
   FINAL_GRACE_MS,
   GAME_IDS,
   GAMES,
+  INTRO_MS,
   MAX_PLAYERS,
   RESUME_COUNTDOWN_MS,
   WINNER_REVEAL_MS,
@@ -22,6 +24,9 @@ import { MAX_ROOMS, RoomRegistry } from '../../server/rooms';
 
 import type { CutsceneDef } from '../../shared/cutscenes';
 import type { GameId, Phase, RoomState, RoundResults } from '../../shared/protocol';
+
+/** The intro and the 3-2-1: a round starts this long after host:start. */
+const PRELUDE = INTRO_MS + COUNTDOWN_MS;
 import type { RoomTiming } from '../../server/config';
 import type { RoomSink, ScoresMessage } from '../../server/room';
 
@@ -627,7 +632,7 @@ describe('reconnects', () => {
       expect(h.room.hostConnected).toBe(true);
     };
     bounce(1); // intro
-    vi.advanceTimersByTime(8_000);
+    vi.advanceTimersByTime(PRELUDE - 2_000);
     bounce(2); // countdown
     h.toPlaying();
     bounce(3); // playing
@@ -656,12 +661,12 @@ describe('cutscenes and the clock', () => {
     const h = makeRoom({ cutscenes: [joker] });
     h.join('a');
     h.room.start('tap');
-    vi.advanceTimersByTime(8_000); // 2s before startAt
+    vi.advanceTimersByTime(PRELUDE - 2_000); // 2s before startAt
     expect(h.state().phase).toBe('countdown');
     const before = h.state().round;
     h.room.startCutscene('joker');
     vi.advanceTimersByTime(12_345);
-    expect(h.state()).toMatchObject({ phase: 'countdown', round: { frozenAt: T0 + 8_000 } });
+    expect(h.state()).toMatchObject({ phase: 'countdown', round: { frozenAt: T0 + PRELUDE - 2_000 } });
     expect(h.elapsed()).toBe(-2_000);
     h.room.endCutscene();
     const after = h.state().round;
@@ -792,7 +797,7 @@ describe('cutscenes and the clock', () => {
       const h = makeRoom({ cutscenes: [joker] });
       h.join('a');
       h.room.start('tap');
-      if (at === 'countdown') vi.advanceTimersByTime(8_000);
+      if (at === 'countdown') vi.advanceTimersByTime(PRELUDE - 2_000);
       if (at === 'playing') h.toPlaying();
       expect(h.state().phase).toBe(at);
       h.room.startCutscene('joker');
@@ -818,7 +823,7 @@ describe('cutscenes and the clock', () => {
     vi.advanceTimersByTime(30_000);
     expect(h.state()).toMatchObject({ phase: 'intro', round: { frozenAt: T0 } });
     h.room.endCutscene();
-    expect(h.elapsed()).toBe(-10_000);
+    expect(h.elapsed()).toBe(-PRELUDE);
     h.toPlaying();
     // kick under a cutscene: gone at once, round not ended under the video.
     h.room.final(a, 0, 4);
@@ -930,7 +935,7 @@ describe('cutscenes and the clock', () => {
     h.room.start('icy');
     const r1 = h.state().round;
     // Where round 0 would have frozen (30s) and ended (60s): nothing may happen to round 1 except its own clock.
-    vi.advanceTimersByTime(9_999);
+    vi.advanceTimersByTime(PRELUDE - 1);
     expect(h.state()).toMatchObject({ phase: 'countdown', cutscene: null, round: { index: 1, startAt: r1?.startAt, endAt: r1?.endAt } });
     h.toPlaying();
     vi.advanceTimersByTime(11_000); // round 0's 30s mark and beyond, in round 1 time 11s
@@ -1094,7 +1099,7 @@ describe('abuse and limits', () => {
     A.start('tap');
     B.start('icy');
     boom = true;
-    vi.advanceTimersByTime(10_000);
+    vi.advanceTimersByTime(PRELUDE);
     expect(A.snapshot().phase).toBe('playing');
     expect(B.snapshot().phase).toBe('playing');
     A.score(a.playerId, 0, 10);

@@ -113,6 +113,9 @@ export function useHostRoom(): HostRoom {
     const prevRound = prev?.round?.index ?? null;
     const nextRound = next.round?.index ?? null;
     if (prevRound !== nextRound || prev?.code !== next.code) setScores(new Map());
+    // a new intro: measure the server clock afresh, so the 3-2-1 and its sounds land on the exact
+    // instants (the phones do the same; the intro leaves them 27 s for it)
+    if (next.phase === 'intro' && (prev?.phase !== 'intro' || prevRound !== nextRound) && socket.connected) void clock.sync(6);
     stateRef.current = next;
     setState(next);
   };

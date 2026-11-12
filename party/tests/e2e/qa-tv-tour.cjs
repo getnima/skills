@@ -59,7 +59,7 @@ const layoutCheck = (page) =>
     const W = innerWidth;
     const H = innerHeight;
     const out = { sw: de.scrollWidth, sh: de.scrollHeight, W, H, outside: [] };
-    const sel = '.hs-intro-title, .hs-intro-text, .hs-countdown-num, .sh-cer-name, .sh-cer-kicker, .sh-champ-name, .sh-pod-name, .sh-banner-text, .hs-code, .hs-qr-card, .sh-aside-title, .sh-mystery-text, .sh-nobody-a, .hs-primary, .sh-ring';
+    const sel = '.hs-intro-title, .hs-howto-text, .hs-countdown-num, .sh-cer-name, .sh-cer-kicker, .sh-champ-name, .sh-pod-name, .sh-banner-text, .hs-code, .hs-qr-card, .sh-aside-title, .sh-mystery-text, .sh-nobody-a, .hs-primary, .sh-ring';
     for (const el of document.querySelectorAll(sel)) {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
@@ -156,7 +156,7 @@ const layoutCheck = (page) =>
         check(first !== null && first.opacity === 1 && first.textOpacity === 1 && first.h > 50, `${n}p intro: title and instructions readable on the first frame`, first);
         await sleep(800);
         await shoot(`intro-r${r}`, [SIZES[0], SIZES[2], SIZES[1]]);
-        await page.waitForFunction(() => ['countdown', 'playing'].includes(window.__host.state().phase), null, { timeout: 15000 });
+        await page.waitForFunction(() => ['countdown', 'playing'].includes(window.__host.state().phase), null, { timeout: 35000 }); // the 27 s how-to first
         if ((await state(page)).phase === 'countdown') {
           await sleep(200);
           await shoot(`countdown-r${r}`, [SIZES[0]]);

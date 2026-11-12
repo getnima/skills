@@ -177,9 +177,23 @@ keep their screen awake (the wake lock needs https; everything else works on htt
 The server owns the room; every change is broadcast to everyone as one
 `RoomState` snapshot. Phases (`shared/protocol.ts`):
 
-`lobby` → `intro` (title + instructions, 7 s) → `countdown` (3-2-1, 3 s) →
+`lobby` → `intro` (title + how to play, 27 s) → `countdown` (3-2-1, 3 s) →
 `playing` (`round.startAt` .. `round.endAt`) → `results` → back to `lobby` for
 the next game, or `final` (podium).
+
+- **How to play: 30 s, the same on the TV and every phone.** Each game has two or three
+  ultra-short steps (`GameMeta.howTo`: an emoji and a few words of Rubik), shown on the TV
+  as one white card under the title and on each phone under the game's art, with a
+  "מתחילים בעוד N" chip that counts down on the server clock. The game starts 30 s after
+  the remote presses start (`INTRO_MS` 27 s + `COUNTDOWN_MS` 3 s).
+- **The 3-2-1 is locked to the server clock.** Every screen turns the intro into the 3-2-1
+  at `round.startAt - round.countdownMs` by its own synced clock (not when the `countdown`
+  message arrives) and reads the digit from the clock every frame; clocks re-sync as an
+  intro begins. Only the TV makes sound: a beep at T-3 s and T-2 s, a high beep at T-1 s
+  and the gong at T, scheduled on the Web Audio clock a moment ahead, so they land on the
+  exact instants the digits change. Phones stay silent (a buzz on each digit). Measured
+  with a TV and two phones in one browser on the real 30 s intro: the cues at -2999 /
+  -1999 / -999 / +1 ms of `startAt`, every screen's digit within 35 ms of the same instant.
 
 - Game lengths: tap 53 s (a 30 s start window, then each guest's own 20 s; the round ends
   early when everybody is done), icy 75 s, flappy until one is left (90 s at most),

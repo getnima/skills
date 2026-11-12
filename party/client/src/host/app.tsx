@@ -18,7 +18,7 @@ import { enterFullscreen } from '../kit/mobile';
 import { buildControlModel, checkAction, confirmQuestion, findAction, isGameId, nextUnplayed, parseRelay, remoteView, toRelay } from './actions';
 import { CreditsPanel } from './credits';
 import { CutsceneMenu, CutscenePlayer } from './cutscene';
-import { CountdownScreen, GoSplash, IntroScreen, ResumeOverlay } from './intro';
+import { GoSplash, markResumeGo, markStartGong, PreRoundScreen, ResumeOverlay, startGongScheduled, useCountdownCues } from './intro';
 import { Lobby } from './lobby';
 import { SoundCheck, useShowMusic } from './music';
 import { Narrator } from './narrator';
@@ -124,7 +124,8 @@ function RoundGo(props: { readonly round: RoundPublic; readonly clock: ServerClo
     const rt = roundTime(props.round, props.clock.now());
     return !rt.frozen && rt.elapsedMs < 1_200;
   });
-  return fresh ? <GoSplash gong /> : null;
+  // the gong itself is on the audio clock for the exact start (useCountdownCues); the splash only draws
+  return fresh ? <GoSplash gong quiet={startGongScheduled(props.round.index)} /> : null;
 }
 
 function PlayingView(props: { readonly state: RoomState; readonly round: RoundPublic; readonly room: HostRoom }): JSX.Element {
@@ -279,6 +280,24 @@ export function App(): JSX.Element {
   useEffect(() => setArmed(null), [phaseKey]);
   // the show's drop-in clips decode once at boot, so the first air horn and gong land on their moment
   useEffect(() => preloadClips(['airhorn', 'gong']), []);
+  // the 3-2-1 heard from the TV, locked to the server clock: the beeps and the start gong on the
+  // audio clock for the exact instants every screen shows (none under a cutscene: it re-plans after)
+  const cueRound = state?.round ?? null;
+  const startTarget =
+    cueRound !== null && (phase === 'intro' || phase === 'countdown' || phase === 'playing') && cutscene === null && cueRound.frozenAt === null ? cueRound.startAt : null;
+  useCountdownCues(
+    startTarget,
+    'gong',
+    room.clock,
+    () => {
+      if (cueRound !== null) markStartGong(cueRound.index);
+    },
+    cueRound?.countdownMs,
+  );
+  const resumeTarget = cueRound !== null && phase === 'playing' && cutscene === null && cueRound.frozenAt === null ? cueRound.resumeAt : null;
+  useCountdownCues(resumeTarget, 'go', room.clock, () => {
+    if (cueRound !== null) markResumeGo(`${cueRound.index}:${cueRound.resumeAt ?? 0}`);
+  });
   // the gong when a round is over: play ends and the results come up
   const prevPhase = useRef(phase);
   useEffect(() => {
@@ -560,12 +579,8 @@ export function App(): JSX.Element {
     scene = <Lobby state={state} onStart={(g) => click('start', g)} onKick={(p) => click('kick', p.id)} />;
   } else if ((phase === 'intro' || phase === 'countdown') && state.round !== null) {
     const game = GAMES[state.round.gameId];
-    scene =
-      phase === 'intro' ? (
-        <IntroScreen key={state.round.index} game={game} round={state.round} clock={room.clock} players={state.players.length} covered={cutscene !== null} />
-      ) : (
-        <CountdownScreen key={state.round.index} game={game} round={state.round} clock={room.clock} covered={cutscene !== null} />
-      );
+    // one element through the intro and the 3-2-1: the clock decides which one shows
+    scene = <PreRoundScreen key={state.round.index} game={game} round={state.round} clock={room.clock} players={state.players.length} covered={cutscene !== null} />;
   } else if (phase === 'playing' && state.round !== null) {
     scene = <PlayingView state={state} round={state.round} room={room} />;
   } else if (phase === 'results') {

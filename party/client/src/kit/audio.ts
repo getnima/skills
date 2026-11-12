@@ -412,6 +412,8 @@ function drumroll(ms = 1600): void {
 
 const CLIP_EXTS = ['mp3', 'm4a', 'ogg', 'wav', 'webm'] as const;
 const clips = new Map<string, Promise<AudioBuffer | null>>();
+/** Clips already decoded (a scheduled cue needs the buffer now, not a promise). */
+const decoded = new Map<string, AudioBuffer | null>();
 
 /** Decode /audio/<name>.mp3 (or another extension) once; null when there is no such file or it does not decode. */
 function loadClip(name: string): Promise<AudioBuffer | null> {
@@ -427,6 +429,7 @@ function loadClip(name: string): Promise<AudioBuffer | null> {
           .then((b) => c.decodeAudioData(b))
           .catch(() => null);
   clips.set(name, p);
+  void p.then((b) => decoded.set(name, b));
   return p;
 }
 
@@ -493,6 +496,91 @@ function airhorn(pitch = 1): void {
 /** The gong: gong.mp3 (at most 4.5 s) when it is there, else a synthesized gong. */
 function gong(): void {
   playClip('gong', gongSynth, 0.9, 4.5);
+}
+
+// ───────────────────────────── Cues on the audio clock ─────────────────────────────
+
+/**
+ * A countdown's sounds, scheduled on the audio clock for an exact moment (sample-accurate, not a
+ * timer that fires when the page gets round to it): 'beep' for 3 and 2, 'beepHigh' for 1, 'gong'
+ * for a round's start (gong.mp3 when it is decoded, else the synthesized gong), 'go' after a pause.
+ */
+export type CueKind = 'beep' | 'beepHigh' | 'gong' | 'go';
+
+/**
+ * Schedule a cue `inMs` from now. Returns a cancel that stops it if it has not finished, or null
+ * when nothing was scheduled (audio locked, muted context missing, or the moment already passed).
+ */
+export function scheduleCue(kind: CueKind, inMs: number): (() => void) | null {
+  const c = live();
+  if (!c || !master || inMs < -30) return null;
+  const when = c.currentTime + Math.max(0, inMs) / 1000;
+  const nodes: AudioScheduledSourceNode[] = [];
+  const note = (freq: number, dur: number, type: OscillatorType, vol: number, at = 0): void => {
+    const osc = c.createOscillator();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, when + at);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, when + at);
+    g.gain.linearRampToValueAtTime(vol, when + at + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + at + dur);
+    osc.connect(g);
+    g.connect(master as AudioNode);
+    osc.start(when + at);
+    osc.stop(when + at + dur + 0.05);
+    nodes.push(osc);
+  };
+  try {
+    if (kind === 'beep') {
+      note(660, 0.2, 'square', 0.13);
+      note(1320, 0.12, 'sine', 0.05);
+    } else if (kind === 'beepHigh') {
+      note(880, 0.26, 'square', 0.14);
+      note(1760, 0.16, 'sine', 0.06);
+    } else if (kind === 'go') {
+      note(1040, 0.45, 'square', 0.11);
+      note(1560, 0.45, 'triangle', 0.09);
+    } else {
+      const buf = decoded.get('gong') ?? null;
+      if (buf !== null) {
+        const src = c.createBufferSource();
+        src.buffer = buf;
+        const g = c.createGain();
+        const len = Math.min(4.5, buf.duration);
+        g.gain.setValueAtTime(0.9, when);
+        if (buf.duration > 4.5) {
+          g.gain.setValueAtTime(0.9, when + len - 1);
+          g.gain.linearRampToValueAtTime(0.0001, when + len);
+        }
+        src.connect(g);
+        g.connect(master);
+        src.start(when);
+        src.stop(when + len + 0.02);
+        nodes.push(src);
+      } else {
+        // the synthesized gong, on the same moment
+        const partials: ReadonlyArray<readonly [number, number, number]> = [
+          [98, 0.32, 3.6],
+          [146, 0.2, 3.0],
+          [207, 0.14, 2.4],
+          [263, 0.1, 2.0],
+          [349, 0.07, 1.6],
+        ];
+        for (const [f, v, d] of partials) note(f, d, 'sine', v);
+      }
+    }
+  } catch {
+    // never let a sound break the show
+  }
+  return () => {
+    for (const n of nodes) {
+      try {
+        n.stop();
+      } catch {
+        // already stopped
+      }
+    }
+  };
 }
 
 /** A soft-clip curve for the air horn's rasp (made once). */

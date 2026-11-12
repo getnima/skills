@@ -148,7 +148,7 @@ const NOTCH = { iphone14: [47, 34], promax: [59, 34], se375: [20, 0] };
     await Promise.all(all().map((p) => L.waitScreen(p, 'intro', 5000)));
     await L.sleep(400);
     await shotAll('06-intro');
-    await Promise.all(all().map((p) => L.waitScreen(p, 'countdown', 5000)));
+    await Promise.all(all().map((p) => L.waitScreen(p, 'countdown', 32000))); // the 27 s how-to first
     await L.sleep(150);
     await shotAll('07-countdown', { allowOverlap: true });
     await Promise.all(all().map((p) => L.waitScreen(p, 'playing', 5000)));

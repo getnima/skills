@@ -1,7 +1,7 @@
 // narration-intros: each of the five games' intro screen on the TV with the hosts' banter pair, at 1920x1080
 // and 1280x720: both lines are said, the hosts cover nothing (title, instructions, round tag, prize, players,
 // progress bar, 3-2-1), no console errors. One fresh room per game, one scripted phone in it.
-// Needs the REAL intro timing (7 s): the server of narration-room.cjs.
+// Needs the REAL intro timing (27 s + the 3-2-1): the server of narration-room.cjs.
 //   BASE_URL=http://localhost:5279 SERVER_URL=http://localhost:8879 node tests/e2e/narration-intros.cjs
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -29,7 +29,7 @@ const covered = (page) =>
     const pic = { left: r.left + (r.width - w) / 2, right: r.left + (r.width + w) / 2, top: r.bottom - img.naturalHeight * k, bottom: r.bottom };
     const mine = [pic, nr.querySelector('.nr-bubble').getBoundingClientRect()];
     const out = [];
-    for (const sel of ['.hs-intro-round', '.hs-intro-title', '.hs-intro-text', '.hs-intro-foot > *', '.hs-intro-emoji', '.hs-progress', '.hs-countdown-num', '.hs-countdown-game', '.hs-countdown-hint']) {
+    for (const sel of ['.hs-intro-round', '.hs-intro-title', '.hs-howto-text', '.hs-intro-start', '.hs-intro-foot > *', '.hs-intro-emoji', '.hs-progress', '.hs-countdown-num', '.hs-countdown-game', '.hs-countdown-hint']) {
       for (const el of document.querySelectorAll(sel)) {
         // a line of text is judged by its letters (a heading's block box is as wide as its container)
         let b = el.getBoundingClientRect();

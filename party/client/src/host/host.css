@@ -1434,41 +1434,6 @@ body {
 .hs-intro.has-art .hs-intro-title {
   font-size: calc(150 * var(--hu));
 }
-/* how to play: a white speech box with a red tab; plain Rubik, big */
-.hs-intro-text {
-  position: relative;
-  max-width: calc(1340 * var(--hu));
-  margin: calc(14 * var(--hu)) 0 0;
-  padding: calc(36 * var(--hu)) calc(46 * var(--hu)) calc(28 * var(--hu));
-  border: calc(5.5 * var(--hu)) solid var(--ink);
-  border-radius: calc(30 * var(--hu));
-  font-size: calc(58 * var(--hu));
-  font-weight: 700;
-  line-height: 1.24;
-  color: var(--ink);
-  background: #fff;
-  box-shadow: calc(8 * var(--hu)) calc(10 * var(--hu)) 0 var(--ink);
-  animation: hs-settle 520ms cubic-bezier(0.2, 1.4, 0.4, 1) 100ms both;
-  text-wrap: balance;
-}
-.hs-intro.has-art .hs-intro-text {
-  max-width: calc(1120 * var(--hu));
-  font-size: calc(52 * var(--hu));
-}
-.hs-intro-text::before {
-  content: 'איך משחקים?';
-  position: absolute;
-  top: calc(-30 * var(--hu));
-  inset-inline-start: calc(40 * var(--hu));
-  padding: calc(2 * var(--hu)) calc(22 * var(--hu)) calc(7 * var(--hu));
-  border: calc(4 * var(--hu)) solid var(--ink);
-  border-radius: calc(12 * var(--hu));
-  font: 700 calc(36 * var(--hu)) / 1.1 var(--disp);
-  color: #fff;
-  background: var(--red);
-  box-shadow: calc(3 * var(--hu)) calc(4 * var(--hu)) 0 var(--ink);
-  transform: rotate(-2deg);
-}
 .hs-intro-foot {
   display: flex;
   align-items: center;
@@ -2450,11 +2415,6 @@ body {
   .hs-intro-title,
   .hs-intro.has-art .hs-intro-title {
     font-size: calc(96 * var(--hu));
-  }
-  .hs-intro-text,
-  .hs-intro.has-art .hs-intro-text {
-    padding: calc(30 * var(--hu)) calc(26 * var(--hu)) calc(22 * var(--hu));
-    font-size: calc(40 * var(--hu));
   }
   .hs-qr-card.is-designed,
   .hs-join.is-compact .hs-qr-card.is-designed {

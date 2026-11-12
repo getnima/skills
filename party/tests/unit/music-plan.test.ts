@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { MUSIC } from '../../client/src/host/music-config';
+import { COUNTDOWN_MS, INTRO_MS } from '../../shared/protocol';
 import { DEFAULT_PRELUDE_MS, planMusic, preludeOf, resolveGameSlot, songElapsedMs } from '../../client/src/host/music-plan';
 
 import type { MusicSlot } from '../../client/src/host/music-config';
@@ -10,7 +11,7 @@ import type { RoundPublic } from '../../shared/protocol';
 const PRELUDE = 10_000;
 /** intro begins at 0, play at 10 s, ends at 70 s */
 function round(over: Partial<RoundPublic> = {}): RoundPublic {
-  return { index: 2, number: 3, gameId: 'tap', seed: 7, startAt: 10_000, endAt: 70_000, frozenAt: null, resumeAt: null, finale: null, ...over };
+  return { index: 2, number: 3, gameId: 'tap', seed: 7, startAt: 10_000, countdownMs: 3_000, endAt: 70_000, frozenAt: null, resumeAt: null, finale: null, ...over };
 }
 
 const files = (...have: MusicSlot[]) => (slot: MusicSlot): boolean => have.includes(slot);
@@ -99,7 +100,7 @@ describe('preludeOf / songElapsedMs', () => {
     expect(preludeOf(round({ startAt: 3_000 }), 0)).toBe(3_000);
     expect(preludeOf(round({ frozenAt: 0 }), 50_000)).toBe(10_000);
     expect(preludeOf(round(), 99_000)).toBe(0);
-    expect(DEFAULT_PRELUDE_MS).toBe(10_000);
+    expect(DEFAULT_PRELUDE_MS).toBe(INTRO_MS + COUNTDOWN_MS);
   });
 
   it('counts from the intro and never goes negative', () => {

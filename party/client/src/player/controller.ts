@@ -231,6 +231,9 @@ export function createController(): PlayerController {
   function applyState(state: RoomState): void {
     if (snap.status !== 'in' || state.code !== snap.code) return;
     if (!clock.synced) clock.hint(state.serverNow);
+    // a new intro: measure the server clock afresh before the 3-2-1 (the TV does the same)
+    const before = snap.state;
+    if (state.phase === 'intro' && (before?.phase !== 'intro' || before.round?.index !== state.round?.index) && socket.connected) void clock.sync(6);
     const patch: { -readonly [K in keyof Snapshot]?: Snapshot[K] } = { state };
     // A new round started: forget the previous round's local end.
     if (snap.endedRound !== null && state.round !== null && state.round.index !== snap.endedRound) {

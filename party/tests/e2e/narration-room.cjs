@@ -41,7 +41,7 @@ function installSampler() {
     ['[data-testid=join-url]', 'join link'],
     ['[data-testid=chip]', 'guest'],
     ['.hs-intro-title', 'game title'],
-    ['.hs-intro-text', 'instructions'],
+    ['.hs-howto', 'instructions'],
     ['.sh-rrow.is-on', 'results row'],
     ['.sh-mystery', 'who wins sign'],
     ['.pc:not(.is-hidden) .pc-in', 'standings card'],

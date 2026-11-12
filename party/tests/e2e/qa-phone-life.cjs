@@ -155,7 +155,7 @@ function expectedLeft(host) {
 
     // ───────── round 1 ─────────
     await host.call('host:start', { gameId: 'tap' });
-    await L.waitScreen(A, 'countdown', 12000);
+    await L.waitScreen(A, 'countdown', 35000); // the 27 s how-to first
     // A locks for 5 s in the middle of the countdown
     const tCd = await lock(A, 5000, { freeze: true }, async () => (await L.screen(A)) === 'playing' && Math.abs((await play(A)).leftMs - expectedLeft(host)) < 400, 'A back in the game');
     check(tCd >= 0 && tCd < 1200, `lock 5s across the countdown → playing with the right clock in ${tCd} ms`);

@@ -698,6 +698,7 @@ export class Room {
       gameId: r.gameId,
       seed: r.seed,
       startAt: r.startAt,
+      countdownMs: this.timing.countdownMs,
       endAt: r.endAt,
       frozenAt: r.frozenAt,
       resumeAt: r.resumeAt,

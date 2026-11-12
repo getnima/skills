@@ -74,7 +74,7 @@ const SLOW3G = { offline: false, latency: 2000, downloadThroughput: (400 * 1024)
     await host.call('host:start', { gameId: 'ninja' });
     const tStart = Date.now();
     await Promise.all(pages.map((p) => L.waitScreen(p, 'intro', 15000)));
-    await Promise.all(pages.map((p) => L.waitScreen(p, ['countdown', 'playing'], 20000)));
+    await Promise.all(pages.map((p) => L.waitScreen(p, ['countdown', 'playing'], 35000))); // the 27 s how-to first
     for (const p of pages) {
       const r = p.__reqs.find((x) => /\/assets\/ninja-/.test(x.url));
       check(r && r.t - tStart < 7000, `${p.__name}: game chunk requested during the intro (${r ? r.t - tStart : 'never'} ms after start)`);

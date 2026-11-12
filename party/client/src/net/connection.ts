@@ -47,6 +47,17 @@ export interface ServerClock {
   readonly synced: boolean;
 }
 
+/**
+ * This device's own clock for the sync: monotonic and sub-millisecond (performance.now() on the
+ * epoch's scale), so a wall-clock correction on a phone mid-party cannot shift the 3-2-1, and a
+ * round trip of a few ms is measured as such. Falls back to Date.now() where it is missing.
+ */
+function localNow(): number {
+  const p = typeof performance !== 'undefined' ? performance : null;
+  if (p !== null && typeof p.now === 'function' && typeof p.timeOrigin === 'number' && p.timeOrigin > 0) return p.timeOrigin + p.now();
+  return Date.now();
+}
+
 export function createServerClock(socket: PartySocket): ServerClock {
   let offset = 0;
   let bestRtt = Number.POSITIVE_INFINITY;
@@ -54,14 +65,16 @@ export function createServerClock(socket: PartySocket): ServerClock {
 
   function sample(): Promise<void> {
     return new Promise((resolve) => {
-      const sentAt = Date.now();
+      const sentAt = localNow();
       const timer = setTimeout(resolve, 2_000);
-      socket.emit('time:ping', sentAt, (res) => {
+      socket.emit('time:ping', Date.now(), (res) => {
         clearTimeout(timer);
-        const rtt = Date.now() - sentAt;
+        const now = localNow();
+        const rtt = now - sentAt;
+        // the sample with the shortest round trip is the most symmetric one: keep it
         if (rtt < bestRtt) {
           bestRtt = rtt;
-          offset = res.serverNow + rtt / 2 - Date.now();
+          offset = res.serverNow + rtt / 2 - now;
           sampled = true;
         }
         resolve();
@@ -70,7 +83,7 @@ export function createServerClock(socket: PartySocket): ServerClock {
   }
 
   return {
-    now: (): number => Date.now() + offset,
+    now: (): number => localNow() + offset,
     async sync(samples = 5): Promise<void> {
       // A reconnect (or a long sleep) can land on a different network path: start over.
       bestRtt = Number.POSITIVE_INFINITY;
@@ -78,7 +91,7 @@ export function createServerClock(socket: PartySocket): ServerClock {
     },
     hint(serverNow: number): void {
       if (sampled || !Number.isFinite(serverNow)) return;
-      offset = serverNow - Date.now();
+      offset = serverNow - localNow();
     },
     get synced(): boolean {
       return sampled;

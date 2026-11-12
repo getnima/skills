@@ -203,7 +203,7 @@ const WATCH_FINALE_TV = () => {
     await sleep(1500);
     await tvShot('01-intro');
     const introText = await host.textContent('[data-testid=intro]');
-    check(/האחרון שנשאר באוויר מנצח/.test(introText), 'the TV intro shows the new instructions', introText.slice(0, 80));
+    check(/האחרון באוויר מנצח/.test(introText), 'the TV intro shows the new instructions', introText.slice(0, 80));
     await shot(P1, '01-intro');
 
     // the games are mounted during the countdown; the pilots are armed before GO

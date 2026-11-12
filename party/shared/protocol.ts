@@ -16,8 +16,13 @@ export interface GameMeta {
   /** Hebrew title shown on the TV and on phones. */
   readonly title: string;
   readonly emoji: string;
-  /** One or two short Hebrew sentences shown during the intro phase. */
+  /** One or two short Hebrew sentences: the long form (the README, the remote). */
   readonly instructions: string;
+  /**
+   * How to play, ultra concise: two or three steps, each an emoji and a few words. The TV and the
+   * phones show these during the intro (in Rubik, big), the same on both.
+   */
+  readonly howTo: readonly (readonly [icon: string, text: string])[];
   readonly durationMs: number;
   /**
    * Upper bound on a plausible raw score. The server clamps reported scores
@@ -39,6 +44,11 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     title: 'שימי טאפ',
     emoji: '👆',
     instructions: 'יש לכם 30 שניות להתחיל. מהנגיעה הראשונה: 20 שניות של ספאם על שימי. כל הקשה נקודה!',
+    howTo: [
+      ['👆', 'הקישו על שימי, מהר!'],
+      ['⏱️', '20 שניות מהנגיעה הראשונה'],
+      ['➕', 'כל הקשה = נקודה'],
+    ],
     // 30 s start window + 20 s personal sprint + a 3 s hold for the last starter's final frame
     durationMs: 53_000,
     maxRaw: 300,
@@ -49,6 +59,11 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     title: 'אייסי שימי',
     emoji: '🧊',
     instructions: 'טפסו כמה שיותר גבוה על מדרגות הקרח. צוברים מהירות – קופצים גבוה יותר. לא ליפול!',
+    howTo: [
+      ['👈👉', 'מחזיקים צד = רצים'],
+      ['⬆️', 'קופצים לבד. מהר = גבוה'],
+      ['🏆', 'הכי גבוה מנצח'],
+    ],
     durationMs: 75_000,
     maxRaw: 100_000,
     mode: 'score',
@@ -58,6 +73,11 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     title: 'פלאפי תבורי',
     emoji: '🐤',
     instructions: 'הקישו כדי לעוף. מי שמתרסק - בחוץ! האחרון שנשאר באוויר מנצח.',
+    howTo: [
+      ['👆', 'הקשה = עפים למעלה'],
+      ['💥', 'נגיעה = בחוץ'],
+      ['🏆', 'האחרון באוויר מנצח'],
+    ],
     // Hard cap only: the round ends 1.5 s after one player is left (normally 20-50 s).
     durationMs: 90_000,
     // Raw = distance flown in tenths of a course unit (at most ~60 units/s for 90 s).
@@ -69,6 +89,11 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     title: 'פלוצל',
     emoji: '💨',
     instructions: 'מגיעים מהמילה שעל המסך ל״פלוץ״. בכל צעד משנים אות אחת, וכל צעד חייב להיות מילה אמיתית. הניקוד: 80% מהירות, 20% כמה שפחות צעדים. אז מהר!',
+    howTo: [
+      ['🔤', 'משנים אות אחת בכל צעד'],
+      ['✅', 'כל צעד = מילה אמיתית'],
+      ['💨', 'מגיעים ל״פלוץ״. מהר!'],
+    ],
     durationMs: 120_000,
     maxRaw: 30_000,
     mode: 'score',
@@ -78,6 +103,11 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     title: 'נינג׳ה תבורי',
     emoji: '🗡️',
     instructions: 'חתכו את כל מה שעף באוויר – אבל לא את הפצצה עם הפתיל. זה אנחנו!',
+    howTo: [
+      ['👉', 'מחליקים = חותכים'],
+      ['💣', 'לא את הפצצה!'],
+      ['🔥', '3 בהחלקה אחת = בונוס'],
+    ],
     durationMs: 60_000,
     maxRaw: 20_000,
     mode: 'score',
@@ -86,9 +116,18 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
 
 // ───────────────────────────── Timing ─────────────────────────────
 
-/** Instructions screen before the countdown. */
-export const INTRO_MS = 7_000;
-/** 3-2-1 countdown right before `round.startAt`. */
+/**
+ * Instructions screen before the countdown, on the TV and on every phone: with the 3-2-1 the
+ * game starts 30 s after the intro opens (the owner: "the instructions are played like 30 seconds
+ * until the game starts").
+ */
+export const INTRO_MS = 27_000;
+/**
+ * 3-2-1 countdown right before `round.startAt`. Every screen draws it from the server clock (the
+ * TV and the phones switch to it at `startAt - COUNTDOWN_MS` by the clock, not when the phase
+ * message arrives) and the TV plays its beeps and the start gong scheduled on the audio clock at
+ * those exact instants.
+ */
 export const COUNTDOWN_MS = 3_000;
 /** After `round.endAt` the server waits this long for `player:final` before scoring. */
 export const FINAL_GRACE_MS = 1_500;
@@ -171,8 +210,13 @@ export interface RoundPublic {
   readonly gameId: GameId;
   /** Same seed for every player, so every phone gets the same level. */
   readonly seed: number;
-  /** Server epoch ms. The intro runs until `startAt - COUNTDOWN_MS`. */
+  /** Server epoch ms. The intro runs until `startAt - countdownMs`. */
   readonly startAt: number;
+  /**
+   * How long this round's 3-2-1 is (COUNTDOWN_MS; shorter only under the test timing). Every
+   * screen turns the intro into the 3-2-1 at `startAt - countdownMs` by the server clock.
+   */
+  readonly countdownMs: number;
   readonly endAt: number;
   /**
    * Set while the round clock is frozen (a cutscene is playing): the round's

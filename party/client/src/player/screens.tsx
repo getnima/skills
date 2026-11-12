@@ -121,12 +121,19 @@ export function Movement(props: { readonly rank: number; readonly prev: number |
 
 // ───────────────────────────── Intro / countdown / late ─────────────────────────────
 
-export function IntroScreen(props: { readonly round: RoundPublic }): JSX.Element {
+/**
+ * How to play, while the TV shows the same: the game's two or three steps (ultra concise, Rubik)
+ * and the seconds to the start, read from the server clock like the TV's.
+ */
+export function IntroScreen(props: { readonly round: RoundPublic; readonly ctl: PlayerController }): JSX.Element {
   const game = GAMES[props.round.gameId];
   useEffect(() => {
     preloadGame(props.round.gameId);
     sfx.whoosh();
   }, [props.round.gameId]);
+  useTick(250);
+  const rt = roundTime(props.round, props.ctl.now());
+  const secs = Math.max(1, Math.ceil(-rt.elapsedMs / 1000));
   return (
     <div class={`pp-screen pw ps pp-intro pp-game-${game.id}`}>
       <header class="pw-bar">
@@ -146,7 +153,19 @@ export function IntroScreen(props: { readonly round: RoundPublic }): JSX.Element
       <div class="pw-tray ps-intro-tray">
         <div class="ps-say">
           <span class="ps-tab">איך משחקים</span>
-          <p class="pp-intro-text">{game.instructions}</p>
+          <ol class="ps-howto" aria-label="איך משחקים">
+            {game.howTo.map(([icon, text]) => (
+              <li class="ps-howto-step" key={text}>
+                <span class="ps-howto-icon" dir="ltr" aria-hidden="true">
+                  {icon}
+                </span>
+                <span class="ps-howto-text">{text}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div class={`ps-intro-start ${rt.frozen ? 'is-frozen' : ''}`} data-testid="intro-start">
+          מתחילים בעוד <Num>{secs}</Num>
         </div>
       </div>
     </div>
@@ -166,13 +185,10 @@ export function CountdownOverlay(props: { readonly ctl: PlayerController; readon
   useEffect(() => {
     if (last.current === key || done) return;
     last.current = key;
-    if (key === 'go') {
-      sfx.go();
-      haptic.success();
-    } else {
-      sfx.tick(key === 1 ? 1.5 : 1);
-      haptic.tap();
-    }
+    // silent on the phone: the TV plays the 3-2-1 and the gong, on the same clock (a room of
+    // phones beeping a few ms apart would smear it); the phone only buzzes on each digit
+    if (key === 'go') haptic.success();
+    else haptic.tap();
   }, [key, done]);
   const game = GAMES[props.round.gameId];
   if (done) return null;

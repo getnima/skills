@@ -52,7 +52,7 @@ const watchFirstFrame = (page, sel, parts) =>
       const { ctx, page, errors, code } = await openHost(browser, { viewport: { width: w, height: h } });
       phones = await scriptedPhones(code, ['דנה', 'Yossi'], (i, t) => t / 30);
       await page.mouse.click(w / 2, 40);
-      await watchFirstFrame(page, '[data-testid=intro]', ['.hs-intro-round', '.hs-intro-emoji', '.hs-intro-title', '.hs-intro-text', '.hs-intro-foot']);
+      await watchFirstFrame(page, '[data-testid=intro]', ['.hs-intro-round', '.hs-intro-emoji', '.hs-intro-title', '.hs-howto', '.hs-intro-foot']);
       await page.keyboard.press('KeyN');
       await page.waitForFunction(() => window.__first !== null, null, { timeout: 8000 });
       await page.screenshot({ path: path.join(dir, `${w}x${h}-intro-first.png`) });
