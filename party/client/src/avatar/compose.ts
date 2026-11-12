@@ -51,6 +51,8 @@ function loadPic(url: string): Promise<Pic | null> {
         pics.set(url, pic);
         failedAt.delete(url);
         resolve(pic);
+        // the half-size copies are part of loading: made now, in a quiet moment, not inside the first compose
+        schedule(() => void mipFor(pic, 20));
       } else {
         failedAt.set(url, Date.now());
         resolve(null);
@@ -74,6 +76,12 @@ export function preloadAvatarAssets(): Promise<void> {
   return Promise.all([DOLL.file, ...ITEMS.map((i) => i.file)].map(loadPic)).then(() => undefined);
 }
 
+/**
+ * Every canvas here lives in plain memory, not on the GPU: the pictures are small, they are read
+ * back right away (BMP), and mixing GPU and memory canvases costs a readback on every drawImage.
+ */
+const SOFT: CanvasRenderingContext2DSettings = { willReadFrequently: true };
+
 function makeCanvas(w: number, h: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(w));
@@ -89,7 +97,7 @@ function mipFor(pic: Pic, dw: number): Source {
     const prev = pic.mips[i - 1];
     if (prev === undefined) break;
     const c = makeCanvas(pic.width / 2 ** i, pic.height / 2 ** i);
-    const g = c.getContext('2d');
+    const g = c.getContext('2d', SOFT);
     if (g === null) break;
     g.imageSmoothingQuality = 'high';
     g.drawImage(prev, 0, 0, c.width, c.height);
@@ -226,7 +234,7 @@ function scratchCtx(which: 1 | 2, size: number): CanvasRenderingContext2D | null
     c.width = size;
     c.height = size;
   }
-  const g = c.getContext('2d');
+  const g = c.getContext('2d', SOFT);
   if (g === null) return null;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.globalCompositeOperation = 'source-over';
@@ -239,8 +247,7 @@ function composeInner(input: AvatarLook | string, opts: ComposeOptions): Compose
   const crop = opts.crop ?? 'icon';
   const look = normalizeLook(typeof input === 'string' ? decodeLook(input) : input);
   const out = makeCanvas(size, size);
-  // small pictures are read back (BMP) right after: keep them in plain memory, not on the GPU
-  const g = out.getContext('2d', { willReadFrequently: size <= 192 });
+  const g = out.getContext('2d', SOFT);
   if (g === null) return { canvas: out, complete: false };
   if (opts.plate !== false) drawPlate(g, look.bg, size);
 
@@ -526,7 +533,7 @@ function fromBigger(r: Request): Composed | null {
     }
     if (big === undefined) continue;
     const c = makeCanvas(r.bucket, r.bucket);
-    const g = c.getContext('2d', { willReadFrequently: true });
+    const g = c.getContext('2d', SOFT);
     if (g === null) return null;
     g.imageSmoothingQuality = 'high';
     g.drawImage(big, 0, 0, r.bucket, r.bucket);
@@ -628,10 +635,10 @@ export function canvasToBmp(canvas: HTMLCanvasElement): Blob | null {
     const g = canvas.getContext('2d');
     if (g === null) return null;
     const src = new Uint32Array(g.getImageData(0, 0, w, h).data.buffer);
-    const out = new ArrayBuffer(54 + w * h * 4);
-    const v = new DataView(out);
+    const head = new ArrayBuffer(54);
+    const v = new DataView(head);
     v.setUint16(0, 0x4d42, true); // "BM"
-    v.setUint32(2, out.byteLength, true);
+    v.setUint32(2, 54 + w * h * 4, true);
     v.setUint32(10, 54, true); // pixel data offset
     v.setUint32(14, 40, true); // BITMAPINFOHEADER
     v.setInt32(18, w, true);
@@ -641,17 +648,18 @@ export function canvasToBmp(canvas: HTMLCanvasElement): Blob | null {
     v.setUint32(34, w * h * 4, true);
     v.setUint32(38, 2835, true);
     v.setUint32(42, 2835, true);
-    const dst = new DataView(out, 54);
     // canvas pixels are RGBA bytes = 0xAABBGGRR as little-endian words; BMP wants BGRX bytes = 0xXXRRGGBB
+    // (every phone, laptop and TV box is little-endian)
+    const dst = new Uint32Array(w * h);
     let o = 0;
     for (let y = h - 1; y >= 0; y--) {
-      let i = y * w;
-      for (let x = 0; x < w; x++, i++, o += 4) {
-        const p = src[i] ?? 0;
-        dst.setUint32(o, ((p & 0xff) << 16) | (p & 0xff00) | ((p >>> 16) & 0xff) | 0xff000000, true);
+      const end = y * w + w;
+      for (let i = y * w; i < end; i++) {
+        const p = src[i] as number;
+        dst[o++] = ((p & 0xff) << 16) | (p & 0xff00) | ((p >>> 16) & 0xff) | 0xff000000;
       }
     }
-    return new Blob([out], { type: 'image/bmp' });
+    return new Blob([head, dst], { type: 'image/bmp' });
   } catch {
     return null;
   }

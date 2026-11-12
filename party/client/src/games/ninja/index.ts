@@ -25,7 +25,7 @@ import { createInput } from '../../kit/input';
 import { createLoop, STEP_S } from '../../kit/loop';
 import { COLORS } from '../../kit/theme';
 import { GAMES } from '../../../../shared/protocol';
-import { BODY_RADIUS, buildHalves, buildSplats, createBackdrop, FRUIT_STYLES, GOLD_STYLE, loadNinjaArt } from './art';
+import { BODY_RADIUS, buildHalves, buildSplats, createBackdrop, GOLD_STYLE, loadNinjaArt } from './art';
 import { PAL, blit, createStickerCache, loadDisplayFont, renderChip, renderSticker } from './look';
 import { buildSchedule, GRAVITY, LAUNCH_Y, scheduleSignature } from './waves';
 
@@ -327,9 +327,9 @@ function segDist2(ax: number, ay: number, bx: number, by: number, cx: number, cy
   return ex * ex + ey * ey;
 }
 
-function styleOf(kind: ThrowKind, variant: number): FruitStyle {
+function styleOf(styles: readonly FruitStyle[], kind: ThrowKind, variant: number): FruitStyle {
   if (kind === 'gold') return GOLD_STYLE;
-  return FRUIT_STYLES[variant] ?? GOLD_STYLE;
+  return styles[variant] ?? GOLD_STYLE;
 }
 
 // ───────────────────────────── Game ─────────────────────────────
@@ -340,10 +340,10 @@ export const game: GameModule = {
     const [art] = await Promise.all([loadNinjaArt(), loadDisplayFont()]);
     const backdrop = createBackdrop(art.background, 1.06);
     // pre-cut halves: index = fruit variant, then one per golden look
-    const halfArt = [...art.targets.map((d, i) => buildHalves(d, FRUIT_STYLES[i] ?? GOLD_STYLE)), ...art.golds.map((d) => buildHalves(d, GOLD_STYLE))];
+    const halfArt = [...art.targets.map((d, i) => buildHalves(d, art.styles[i] ?? GOLD_STYLE)), ...art.golds.map((d) => buildHalves(d, GOLD_STYLE))];
     // juice decals: three blob shapes per juice colour, pre-rendered once
     const splatArt = new Map<string, HTMLCanvasElement[]>();
-    for (const st of [...FRUIT_STYLES, GOLD_STYLE]) if (!splatArt.has(st.juice)) splatArt.set(st.juice, buildSplats(st.juice, 3));
+    for (const st of [...art.styles, GOLD_STYLE]) if (!splatArt.has(st.juice)) splatArt.set(st.juice, buildSplats(st.juice, 3));
     const stickers = createStickerCache(24);
     /** Which golden look a throw wears (looks only). */
     const goldLook = (id: number): number => id % art.golds.length;
@@ -645,7 +645,7 @@ export const game: GameModule = {
       }
       hintDone = true;
       sliced++;
-      const st = styleOf(f.kind, f.variant);
+      const st = styleOf(art.styles, f.kind, f.variant);
       addHalves(f, x, y, angle);
       const big = Math.min(blade.swipe + 1, 6);
       addSplat(x, y, st.juice, R * (1.5 + (big >= COMBO_MIN ? 0.18 * big : 0)));
@@ -1203,7 +1203,9 @@ export const game: GameModule = {
         renderSticker(c.text, { size, fill: c.color, shadow: PAL.red, sub: c.sub || undefined, subFill: PAL.yel2 }, old),
       );
       g.globalAlpha = fade;
-      blit(g, st, c.x, c.y - t * 22, pop * Math.min(1, (W - 12) / st.w));
+      const fit = Math.min(1, (W - 12) / st.w);
+      const half = (st.w * fit) / 2;
+      blit(g, st, clamp(c.x, half + 6, W - half - 6), c.y - t * 22, pop * fit);
       g.globalAlpha = 1;
     }
 

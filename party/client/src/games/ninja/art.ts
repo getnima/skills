@@ -23,7 +23,7 @@ export const BODY_RADIUS = 0.42;
 
 const INK = PAL.ink;
 
-export type Inside = 'melon' | 'citrus' | 'apple' | 'stone' | 'gold';
+export type Inside = 'melon' | 'citrus' | 'apple' | 'stone' | 'arils' | 'berry' | 'gold';
 
 export interface FruitStyle {
   /** Juice color of the splash and the cut edge. */
@@ -36,8 +36,19 @@ export interface FruitStyle {
   readonly inside: Inside;
 }
 
-/** Juice per target_N (index = variant). Stays when real art replaces the placeholder. */
+/**
+ * Juice and inside of the owner's target_N files (index = variant): watermelon, orange,
+ * lemon, pomegranate, strawberry. Change here if other pictures go into those slots.
+ */
 export const FRUIT_STYLES: readonly FruitStyle[] = [
+  { juice: '#ff3b5c', flesh: '#ff6f86', rind: '#2fb35a', inside: 'melon' }, // watermelon
+  { juice: '#ff9a1f', flesh: '#ffc061', rind: '#ff9a1f', inside: 'citrus' }, // orange
+  { juice: '#ffe03d', flesh: '#fff3a0', rind: '#ffd400', inside: 'citrus' }, // lemon
+  { juice: '#d7193f', flesh: '#fbe7c6', rind: '#9e1530', inside: 'arils' }, // pomegranate
+  { juice: '#ff2e4d', flesh: '#ff7a8c', rind: '#e8202f', inside: 'berry' }, // strawberry
+];
+/** Juice and inside of the drawn fallbacks (when a target_N file is missing). */
+export const PLACEHOLDER_STYLES: readonly FruitStyle[] = [
   { juice: '#ff3b5c', flesh: '#ff6f86', rind: '#2fb35a', inside: 'melon' }, // watermelon
   { juice: '#ff9a1f', flesh: '#ffc061', rind: '#ff9a1f', inside: 'citrus' }, // orange
   { juice: '#ff4d3d', flesh: '#fff1d6', rind: '#ff3d3d', inside: 'apple' }, // apple
@@ -584,6 +595,8 @@ function goldSkin(key: string, prop: Drawable): Drawable {
 export interface NinjaArt {
   /** target_1..target_5, index = Throw.variant. */
   readonly targets: readonly Drawable[];
+  /** Juice / inside per target (the owner's file style, or the drawn fallback's). */
+  readonly styles: readonly FruitStyle[];
   /** The golden target's looks (one is picked per throw, by its id: looks only). */
   readonly golds: readonly Drawable[];
   readonly bomb: Drawable;
@@ -667,8 +680,10 @@ export async function loadNinjaArt(): Promise<NinjaArt> {
     sp.ctx.fillStyle = '#ffffff';
     sp.ctx.fill();
   }
+  const targets = [a.target_1, a.target_2, a.target_3, a.target_4, a.target_5];
   return {
-    targets: [a.target_1, a.target_2, a.target_3, a.target_4, a.target_5],
+    targets,
+    styles: targets.map((d, i) => (d.isPlaceholder ? PLACEHOLDER_STYLES[i] : FRUIT_STYLES[i]) ?? GOLD_STYLE),
     golds,
     bomb: a.bomb,
     background: a.background,
@@ -805,6 +820,42 @@ function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number
       g.fill();
       g.lineWidth = Math.max(2, rx * 0.035);
       g.strokeStyle = INK;
+      g.stroke();
+      break;
+    }
+    case 'arils': {
+      // white membrane, packed ruby seeds
+      g.fillStyle = '#c4122f';
+      for (let j = 0; j < 4; j++) {
+        for (let i = 0; i < 9; i++) {
+          const a = (i / 9) * Math.PI * 2 + j * 0.35;
+          const d = 0.2 + j * 0.2;
+          g.beginPath();
+          g.ellipse(cx + Math.cos(a) * fx * d, cy + Math.sin(a) * fy * d, rx * 0.075, ry * 0.17, 0, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      g.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + 0.35;
+        g.fillRect(cx + Math.cos(a) * fx * 0.4 - 2, cy + Math.sin(a) * fy * 0.4 - 2, 4, 3);
+      }
+      break;
+    }
+    case 'berry': {
+      // pale heart and white veins towards the rim
+      g.beginPath();
+      g.ellipse(cx, cy, fx * 0.45, fy * 0.5, 0, 0, Math.PI * 2);
+      g.fillStyle = '#ffd3da';
+      g.fill();
+      g.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      g.lineWidth = Math.max(2, rx * 0.025);
+      g.beginPath();
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        g.moveTo(cx + Math.cos(a) * fx * 0.45, cy + Math.sin(a) * fy * 0.5);
+        g.lineTo(cx + Math.cos(a) * fx * 0.92, cy + Math.sin(a) * fy * 0.92);
+      }
       g.stroke();
       break;
     }

@@ -272,8 +272,115 @@ async function sheet(name, pairs) {
   await browser.close();
 }
 
+
+// ───────────────────────────── freeze + lifecycle ─────────────────────────────
+
+/** While frozen nothing moves: the canvas pixels (and the DOM layers) are identical 700 ms apart; resume continues. */
+async function freezeCheck(game, hook, play) {
+  const browser = await chromium.launch();
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(`${BASE}/dev.html?game=${game}&seed=11&duration=40000`);
+  await page.waitForFunction((h) => !!window[h], hook, { timeout: 15000 });
+  const cdp = await context.newCDPSession(page);
+  await play(page, cdp);
+  await page.evaluate(() => window.__party.freeze(2000));
+  await sleep(200);
+  const snap = () =>
+    page.evaluate(() => {
+      const root = document.querySelector('.pa-stage-game');
+      const cs = [...root.querySelectorAll('canvas')];
+      let h = 0;
+      const s = cs[0].toDataURL();
+      for (let i = 0; i < s.length; i += 7) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+      return { hash: h, layers: cs.slice(1).map((c) => c.style.transform + '|' + c.style.opacity).join(','), frozen: window.__party.frozen };
+    });
+  const a = await snap();
+  await sleep(700);
+  const b = await snap();
+  await page.waitForFunction(() => !window.__party.frozen, null, { timeout: 5000 });
+  await sleep(400);
+  const c = await snap();
+  await context.close();
+  await browser.close();
+  const ok = a.frozen && b.frozen && a.hash === b.hash && a.layers === b.layers && c.hash !== b.hash;
+  console.log(JSON.stringify({ game, frozenSame: a.hash === b.hash && a.layers === b.layers, movesAfterResume: c.hash !== b.hash, errors }));
+  console.log(ok && errors.length === 0 ? 'ok   freeze: nothing animates while frozen, resumes after' : 'FAIL freeze');
+}
+
+/** Five create / destroy cycles in one page (destroy twice each): listeners, canvases this code released, heap. */
+async function lifecycle(game) {
+  const browser = await chromium.launch();
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(`${BASE}/dev.html?kit=1`);
+  await sleep(500);
+  const cdp = await context.newCDPSession(page);
+  const listeners = async () => {
+    let n = 0;
+    for (const expr of ['window', 'document']) {
+      const { result } = await cdp.send('Runtime.evaluate', { expression: expr });
+      const { listeners: l } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId });
+      n += l.length;
+    }
+    return n;
+  };
+  await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerdown')));
+  await page.evaluate(async (g) => {
+    document.body.innerHTML = '';
+    window.__mod = await import(`/src/games/${g}/index.ts`);
+    // count every canvas made from here on
+    window.__made = [];
+    const orig = document.createElement.bind(document);
+    document.createElement = (tag, o) => {
+      const el = orig(tag, o);
+      if (String(tag).toLowerCase() === 'canvas') window.__made.push(el);
+      return el;
+    };
+  }, game);
+  const before = await listeners();
+  const rounds = [];
+  for (let r = 0; r < 5; r++) {
+    const res = await page.evaluate(async (r) => {
+      const from = window.__made.length;
+      const root = document.createElement('div');
+      root.style.cssText = 'position:fixed;inset:0';
+      document.body.appendChild(root);
+      const ctx = { root, seed: 3 + r, durationMs: 60000, timeLeftMs: () => 50000, isPaused: () => false, hudHeight: 66, safeBottom: 0, setScore() {}, finish() {} };
+      const inst = await window.__mod.game.create(ctx);
+      await new Promise((ok) => setTimeout(ok, 700));
+      inst.destroy();
+      inst.destroy();
+      const made = window.__made.slice(from);
+      const leftInDom = root.querySelectorAll('*').length;
+      root.remove();
+      return { made: made.length, stillSized: made.filter((c) => c.width * c.height > 0).length, mpxStillSized: +(made.reduce((a, c) => a + c.width * c.height, 0) / 1e6).toFixed(2), leftInDom };
+    }, r);
+    await cdp.send('HeapProfiler.collectGarbage');
+    const heap = await cdp.send('Runtime.getHeapUsage');
+    rounds.push({ ...res, heapMB: +(heap.usedSize / 1e6).toFixed(1), listeners: await listeners() });
+  }
+  console.log(game, 'listeners before', before);
+  console.table(rounds);
+  const ok = rounds.every((x) => x.listeners === before && x.leftInDom === 0) && rounds[4].heapMB <= rounds[1].heapMB + 2 && errors.length === 0;
+  console.log(ok ? 'ok   lifecycle: 5 cycles, destroy twice, no listeners / DOM left, heap flat' : 'FAIL lifecycle', errors);
+  await browser.close();
+}
+
 (async () => {
-  if (MODE === 'proof') await proof();
+  if (MODE === 'freeze') await freezeCheck('ninja', '__ninja', async (page, cdp) => {
+      await sleep(2500);
+      const p = [];
+      p.push(cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 30, y: 500, id: 1 }] }));
+      for (let i = 1; i <= 10; i++) { await sleep(16); p.push(cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 30 + i * 33, y: 500 - i * 10, id: 1 }] })); }
+      await Promise.all(p);
+    });
+  else if (MODE === 'life') await lifecycle('ninja');
+  else if (MODE === 'proof') await proof();
   else if (MODE === 'perf') await perf();
   else if (MODE === 'shots') await shots();
   else if (MODE === 'sheet') {

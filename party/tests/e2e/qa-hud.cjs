@@ -241,7 +241,12 @@ function meBarRead(page) {
 
 const BOT_NAMES = ['דנה', 'Mike 🎸', 'רון', '🦄 יוני', 'Tal', 'אביגיל', 'Omer K', 'מאיה', 'בן', 'אלכסנדר מגדול'];
 
+function clearShots(keep) {
+  for (const f of fs.readdirSync(OUT)) if (f.endsWith('.png') && !keep(f)) fs.unlinkSync(path.join(OUT, f));
+}
+
 async function flow() {
+  clearShots((f) => f.startsWith('game-'));
   const browser = await L.launch();
   let bots = null;
   let host = null;
@@ -575,6 +580,7 @@ async function flow() {
 // ───────────────────────────── games ─────────────────────────────
 
 async function games() {
+  clearShots((f) => !f.startsWith('game-'));
   const browser = await L.launch();
   const host = L.createHost();
   let bots = null;

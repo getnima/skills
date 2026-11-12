@@ -241,7 +241,10 @@ function Picker(props: {
   const lit = props.selected ?? defaultPick(props.model);
   return (
     <section class="rm-games" data-testid="picker">
-      <div class="rm-sec-title">בחרו משחק</div>
+      <div class="rm-sec-title">
+        <span>בחרו משחק</span>
+        <span class="rm-live-count">נגיעה בוחרת · הכפתור מתחיל</span>
+      </div>
       <div class="rm-game-row">
         {start.items.map((item) => {
           const g = item.arg as GameId;
@@ -293,6 +296,71 @@ function LiveTop(props: { readonly link: RemoteLink }): JSX.Element {
             </span>
             <span class="rm-score" dir="ltr">
               {r.score.toLocaleString('he-IL')}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function Players(props: { readonly link: RemoteLink }): JSX.Element {
+  const players = props.link.state?.players ?? [];
+  const { online } = connectedCount(props.link.state);
+  return (
+    <section class="rm-live" data-testid="players-panel">
+      <div class="rm-sec-title">
+        <span>👥 בחדר</span>
+        <span class="rm-live-count">
+          {players.length} שחקנים{online < players.length ? ` · ${online} מחוברים` : ''}
+        </span>
+      </div>
+      {players.length === 0 ? (
+        <p class="rm-top5-empty">עוד אף אחד… הקוד על המסך</p>
+      ) : (
+        <div class="rm-chips">
+          {players.map((p) => (
+            <span key={p.id} class={`rm-chip ${p.connected ? '' : 'is-away'}`} dir="auto">
+              {p.name}
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The round's results, once the TV revealed the winner (the owner is not spoiled either). */
+function RoundTop(props: { readonly link: RemoteLink }): JSX.Element {
+  const res = props.link.state?.results ?? null;
+  const revealed = res !== null && props.link.clock.now() >= res.revealAt;
+  useEvery(500, res !== null && !revealed);
+  if (res === null || !revealed) {
+    return (
+      <section class="rm-live" data-testid="round-top">
+        <div class="rm-sec-title">
+          <span>🥁 התוצאות</span>
+        </div>
+        <p class="rm-top5-empty">נחשפות עכשיו על המסך…</p>
+      </section>
+    );
+  }
+  const rows = [...res.rows].sort((a, b) => a.roundRank - b.roundRank).slice(0, 5);
+  return (
+    <section class="rm-live" data-testid="round-top">
+      <div class="rm-sec-title">
+        <span>🏆 {GAMES[res.gameId].title}</span>
+        <span class="rm-live-count">נקודות בסיבוב</span>
+      </div>
+      <ol class="rm-top5">
+        {rows.map((r) => (
+          <li key={r.playerId} class={`rm-top5-row ${r.roundRank === 1 ? 'is-first' : ''}`}>
+            <span class="rm-place">{r.roundRank}</span>
+            <span class="rm-name" dir="auto">
+              {r.name}
+            </span>
+            <span class="rm-score" dir="ltr">
+              +{r.points.toLocaleString('he-IL')}
             </span>
           </li>
         ))}
@@ -530,19 +598,16 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
   const cutAction = act('cutscene');
   const kickAction = act('kick');
 
+  // the top half is for reading, the bottom half (the thumb's reach) for pressing
   let mid: JSX.Element | null = null;
-  if (running && s?.cutscene === null) mid = <LiveTop link={link} />;
-  else if (between && model !== null && live) {
-    mid = (
-      <Picker
-        model={model}
-        selected={selected}
-        enabled={live}
-        onPick={(g) => setSelected((cur) => (cur === g ? null : g))}
-      />
-    );
-  } else if (phase === 'final') mid = <Standings link={link} title="🏆 הדירוג הסופי" />;
-  else if (running) mid = <LiveTop link={link} />;
+  if (running) mid = <LiveTop link={link} />;
+  else if (phase === 'results') mid = <RoundTop link={link} />;
+  else if (phase === 'final') mid = <Standings link={link} title="🏆 הדירוג הסופי" />;
+  else if (phase === 'lobby') mid = s !== null && (s.played.length > 0 || s.results !== null) ? <Standings link={link} title="🏅 הדירוג עד עכשיו" /> : <Players link={link} />;
+  const picker =
+    between && model !== null ? (
+      <Picker model={model} selected={selected} enabled={live} onPick={(g) => setSelected((cur) => (cur === g ? null : g))} />
+    ) : null;
 
   return (
     <div class={`rm-page rm-main ${live ? '' : 'is-dead'}`} data-testid="main" data-phase={phase ?? 'none'}>
@@ -560,6 +625,14 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
           {model?.hint ?? 'מחכים למסך…'}
         </div>
       )}
+
+      <div class="rm-mid">{mid}</div>
+
+      {tvDown && !serverDown ? null : picker}
+
+      <div class={`rm-flash ${flash === null ? '' : flash.ok ? 'is-ok' : 'is-bad'}`} data-testid="flash" role="status">
+        {flash?.text ?? ''}
+      </div>
 
       {tvDown && !serverDown ? (
         <div class="rm-rescue" data-testid="rescue">
@@ -601,12 +674,6 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
           <span class="rm-big-label">{big?.label ?? (live ? 'אין מה ללחוץ עכשיו' : 'מחכים למסך…')}</span>
         </button>
       )}
-
-      <div class={`rm-flash ${flash === null ? '' : flash.ok ? 'is-ok' : 'is-bad'}`} data-testid="flash" role="status">
-        {flash?.text ?? ''}
-      </div>
-
-      <div class="rm-mid">{mid}</div>
 
       <nav class="rm-tray">
         {secondary.map((a) => (

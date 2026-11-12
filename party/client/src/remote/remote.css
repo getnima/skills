@@ -453,9 +453,36 @@ body {
   text-shadow: 0.05em 0.06em 0 var(--ink);
 }
 .rm-games {
+  flex: none;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  padding-top: 10px;
+}
+.rm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 0;
+  overflow: hidden;
+}
+.rm-chip {
+  padding: 5px 11px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--ink);
+  font: 900 15px/1.2 var(--ui);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.rm-chip:nth-child(3n + 1) {
+  background: var(--yel);
+}
+.rm-chip:nth-child(3n + 2) {
+  background: var(--pink);
+}
+.rm-chip.is-away {
+  opacity: 0.55;
 }
 .rm-game-row {
   display: grid;
@@ -598,6 +625,7 @@ body {
 /* ───────────── main: the tray ───────────── */
 .rm-tray {
   flex: none;
+  margin-top: 8px;
   display: grid;
   grid-auto-columns: minmax(0, 1fr);
   grid-auto-flow: column;
