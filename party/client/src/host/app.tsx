@@ -51,8 +51,6 @@ interface PrimaryAction {
 
 /** Keyboard actions are ignored this long after the phase changed (Space-Space must not skip two screens). */
 const KEY_GUARD_MS = 1_500;
-/** Clicks on the main button are ignored this long after the phase changed (a double click). */
-const CLICK_GUARD_MS = 700;
 /** A risky action asks for a second press within this window. */
 const ARM_MS = 3_500;
 /** ...but not sooner than this after the first one (a double tap does not count). */
@@ -326,8 +324,8 @@ export function App(): JSX.Element {
     }
   }
   const runPrimary = (): void => {
-    // a double click must not land on the next screen's button too
-    if (primary === null || performance.now() - phaseAt.current < CLICK_GUARD_MS) return;
+    // (a double click's second click never gets here: Btn drops it, so it cannot land on the next screen's button)
+    if (primary === null) return;
     const p = primary;
     if (p.confirm !== undefined) twice(p.confirm, p.run);
     else p.run();

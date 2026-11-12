@@ -197,3 +197,50 @@ const handPainter: Painter = (ctx, w, h) => {
   roundRectPath(ctx, w * 0.5 - fw * 0.28, h * 0.07, fw * 0.56, h * 0.09, fw * 0.2);
   ctx.fill();
 };
+
+/**
+ * The backdrop pre-scaled once to the canvas' device pixels and then copied 1:1 every
+ * frame. A cover-scaled drawImage of a full-screen picture is a resample of every pixel
+ * every frame: on a slow phone that alone cost a whole frame (measured at CPU 4x).
+ * Redrawn only when the canvas size changes. Draw it first, outside any shake.
+ */
+export interface Backdrop {
+  draw(g: CanvasRenderingContext2D, w: number, h: number, dpr: number): void;
+  dispose(): void;
+}
+
+export function createBackdrop(bg: Drawable, overscale = 1): Backdrop {
+  let cache: HTMLCanvasElement | null = null;
+  let cw = 0;
+  let ch = 0;
+  return {
+    draw(g: CanvasRenderingContext2D, w: number, h: number, dpr: number): void {
+      const pw = Math.round(w * dpr);
+      const ph = Math.round(h * dpr);
+      if (!cache || pw !== cw || ph !== ch) {
+        cache ??= document.createElement('canvas');
+        cw = pw;
+        ch = ph;
+        cache.width = pw;
+        cache.height = ph;
+        const c = cache.getContext('2d');
+        if (c) {
+          c.setTransform(dpr, 0, 0, dpr, 0, 0);
+          const k = Math.max(w / bg.width, h / bg.height) * overscale;
+          bg.draw(c, w / 2, h / 2, bg.width * k, bg.height * k);
+        }
+      }
+      g.save();
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.drawImage(cache, 0, 0);
+      g.restore();
+    },
+    dispose(): void {
+      if (cache) {
+        cache.width = 0;
+        cache.height = 0;
+      }
+      cache = null;
+    },
+  };
+}

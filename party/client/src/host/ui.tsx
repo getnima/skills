@@ -32,6 +32,9 @@ export function Btn(props: BtnProps): JSX.Element {
       onClick={(e) => {
         e.stopPropagation();
         (e.currentTarget as HTMLButtonElement).blur();
+        // the 2nd (3rd…) click of a double click is not a decision: after the 1st one changed the
+        // screen it would hit whatever button is under the pointer now (continue → next game)
+        if (e.detail > 1) return;
         props.onClick();
       }}
     >

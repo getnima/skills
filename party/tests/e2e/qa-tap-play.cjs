@@ -108,7 +108,9 @@ async function round(browser, names, opts = {}) {
   return res;
 }
 
-(async () => {
+module.exports = { STRATS, play };
+
+if (require.main === module) (async () => {
   const browser = await chromium.launch();
   const all = {};
   if (MODE === 'players' || MODE === 'all') Object.assign(all, await round(browser, ['clumsy', 'normal', 'expert']));

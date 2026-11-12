@@ -581,3 +581,80 @@ export async function loadNinjaArt(): Promise<NinjaArt> {
     hand: paintDrawable('hand', handPainter, 100),
   };
 }
+
+/**
+ * The backdrop pre-scaled once to the canvas' device pixels and then copied 1:1 every
+ * frame. A cover-scaled drawImage of a full-screen picture is a resample of every pixel
+ * every frame: on a slow phone that alone cost a whole frame (measured at CPU 4x).
+ * Redrawn only when the canvas size changes. Draw it first, outside any shake.
+ */
+export interface Backdrop {
+  draw(g: CanvasRenderingContext2D, w: number, h: number, dpr: number): void;
+  dispose(): void;
+}
+
+export function createBackdrop(bg: Drawable, overscale = 1): Backdrop {
+  let cache: HTMLCanvasElement | null = null;
+  let cw = 0;
+  let ch = 0;
+  return {
+    draw(g: CanvasRenderingContext2D, w: number, h: number, dpr: number): void {
+      const pw = Math.round(w * dpr);
+      const ph = Math.round(h * dpr);
+      if (!cache || pw !== cw || ph !== ch) {
+        cache ??= document.createElement('canvas');
+        cw = pw;
+        ch = ph;
+        cache.width = pw;
+        cache.height = ph;
+        const c = cache.getContext('2d');
+        if (c) {
+          c.setTransform(dpr, 0, 0, dpr, 0, 0);
+          const k = Math.max(w / bg.width, h / bg.height) * overscale;
+          bg.draw(c, w / 2, h / 2, bg.width * k, bg.height * k);
+        }
+      }
+      g.save();
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.drawImage(cache, 0, 0);
+      g.restore();
+    },
+    dispose(): void {
+      if (cache) {
+        cache.width = 0;
+        cache.height = 0;
+      }
+      cache = null;
+    },
+  };
+}
+
+/**
+ * The two halves of a sliced target, pre-cut once along the picture's own horizontal
+ * axis with the juicy cut face painted on: [upper half, lower half], each a canvas of
+ * the full sprite box at 2x. Drawing a half is then one rotated drawImage, not a clip
+ * per half per frame (the clip was the most expensive draw of the game on a slow phone).
+ */
+export function buildHalves(d: Drawable, style: FruitStyle): readonly [HTMLCanvasElement, HTMLCanvasElement] {
+  const S = SPRITE_BOX * 2;
+  const make = (upper: boolean): HTMLCanvasElement => {
+    const c = document.createElement('canvas');
+    c.width = S;
+    c.height = S;
+    const g = c.getContext('2d');
+    if (!g) return c;
+    g.beginPath();
+    g.rect(0, upper ? 0 : S / 2, S, S / 2);
+    g.clip();
+    d.draw(g, S / 2, S / 2, S, S);
+    g.fillStyle = style.flesh;
+    g.strokeStyle = style.juice;
+    g.lineWidth = 6;
+    g.beginPath();
+    g.ellipse(S / 2, S / 2, S * BODY_RADIUS * 0.92, S * BODY_RADIUS * 0.2, 0, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    return c;
+  };
+  return [make(true), make(false)];
+}

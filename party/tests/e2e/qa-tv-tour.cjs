@@ -124,7 +124,7 @@ const layoutCheck = (page) =>
           const svg = document.querySelector('[data-testid=qr]');
           const r = svg.getBoundingClientRect();
           const vb = svg.viewBox.baseVal;
-          return { card: [Math.round(card.width), Math.round(card.height)], svg: Math.round(r.width), modules: vb.width - 4, modulePx: +(r.width / vb.width).toFixed(1), url: document.querySelector('[data-testid=join-url]').textContent };
+          return { card: [Math.round(card.width), Math.round(card.height)], svg: Math.round(r.width), modules: vb.width - 6, modulePx: +(r.width / vb.width).toFixed(1), url: document.querySelector('[data-testid=join-url]').textContent };
         });
         console.log('   QR at 1080p:', JSON.stringify(qr));
         check(qr.modulePx >= 8, `QR modules are at least 8 px at 1080p (${qr.modulePx})`, qr);

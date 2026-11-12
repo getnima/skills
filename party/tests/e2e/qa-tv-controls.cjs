@@ -93,16 +93,23 @@ const dir = outDir('controls');
     check((await phase()) === 'lobby', 'Space-Space right after landing in the lobby does not start a game');
     await shot('04-lobby-after-skip');
 
-    // ── a click on the main button right after a phase change is a double click: ignored ──
-    // (click "continue" after the ceremony, then the lobby's "next game" lands under the pointer)
+    // ── a double click counts once: its 2nd click must not hit the next screen's button ──
+    // (double click "next game": the 1st click starts it, the 2nd would land on "cancel round")
     await sleep(1600);
-    await page.click('[data-testid=btn-primary]');
-    await waitPhase(page, 'intro', 5000);
+    const roundsBefore = (await state(page)).played.length;
+    await page.dblclick('[data-testid=btn-primary]');
+    await sleep(800);
+    check((await phase()) === 'intro', 'a double click on "next game" starts the game once and does not cancel it');
     await page.keyboard.press('KeyE');
     await waitPhase(page, 'lobby', 5000);
+    await sleep(300);
+    // a plain click right after the screen changed is a real click (no hidden time window)
     await page.click('[data-testid=btn-primary]');
-    await sleep(500);
-    check((await phase()) === 'lobby', 'a click on the main button right after the screen changed is ignored');
+    await waitPhase(page, 'intro', 5000);
+    check(true, 'a single click right after the screen changed works');
+    await page.keyboard.press('KeyE');
+    await waitPhase(page, 'lobby', 5000);
+    check((await state(page)).played.length === roundsBefore, 'cancelled rounds are not counted as played');
 
     // ── M mute, C cutscene menu, Escape, auto switch, S skip ──
     const muteIcon = async () => (await page.textContent('[data-testid=btn-mute]')).trim();

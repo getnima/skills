@@ -16,7 +16,7 @@ import { haptic } from '../../kit/haptics';
 import { createInput } from '../../kit/input';
 import { createLoop } from '../../kit/loop';
 import { COLORS, font } from '../../kit/theme';
-import { HEAD_RADIUS, loadTapArt } from './art';
+import { createBackdrop, HEAD_RADIUS, loadTapArt } from './art';
 import { buildLevel } from './schedule';
 
 import type { KitPointer } from '../../kit/input';
@@ -112,6 +112,8 @@ declare global {
   interface Window {
     /** Read-only state of the running tap game for test scripts (like __flappy / __ninja). */
     __tap?: () => TapDebugState | null;
+    /** Set to [] before the game starts: the level state every 30 steps (fairness checks). */
+    __tapTrace?: string[];
   }
 }
 
@@ -135,6 +137,9 @@ export const game: GameModule = {
   async create(ctx: GameContext): Promise<GameInstance> {
     const level = buildLevel(ctx.seed, ctx.durationMs);
     const art = await loadTapArt();
+    // the placeholder and a .jpg are opaque; a dropped .png / .webp / .svg may be see-through
+    const bgOpaque = art.background.isPlaceholder || /\.jpe?g(\?|$)/i.test(art.background.url);
+    const backdrop = createBackdrop(art.background);
     const view = createGameCanvas(ctx.root);
     view.canvas.dataset.level = level.fingerprint;
     const input = createInput(view.canvas);
@@ -317,7 +322,7 @@ export const game: GameModule = {
         fx.text(p.x, textY, PLUS[pts] ?? '+', TEXT_PICK);
       } else {
         fx.burst(p.x, p.y, BURST_HIT);
-        fx.text(p.x, textY, PLUS[pts] ?? '+', TEXT_HIT[nextMult] ?? TEXT_HIT[1]);
+
       }
 
       const step = loop.steps;
@@ -376,6 +381,7 @@ export const game: GameModule = {
     });
 
     // ── loop ──
+    const trace = Array.isArray(window.__tapTrace) ? window.__tapTrace : null;
     const loop = createLoop({
       update(dt: number): void {
         elapsed = startOffset + loop.timeMs;
@@ -449,6 +455,11 @@ export const game: GameModule = {
 
         fx.update(dt);
         computeGeo();
+        const roundStep = Math.round(elapsed / (1000 / 60));
+        if (trace && roundStep % 30 === 0 && trace.length < 400) {
+          // the face pose is normalized (u, v, scale in the free area), so screens of any size compare
+          trace.push(`${roundStep}|${picking ? 1 : 0}|${expr}|${hopIdx}|${frenzy ? 1 : 0}|${toU.toFixed(3)},${toV.toFixed(3)},${toS.toFixed(3)}|${hopT.toFixed(3)}`);
+        }
       },
       render(): void {
         computeGeo();
@@ -462,18 +473,21 @@ export const game: GameModule = {
       const w = view.width;
       const h = view.height;
       const t = loop.timeMs / 1000;
-      view.clear();
+      // The backdrop covers the whole canvas, so clearing first is only needed for a
+      // see-through file. (Every full-screen layer costs a frame on a slow phone.)
+      if (!bgOpaque) view.clear();
 
-      // backdrop (cover)
-      const bg = art.background;
-      const cover = Math.max(w / bg.width, h / bg.height);
-      bg.draw(g, w / 2, h / 2, bg.width * cover, bg.height * cover);
+      // backdrop (cover, pre-scaled)
+      backdrop.draw(g, w, h, view.dpr);
       if (frenzy) {
-        // red pulse, faster in the last seconds
+        // red pulsing frame around the screen, faster in the last seconds (a frame, not a
+        // full-screen tint: the frenzy is the busiest moment, keep it cheap)
         const speed = leftMs < 5_000 ? 14 : 7;
-        g.globalAlpha = 0.1 + 0.08 * Math.sin(t * speed);
-        g.fillStyle = COLORS.red;
-        g.fillRect(0, 0, w, h);
+        const k = 0.5 + 0.5 * Math.sin(t * speed);
+        g.globalAlpha = 0.45 + 0.4 * k;
+        g.strokeStyle = COLORS.red;
+        g.lineWidth = 14 + 10 * k;
+        g.strokeRect(0, 0, w, h);
         g.globalAlpha = 1;
       }
       if (picking) {
@@ -489,13 +503,13 @@ export const game: GameModule = {
       const { x, y, r } = geo;
       const box = r / HEAD_RADIUS;
 
-      // sunburst behind the face
-      g.globalAlpha = picking ? 0.85 : frenzy ? 0.45 : 0.3;
-      art.rays.draw(g, x, y, r * 3.3, r * 3.3, t * (picking ? 1.6 : 0.35));
-      g.globalAlpha = 1;
-
-      // glow ring while picking
+      // sunburst + glow ring behind the face: only while it picks its nose, so the +5
+      // moment looks like nothing else in the round (and a rotated 3x sprite every frame
+      // was the most expensive draw of the game on a slow phone)
       if (picking) {
+        g.globalAlpha = 0.85;
+        art.rays.draw(g, x, y, r * 3.3, r * 3.3, t * 1.6);
+        g.globalAlpha = 1;
         const pulse = 1 + 0.06 * Math.sin(t * 16);
         art.glow.draw(g, x, y, r * 2.75 * pulse, r * 2.75 * pulse);
       }
@@ -739,6 +753,7 @@ export const game: GameModule = {
         input.dispose();
         fx.clear();
         view.dispose();
+        backdrop.dispose();
         debugSource = null;
       },
     };

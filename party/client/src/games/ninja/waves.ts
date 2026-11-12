@@ -153,8 +153,10 @@ export function buildSchedule(seed: number, durationMs: number): Throw[] {
     if (wave === 0) {
       n = 1; // the tutorial throw: one slow fruit in the middle
     } else {
-      const lo = Math.floor(1 + p * 3.3);
-      const hi = Math.min(6, Math.floor(2 + p * 4.6));
+      // denser than one swipe a second can clear from the middle on: speed and combos
+      // then separate a sharp player from a slow one (measured: qa-ninja-play.cjs)
+      const lo = Math.floor(1 + p * 4.2);
+      const hi = Math.min(7, Math.floor(2 + p * 6));
       n = rng.int(lo, Math.max(lo, hi));
       if (p >= 0.2 && p < 0.5) bombs = rng.chance(0.35) ? 1 : 0;
       else if (p >= 0.5 && p < 0.75) bombs = rng.chance(0.6) ? 1 : 0;
@@ -218,7 +220,7 @@ export function buildSchedule(seed: number, durationMs: number): Throw[] {
       longest = Math.max(longest, s.delayMs);
     }
 
-    const gap = wave === 0 ? 1550 : Math.round(1500 - p * 620) + rng.int(-120, 150);
+    const gap = wave === 0 ? 1550 : Math.round(1450 - p * 750) + rng.int(-120, 150);
     t += longest + gap;
     wave++;
   }

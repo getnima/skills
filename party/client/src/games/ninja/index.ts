@@ -7,8 +7,8 @@
  * steps (finger path of that step against the throws), so a cutscene freeze
  * stops everything exactly where it is.
  *
- * Score: +10 per slice, +50 golden, +5 per object of a swipe of 3 or more
- * (+15 when it reaches 3, then +5 per extra), bomb -50 (never below 0) and a
+ * Score: +10 per slice, +50 golden, +10 per object of a swipe of 3 or more
+ * (+30 when it reaches 3, then +10 per extra), bomb -50 (never below 0) and a
  * 1.2 s stun.
  */
 import { sfx } from '../../kit/audio';
@@ -19,7 +19,7 @@ import { createInput } from '../../kit/input';
 import { createLoop, STEP_S } from '../../kit/loop';
 import { COLORS, font } from '../../kit/theme';
 import { GAMES } from '../../../../shared/protocol';
-import { BODY_RADIUS, FRUIT_STYLES, GOLD_STYLE, loadNinjaArt, SPRITE_BOX } from './art';
+import { BODY_RADIUS, buildHalves, createBackdrop, FRUIT_STYLES, GOLD_STYLE, loadNinjaArt, SPRITE_BOX } from './art';
 import { buildSchedule, GRAVITY, LAUNCH_Y, scheduleSignature } from './waves';
 
 import type { Drawable } from '../../kit/assets';
@@ -34,7 +34,7 @@ import type { ThrowKind } from './waves';
 const MAX_RAW = GAMES.ninja.maxRaw;
 const POINTS_FRUIT = 10;
 const POINTS_GOLD = 50;
-const POINTS_COMBO_EACH = 5;
+const POINTS_COMBO_EACH = 10;
 const COMBO_MIN = 3;
 const BOMB_PENALTY = 50;
 const STUN_STEPS = 72; // 1.2 s
@@ -103,8 +103,8 @@ interface Flyer {
 
 interface Half {
   active: boolean;
-  art: Drawable | null;
-  style: FruitStyle;
+  /** Pre-cut picture of this half (buildHalves). */
+  img: HTMLCanvasElement | null;
   x: number;
   y: number;
   px: number;
@@ -112,7 +112,6 @@ interface Half {
   vx: number;
   vy: number;
   cut: number;
-  objRot: number;
   rot: number;
   prot: number;
   spin: number;
@@ -148,6 +147,8 @@ interface Blade {
   lastX: number;
   lastY: number;
   speed: number;
+  /** Fixed steps since the finger's position last changed (a slow phone moves it once every few steps). */
+  idle: number;
   dull: number;
   swipe: number;
   sinceSlice: number;
@@ -182,6 +183,18 @@ interface NinjaDebug {
   readonly score: number;
   readonly stunned: boolean;
   readonly active: number;
+  /** Gravity in CSS px/s² and the top of the play field (bots in tests). */
+  readonly gravityPx: number;
+  readonly fieldTop: number;
+  readonly fieldH: number;
+  /** Round time of the game clock (ms since the round began). */
+  readonly elapsedMs: number;
+  /** Fastest finger right now in px/s (fairness checks across frame rates). */
+  readonly bladeSpeed: number;
+  /** Fixed steps in which a finger was fast enough to cut, since the start. */
+  readonly sharpSteps: number;
+  /** With `window.__ninjaTrace = []` set before the game starts: snapshot() every 30 steps. */
+  readonly traced: number;
   /** Positions of the throws in the air (determinism checks). */
   snapshot(): string;
   /** Throws in the air in CSS px (bots in tests). */
@@ -206,6 +219,7 @@ interface NinjaDebug {
 declare global {
   interface Window {
     __ninja?: NinjaDebug;
+    __ninjaTrace?: string[];
   }
 }
 
@@ -231,8 +245,7 @@ function makeFlyer(): Flyer {
 function makeHalf(): Half {
   return {
     active: false,
-    art: null,
-    style: GOLD_STYLE,
+    img: null,
     x: 0,
     y: 0,
     px: 0,
@@ -240,7 +253,6 @@ function makeHalf(): Half {
     vx: 0,
     vy: 0,
     cut: 0,
-    objRot: 0,
     rot: 0,
     prot: 0,
     spin: 0,
@@ -259,6 +271,7 @@ function makeBlade(): Blade {
     lastX: 0,
     lastY: 0,
     speed: 0,
+    idle: 0,
     dull: 0,
     swipe: 0,
     sinceSlice: 0,
@@ -292,12 +305,20 @@ export const game: GameModule = {
   id: 'ninja',
   async create(ctx: GameContext): Promise<GameInstance> {
     const art = await loadNinjaArt();
+    const backdrop = createBackdrop(art.background, 1.06);
+    // pre-cut halves: index = fruit variant, last = gold
+    const halfArt = [...art.targets.map((d, i) => buildHalves(d, FRUIT_STYLES[i] ?? GOLD_STYLE)), buildHalves(art.gold, GOLD_STYLE)];
+    const bgOpaque = art.background.isPlaceholder || /\.jpe?g(\?|$)/i.test(art.background.url);
     const view = createGameCanvas(ctx.root);
     const input = createInput(view.canvas);
     const fx = createFx(420);
     const schedule = buildSchedule(ctx.seed, ctx.durationMs);
     const signature = scheduleSignature(schedule);
     const firstBomb = schedule.findIndex((t) => t.kind === 'bomb');
+    // Round time already gone when the game starts (slow load, late mount), snapped to whole
+    // steps: the schedule is in round time, so a late phone sees the same throws at the same
+    // moments as the others and skips the ones it was not there for.
+    const startOffset = clamp(Math.round((ctx.durationMs - ctx.timeLeftMs()) / (1000 / 60)) * (1000 / 60), 0, ctx.durationMs);
 
     const flyers: Flyer[] = Array.from({ length: MAX_FLYERS }, makeFlyer);
     const halves: Half[] = Array.from({ length: MAX_HALVES }, makeHalf);
@@ -333,6 +354,7 @@ export const game: GameModule = {
 
     let destroyed = false;
     let nextThrow = 0;
+    while (nextThrow < schedule.length && (schedule[nextThrow]?.atMs ?? 0) < startOffset) nextThrow++;
     let score = 0;
     let launched = 0;
     let sliced = 0;
@@ -346,6 +368,7 @@ export const game: GameModule = {
     let tenSecondsCalled = ctx.durationMs < 20_000;
     let splatCursor = 0;
     let slashCursor = 0;
+    let sharpSteps = 0;
 
     // ── layout (read every frame; cheap) ──
     let W = 0;
@@ -428,7 +451,7 @@ export const game: GameModule = {
     }
 
     function addHalves(f: Flyer, x: number, y: number, angle: number): void {
-      const drawable = f.kind === 'gold' ? art.gold : (art.targets[f.variant] ?? art.gold);
+      const pair = f.kind === 'gold' ? halfArt[halfArt.length - 1] : halfArt[f.variant];
       const nx = -Math.sin(angle);
       const ny = Math.cos(angle);
       const bvx = f.vx * colW;
@@ -443,14 +466,12 @@ export const game: GameModule = {
         }
         if (!h) return;
         h.active = true;
-        h.art = drawable;
-        h.style = styleOf(f.kind, f.variant);
+        h.img = pair ? pair[side < 0 ? 0 : 1] : null;
         h.x = h.px = x + nx * side * 3;
         h.y = h.py = y + ny * side * 3;
         h.vx = bvx + nx * side * 150 + Math.cos(angle) * 70;
         h.vy = bvy + ny * side * 150 + Math.sin(angle) * 70 - 80;
         h.cut = angle;
-        h.objRot = f.rot;
         h.rot = h.prot = 0;
         h.spin = side * (3 + (f.id % 4) * 0.7);
         h.side = side;
@@ -604,6 +625,7 @@ export const game: GameModule = {
       b.curX = b.lastX = p.x;
       b.curY = b.lastY = p.y;
       b.speed = 0;
+      b.idle = 0;
       b.dull = 0;
       b.swipe = 0;
       b.sinceSlice = 0;
@@ -621,6 +643,10 @@ export const game: GameModule = {
       if (!p.cancelled) {
         b.curX = p.x;
         b.curY = p.y;
+      } else {
+        // cancelled (freeze, notification, system gesture): the move not yet cut is dropped
+        b.curX = b.lastX;
+        b.curY = b.lastY;
       }
       b.released = true;
     });
@@ -662,10 +688,20 @@ export const game: GameModule = {
       const dx = b.curX - b.lastX;
       const dy = b.curY - b.lastY;
       const d = Math.hypot(dx, dy);
-      b.speed = b.speed * 0.5 + (d / dt) * 0.5;
+      // Finger speed in px per second of game time. A phone at 20-30 fps delivers one move
+      // every 2-3 fixed steps: the move covers all of them, so divide by the steps it took
+      // (else a slow phone would read 3x the speed and cut with a lazier swipe).
+      if (d > 0.5) {
+        b.speed = b.speed * 0.5 + (d / (Math.min(b.idle + 1, 3) * dt)) * 0.5;
+        b.idle = 0;
+      } else {
+        b.idle++;
+        if (b.idle >= 3) b.speed *= 0.5;
+      }
       b.sinceSlice++;
       const sharp = d > 0.5 && b.speed >= SHARP_SPEED;
       if (sharp) {
+        sharpSteps++;
         b.dull = 0;
         if (stun === 0) {
           const ang = Math.atan2(dy, dx);
@@ -696,7 +732,7 @@ export const game: GameModule = {
 
     function update(dt: number): void {
       layout();
-      const now = loop.timeMs;
+      const now = startOffset + loop.timeMs;
       // launches
       while (nextThrow < schedule.length) {
         const th = schedule[nextThrow];
@@ -772,6 +808,8 @@ export const game: GameModule = {
         if (ring.age > 0.6) ring.active = false;
       }
       flash = Math.max(0, flash - dt * 2.6);
+      const roundStep = Math.round(now / (1000 / 60));
+      if (trace && roundStep % 30 === 0 && trace.length < 400) trace.push(`${roundStep}|${debug.snapshot()}`);
       if (!hintDone && now > HINT_MAX_MS) hintDone = true;
       if (hintDone && hint > 0) hint = Math.max(0, hint - dt * 3.5);
       if (!tenSecondsCalled) {
@@ -789,9 +827,8 @@ export const game: GameModule = {
     // ───────────────────────────── Render ─────────────────────────────
 
     function drawBackground(g: CanvasRenderingContext2D): void {
-      const bg = art.background;
-      const k = Math.max(W / bg.width, H / bg.height) * 1.06;
-      bg.draw(g, W / 2, H / 2, bg.width * k, bg.height * k);
+      if (!bgOpaque) view.clear();
+      backdrop.draw(g, W, H, view.dpr);
     }
 
     function drawSplats(g: CanvasRenderingContext2D): void {
@@ -815,26 +852,14 @@ export const game: GameModule = {
 
     function drawHalves(g: CanvasRenderingContext2D, alpha: number): void {
       for (const h of halves) {
-        if (!h.active || !h.art) continue;
+        if (!h.active || !h.img) continue;
         const x = lerp(h.px, h.x, alpha);
         const y = lerp(h.py, h.y, alpha);
         const rot = lerp(h.prot, h.rot, alpha);
         g.save();
         g.translate(x, y);
         g.rotate(h.cut + rot);
-        g.beginPath();
-        if (h.side < 0) g.rect(-box, -box, box * 2, box);
-        else g.rect(-box, 0, box * 2, box);
-        g.clip();
-        h.art.draw(g, 0, 0, box, box, h.objRot - h.cut);
-        // juicy flesh on the cut face
-        g.fillStyle = h.style.flesh;
-        g.strokeStyle = h.style.juice;
-        g.lineWidth = 3;
-        g.beginPath();
-        g.ellipse(0, 0, R * 0.92, R * 0.2, 0, 0, Math.PI * 2);
-        g.fill();
-        g.stroke();
+        g.drawImage(h.img, -box / 2, -box / 2, box, box);
         g.restore();
       }
     }
@@ -1122,9 +1147,9 @@ export const game: GameModule = {
     function render(alpha: number): void {
       layout();
       const g = view.ctx;
+      drawBackground(g); // outside the shake: the copy stays a 1:1 blit
       g.save();
       fx.applyShake(g);
-      drawBackground(g);
       drawSplats(g);
       drawHalves(g, alpha);
       drawFlyers(g, alpha);
@@ -1154,6 +1179,7 @@ export const game: GameModule = {
     }
 
     const loop = createLoop({ update, render });
+    const trace = Array.isArray(window.__ninjaTrace) ? window.__ninjaTrace : null;
 
     const debug: NinjaDebug = {
       seed: ctx.seed,
@@ -1182,6 +1208,29 @@ export const game: GameModule = {
       },
       get stunned(): boolean {
         return stun > 0;
+      },
+      get gravityPx(): number {
+        return GRAVITY * fieldH;
+      },
+      get fieldTop(): number {
+        return top;
+      },
+      get fieldH(): number {
+        return fieldH;
+      },
+      get elapsedMs(): number {
+        return startOffset + loop.timeMs;
+      },
+      get bladeSpeed(): number {
+        let v = 0;
+        for (const b of blades) if (b.active) v = Math.max(v, b.speed);
+        return v;
+      },
+      get sharpSteps(): number {
+        return sharpSteps;
+      },
+      get traced(): number {
+        return trace ? trace.length : 0;
       },
       get active(): number {
         let n = 0;
@@ -1229,6 +1278,7 @@ export const game: GameModule = {
         offUp();
         input.dispose();
         view.dispose();
+        backdrop.dispose();
         fx.clear();
         // window.__ninja keeps the final counters for test scripts
       },

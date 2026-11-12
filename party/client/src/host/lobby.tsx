@@ -36,7 +36,8 @@ function qrPath(text: string): { size: number; d: string } {
 
 export function QrCode(props: { readonly text: string; readonly class?: string }): JSX.Element {
   const { size, d } = useMemo(() => qrPath(props.text), [props.text]);
-  const pad = 2;
+  // quiet zone in modules: with the white card around it this is more than the 4 the standard asks for
+  const pad = 3;
   return (
     <svg
       class={`hs-qr-svg ${props.class ?? ''}`}
