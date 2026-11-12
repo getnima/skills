@@ -405,6 +405,101 @@ function drumroll(ms = 1600): void {
   }
 }
 
+/** A soft-clip curve for the air horn's rasp (made once). */
+let hornCurve: Float32Array<ArrayBuffer> | null = null;
+function hornShape(): Float32Array<ArrayBuffer> {
+  if (hornCurve) return hornCurve;
+  const n = 1024;
+  const c = new Float32Array(new ArrayBuffer(n * 4));
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    c[i] = Math.tanh(x * 3.2);
+  }
+  hornCurve = c;
+  return c;
+}
+
+/**
+ * The DJ air horn: "bwa-bwa-bwaaaa". Three blasts of a detuned, rasped sawtooth stack
+ * with a nasal formant, each scooping up into pitch and the last one sagging at its end.
+ * Synthesized, so there is no sample to license or load. `pitch` 1 = about B♭4.
+ */
+function airhorn(pitch = 1): void {
+  const c = live();
+  if (!c || !master) return;
+  try {
+    const t0 = c.currentTime + 0.02;
+    const f = 466 * pitch;
+    // the bus: rasp -> nasal peak -> top cut -> level
+    const shaper = c.createWaveShaper();
+    shaper.curve = hornShape();
+    const peak = c.createBiquadFilter();
+    peak.type = 'peaking';
+    peak.frequency.value = 1650;
+    peak.Q.value = 1.6;
+    peak.gain.value = 9;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 5200;
+    const out = c.createGain();
+    out.gain.value = 0.22;
+    shaper.connect(peak);
+    peak.connect(lp);
+    lp.connect(out);
+    out.connect(master);
+    // [start, length] of each blast
+    const blasts: ReadonlyArray<readonly [number, number]> = [
+      [0, 0.13],
+      [0.19, 0.13],
+      [0.38, 0.78],
+    ];
+    const end = t0 + 0.38 + 0.78 + 0.12;
+    for (const [i, [at, len]] of blasts.entries()) {
+      const s = t0 + at;
+      const last = i === blasts.length - 1;
+      const env = c.createGain();
+      env.gain.setValueAtTime(0.0001, s);
+      env.gain.linearRampToValueAtTime(1, s + 0.012);
+      env.gain.setValueAtTime(1, s + len - 0.03);
+      env.gain.exponentialRampToValueAtTime(0.0001, s + len + 0.06);
+      env.connect(shaper);
+      for (const [mul, type, vol] of [
+        [1, 'sawtooth', 0.42],
+        [1.006, 'sawtooth', 0.34],
+        [0.994, 'sawtooth', 0.34],
+        [2.003, 'square', 0.12],
+        [0.5, 'sawtooth', 0.16],
+      ] as const) {
+        const o = c.createOscillator();
+        o.type = type;
+        const fo = f * mul;
+        // the scoop up into the note, and the sag at the end of the long blast
+        o.frequency.setValueAtTime(fo * 0.82, s);
+        o.frequency.exponentialRampToValueAtTime(fo, s + 0.045);
+        if (last) {
+          o.frequency.setValueAtTime(fo, s + len - 0.2);
+          o.frequency.exponentialRampToValueAtTime(fo * 0.9, s + len + 0.06);
+        }
+        const g = c.createGain();
+        g.gain.value = vol;
+        o.connect(g);
+        g.connect(env);
+        o.start(s);
+        o.stop(s + len + 0.1);
+      }
+      // the air in the horn
+      noise({ dur: len + 0.05, vol: 0.05, at: s, abs: true, attack: 0.01, filter: { type: 'bandpass', freq: 2600, q: 0.9 } });
+    }
+    // let the bus go once the last blast is over
+    const stopper = c.createConstantSource();
+    stopper.onended = (): void => out.disconnect();
+    stopper.start(t0);
+    stopper.stop(end);
+  } catch {
+    // never let a sound break the show
+  }
+}
+
 function laugh(pitch = 1): void {
   const n = 6;
   for (let i = 0; i < n; i++) {
@@ -483,6 +578,8 @@ export const sfx = {
   drumroll,
   /** Brass flourish (~2s). */
   fanfare: (): void => playFanfare(0),
+  /** The DJ air horn, "bwa-bwa-bwaaaa" (~1.3 s): the TV plays it when the show switches to the next game. */
+  airhorn,
   /** Crowd-ish swell. */
   cheer: (): void => {
     noise({ dur: 1.3, vol: 0.2, attack: 0.3, filter: { type: 'bandpass', freq: 1100, to: 2100, q: 0.7 } });

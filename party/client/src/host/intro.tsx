@@ -36,6 +36,11 @@ export function IntroScreen(props: IntroProps): JSX.Element {
   const span = Math.max(1, total.current - cd);
   const p = Math.min(1, Math.max(0, 1 - (toStart - cd) / span));
   const frozen = roundTime(props.round, now).frozen;
+  // the DJ air horn as the show switches to the next game: once per round (the screen is keyed by
+  // the round), and not when the TV only reconnects in the last moments of an intro
+  useEffect(() => {
+    if (toStart > 1500) sfx.airhorn();
+  }, []);
   return (
     <div class={`hs-intro ${introArtUrl(props.game.id) !== null ? 'has-art' : ''}`} data-testid="intro">
       <div class="hs-intro-round">
