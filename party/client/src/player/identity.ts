@@ -1,6 +1,9 @@
 /**
- * Who this phone is, per room code, in localStorage. Every access is guarded:
- * private mode / blocked storage simply means no resume after a reload.
+ * Who this phone is, per room code, in localStorage, with the seat (identity, last room,
+ * name) mirrored in a small first-party cookie: closing the browser and opening the link
+ * again lands in the same seat, and a phone whose localStorage is blocked or empty still
+ * finds it in the cookie. Every access is guarded: with both blocked there is simply no
+ * resume after a reload.
  */
 import { NAME_MAX_LEN, ROOM_CODE_LEN } from '../../../shared/protocol';
 
@@ -24,12 +27,46 @@ const LOOK_MAX_LEN = 48;
 /** Same alphabet the server uses (no I, O, L). */
 const CODE_RE = new RegExp(`^[A-HJKMNP-Z]{${ROOM_CODE_LEN}}$`);
 
-function read(key: string): string | null {
+/** The seat is mirrored in a cookie (see the top); the rest (looks, tips) stays in localStorage only. */
+const COOKIE_PREFIX = 'pa_';
+const COOKIE_MAX_AGE_S = 2 * 24 * 60 * 60;
+function mirrored(key: string): boolean {
+  return key.startsWith(KEY_PREFIX) || key === LAST_ROOM_KEY || key === LAST_NAME_KEY;
+}
+
+function readCookie(key: string): string | null {
   try {
-    return localStorage.getItem(key);
+    const name = `${COOKIE_PREFIX}${encodeURIComponent(key)}=`;
+    for (const part of document.cookie.split('; ')) {
+      if (part.startsWith(name)) return decodeURIComponent(part.slice(name.length));
+    }
   } catch {
-    return null;
+    // cookies blocked
   }
+  return null;
+}
+
+function writeCookie(key: string, value: string | null): void {
+  try {
+    const name = `${COOKIE_PREFIX}${encodeURIComponent(key)}`;
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie =
+      value === null
+        ? `${name}=; Max-Age=0; Path=/; SameSite=Lax${secure}`
+        : `${name}=${encodeURIComponent(value)}; Max-Age=${COOKIE_MAX_AGE_S}; Path=/; SameSite=Lax${secure}`;
+  } catch {
+    // cookies blocked: ignore
+  }
+}
+
+function read(key: string): string | null {
+  let value: string | null = null;
+  try {
+    value = localStorage.getItem(key);
+  } catch {
+    value = null;
+  }
+  return value ?? (mirrored(key) ? readCookie(key) : null);
 }
 
 function write(key: string, value: string | null): void {
@@ -37,8 +74,9 @@ function write(key: string, value: string | null): void {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
   } catch {
-    // storage blocked: ignore
+    // storage blocked: the cookie below still keeps the seat
   }
+  if (mirrored(key)) writeCookie(key, value);
 }
 
 /**

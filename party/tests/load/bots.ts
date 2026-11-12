@@ -34,6 +34,9 @@
  *   --cutscene-ms <ms>   self-hosted: how long the host bot lets a cutscene play (default 2500)
  *   --churn <0..1>       chance per bot per second to drop its connection and come back
  *                        0.3-2s later with the same identity (default 0)
+ *   --storm              self-hosted: in every round, at half time, EVERY bot drops its
+ *                        connection at once and comes back 0.5-3 s later with the same
+ *                        identity (a party Wi-Fi hiccup); checks nobody became a second player
  *   --elim-by <ms>       elimination rounds (flappy): every bot is out by this round time,
  *                        spread evenly from 2.5 s (default: each bot's own seeded time, the
  *                        best ones last into the finale). For scripts that need the last
@@ -77,6 +80,8 @@ interface Options {
   quiet: boolean;
   /** Elimination rounds: every bot is out by this round time (null: its own seeded time). */
   elimBy: number | null;
+  /** Every round: all bots drop at once at half time and come back (see --storm). */
+  storm: boolean;
 }
 
 function parseArgs(argv: readonly string[]): Options {
@@ -94,6 +99,7 @@ function parseArgs(argv: readonly string[]): Options {
     prefix: 'בוט',
     quiet: false,
     elimBy: null,
+    storm: false,
   };
   const value = (i: number, flag: string): string => {
     const v = argv[i];
@@ -142,6 +148,9 @@ function parseArgs(argv: readonly string[]): Options {
         break;
       case '--quiet':
         opts.quiet = true;
+        break;
+      case '--storm':
+        opts.storm = true;
         break;
       case '--elim-by':
         opts.elimBy = Number(value(++i, flag));
@@ -261,6 +270,8 @@ function flightOf(seed: number, finaleAtMs: number | null): ReturnType<typeof cr
 
 const stateLatency = new Stats();
 const scoreEcho = new Stats();
+/** What one phone (bot 0) receives: messages and JSON bytes per event, the biggest state. */
+const downlink = { since: 0, bytes: 0, maxState: 0, byEvent: new Map<string, { n: number; bytes: number }>() };
 
 class Bot {
   readonly socket: PartySocket;
@@ -284,6 +295,18 @@ class Bot {
   ) {
     this.socket = connectSocket(opts.url);
     this.clock = new Clock(this.socket);
+    if (index === 0) {
+      downlink.since = Date.now();
+      this.socket.onAny((event: string, ...args: unknown[]) => {
+        const bytes = JSON.stringify(args).length;
+        downlink.bytes += bytes;
+        if (event === 'state') downlink.maxState = Math.max(downlink.maxState, bytes);
+        const e = downlink.byEvent.get(event) ?? { n: 0, bytes: 0 };
+        e.n++;
+        e.bytes += bytes;
+        downlink.byEvent.set(event, e);
+      });
+    }
     this.socket.on('state', (state) => {
       stateLatency.add(Math.max(0, this.clock.now() - state.serverNow));
       this.state = state;
@@ -431,6 +454,20 @@ class Bot {
     });
   }
 
+  /** Drop the connection now and come back after `ms` (same identity). False while a final awaits its ack. */
+  drop(ms: number): boolean {
+    if (!this.joined || this.awaitingAck) return false;
+    this.reconnects++;
+    this.joined = false;
+    this.socket.disconnect();
+    setTimeout(() => this.socket.connect(), ms);
+    return true;
+  }
+
+  get isJoined(): boolean {
+    return this.joined;
+  }
+
   private maybeChurn(): boolean {
     const perTick = this.opts.churn * (SCORE_SEND_INTERVAL_MS / 1000);
     if (!this.joined || this.awaitingAck || Math.random() >= perTick) return false;
@@ -526,6 +563,8 @@ async function selfHosted(opts: Options): Promise<number> {
   log(opts, `${bots.length} bots joined`);
 
   const expectedTotals = new Map<string, number>(bots.map((b) => [b.playerId, 0]));
+  const ids = new Set(bots.map((b) => b.playerId));
+  const storms: number[] = [];
 
   for (let i = 0; i < rounds; i++) {
     const gameId = opts.games[i % opts.games.length] ?? 'tap';
@@ -534,9 +573,19 @@ async function selfHosted(opts: Options): Promise<number> {
     log(opts, `round ${i} (${gameId}) started`);
 
     let manualFired = false;
+    let stormed = false;
     await waitFor(`results of round ${i}`, 10 * 60_000, () => {
       const s = state;
       if (s === null) return false;
+      if (opts.storm && !stormed && s.phase === 'playing' && s.round !== null && s.cutscene === null) {
+        const t = roundTime(s.round, hostClock.now());
+        if (!t.frozen && t.elapsedMs > Math.min(20_000, (s.round.endAt - s.round.startAt) * 0.5)) {
+          stormed = true;
+          const dropped = bots.filter((b) => b.drop(500 + Math.random() * 2_500)).length;
+          storms.push(dropped);
+          log(opts, `  storm: ${dropped} bots dropped at once`);
+        }
+      }
       if (opts.cutscene !== null && !manualFired && s.phase === 'playing' && s.round !== null && s.cutscene === null) {
         const t = roundTime(s.round, hostClock.now());
         if (!t.frozen && t.elapsedMs > (s.round.endAt - s.round.startAt) * 0.6) {
@@ -604,6 +653,11 @@ async function selfHosted(opts: Options): Promise<number> {
       }
     }
     if (results.rows.length !== bots.length) failures.push(`round ${i}: ${results.rows.length} rows for ${bots.length} bots`);
+    if (opts.storm || opts.churn > 0) {
+      const now = (state as RoomState | null)?.players ?? [];
+      if (now.length !== bots.length) failures.push(`round ${i}: ${now.length} players in the room for ${bots.length} bots (a reconnect made a second player?)`);
+      if (bots.some((b) => !ids.has(b.playerId))) failures.push(`round ${i}: a bot came back as a different player`);
+    }
     const wantWinners = [...scored].filter(([id, s]) => s.roundRank === 1 && (sent.get(id) ?? 0) > 0).map(([id]) => id).sort();
     if (JSON.stringify([...results.winnerIds].sort()) !== JSON.stringify(wantWinners)) failures.push(`round ${i}: winnerIds mismatch`);
     const winner = results.rows.find((r) => r.playerId === results.winnerIds[0]);
@@ -645,6 +699,14 @@ async function selfHosted(opts: Options): Promise<number> {
   console.log(`state delivery latency (server stamp -> bot):   ${stateLatency.summary()}`);
   console.log(`score echo (bot sends -> sees it in 'scores'):  ${scoreEcho.summary()}`);
   console.log(`clock sync rtt: max ${Math.max(...bots.map((b) => b.clock.rtt)).toFixed(1)}ms`);
+  if (opts.storm) {
+    const back = bots.filter((b) => b.isJoined).length;
+    console.log(`storms: ${storms.join(', ')} bots dropped at once per round; ${back}/${bots.length} back in their own seats at the end`);
+    if (back !== bots.length) failures.push(`${bots.length - back} bots did not come back after the storms`);
+  }
+  const secs = Math.max(1, (Date.now() - downlink.since) / 1000);
+  const parts = [...downlink.byEvent].map(([e, v]) => `${e} ${v.n}x/${(v.bytes / 1024).toFixed(0)}KB`).join(', ');
+  console.log(`one phone's downlink: ${(downlink.bytes / 1024).toFixed(0)} KB in ${secs.toFixed(0)} s (${(downlink.bytes / 1024 / secs).toFixed(1)} KB/s); biggest state ${(downlink.maxState / 1024).toFixed(1)} KB; ${parts}`);
 
   for (const b of bots) b.stop();
   host.disconnect();
