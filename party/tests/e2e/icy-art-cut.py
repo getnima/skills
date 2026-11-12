@@ -82,6 +82,7 @@ def main():
     ap.add_argument('--height', type=int, default=0, help='resize to exactly this height')
     ap.add_argument('--keep-alpha', action='store_true')
     ap.add_argument('--erode', type=int, default=1)
+    ap.add_argument('--close', type=int, default=0, help='close gaps up to about 2x this many pixels wide (dark joints that match a dark backdrop)')
     ap.add_argument('--check', default='')
     ap.add_argument('--check-bg', default='20,44,156;122,31,92;255,210,31')
     a = ap.parse_args()
@@ -116,6 +117,14 @@ def main():
                 holes += 1
             rest &= ~comp
         obj = ~back
+        if a.close > 0:
+            m = obj
+            for _ in range(a.close):
+                m = dilate(m)
+            for _ in range(a.close):
+                m = m & shift(m, 1, 0) & shift(m, -1, 0) & shift(m, 0, 1) & shift(m, 0, -1)
+            # erosion pulls the picture border in: keep what was object there
+            obj = m | obj
     if a.box:
         x0, y0, x1, y1 = (int(v) for v in a.box.split(','))
         keep = np.zeros_like(obj)

@@ -122,6 +122,18 @@ export function createPartyApp(config: ServerConfig): PartyApp {
     res.json({ lanIps: lanIps() });
   });
 
+  // Short join link for a designed or printed QR code (tools/qr): it never changes, and it always
+  // opens the room that is on the TV right now. With no TV connected it opens the join page, which
+  // asks for the room code. It gives away nothing the TV does not already show.
+  app.get('/j', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const live = registry
+      .candidates()
+      .filter((c) => c.screen)
+      .sort((a, b) => b.activeAt - a.activeAt)[0];
+    res.redirect(302, live !== undefined ? `/?room=${encodeURIComponent(live.code)}` : '/');
+  });
+
   const clientDir = findClientDir();
   if (clientDir !== null) mountClient(app, clientDir);
 

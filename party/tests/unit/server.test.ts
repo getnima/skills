@@ -112,6 +112,18 @@ describe('http', () => {
     }
   });
 
+  it('GET /j sends a guest to the room on the TV, or to the join page when no TV is connected', async () => {
+    const none = await fetch(`${url}/j`, { redirect: 'manual' });
+    expect(none.status).toBe(302);
+    expect(none.headers.get('cache-control')).toBe('no-store');
+    // other tests may have left rooms with a TV attached: whatever it is, it is a join link
+    expect(none.headers.get('location')).toMatch(/^\/(\?room=[A-Z0-9]+)?$/);
+    const host = await newHost();
+    const res = await fetch(`${url}/j`, { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`/?room=${host.code}`);
+  });
+
   it('GET /healthz answers and unknown paths are a plain 404', async () => {
     const health = (await (await fetch(`${url}/healthz`)).json()) as { ok: boolean };
     expect(health.ok).toBe(true);
