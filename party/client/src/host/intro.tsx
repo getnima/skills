@@ -36,7 +36,7 @@ export function IntroScreen(props: IntroProps): JSX.Element {
   const frozen = roundTime(props.round, now).frozen;
   return (
     <div class="hs-intro" data-testid="intro">
-      <div class="hs-intro-round">סיבוב {props.round.index + 1}</div>
+      <div class="hs-intro-round">סיבוב {props.round.number}</div>
       <div class="hs-intro-emoji">{props.game.emoji}</div>
       <h1 class="hs-intro-title">{props.game.title}</h1>
       <p class="hs-intro-text">{props.game.instructions}</p>

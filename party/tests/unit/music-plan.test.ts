@@ -10,7 +10,7 @@ import type { RoundPublic } from '../../shared/protocol';
 const PRELUDE = 10_000;
 /** intro begins at 0, play at 10 s, ends at 70 s */
 function round(over: Partial<RoundPublic> = {}): RoundPublic {
-  return { index: 2, gameId: 'tap', seed: 7, startAt: 10_000, endAt: 70_000, frozenAt: null, resumeAt: null, ...over };
+  return { index: 2, number: 3, gameId: 'tap', seed: 7, startAt: 10_000, endAt: 70_000, frozenAt: null, resumeAt: null, ...over };
 }
 
 const files = (...have: MusicSlot[]) => (slot: MusicSlot): boolean => have.includes(slot);

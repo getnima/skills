@@ -28,7 +28,7 @@ function room(players: PlayerPublic[], results: RoundResults | null, phase: Room
 }
 
 function results(rows: ResultRow[]): RoundResults {
-  return { roundIndex: 1, gameId: 'tap', rows, winnerIds: [rows[0]?.playerId ?? ''], revealAt: 10_000 };
+  return { roundIndex: 1, roundNumber: 2, gameId: 'tap', rows, winnerIds: [rows[0]?.playerId ?? ''], revealAt: 10_000 };
 }
 
 describe('meStanding', () => {

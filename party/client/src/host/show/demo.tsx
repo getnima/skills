@@ -169,7 +169,7 @@ function buildResults(players: readonly PlayerPublic[], raws: ReadonlyMap<string
   });
   rows.sort((a, b) => a.rank - b.rank);
   const winnerIds = rows.filter((r) => r.roundRank === 1 && r.raw > 0).map((r) => r.playerId);
-  return { roundIndex: 2, gameId, rows, winnerIds, revealAt };
+  return { roundIndex: 2, roundNumber: 3, gameId, rows, winnerIds, revealAt };
 }
 
 function Demo(): JSX.Element {

@@ -122,8 +122,15 @@ export interface PlayerPublic {
 }
 
 export interface RoundPublic {
-  /** 0-based index of the round within this competition. */
+  /**
+   * Id of the round inside the room: 0 for the first round ever started, then
+   * +1 for every started round. Never reused - not after a cancelled intro and
+   * not after a competition reset - so clients may key per-round memory on it.
+   * For display use `number`.
+   */
   readonly index: number;
+  /** 1-based position of this round in the current competition (what "סיבוב N" shows). */
+  readonly number: number;
   readonly gameId: GameId;
   /** Same seed for every player, so every phone gets the same level. */
   readonly seed: number;
@@ -180,7 +187,10 @@ export interface ResultRow {
 }
 
 export interface RoundResults {
+  /** `RoundPublic.index` of the round these results belong to. */
   readonly roundIndex: number;
+  /** `RoundPublic.number` of that round (1-based, for display). */
+  readonly roundNumber: number;
   readonly gameId: GameId;
   /** Sorted by `rank` (overall), which is strict: 1..n. */
   readonly rows: readonly ResultRow[];

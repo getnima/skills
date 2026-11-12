@@ -330,7 +330,7 @@ export function IntroScreen(props: { readonly round: RoundPublic }): JSX.Element
   }, [props.round.gameId]);
   return (
     <div class={`pp-screen pp-intro pp-game-${game.id}`}>
-      <div class="pp-pill pp-pill-dim">סיבוב {props.round.index + 1}</div>
+      <div class="pp-pill pp-pill-dim">סיבוב {props.round.number}</div>
       <div class="pp-intro-emoji">{game.emoji}</div>
       <h1 class="pp-intro-title">{game.title}</h1>
       <p class="pp-intro-text">{game.instructions}</p>
@@ -589,7 +589,7 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
     <div class="pp-screen pp-results">
       <div class="pp-res-head">
         <span class="pp-pill pp-pill-dim">
-          {game.emoji} {game.title} · סיבוב {results.roundIndex + 1}
+          {game.emoji} {game.title} · סיבוב {results.roundNumber}
         </span>
       </div>
       {row !== undefined ? (

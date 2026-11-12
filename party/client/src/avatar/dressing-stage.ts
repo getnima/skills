@@ -36,7 +36,7 @@ const CX = (DOLL.centerX / 100) * W;
 /** Room kept above the bare head, as a fraction of the doll height (one ordinary hat fits). */
 const HEADROOM = 0.18;
 /** Where the doll is cut in 'bust' (fraction of its height). */
-const BUST_CUT = 0.665;
+const BUST_CUT = 0.7;
 /** Where the soles are (fraction of the doll height). */
 const FEET = 0.985;
 /** Disc: width / doll width, height / disc width. */
@@ -55,11 +55,11 @@ function contentBounds(placed: readonly PlacedItem[]): { top: number; half: numb
 }
 
 /** The framing ('full' / 'bust') a stage of this size gets. */
-export function stageMode(sw: number, sh: number, padTop: number): StageMode {
+export function stageMode(sw: number, sh: number, padTop: number, padBottom = 0): StageMode {
   if (sw <= 0 || sh <= 0) return 'bust';
-  const f = fitScale('full', sw, sh, padTop, 0, CX - (13 / 100) * W);
+  const f = fitScale('full', sw, sh - padBottom, padTop, 0, CX - (13 / 100) * W);
   const headPx = 0.765 * W * f;
-  return headPx >= Math.min(0.4 * sw, 150) ? 'full' : 'bust';
+  return headPx >= Math.min(0.32 * sw, 120) ? 'full' : 'bust';
 }
 
 function fitScale(mode: StageMode, sw: number, sh: number, padTop: number, top: number, half: number): number {
@@ -73,8 +73,12 @@ function fitScale(mode: StageMode, sw: number, sh: number, padTop: number, top: 
   return Math.max(0.05, s);
 }
 
-/** Where the doll goes for this look on a stage of sw x sh px. */
-export function frameStage(sw: number, sh: number, look: AvatarLook, mode: StageMode, padTop = 8): StageFrame {
+/**
+ * Where the doll goes for this look on a stage of sw x sh px. `padBottom` is kept free under the
+ * disc in 'full' (the speech box lives there, like the source page's lower third).
+ */
+export function frameStage(sw: number, sh0: number, look: AvatarLook, mode: StageMode, padTop = 8, padBottom = 0): StageFrame {
+  const sh = mode === 'full' ? sh0 - padBottom : sh0;
   const placed = layoutLook(look);
   const { top, half } = contentBounds(placed);
   const s = fitScale(mode, sw, sh, padTop, top, half);

@@ -137,7 +137,7 @@ function PlayingView(props: { readonly state: RoomState; readonly round: RoundPu
     <div class="hs-scene-wrap" data-testid="playing">
       <PlayingScene
         game={GAMES[round.gameId]}
-        roundIndex={round.index}
+        roundIndex={round.number - 1}
         players={state.players}
         scores={room.scores}
         clock={clockRef.current}

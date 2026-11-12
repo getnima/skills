@@ -211,6 +211,7 @@ describe('round lifecycle', () => {
     expect(s.phase).toBe('intro');
     expect(s.round).toEqual({
       index: 0,
+      number: 1,
       gameId: 'tap',
       seed: 0xdeadbeef,
       startAt: T0 + INTRO_MS + COUNTDOWN_MS,
@@ -540,7 +541,8 @@ describe('host actions', () => {
     expect(h.state().phase).toBe('lobby');
 
     h.room.start('icy');
-    expect(h.round().index).toBe(0);
+    expect(h.round().number).toBe(1);
+    expect(h.round().index).toBe(1); // the cancelled round's id is not reused
     vi.advanceTimersByTime(INTRO_MS);
     expect(h.state().phase).toBe('countdown');
     h.room.endRound();
@@ -571,11 +573,12 @@ describe('host actions', () => {
     expect(s).toMatchObject({ phase: 'lobby', round: null, played: [], results: null, cutscene: null });
     expect(s.players).toHaveLength(1);
     expect(s.players[0]).toMatchObject({ id: a, total: 0, connected: true });
-    // A new competition starts at round 0 and automatic cutscenes may fire again.
+    // A new competition starts at round number 1 and automatic cutscenes may fire again.
     h.room.start('tap');
-    expect(h.round().index).toBe(0);
+    expect(h.round().number).toBe(1);
+    expect(h.round().index).toBe(1); // ids stay unique across a reset
     h.toPlaying();
-    h.room.final(a, 0, 5);
+    h.room.final(a, h.round().index, 5);
     expect(h.results().rows[0]?.prevRank).toBeNull();
     h.room.toFinal();
     expect(h.state().cutscene?.id).toBe('fin');
@@ -907,7 +910,7 @@ describe('cutscenes', () => {
     h.toPlaying();
     vi.advanceTimersByTime(40_000);
     expect(h.state().cutscene).toBeNull();
-    h.room.final(a, 0, 3);
+    h.room.final(a, h.round().index, 3);
     expect(h.state()).toMatchObject({ phase: 'results', cutscene: null });
     h.room.toFinal();
     expect(h.state().cutscene).toBeNull();

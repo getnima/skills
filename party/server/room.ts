@@ -108,6 +108,8 @@ interface PlayerRec {
 
 interface RoundRec {
   readonly index: number;
+  /** 1-based position in the current competition (display). */
+  readonly number: number;
   readonly gameId: GameId;
   readonly seed: number;
   startAt: number;
@@ -375,6 +377,7 @@ export class Room {
     this.clearPhaseTimers();
     this.round = {
       index: this.nextRoundIndex++,
+      number: this.played.length + 1,
       gameId,
       seed: this.seed() >>> 0,
       startAt,
@@ -445,7 +448,7 @@ export class Room {
     this.cutscene = null;
     this.phase = 'lobby';
     this.round = null;
-    this.nextRoundIndex = 0;
+    // nextRoundIndex is NOT reset: round ids stay unique for the room's lifetime (phones key on them).
     this.played = [];
     this.results = null;
     this.prevOrder = [];
@@ -591,6 +594,7 @@ export class Room {
   private roundPublic(r: RoundRec): RoundPublic {
     return {
       index: r.index,
+      number: r.number,
       gameId: r.gameId,
       seed: r.seed,
       startAt: r.startAt,
@@ -746,7 +750,7 @@ export class Room {
     this.clearPhaseTimers();
     this.phase = 'lobby';
     this.round = null;
-    this.nextRoundIndex = Math.max(0, this.nextRoundIndex - 1);
+    // the cancelled round's id is not reused (a phone may have keyed 'joined late' on it)
     this.broadcast();
   }
 
@@ -904,6 +908,7 @@ export class Room {
     const top = rows.find((row) => row.roundRank === 1 && row.raw > 0);
     this.results = {
       roundIndex: r.index,
+      roundNumber: r.number,
       gameId: r.gameId,
       rows,
       winnerIds: top === undefined ? [] : [top.playerId],

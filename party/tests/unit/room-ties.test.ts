@@ -487,7 +487,7 @@ describe('strict overall ranks', () => {
     ]);
     // Same raw for everyone, same millisecond: nothing of the old competition (c's win, c's stamp) is left.
     i = h.play();
-    expect(i).toBe(0);
+    expect(i).toBeGreaterThan(0); // round ids are not reused after a reset
     h.room.final(a, i, 4);
     h.room.final(b, i, 4);
     h.room.final(c, i, 4);

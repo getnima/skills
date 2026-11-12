@@ -218,13 +218,13 @@ function Header(props: { readonly link: RemoteLink }): JSX.Element {
             {clock}
           </span>
         ) : null}
-        <span class="rm-people" data-testid="people">
-          👥 {online}/{total}
-        </span>
       </div>
       <div class="rm-top-row rm-top-row--links">
         <Dot on={link.server === 'online' ? true : link.server === 'offline' ? false : null} label="שרת" testId="dot-server" />
         <Dot on={link.tv === 'online' ? true : link.tv === 'offline' ? false : null} label="מסך" testId="dot-tv" />
+        <span class="rm-people" data-testid="people">
+          👥 {online}/{total} מחוברים
+        </span>
       </div>
     </header>
   );
@@ -574,13 +574,15 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
   };
 
   const big = live && model !== null ? bigButton(model, selected) : null;
-  const bigLocked = lockedKey !== null && lockedKey.key === key && Date.now() < lockedKey.until;
+  const lockId = `${key}:${big?.id ?? ''}:${big?.arg ?? ''}`;
+  const bigLocked = lockedKey !== null && lockedKey.key === lockId && Date.now() < lockedKey.until;
   const pressBig = (): void => {
     if (big === null || !big.enabled || bigLocked || model === null) return;
     press();
     const a = findAction(model, big.id);
     if (a === undefined) return;
-    setLockedKey({ key, until: Date.now() + 1_500 });
+    // the same press again is a double tap until the screen or the step changes (or 1.5 s pass)
+    setLockedKey({ key: lockId, until: Date.now() + 1_500 });
     if (big.ask !== null) {
       setLockedKey(null);
       setAsk({

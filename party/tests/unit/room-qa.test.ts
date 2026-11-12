@@ -524,8 +524,11 @@ describe('scoring truth', () => {
     expect(h.state()).toMatchObject({ phase: 'lobby', round: null, results: null, played: [], players: [{ id: a, total: 0 }] });
     h.room.start('tap');
     h.toPlaying();
-    expect(h.state().round?.index).toBe(0);
-    h.room.final(a, 0, 5);
+    // display numbering restarts; the round id does not (phones key their per-round memory on it)
+    expect(h.state().round?.number).toBe(1);
+    const idAfterReset = h.state().round?.index ?? -1;
+    expect(idAfterReset).toBeGreaterThan(0);
+    h.room.final(a, idAfterReset, 5);
     expect(h.results().rows[0]).toMatchObject({ total: 1100, prevRank: null });
   });
 });
@@ -929,7 +932,9 @@ describe('cutscenes and the clock', () => {
     h.room.endRound();
     expect(h.state()).toMatchObject({ phase: 'lobby', round: null });
     h.room.start('tap');
-    expect(h.state().round?.index).toBe(2);
+    // the cancelled intro used up id 2: ids are never reused, the display number is still 3
+    expect(h.state().round?.index).toBe(3);
+    expect(h.state().round?.number).toBe(3);
     h.room.endRound();
     const n = h.states.length;
     vi.advanceTimersByTime(60 * 60_000);

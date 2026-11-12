@@ -50,6 +50,9 @@ def main():
     ap.add_argument('--pad-bottom', type=float, default=0.0, help='transparent space added below, fraction of height')
     ap.add_argument('--pad-top', type=float, default=0.0)
     ap.add_argument('--grey', default='', help='"chroma,minvalue": grey pixels (a soft shadow) count as background too')
+    ap.add_argument('--peel', default='', help='"iters,minvalue,chroma": peel pale pixels next to the background (a light base / fringe)')
+    ap.add_argument('--rowfill', action='store_true', help='fill each row between the outermost object pixels (convex objects)')
+    ap.add_argument('--quantize', action='store_true', help='save as a 256-colour palette PNG with alpha')
     ap.add_argument('--keep-alpha', action='store_true', help='input is already cut (remove_background): use its alpha')
     ap.add_argument('--check', default='', help='where to write the dark / yellow check tile')
     a = ap.parse_args()
@@ -86,7 +89,18 @@ def main():
             holes += 1
         rest &= ~comp
 
+    if a.peel:
+        it, v, c = (int(x) for x in a.peel.split(','))
+        pale = (rgb.min(axis=2) >= v) & ((rgb.max(axis=2) - rgb.min(axis=2)) <= c)
+        for _ in range(it):
+            back = back | (dilate(back) & pale)
     obj = ~back
+    if a.rowfill:
+        # the object is convex across each row (a cone): fill between its outermost pixels
+        for y in range(h):
+            xs = np.nonzero(obj[y])[0]
+            if xs.size:
+                obj[y, xs[0]:xs[-1] + 1] = True
     # erode by one pixel
     inner = obj & shift(obj, 1, 0) & shift(obj, -1, 0) & shift(obj, 0, 1) & shift(obj, 0, -1)
     alpha = Image.fromarray((inner * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2))
@@ -122,7 +136,11 @@ def main():
     if max(pic.size) > a.max:
         k = a.max / max(pic.size)
         pic = pic.resize((max(1, round(pic.size[0] * k)), max(1, round(pic.size[1] * k))), Image.LANCZOS)
-    pic.save(a.dst, optimize=True)
+    if a.quantize:
+        # 256-colour palette with alpha: a third of the bytes, no visible change at avatar sizes
+        pic.quantize(256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.FLOYDSTEINBERG).save(a.dst, optimize=True)
+    else:
+        pic.save(a.dst, optimize=True)
 
     tw, th = pic.size
     chk = Image.new('RGB', (tw * 2 + 30, th + 20), (255, 255, 255))
