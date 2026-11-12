@@ -1,7 +1,7 @@
 /** StandingsPanel: the compact cumulative leaderboard in the lobby between rounds. */
 import { useMemo } from 'preact/hooks';
 
-import { Avatar, formatScore, sharedRanks, useStage } from './common';
+import { Avatar, CountUp, sharedRanks, useStage } from './common';
 
 import type { JSX } from 'preact';
 import type { StandingsPanelProps } from './types';
@@ -48,9 +48,7 @@ export function StandingsPanel(props: StandingsPanelProps): JSX.Element {
               ) : r.isNew && props.results !== null && props.results.roundIndex > 0 ? (
                 <span class="sh-move is-up">חדש</span>
               ) : null}
-              <span class="sh-total" dir="ltr">
-                {formatScore(r.player.total)}
-              </span>
+              <CountUp class="sh-total" value={r.player.total} ms={1_000} />
             </div>
           ))}
           {more > 0 ? <div class="sh-panel-more">+{more} נוספים</div> : null}

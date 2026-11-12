@@ -2188,3 +2188,29 @@
     opacity: 1;
   }
 }
+
+/* ── odometer numbers (CountUp): each digit rolls upwards to its new value ── */
+.sh-odo {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sh-odo-d {
+  position: relative;
+  display: inline-block;
+  /* clip-path, not overflow: an inline-block with overflow moves its baseline */
+  clip-path: inset(0 -2px);
+}
+.sh-odo-g {
+  visibility: hidden;
+}
+.sh-odo-s {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  white-space: pre;
+}
+.sh-odo-s::before {
+  content: '0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9\A 0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9';
+}

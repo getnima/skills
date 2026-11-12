@@ -244,9 +244,7 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
                 <span class="sh-name" dir="auto">
                   <bdi>{r.player.name}</bdi>
                 </span>
-                <span class="sh-total" dir="ltr">
-                  {formatScore(r.player.total)}
-                </span>
+                <CountUp class="sh-total" value={r.player.total} ms={1_000} />
               </div>
             ))}
           </div>

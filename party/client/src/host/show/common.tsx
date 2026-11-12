@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import type { JSX } from 'preact';
 
@@ -151,43 +151,120 @@ export function useTicker(ms: number): number {
 
 export interface CountUpProps {
   readonly value: number;
-  /** Start value on mount (default: `value`, no animation). */
+  /** Start value on mount (default: `value`, no animation). With it, every digit takes a full spin on mount. */
   readonly from?: number;
+  /** Roughly how long a change takes to settle (default 900). */
   readonly ms?: number;
   readonly prefix?: string;
   readonly class?: string;
 }
 
-/** A number that rolls to its new value whenever `value` changes. */
+/** The strip under each digit shows 0-9 twice, so a digit can always roll upwards (9 -> 0 included). */
+const ODO_CELLS = 20;
+const odoY = (pos: number): string => `translateY(${(-pos * 100) / ODO_CELLS}%)`;
+const reducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+interface OdoDigitProps {
+  readonly digit: number;
+  /** Digit shown before the first roll. */
+  readonly start: number;
+  /** Take a full extra turn on the first roll (score reveals). */
+  readonly spin: boolean;
+  readonly ms: number;
+  readonly delay: number;
+}
+
+/**
+ * One odometer digit. The real digit stays in the DOM as (hidden) text, so
+ * `textContent` of the whole number is still the plain formatted value; the
+ * rolling strip is a pseudo-element moved by transform only.
+ */
+function OdoDigit(props: OdoDigitProps): JSX.Element {
+  const strip = useRef<HTMLSpanElement | null>(null);
+  /** Strip position (0..19) the last roll was sent to. */
+  const pos = useRef(props.start);
+  const anim = useRef<Animation | null>(null);
+  const first = useRef(true);
+  useLayoutEffect(() => {
+    const el = strip.current;
+    if (!el) return;
+    const wasFirst = first.current;
+    if (wasFirst) {
+      first.current = false;
+      el.style.transform = odoY(pos.current);
+      if (props.digit === pos.current && !props.spin) return;
+    }
+    try {
+      // where the strip really is right now: it may be in the middle of a roll
+      let at = pos.current;
+      const cell = el.offsetHeight / ODO_CELLS;
+      if (!wasFirst && cell > 0) {
+        const y = new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
+        if (Number.isFinite(y)) at = -y / cell;
+      }
+      if (at >= 10) at -= 10;
+      at = Math.min(9.999, Math.max(0, at));
+      let target = props.digit >= at - 0.01 ? props.digit : props.digit + 10;
+      if (wasFirst && props.spin && target < 10) target += 10;
+      anim.current?.cancel();
+      anim.current = null;
+      pos.current = target;
+      el.style.transform = odoY(target);
+      if (Math.abs(target - at) < 0.02 || reducedMotion() || typeof el.animate !== 'function') return;
+      anim.current = el.animate([{ transform: odoY(at) }, { transform: odoY(target) }], {
+        duration: props.ms,
+        delay: props.delay,
+        easing: 'cubic-bezier(0.2, 0.85, 0.3, 1)',
+        fill: 'backwards',
+      });
+    } catch {
+      // the number is still right (hidden text + final transform); only the roll is lost
+      pos.current = props.digit;
+      el.style.transform = odoY(props.digit);
+    }
+  }, [props.digit]);
+  useEffect(() => () => anim.current?.cancel(), []);
+  return (
+    <span class="sh-odo-d">
+      <span class="sh-odo-g">{props.digit}</span>
+      <span class="sh-odo-s" ref={strip} aria-hidden="true" />
+    </span>
+  );
+}
+
+const isDigit = (ch: string | undefined): ch is string => ch !== undefined && ch >= '0' && ch <= '9';
+
+/**
+ * Odometer number: every digit that changes rolls upwards to its new value
+ * (units first, higher places a beat later). Used for every score on the TV.
+ */
 export function CountUp(props: CountUpProps): JSX.Element {
-  const el = useRef<HTMLSpanElement | null>(null);
-  const shown = useRef(props.from ?? props.value);
   const prefix = props.prefix ?? '';
   const ms = props.ms ?? 900;
-  useEffect(() => {
-    const node = el.current;
-    const start = shown.current;
-    const end = props.value;
-    if (!node) return undefined;
-    if (start === end) {
-      node.textContent = prefix + formatScore(end);
-      return undefined;
+  const roll = Math.max(180, Math.round(ms * 0.7));
+  const stagger = Math.min(90, Math.round(ms * 0.08));
+  const mount = useRef({ chars: [...formatScore(props.from ?? props.value)], spin: props.from !== undefined && props.from !== props.value });
+  const chars = [...formatScore(props.value)];
+  const from = mount.current.chars;
+  const cells: JSX.Element[] = [];
+  let place = 0;
+  for (let i = chars.length - 1; i >= 0; i--) {
+    const ch = chars[i] ?? '';
+    const fromRight = chars.length - 1 - i;
+    if (isDigit(ch)) {
+      const was = from[from.length - 1 - fromRight];
+      cells.unshift(
+        <OdoDigit key={`d${fromRight}`} digit={Number(ch)} start={isDigit(was) ? Number(was) : 0} spin={mount.current.spin} ms={roll} delay={place * stagger} />,
+      );
+      place++;
+    } else {
+      cells.unshift(<span key={`s${fromRight}`}>{ch}</span>);
     }
-    let raf = 0;
-    const t0 = performance.now();
-    const tick = (t: number): void => {
-      const p = Math.min(1, (t - t0) / ms);
-      const eased = 1 - Math.pow(1 - p, 3);
-      shown.current = start + (end - start) * eased;
-      node.textContent = prefix + formatScore(shown.current);
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [props.value, ms, prefix]);
+  }
   return (
-    <span class={props.class} ref={el} dir="ltr">
-      {prefix + formatScore(shown.current)}
+    <span class={props.class ? `sh-odo ${props.class}` : 'sh-odo'} dir="ltr" data-value={Math.round(props.value)}>
+      {prefix}
+      {cells}
     </span>
   );
 }

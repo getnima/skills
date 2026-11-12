@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from 'preact/hooks';
 
 import { sfx } from '../../kit/audio';
 import { backdropUrl, crownUrl, lastPlaceArt } from './art';
-import { Avatar, avatarColor, formatScore, useFrame, useStage, useTicker } from './common';
+import { Avatar, avatarColor, CountUp, formatScore, useFrame, useStage, useTicker } from './common';
 import { useFunnyLayer } from './funny';
 import { createMomentEngine } from './moments';
 
@@ -212,17 +212,13 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
     for (const m of moments) handleRef.current(m);
   }, [tick, engine]);
 
-  // ── per-frame: the clock ring and the ticking scores (no re-render) ──
+  // ── per-frame: the clock ring (no re-render); the scores are odometers (CountUp) ──
   const rootRef = useRef<HTMLElement | null>(null);
   const ringRef = useRef<SVGCircleElement | null>(null);
   const numRef = useRef<HTMLDivElement | null>(null);
-  const scoreEls = useRef(new Map<string, HTMLSpanElement>());
-  const shown = useRef(new Map<string, number>());
   const lastSecond = useRef(-1);
-  useFrame((dt) => {
+  useFrame(() => {
     const sample = clockRef.current();
-    // the numbers close 22% of the gap per 60 Hz frame, whatever the real frame rate
-    const ease = 1 - Math.pow(0.78, Math.min(10, Math.max(0, dt) / 16.7));
     const root = rootRef.current;
     const frac = durationRef.current > 0 ? Math.min(1, Math.max(0, sample.leftMs / durationRef.current)) : 0;
     if (ringRef.current) ringRef.current.style.strokeDashoffset = String(RING_LEN * (1 - frac));
@@ -243,28 +239,6 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
           sfx.tick(second <= 3 ? 1.4 : 1);
           num.animate([{ transform: 'scale(1.35)' }, { transform: 'scale(1)' }], { duration: 380, easing: 'ease-out' });
         }
-      }
-    }
-    for (const r of boardRef.current) {
-      let el = scoreEls.current.get(r.id);
-      if (el && !el.isConnected) {
-        scoreEls.current.delete(r.id);
-        el = undefined;
-      }
-      if (!el) {
-        // off screen: no ticking, just be right when it comes back
-        shown.current.set(r.id, r.score);
-        continue;
-      }
-      const from = shown.current.get(r.id) ?? r.score;
-      let next = from + (r.score - from) * ease;
-      if (Math.abs(r.score - next) < 0.6) next = r.score;
-      if (next !== from || el.textContent === '') {
-        shown.current.set(r.id, next);
-        const text = formatScore(next);
-        if (el.textContent !== text) el.textContent = text;
-      } else if (!shown.current.has(r.id)) {
-        shown.current.set(r.id, next);
       }
     }
   });
@@ -320,20 +294,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
                 )
               ) : null}
             </span>
-            <span
-              class="sh-score"
-              dir="ltr"
-              ref={(el) => {
-                if (el) {
-                  if (!scoreEls.current.has(r.id) || scoreEls.current.get(r.id) !== el) {
-                    // a row that just came on screen shows its real score at once
-                    shown.current.set(r.id, r.score);
-                    el.textContent = formatScore(shown.current.get(r.id) ?? r.score);
-                  }
-                  scoreEls.current.set(r.id, el);
-                }
-              }}
-            />
+            <CountUp class="sh-score" value={r.score} ms={420} />
             <div class="sh-track">
               <div
                 class="sh-fill"
