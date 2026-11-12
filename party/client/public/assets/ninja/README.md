@@ -33,3 +33,7 @@ Background
 Not slots: the blade, the slash flashes, splats and droplets, the fuse and its spark, the warning burst, the sunburst, the stickers ("+10", "קומבו ×3!", "לא לחתוך!", "בום! הלהב מושבת") are drawn by the game.
 
 Retired: the toy fruit (`target_1..5.png`, `target_gold.png`) and the shared two-host `bomb.png` are no longer loaded and were taken out of this folder.
+
+## Shipped as WebP
+
+The pictures here ship as `.webp` (made from the PNG sources by `tools/assets/to_webp.py`: same pixels and the exact same transparency, about 7x lighter for 20 phones on party Wi-Fi). The names in the tables are the slot names: the game finds `face.webp` for the slot `face.png`. To replace a picture, drop a file with the slot name (`.png`, `.webp` or `.jpg`); a file with the exact slot name wins over the WebP.

@@ -100,7 +100,19 @@ def head_of(px):
     seed &= ok
     if not seed.any():
         seed = face & ok
-    head = reconstruct(seed, ok)
+    # flood over `ok` eroded by 3 px, so a thin rim (the edge of the scarf tip) cannot carry it out of the head,
+    # then grow back over `ok`
+    core = ok.copy()
+    for _ in range(3):
+        core = core & np.roll(core, 1, 0) & np.roll(core, -1, 0) & np.roll(core, 1, 1) & np.roll(core, -1, 1)
+    head = reconstruct(seed & core, core)
+    for _ in range(4):
+        g2 = head.copy()
+        g2[1:] |= head[:-1]
+        g2[:-1] |= head[1:]
+        g2[:, 1:] |= head[:, :-1]
+        g2[:, :-1] |= head[:, 1:]
+        head = g2 & ok
     # fill holes (skin highlights read as scarf yellow): whatever the outside cannot reach is head
     outside = np.zeros_like(head)
     outside[0, :] = outside[-1, :] = outside[:, 0] = outside[:, -1] = True
@@ -117,7 +129,7 @@ def head_of(px):
         m = g2
     for _ in range(4):
         m = m & np.roll(m, 1, 0) & np.roll(m, -1, 0) & np.roll(m, 1, 1) & np.roll(m, -1, 1)
-    head = (head | m) & opaque
+    head = (head | (m & ~yellow)) & opaque
     head[chin + 1 :] = False
     return head, chin_x, float(chin)
 
@@ -151,7 +163,19 @@ def swap_head(px, donor, ratio, sink=5.0):
     layer.paste(head, (ox, oy), head)
     # the head goes BEHIND what is left in front of it at the neck? no: the chin sits over the scarf
     base.alpha_composite(layer)
-    return np.asarray(base).astype(np.float32)
+    res = np.asarray(base).astype(np.float32)
+    # the soft rim of the old head can survive as a faint line: drop see-through pixels with no solid pixel within 2 px
+    solid = res[:, :, 3] > 200
+    near = solid.copy()
+    for _ in range(2):
+        g = near.copy()
+        g[1:] |= near[:-1]
+        g[:-1] |= near[1:]
+        g[:, 1:] |= near[:, :-1]
+        g[:, :-1] |= near[:, 1:]
+        near = g
+    res[(res[:, :, 3] < 200) & ~near, 3] = 0
+    return res
 
 
 def load(path):

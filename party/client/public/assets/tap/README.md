@@ -101,3 +101,7 @@ the middle calm) dropped here replaces the painted sunburst.
 `pick_double.png` and `fist.png` (nano_banana_2_1, 1k, one at a time, the existing nose-pick frame as the
 reference), cut out locally (flood fill from the corners), `pick_double` aligned to `face_normal.png` by the
 width and top of the head.
+
+## Shipped as WebP
+
+The pictures here ship as `.webp` (made from the PNG sources by `tools/assets/to_webp.py`: same pixels and the exact same transparency, about 7x lighter for 20 phones on party Wi-Fi). The names in the tables are the slot names: the game finds `face.webp` for the slot `face.png`. To replace a picture, drop a file with the slot name (`.png`, `.webp` or `.jpg`); a file with the exact slot name wins over the WebP.

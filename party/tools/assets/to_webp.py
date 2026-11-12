@@ -6,7 +6,7 @@ Every game loads its art through the kit (client/src/kit/assets.ts), which asks 
 name and falls back to the same base name with another extension, so `face.png` -> `face.webp` needs
 no code change. A PNG dropped in later with the original name wins over the WebP (exact name first).
 
-Safety: the colour is lossy (quality 88) but the transparency is kept EXACTLY (lossless alpha). For
+Safety: the colour is lossy (quality 88, or 95 when 88 misses the check) but the transparency is kept EXACTLY (lossless alpha). For
 every file the script checks that the decoded alpha channel equals the original one pixel for pixel
 and that the colour error on visible pixels stays small; a file that fails a check is left as PNG.
 Folders are walked recursively. Only PNGs are touched; READMEs and other files are left alone.
@@ -17,7 +17,7 @@ import sys
 
 from PIL import Image, ImageChops
 
-QUALITY = 88
+QUALITIES = (88, 95)  # the second is tried when the first misses the colour check
 MAX_MEAN_ERR = 3.0  # mean absolute RGB error (0-255) over pixels with alpha > 16
 MAX_P99_ERR = 40  # 99th percentile of the per-pixel RGB error over those pixels
 
@@ -71,8 +71,12 @@ def main():
                 im.load()
                 rgba = im.convert('RGBA')
                 size0 = os.path.getsize(src)
-                rgba.save(dst, 'WEBP', quality=QUALITY, method=6, alpha_quality=100, exact=True)
-                problem = check(rgba, dst)
+                problem = 'not tried'
+                for q in QUALITIES:
+                    rgba.save(dst, 'WEBP', quality=q, method=6, alpha_quality=100, exact=True)
+                    problem = check(rgba, dst)
+                    if problem is None:
+                        break
                 size1 = os.path.getsize(dst)
                 if problem is not None or size1 >= size0:
                     os.remove(dst)

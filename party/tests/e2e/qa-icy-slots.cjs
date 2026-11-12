@@ -2,14 +2,16 @@
 // READMEs list (exact file names and pixel sizes), checks that each one replaces its
 // placeholder (window.__icy.art / window.__flappy.art), screenshots it, then deletes
 // every test file again (also on failure).
-//   PARTY_CLIENT_PORT=5222 npx vite --config tests/e2e/qa-icy-vite.config.mjs
-//   node tests/e2e/qa-icy-slots.cjs
+// It WRITES and DELETES files under client/public/assets/: run it against a temporary copy of the tree
+// (QA_TREE=<copy root>, the dev server started from that copy), never the real one.
+//   PARTY_CLIENT_PORT=5222 npx vite --config tests/e2e/qa-icy-vite.config.mjs      (from the copy)
+//   QA_TREE=<copy root> QA_BASE=http://localhost:5222 node tests/e2e/qa-icy-slots.cjs
 const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
 const { phoneContext, createTouch, sleep, SIZES } = require('./qa-icy-lib.cjs');
 const BASE = process.env.QA_BASE || 'http://localhost:5222';
-const ASSETS = path.join(__dirname, '..', '..', 'client', 'public', 'assets');
+const ASSETS = path.join(process.env.QA_TREE || path.join(__dirname, '..', '..'), 'client', 'public', 'assets');
 const fails = [];
 function check(name, ok, extra) {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${extra !== undefined ? ' ' + JSON.stringify(extra) : ''}`);
@@ -23,8 +25,21 @@ const SLOTS = [
   ['icy', 'face_fall.png', 256, 256, true, 'faceFall'],
   ['icy', 'platform.png', 128, 32, false, 'platform'],
   ['icy', 'milestone.png', 128, 32, false, 'milestone'],
-  ['icy', 'wall.png', 32, 256, false, 'wall'],
-  ['icy', 'bg.png', 720, 1280, true, 'bg'],
+  ['icy', 'wall.png', 40, 320, false, 'wall'],
+  ['icy', 'bg.png', 720, 720, false, 'bg'],
+  ['icy', 'shirt.png', 128, 128, true, 'shirt'],
+  ['icy', 'hero/stand.png', 256, 256, true, 'hero_stand'],
+  ['icy', 'hero/run1.png', 256, 256, true, 'hero_run1'],
+  ['icy', 'hero/run2.png', 256, 256, true, 'hero_run2'],
+  ['icy', 'hero/jump.png', 256, 256, true, 'hero_jump'],
+  ['icy', 'hero/fall.png', 256, 256, true, 'hero_fall'],
+  ['icy', 'hero/ball.png', 256, 256, true, 'hero_ball'],
+  ['icy', 'floors/zone1.png', 493, 64, true, 'floor1'],
+  ['icy', 'floors/zone2.png', 345, 64, true, 'floor2'],
+  ['icy', 'floors/zone3.png', 391, 64, true, 'floor3'],
+  ['icy', 'floors/zone4.png', 410, 64, true, 'floor4'],
+  ['icy', 'floors/milestone.png', 381, 64, true, 'floorMilestone'],
+  ['icy', 'floors/icicles.png', 384, 64, true, 'icicles'],
   ['flappy', 'face.png', 256, 256, true, 'face'],
   ['flappy', 'face_flap.png', 256, 256, true, 'face_flap'],
   ['flappy', 'face_dead.png', 256, 256, true, 'face_dead'],
@@ -40,8 +55,10 @@ const COLORS = ['#ff00aa', '#00d0ff', '#9dff00', '#ff8800', '#7a00ff', '#00ff99'
 
 function readmeHas(game, file, w, h) {
   const md = fs.readFileSync(path.join(ASSETS, game, 'README.md'), 'utf8');
-  const row = md.split('\n').find((l) => l.includes('`' + file + '`'));
-  return !!row && new RegExp(`${w}\\s*x\\s*${h}`).test(row);
+  // the README may name the shipped file (e.g. hero/stand.webp): any extension of the same base name
+  const base = file.replace(/\.[a-z]+$/i, '');
+  const rows = md.split('\n').filter((l) => l.includes('`' + file + '`') || new RegExp('`' + base.replace(/[/.]/g, '\\$&') + '\\.(png|webp|jpe?g|svg)`').test(l));
+  return rows.some((row) => new RegExp(`${w}\\s*x\\s*${h}`).test(row));
 }
 
 (async () => {
@@ -90,6 +107,7 @@ function readmeHas(game, file, w, h) {
       );
       const dest = path.join(ASSETS, game, file);
       if (fs.existsSync(dest)) throw new Error(`refusing to overwrite a real file: ${dest}`);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, Buffer.from(dataUrl.split(',')[1], 'base64'));
       written.push(dest);
     }
@@ -118,6 +136,7 @@ function readmeHas(game, file, w, h) {
           await sleep(380);
         }
       }
+      fs.mkdirSync(path.join(__dirname, 'out', `qa-${game}`), { recursive: true });
       await page.screenshot({ path: path.join(__dirname, 'out', `qa-${game}`, 'slots-test-images.png') });
       check(`${game} with every test image: no errors`, errors.length === 0, errors);
       await context.close();

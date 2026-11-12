@@ -156,7 +156,7 @@ export const STONE_LOOKS: readonly ZoneLook[] = [
     sky: '#2a160d',
     snow: 'rgba(255, 214, 150, 0.8)',
     stone: '#f0b07c',
-    backTint: '#95504a',
+    backTint: '#7c4038',
     backGrey: true,
   },
   {

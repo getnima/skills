@@ -28,3 +28,7 @@ the halo floats over its top. The hit circle is about 60% of the token's radius,
 | `background.jpg` | 860x1864 | no | Optional full-screen backdrop. Cropped to cover any screen, so keep the important part in the middle. Static. Placeholder: the cobalt sunburst. |
 
 Hit boxes do not depend on the images: the bird's hit circle is about 60% of the face's radius (forgiving on purpose), and the stands hit only along the pole and the head's middle, so a real face or microphone may overlap a little without a crash.
+
+## Shipped as WebP
+
+The pictures here ship as `.webp` (made from the PNG sources by `tools/assets/to_webp.py`: same pixels and the exact same transparency, about 7x lighter for 20 phones on party Wi-Fi). The names in the tables are the slot names: the game finds `face.webp` for the slot `face.png`. To replace a picture, drop a file with the slot name (`.png`, `.webp` or `.jpg`); a file with the exact slot name wins over the WebP.

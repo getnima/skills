@@ -30,10 +30,20 @@ const BOMBS = ['bomb_host_a', 'bomb_host_b'];
 const SLOTS = Object.fromEntries([...FOOD.map((k) => [k, `food/${k}.png`]), ...BOMBS.map((k) => [k, `bombs/${k}.png`])]);
 const IMAGE = /\.(png|webp|jpe?g|svg|gif)$/i;
 
+/** Size and transparency of a PNG or an extended WebP (tools/assets/to_webp.py writes VP8X with alpha). */
 function pngInfo(file) {
   const b = fs.readFileSync(file);
-  if (b.readUInt32BE(0) !== 0x89504e47) return null;
-  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), colorType: b[25], kb: Math.round(b.length / 1024) };
+  const kb = Math.round(b.length / 1024);
+  if (b.readUInt32BE(0) === 0x89504e47) return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), alpha: b[25] === 6, kb };
+  if (b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP' && b.toString('ascii', 12, 16) === 'VP8X') {
+    return { w: b.readUIntLE(24, 3) + 1, h: b.readUIntLE(27, 3) + 1, alpha: (b[20] & 0x10) !== 0, kb };
+  }
+  return null;
+}
+/** The file actually shipped for a slot: the slot's own name, else the same base name as WebP (the kit finds either). */
+function shipped(rel) {
+  if (fs.existsSync(path.join(DIR, rel))) return rel;
+  return rel.replace(/\.png$/, '.webp');
 }
 function listImages(dir, base = dir) {
   const out = [];
@@ -88,16 +98,17 @@ async function realTree(browser) {
   // ── 1. the files ──
   const readme = ['README.md', 'food/README.md', 'bombs/README.md'].map((f) => fs.readFileSync(path.join(DIR, f), 'utf8')).join('\n');
   const sizes = {};
-  for (const [key, rel] of Object.entries(SLOTS)) {
+  for (const [key, slot] of Object.entries(SLOTS)) {
+    const rel = shipped(slot);
     const file = path.join(DIR, rel);
     const info = fs.existsSync(file) ? pngInfo(file) : null;
     sizes[key] = info ? info.kb : null;
-    check(`${rel}: a transparent 384x384 PNG`, !!info && info.w === 384 && info.h === 384 && info.colorType === 6, info);
-    check(`${rel}: listed in the README`, readme.includes('`' + path.basename(rel) + '`'));
+    check(`${rel}: a transparent 384x384 picture`, !!info && info.w === 384 && info.h === 384 && info.alpha, info);
+    check(`${rel}: listed in the README`, readme.includes('`' + path.basename(slot) + '`') || readme.includes('`' + path.basename(rel) + '`'));
   }
   console.log('kB per picture', JSON.stringify(sizes), 'total', Object.values(sizes).reduce((a, b) => a + (b || 0), 0));
   const images = listImages(DIR);
-  const wanted = new Set([...Object.values(SLOTS), 'background.jpg', 'background.png', 'background.webp']);
+  const wanted = new Set([...Object.values(SLOTS).map(shipped), 'background.jpg', 'background.png', 'background.webp']);
   check('nothing else is shipped from assets/ninja (no picture the game does not load)', images.every((f) => wanted.has(f)), images.filter((f) => !wanted.has(f)));
 
   // ── 1b. the game loads every one of them ──
@@ -107,7 +118,7 @@ async function realTree(browser) {
     await playFor(page, cdp, 5000);
     const got = await loaded(page);
     const st = await state(page);
-    const want = Object.values(SLOTS).map((f) => `/assets/ninja/${f}`);
+    const want = Object.values(SLOTS).map((f) => `/assets/ninja/${shipped(f)}`);
     check('every ninja picture is requested', want.every((w) => got.includes(w)), want.filter((w) => !got.includes(w)));
     check('only those are requested from /assets/ninja/', got.filter((p) => p.startsWith('/assets/ninja/')).every((p) => want.includes(p) || /\/background\./.test(p)), got.filter((p) => p.startsWith('/assets/ninja/') && !want.includes(p)));
     check('no picture shows as a drawn stand-in', Object.keys(SLOTS).every((k) => st.art[k] === true), st.art);
@@ -197,13 +208,14 @@ async function tempCopy(browser) {
     const assets = path.join(tmp, 'client', 'public', 'assets', 'ninja');
     const maker = await browser.newPage();
     // drop-ins: a test picture over a slot, and another extension of the same base name
+    // (a PNG with the slot's own name wins over the shipped WebP; a JPEG of the same base name replaces it)
     fs.writeFileSync(path.join(assets, 'food', 'shawarma.png'), await testPicture(maker, '#ff00aa', 'image/png'));
-    fs.rmSync(path.join(assets, 'food', 'pickle.png'));
-    fs.writeFileSync(path.join(assets, 'food', 'pickle.webp'), await testPicture(maker, '#00d0ff', 'image/webp'));
+    for (const ext of ['png', 'webp']) fs.rmSync(path.join(assets, 'food', `pickle.${ext}`), { force: true });
+    fs.writeFileSync(path.join(assets, 'food', 'pickle.jpg'), await testPicture(maker, '#00d0ff', 'image/jpeg'));
     await maker.close();
-    // really missing files
-    const gone = ['food/falafel.png', 'food/gold_falafel.png', 'bombs/bomb_host_b.png'];
-    for (const f of gone) fs.rmSync(path.join(assets, f));
+    // really missing files (every extension of the base name)
+    const gone = ['food/falafel', 'food/gold_falafel', 'bombs/bomb_host_b'];
+    for (const f of gone) for (const ext of ['png', 'webp', 'jpg']) fs.rmSync(path.join(assets, `${f}.${ext}`), { force: true });
 
     vite = spawn(process.execPath, [path.join(REPO, 'node_modules', 'vite', 'bin', 'vite.js'), '--config', 'qa.config.mjs'], { cwd: tmp, env: { ...process.env, PARTY_CLIENT_PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'pipe'] });
     let log = '';
@@ -228,8 +240,8 @@ async function tempCopy(browser) {
     const got = await loaded(page);
     const st = await state(page);
     check('copy: the dropped test picture is loaded by its slot (food/shawarma.png)', got.includes('/assets/ninja/food/shawarma.png') && st.art.shawarma === true);
-    check('copy: another extension of the same base name works (food/pickle.webp)', got.includes('/assets/ninja/food/pickle.webp') && !got.includes('/assets/ninja/food/pickle.png') && st.art.pickle === true, got.filter((p) => p.includes('pickle')));
-    check('copy: missing files are not requested', gone.every((f) => !got.includes(`/assets/ninja/${f}`)));
+    check('copy: another extension of the same base name works (food/pickle.jpg)', got.includes('/assets/ninja/food/pickle.jpg') && !got.some((p) => /\/pickle\.(png|webp)$/.test(p)) && st.art.pickle === true, got.filter((p) => p.includes('pickle')));
+    check('copy: missing files are not requested', gone.every((f) => !got.some((p) => p.startsWith(`/assets/ninja/${f}.`))));
     check('copy: missing files show their drawings', st.art.falafel === false && st.art.gold_falafel === false && st.art.bomb_host_b === false && st.art.bomb_host_a === true && st.art.hummus === true, st.art);
     check('copy: without the gold falafel the gold party props are fetched', got.some((p) => p.startsWith('/assets/shimi/prop_')), got.filter((p) => p.startsWith('/assets/shimi/')));
     check('copy: the game plays, no page errors', st.sliced > 0 && errors.length === 0, { sliced: st.sliced, errors: errors.slice(0, 3) });

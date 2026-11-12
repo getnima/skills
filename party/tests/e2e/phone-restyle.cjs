@@ -154,7 +154,15 @@ const call = (s, ev, req) =>
       if (before) await before;
       // 3-2-1: one phone per digit, then GO
       await Promise.all(phones.map((p) => L.waitScreen(p.page, ['countdown', 'late'], 12000)));
-      const digit = (p) => p.page.evaluate(() => (document.querySelector('.pp-cd-num') || {}).textContent || '');
+      /** The digit on screen once it has popped in (full opacity, no zoom left), else ''. */
+      const digit = (p) =>
+        p.page.evaluate(() => {
+          const n = document.querySelector('.pp-cd-num');
+          if (!n) return '';
+          const cs = getComputedStyle(n);
+          const scale = cs.transform === 'none' ? 1 : new DOMMatrix(cs.transform).a;
+          return cs.opacity === '1' && Math.abs(scale) <= 1.01 ? n.textContent : '';
+        });
       const cdLabel = `${num()}-countdown-${gameId}`;
       const order = gameId === 'tap' ? [A, B, C, D] : [D, C, B, A];
       for (const want of ['3', '2', '1']) {
@@ -162,7 +170,6 @@ const call = (s, ev, req) =>
         const seen = await L.waitFor(async () => (await digit(p)).trim() === want, 4000, `digit ${want}`).catch(() => false);
         // a slow machine can miss a digit: no picture of a number still zooming in
         if (!seen) continue;
-        await sleep(380);
         await shot(p.page, `${cdLabel}-${want}`, { allowOverlap: true });
       }
       const g = order.shift();

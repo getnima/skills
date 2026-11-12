@@ -39,3 +39,7 @@ and two bombs thrown together are one of each. Looks only: `client/src/games/nin
 The game draws on top: the lit fuse and its spark, a throbbing warning burst behind the bomb and, on the first bomb, the "לא לחתוך!" tag.
 If a file is missing the game draws a dark bomb with a cap and a generic face instead (red ring for A, pink for B).
 The old shared `../bomb.png` (both hosts on one bomb) is retired and no longer in the folder.
+
+## Shipped as WebP
+
+The pictures here ship as `.webp` (made from the PNG sources by `tools/assets/to_webp.py`: same pixels and the exact same transparency, about 7x lighter for 20 phones on party Wi-Fi). The names in the tables are the slot names: the game finds `face.webp` for the slot `face.png`. To replace a picture, drop a file with the slot name (`.png`, `.webp` or `.jpg`); a file with the exact slot name wins over the WebP.

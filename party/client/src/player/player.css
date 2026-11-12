@@ -436,7 +436,7 @@
   flex: 1 1 auto;
   width: 100%;
   min-height: 92px;
-  max-height: 250px;
+  max-height: min(calc(var(--app-h) * 0.42), 390px);
 }
 .ps-art.is-mid {
   width: clamp(92px, 30vw, 128px);
@@ -954,6 +954,10 @@
 .ps-send .pw-stage {
   gap: 12px;
 }
+.ps-late .ps-hero .ps-hero-burst {
+  top: -18px;
+  bottom: auto;
+}
 .pp-send {
   flex: none;
   padding: 7px 18px 9px;
@@ -1329,6 +1333,7 @@
   align-items: center;
   gap: 7px;
   width: 100%;
+  padding-bottom: 6px;
   animation: pp-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
 /* me: the doll, big, and what it did */
@@ -1338,7 +1343,7 @@
   justify-content: center;
   gap: 12px;
   width: 100%;
-  padding: 4px 12px 0;
+  padding: 4px 14px 0;
 }
 .is-winner .ps-res-me {
   padding-top: clamp(25px, 7.4vw, 31px);
@@ -1352,7 +1357,7 @@
 }
 .ps-res-me .ps-hero .ps-hero-burst {
   left: auto;
-  right: -10px;
+  right: -3px;
   bottom: -16px;
   width: clamp(54px, 16vw, 66px);
 }
@@ -1376,8 +1381,9 @@
   border: 3px solid var(--ink);
   box-shadow: 3px 3px 0 var(--ink);
   color: var(--ink);
-  font: 700 clamp(19px, 5.9vw, 26px) / 1.1 var(--disp);
-  white-space: nowrap;
+  font: 700 clamp(19px, 5.5vw, 26px) / 1.1 var(--disp);
+  /* one line; two when the doll leaves too little room */
+  max-width: 100%;
   transform: rotate(-2deg);
 }
 .pp-res-rank .ps-n {

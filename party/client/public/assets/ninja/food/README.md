@@ -56,3 +56,7 @@ column says what it draws on the cut face.
 | `gold_falafel.png` | gold `#FFD21F` with a star | gold `#FFC21A` + sparkles | crumbs (coin burst) | gold with a star; gold and white bits, plus the coin burst |
 | `garden_chair.png` | white plastic `#F4F4F2` | `#DADADA` | crumbs (plastic shards) | plain white plastic; white and grey shards |
 | `flip_flop.png` | blue foam `#2E9BE0`, red strap `#E0342A` | `#2E9BE0` | crumbs (foam bits) | blue foam with the white stripe and the red strap plug; blue and red bits |
+
+## Shipped as WebP
+
+The pictures here ship as `.webp` (made from the PNG sources by `tools/assets/to_webp.py`: same pixels and the exact same transparency, about 7x lighter for 20 phones on party Wi-Fi). The names in the tables are the slot names: the game finds `face.webp` for the slot `face.png`. To replace a picture, drop a file with the slot name (`.png`, `.webp` or `.jpg`); a file with the exact slot name wins over the WebP.

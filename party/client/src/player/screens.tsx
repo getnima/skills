@@ -400,7 +400,7 @@ export function WinScreen(props: { readonly onDone: () => void; readonly look: s
           <span class="pp-crown" aria-hidden="true">
             👑
           </span>
-          <Avatar look={props.look} size={dollPx(v, 0.38, 0.19, 96, 160)} crop="bust" />
+          <Avatar look={props.look} size={dollPx(v, 0.42, 0.22, 100, 176)} crop="bust" />
           <Burst text="מחורחר!" class="ps-hero-burst" />
         </div>
         <Prize />

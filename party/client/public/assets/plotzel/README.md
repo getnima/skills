@@ -12,3 +12,7 @@ A production build must be re-run after adding files (the list of files is taken
 
 Square images, subject centered. Use about 2x the size (e.g. 240 x 240 for `puff.png`) for sharp phones.
 Placeholders are generic cartoons; do not use a photo of a real person without their OK.
+
+## Shipped as WebP
+
+The pictures here ship as `.webp` (made from the PNG sources by `tools/assets/to_webp.py`: same pixels and the exact same transparency, about 7x lighter for 20 phones on party Wi-Fi). The names in the tables are the slot names: the game finds `face.webp` for the slot `face.png`. To replace a picture, drop a file with the slot name (`.png`, `.webp` or `.jpg`); a file with the exact slot name wins over the WebP.

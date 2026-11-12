@@ -151,40 +151,45 @@ export function stampSticker(g: CanvasRenderingContext2D, scratch: Scratch, w: n
   const { a, b } = scratch;
   const pw = Math.max(1, Math.ceil(w * raster));
   const ph = Math.max(1, Math.ceil(h * raster));
-  // setting the size clears the canvas
-  a.width = pw;
-  a.height = ph;
-  b.width = pw;
-  b.height = ph;
+  // the work canvases only ever grow (a resize reallocates); the used corner is cleared instead
+  if (a.width < pw || a.height < ph) {
+    a.width = b.width = Math.max(a.width, pw);
+    a.height = b.height = Math.max(a.height, ph);
+  }
   const ca = a.getContext('2d');
   const cb = b.getContext('2d');
   if (!ca || !cb) return;
+  ca.setTransform(1, 0, 0, 1, 0, 0);
+  ca.clearRect(0, 0, pw, ph);
+  cb.setTransform(1, 0, 0, 1, 0, 0);
+  cb.clearRect(0, 0, pw, ph);
   ca.setTransform(raster, 0, 0, raster, 0, 0);
   paint(ca);
   // ink silhouette
-  cb.drawImage(a, 0, 0);
+  cb.drawImage(a, 0, 0, pw, ph, 0, 0, pw, ph);
   cb.globalCompositeOperation = 'source-in';
   cb.fillStyle = PAL.ink;
   cb.fillRect(0, 0, pw, ph);
   cb.globalCompositeOperation = 'source-over';
   const dw = pw / raster;
   const dh = ph / raster;
+  const stamp = (src: HTMLCanvasElement, x: number, y: number): void => g.drawImage(src, 0, 0, pw, ph, x, y, dw, dh);
   if (fin.shadowAlpha > 0) {
     g.globalAlpha = fin.shadowAlpha;
-    g.drawImage(b, fin.shadowX, fin.shadowY, dw, dh);
+    stamp(b, fin.shadowX, fin.shadowY);
     g.globalAlpha = 1;
   }
   if (fin.outline > 0) {
     const o = fin.outline;
     const d = o * 0.7071;
-    g.drawImage(b, -o, 0, dw, dh);
-    g.drawImage(b, o, 0, dw, dh);
-    g.drawImage(b, 0, -o, dw, dh);
-    g.drawImage(b, 0, o, dw, dh);
-    g.drawImage(b, -d, -d, dw, dh);
-    g.drawImage(b, d, -d, dw, dh);
-    g.drawImage(b, -d, d, dw, dh);
-    g.drawImage(b, d, d, dw, dh);
+    stamp(b, -o, 0);
+    stamp(b, o, 0);
+    stamp(b, 0, -o);
+    stamp(b, 0, o);
+    stamp(b, -d, -d);
+    stamp(b, d, -d);
+    stamp(b, -d, d);
+    stamp(b, d, d);
   }
-  g.drawImage(a, 0, 0, dw, dh);
+  stamp(a, 0, 0);
 }

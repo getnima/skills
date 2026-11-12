@@ -452,6 +452,12 @@ export const game: GameModule = {
 
     layout();
     const offResize = view.onResize(layout);
+    // made now rather than on the first frame that needs them (a zone change, the first jump)
+    if (stone) {
+      if (!art.wall.isPlaceholder && looks.some((L) => L.stone)) greyWall = greyCopy(art.wall.source);
+      if (!art.bg.isPlaceholder && looks.some((L) => L.backGrey)) greyBg = greyCopy(art.bg.source);
+    }
+    if (art.hero) for (const f of ['stand', 'run1', 'run2', 'jump', 'fall', 'ball'] as const) heroSprite(f);
 
     // ── input: which half is held. Several fingers: the last one pressed wins. ──
     const sides = new Map<number, number>(); // insertion order = press order
