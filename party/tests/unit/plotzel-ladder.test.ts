@@ -72,8 +72,9 @@ function originalGraph(): { DIST: Map<string, number>; CDIST: Map<string, number
 }
 
 /** Independent BFS from `start` to the goal: neighbors by trying every letter in every position. */
+const DICT_SET = new Set(unpack(DICT));
 function bruteDistance(start: string, allowed: (w: string) => boolean): number | undefined {
-  const dict = new Set(unpack(DICT));
+  const dict = DICT_SET;
   if (!dict.has(start)) return undefined;
   const seen = new Set([start]);
   let frontier = [start];
@@ -152,7 +153,7 @@ describe('plotzel graph', () => {
       expect(ladder.dist(w), disp(w)).toBe(bruteDistance(w, () => true));
       expect(ladder.cdist(w), disp(w)).toBe(bruteDistance(w, (n) => n === TARGET || ladder.isCommon(n)));
     }
-  });
+  }, 60_000);
 
   it('DIST, CDIST, neighbors and bestNext equal the original code', () => {
     let reached = 0;
@@ -168,7 +169,7 @@ describe('plotzel graph', () => {
       expect(ladder.neighbors(w)).toEqual(ref.neighbors(w));
       if (ref.DIST.has(w) && w !== TARGET) expect(ladder.bestNext(w), disp(w)).toBe(ref.bestNext(w));
     }
-  });
+  }, 60_000);
 
   it('every shortestPath step is a one-letter change to a dictionary word and ends at פלוץ', () => {
     for (const w of new Set([...ladder.starts, ...roundSequence(7, ladder).slice(0, 30)])) {

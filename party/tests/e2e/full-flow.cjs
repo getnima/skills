@@ -28,9 +28,8 @@
 //     name and the prize, the winner's phone shows the WIN moment within the same beat, the other
 //     phones show who won, the victory song started on the TV and on the winner's phone
 //   - points and totals on the host equal shared/scoring.ts applied to the raw scores
-// Plotzel is played in its default mode (embed; the iframe points at the local stand-in site
-// client/public/plotzel-bridge/mock.html, once with the score bridge and once without) and in
-// builtin mode, typed on the on-screen Hebrew keyboard.
+// Plotzel (the word ladder to פלוץ) is typed on its on-screen Hebrew keyboard: every phone follows
+// the shortest path the game itself would show (window.__plotzel.path()), at a different pace.
 // Screenshots: tests/e2e/out/full-flow/ (look at them: a layout break is not an assertion).
 const { chromium, devices } = require('playwright');
 const fs = require('fs');
@@ -43,13 +42,6 @@ const SINGLE_ORIGIN = process.env.SINGLE_ORIGIN === '1';
 const OUT = path.join(__dirname, 'out', 'full-flow');
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
-
-// a second origin for the same server, so the Plotzel iframe is really cross-origin
-const MOCK = (() => {
-  const u = new URL(BASE);
-  u.hostname = u.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
-  return `${u.origin}/plotzel-bridge/mock.html`;
-})();
 
 const failures = [];
 let passed = 0;
@@ -88,7 +80,6 @@ function loadTs(entry) {
   return m.exports;
 }
 const { computeRoundScores } = loadTs('shared/scoring.ts');
-const plotzelLogic = loadTs('client/src/games/plotzel/logic.ts');
 const { GAMES, GAME_IDS } = loadTs('shared/protocol.ts');
 
 // ───────────────────────────── pages ─────────────────────────────
@@ -257,54 +248,24 @@ function ninjaDriver(ph, restMs) {
   });
 }
 
-// plotzel
-const normLetter = (c) => ({ ך: 'כ', ם: 'מ', ן: 'נ', ף: 'פ', ץ: 'צ' })[c] || c;
-async function typeWord(ph, word) {
-  for (const ch of Array.from(word)) await ph.page.locator(`.pz-key[data-k="${normLetter(ch)}"]`).tap();
-  await ph.page.locator('.pz-key[data-k="ENTER"]').tap();
-}
-/** A game that finishes early leaves its final score on the HUD: read it while the stage is still up. */
-async function readHudScore(ph, ms) {
-  const until = Date.now() + ms;
-  while (Date.now() < until) {
-    const i = await pinfo(ph).catch(() => null);
-    if (i && i.score !== null) ph.hudFinal = Math.max(ph.hudFinal || 0, i.score);
-    await sleep(60);
-  }
-}
-async function plotzelBuiltin(ph, answer, wrong) {
-  await ph.page.waitForSelector('.pz-key', { timeout: 8000 });
-  await waitFor(async () => (await pinfo(ph)).frozen === false, 8000, `${ph.label} plotzel live`);
-  for (const w of wrong) {
-    await typeWord(ph, w);
-    await sleep(1800); // the row flips before the next one opens
-  }
-  ph.mid = true;
-  await sleep(600);
-  await typeWord(ph, answer);
-  await readHudScore(ph, 900);
-}
-async function plotzelEmbedBridge(ph) {
-  await ph.page.waitForFunction(() => document.querySelector('.pze') && document.querySelector('.pze').dataset.state === 'bridge', null, { timeout: 9000 });
-  await waitFor(async () => (await pinfo(ph)).frozen === false, 8000, `${ph.label} plotzel live`);
-  const frame = ph.page.frameLocator('.pze-frame');
-  await frame.locator('#g1').tap();
-  await sleep(500);
-  await frame.locator('#g2').tap();
-  ph.mid = true;
-  await sleep(2600);
-  await frame.locator('#g3').tap(); // solved on try 3
-  await readHudScore(ph, 900);
-}
-async function plotzelEmbedSelfReport(ph) {
-  await ph.page.waitForFunction(() => document.querySelector('.pze') && document.querySelector('.pze').dataset.state === 'ready', null, { timeout: 9000 });
-  await waitFor(async () => (await pinfo(ph)).frozen === false, 8000, `${ph.label} plotzel live`);
-  ph.mid = true;
-  await sleep(3500);
-  await ph.page.locator('.pze-n[data-act="tries-4"]').tap();
-  await sleep(300);
-  await ph.page.locator('.pze-n[data-act="tries-4"]').tap({ force: true }); // armed = pulsing; the second tap confirms
-  await readHudScore(ph, 900);
+// plotzel: type the next word of the shortest path on the on-screen keys (finals have their own keys)
+function plotzelDriver(ph, keyGapMs) {
+  const key = (k) => ph.page.locator(`.pz-key[data-k="${k}"]`).tap();
+  return drive(ph, async () => {
+    const s = await ph.page.evaluate(() => {
+      const p = window.__plotzel;
+      return p && p.phase === 'play' ? { next: p.path()[1], typed: Array.from(p.typed).length } : null;
+    });
+    if (!s || !s.next) return sleep(80);
+    for (let i = 0; i < s.typed; i++) await key('BACK');
+    for (const ch of Array.from(s.next)) {
+      await key(ch);
+      await sleep(keyGapMs);
+    }
+    await key('ENTER');
+    ph.mid = true;
+    await sleep(keyGapMs);
+  });
 }
 
 // ───────────────────────────── the run ─────────────────────────────
@@ -348,10 +309,10 @@ async function plotzelEmbedSelfReport(ph) {
 
     // ── four phones join with Hebrew names ──
     const spec = [
-      { label: 'iphone-a', device: 'iPhone 14', name: 'דנה', q: `&plotzelUrl=${encodeURIComponent(MOCK)}` },
-      { label: 'iphone-b', device: 'iPhone 14', name: 'יוסי המלך', q: `&plotzelUrl=${encodeURIComponent(MOCK + '?bridge=0')}` },
-      { label: 'pixel-c', device: 'Pixel 7', name: 'מיכל', q: '&plotzel=builtin' },
-      { label: 'pixel-d', device: 'Pixel 7', name: 'אבי', q: '&plotzel=builtin' },
+      { label: 'iphone-a', device: 'iPhone 14', name: 'דנה', q: '' },
+      { label: 'iphone-b', device: 'iPhone 14', name: 'יוסי המלך', q: '' },
+      { label: 'pixel-c', device: 'Pixel 7', name: 'מיכל', q: '' },
+      { label: 'pixel-d', device: 'Pixel 7', name: 'אבי', q: '' },
     ];
     for (const s of spec) {
       const ctx = await browser.newContext({ ...devices[s.device] });
@@ -434,17 +395,15 @@ async function plotzelEmbedSelfReport(ph) {
       const durationMs = round.endAt - round.startAt;
 
       // input
-      const side = [];
       if (gameId === 'tap') drivers = [tapDriver(A, 45), tapDriver(B, 110), tapDriver(C, 170), tapDriver(D, 260)];
       else if (gameId === 'icy') drivers = [icyDriver(A, 700), icyDriver(B, 1000), icyDriver(C, 850), icyDriver(D, 550)];
       else if (gameId === 'flappy') drivers = [flappyDriver(A, 0.75), flappyDriver(B, 0.95), flappyDriver(C, 0.85), flappyDriver(D, 0.6)];
       else if (gameId === 'ninja') drivers = [ninjaDriver(A, 260), ninjaDriver(B, 420), ninjaDriver(C, 120), ninjaDriver(D, 60)];
       else if (gameId === 'plotzel') {
-        const answer = plotzelLogic.pickAnswer(round.seed);
-        const wrong = ['שולחן', 'מכונה', 'ספרים'].filter((w) => plotzelLogic.normalizeWord(w) !== plotzelLogic.normalizeWord(answer));
-        drivers = [];
-        const guard = (p, fn) => fn.catch((e) => check(false, `${p.label} plotzel input`, String(e.message).slice(0, 200)));
-        side.push(guard(A, plotzelEmbedBridge(A)), guard(B, plotzelEmbedSelfReport(B)), guard(C, plotzelBuiltin(C, answer, wrong.slice(0, 1))), guard(D, plotzelBuiltin(D, answer, [])));
+        drivers = [plotzelDriver(A, 60), plotzelDriver(B, 140), plotzelDriver(C, 220), plotzelDriver(D, 320)];
+        // every phone plays the same ladders in the same order
+        const seqs = await Promise.all(phones.map((p) => p.page.evaluate(() => (window.__plotzel ? window.__plotzel.sequence(12).join(',') : null))));
+        check(seqs[0] !== null && seqs.every((q) => q === seqs[0]), 'plotzel: the same ladder sequence on every phone', seqs.map((q) => (q || '').slice(0, 20)));
       }
 
       // mid-game shots
@@ -526,14 +485,6 @@ async function plotzelEmbedSelfReport(ph) {
         await host.mouse.click(960, 60);
         await sleep(900);
         await shots(tag('host-after-reload'), [H]);
-      }
-
-      if (gameId === 'plotzel') {
-        await Promise.all(side);
-        await Promise.all(phones.map((p) => waitScreen(p, ['sending', 'suspense'], 12000, 'plotzel finished')));
-        await shots(tag('finished-early'), [H, A, C]);
-        // the server ends the round by itself once every phone has sent its final score
-        await waitPhase('results', 6000).catch(() => check(false, 'round ends when every phone has finished'));
       }
 
       // end of round → results. From here no phone may show a result before revealAt.

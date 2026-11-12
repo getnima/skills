@@ -414,7 +414,9 @@ async function main() {
     await L.waitPhase(page, 'lobby', 5000);
 
     // ── autoplay blocked until a click: the song starts on the unlock at the right position ──
-    browser2 = await chromium.launch({ args: ['--autoplay-policy=user-gesture-required'] });
+    // Headless Chromium ignores --autoplay-policy, so the fresh tab below models Chrome's rule:
+    // media play() is refused (NotAllowedError) until the page has had a user activation.
+    browser2 = await chromium.launch();
     const tv2 = await openTv(browser2);
     await setAuto(tv2.page, false);
     await startGame(tv2.page, 'tap');
@@ -425,6 +427,15 @@ async function main() {
     const ctx3 = await browser2.newContext({ viewport: { width: 1920, height: 1080 } });
     await ctx3.addInitScript((s) => {
       for (const [k, v] of Object.entries(JSON.parse(s))) localStorage.setItem(k, v);
+      const play = HTMLMediaElement.prototype.play;
+      window.__refusedPlays = 0;
+      HTMLMediaElement.prototype.play = function (...a) {
+        if (!navigator.userActivation.hasBeenActive) {
+          window.__refusedPlays++;
+          return Promise.reject(new DOMException('autoplay blocked (test)', 'NotAllowedError'));
+        }
+        return play.apply(this, a);
+      };
     }, store);
     const page3 = await ctx3.newPage();
     const errors3 = [];
@@ -435,8 +446,8 @@ async function main() {
     check((await L.state(page3)).code === tv2.code && (await L.state(page3)).phase === 'playing', 'fresh TV page rejoined the running round');
     await sleep(1500);
     let s2 = await snap(page3);
-    const lockShown = await page3.isVisible('[data-testid="audio-lock"]');
-    check(s2.tap && !s2.tap.playing && lockShown, 'no gesture yet: the song waits (sound banner shown)', { tap: s2.tap, lockShown });
+    const refused = await page3.evaluate(() => window.__refusedPlays);
+    check(s2.tap && !s2.tap.playing && refused >= 1, `no gesture yet: the song waits (${refused} refused play)`, { tap: s2.tap, refused });
     await page3.mouse.click(960, 300);
     await page3.waitForFunction(() => window.__partyMusic.info('tap') && window.__partyMusic.info('tap').playing, null, { timeout: 4000 });
     await sleep(300);

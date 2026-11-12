@@ -12,11 +12,10 @@ import './plotzel.css';
 
 import { GAMES } from '../../../../shared/protocol';
 import { sfx } from '../../kit/audio';
-import { createGameCanvas, drawText, roundRectPath } from '../../kit/canvas';
+import { createGameCanvas } from '../../kit/canvas';
 import { clamp, createFx, ease } from '../../kit/fx';
 import { haptic } from '../../kit/haptics';
 import { createLoop, isKitPaused } from '../../kit/loop';
-import { COLORS, font } from '../../kit/theme';
 import { loadPlotzelArt } from './art';
 import { checkStep, diffCount, diffPos, disp, getLadder, HEB, hintText, ladderBuildMs, REGULAR_OF, TARGET, TARGET_D, WORD_LEN } from './ladder';
 import { ladderScore, roundSequence, SCORE } from './round';
@@ -42,7 +41,7 @@ const DEMO_MS = 3400;
 const HURRY_MS = 10_000;
 const PUFF_S = 1.3;
 const MASCOT_S = 1.25;
-const MASCOT_R = 40;
+const MASCOT_R = 42;
 
 /** The standard Israeli layout, exactly as the original lays it out (left to right). */
 const KB_ROWS: ReadonlyArray<readonly [string, 'BACK' | 'ENTER' | null]> = [
@@ -56,7 +55,10 @@ const CODE_MAP: Readonly<Record<string, string>> = {
   KeyH: 'י', KeyJ: 'ח', KeyK: 'ל', KeyL: 'ך', Semicolon: 'ף', KeyZ: 'ז', KeyX: 'ס', KeyC: 'ב', KeyV: 'ה', KeyB: 'נ', KeyN: 'מ', KeyM: 'צ', Comma: 'ת', Period: 'ץ',
 };
 
-const F_BUBBLE = font(22, 900);
+/** Canvas fx colours: the design system's (plotzel.css --pz-*). */
+const FX = { yel: '#ffd21f', red: '#f2361b', white: '#fff8e6', pink: '#ff7eb6', org: '#ff9f0a' } as const;
+/** The owner's words for a solve in exactly par (README "Voice"). */
+const PERFECT_WORDS: readonly string[] = ['צדיק!', 'בן פורת יוסף!', 'וואו!', 'מחורחר!'];
 
 type Phase = 'play' | 'celebrate' | 'reveal' | 'done';
 
@@ -169,7 +171,13 @@ export const game: GameModule = {
     const revealEl = el('div', 'pz-reveal');
     const demoEl = el('div', 'pz-demo');
     demoEl.setAttribute('aria-hidden', 'true');
-    board.append(rowsEl, demoEl, revealEl, toastEl);
+    const stickerEl = el('div', 'pz-sticker');
+    const stickerWord = el('div', 'pz-sticker-word');
+    const stickerFace = el('div', 'pz-sticker-face');
+    stickerFace.append(stickerWord);
+    stickerEl.append(stickerFace);
+    stickerEl.setAttribute('aria-hidden', 'true');
+    board.append(rowsEl, demoEl, stickerEl, revealEl, toastEl);
 
     const kb = el('div', 'pz-kb');
     kb.dir = 'ltr';
@@ -246,7 +254,7 @@ export const game: GameModule = {
     let fxBusyUntil = 0;
     let solveCount = 0;
     const puffs: Array<{ x: number; y: number; t: number; size: number }> = [];
-    let mascot: { x: number; y: number; t: number; text: string; color: string } | null = null;
+    let mascot: { x: number; y: number; t: number } | null = null;
 
     const current = (): string => words[words.length - 1] ?? start;
     const steps = (): number => words.length - 1;
@@ -283,7 +291,7 @@ export const game: GameModule = {
       const keyGap = W < 340 ? 1.6 : W < 380 ? 4 : 5;
       root.style.setProperty('--key-h', `${keyH}px`);
       root.style.setProperty('--key-gap', `${keyGap}px`);
-      root.style.setProperty('--key-fs', `${clamp(Math.round(keyH * 0.44), 17, 24)}px`);
+      root.style.setProperty('--key-fs', `${clamp(Math.round(keyH * 0.4), 17, 22)}px`);
       root.style.setProperty('--kb-row-gap', `${portrait ? (avail < 560 ? 5 : 7) : 4}px`);
       root.classList.toggle('is-landscape', !portrait);
       root.classList.toggle('is-short', avail < 560);
@@ -375,6 +383,7 @@ export const game: GameModule = {
       disarmSkip();
       revealEl.classList.remove('is-on');
       revealEl.replaceChildren();
+      stickerEl.classList.remove('is-on');
       shownSkipP = -1;
       rebuildRows();
     }
@@ -478,17 +487,27 @@ export const game: GameModule = {
       const W = view.width;
       // 💨 flies off, a fart, the face pops up, the points float
       puffs.push({ x: c.x, y: c.y, t: 0, size: clamp(W * 0.36, 110, 170) });
-      mascot = { x: 0, y: 0, t: 0, text: perfect ? 'מושלם!' : s === par + 1 ? 'כמעט מושלם!' : 'פלוץ! 💨', color: perfect ? COLORS.yellow : '#ffffff' };
-      // the face + its bubble, centered in the room the active and goal rows just left
+      // a star-burst sticker with the owner's words, in the room the active and goal rows just left,
+      // and Shimi's head popping up next to it
+      const near = s === par + 1;
+      stickerWord.textContent = perfect ? (PERFECT_WORDS[(solveCount - 1) % PERFECT_WORDS.length] ?? 'וואו!') : near ? 'כמעט מושלם!' : 'פלוץ!';
+      stickerEl.classList.toggle('is-near', near);
+      stickerEl.classList.toggle('is-plain', !perfect && !near);
+      const bw = board.clientWidth;
+      const bh = board.clientHeight;
+      const stk = Math.round(clamp(Math.min(bw * 0.44, bh * 0.62), 110, 172));
+      const rowBottom = row.offsetTop + row.offsetHeight + rowsEl.offsetTop;
+      const top = clamp(rowBottom + 4, 4, Math.max(4, bh - stk - 6));
+      stickerEl.style.setProperty('--stk', `${stk}px`);
+      stickerEl.style.top = `${top}px`;
+      replay(stickerEl, 'is-on');
       const b = board.getBoundingClientRect();
       const origin = fxRoot.getBoundingClientRect();
-      const rowBottom = row.getBoundingClientRect().bottom - origin.top;
-      const groupW = MASCOT_R * 2 + 6 + bubbleWidth(view.ctx, mascot.text);
-      mascot.x = b.left - origin.left + b.width / 2 - groupW / 2 + MASCOT_R;
-      mascot.y = clamp(rowBottom + MASCOT_R + 10, b.top - origin.top + MASCOT_R, b.bottom - origin.top - MASCOT_R);
-      fx.text(c.x, c.y - tile * 0.6, `+${points}`, { color: perfect ? COLORS.yellow : '#ffffff', size: 46, rise: 90, life: 1.2 });
-      fx.burst(c.x, c.y, { count: 22, shape: 'star', colors: [COLORS.yellow, COLORS.green, '#ffffff'], speed: 380, life: 0.7 });
-      if (perfect) fx.confetti({ count: 140, width: W });
+      const mx = b.left - origin.left + bw / 2 - stk / 2 - MASCOT_R * 0.35;
+      mascot = { x: Math.max(MASCOT_R + 4, mx), y: b.top - origin.top + top + stk * 0.68, t: 0 };
+      fx.text(c.x, c.y - tile * 0.6, `+${points}`, { color: perfect ? FX.yel : FX.white, size: 46, rise: 90, life: 1.2 });
+      fx.burst(c.x, c.y, { count: 22, shape: 'star', colors: [FX.yel, FX.red, FX.white], speed: 380, life: 0.7 });
+      if (perfect) fx.confetti({ count: 140, width: W, colors: [FX.yel, FX.red, FX.white, FX.pink, FX.org] });
       sfx.fart(solveCount % 4, 0.75 + ((solveCount * 37) % 9) * 0.09);
       if (perfect) sfx.success();
       haptic.success();
@@ -714,12 +733,7 @@ export const game: GameModule = {
       },
     });
 
-    function bubbleWidth(g: CanvasRenderingContext2D, text: string): number {
-      g.font = F_BUBBLE;
-      return g.measureText(text).width + 26;
-    }
-
-    function drawMascot(g: CanvasRenderingContext2D, m: { x: number; y: number; t: number; text: string; color: string }): void {
+    function drawMascot(g: CanvasRenderingContext2D, m: { x: number; y: number; t: number }): void {
       const inK = clamp(m.t / 0.3, 0, 1);
       const outK = clamp((m.t - (MASCOT_S - 0.22)) / 0.22, 0, 1);
       const s = ease.outBack(inK) * (1 - outK);
@@ -730,19 +744,6 @@ export const game: GameModule = {
       g.scale(s, s);
       g.rotate(Math.sin(m.t * 9) * 0.08);
       art.mascot.draw(g, 0, 0, r * 2, r * 2);
-      // speech bubble to the right of the face (RTL text)
-      const bw = bubbleWidth(g, m.text);
-      const bx = r + 6;
-      g.fillStyle = 'rgba(20, 6, 40, 0.35)';
-      roundRectPath(g, bx + 2, -22 + 4, bw, 44, 22);
-      g.fill();
-      g.fillStyle = m.color;
-      roundRectPath(g, bx, -22, bw, 44, 22);
-      g.fill();
-      g.fillStyle = '#2b1436';
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      drawText(g, m.text, bx + bw / 2, 2);
       g.restore();
     }
 

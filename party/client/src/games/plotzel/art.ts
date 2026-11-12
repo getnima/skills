@@ -59,7 +59,7 @@ export interface PlotzelArt {
   readonly background: Drawable;
   /** Replaces the 💨 that flies off on a solve. */
   readonly puff: Drawable;
-  /** The face that pops up on a solve. */
+  /** The face that pops up on a solve: plotzel/mascot.png, else /assets/shimi/head.png. */
   readonly mascot: Drawable;
 }
 
@@ -69,5 +69,11 @@ export async function loadPlotzelArt(): Promise<PlotzelArt> {
     { key: 'puff', file: 'puff.png', size: 120, placeholder: puffPainter },
     { key: 'mascot', file: 'mascot.png', size: 96, round: true, placeholder: facePainter('laughing', '#7fe08a') },
   ]);
-  return { background: a.background, puff: a.puff, mascot: a.mascot };
+  // no plotzel/mascot.png: Shimi's head from the party's own pictures, else the cartoon placeholder
+  let mascot = a.mascot;
+  if (mascot.isPlaceholder) {
+    const shimi = await loadAssets('shimi', [{ key: 'head', file: 'head.png', size: 96, placeholder: facePainter('laughing', '#7fe08a') }]);
+    mascot = shimi.head;
+  }
+  return { background: a.background, puff: a.puff, mascot };
 }
