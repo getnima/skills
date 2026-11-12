@@ -39,12 +39,12 @@ function segDist(ax, ay, bx, by, cx, cy) {
   return Math.hypot(ax + dx * t - cx, ay + dy * t - cy);
 }
 
-/** A horizontal swipe as a finger does it: down, a move every ~16 ms, up. */
-async function swipe(cdp, id, ax, y, bx) {
-  const pend = [touch(cdp, 'touchStart', [{ x: ax, y, id }])];
+/** A swipe as a finger does it: down, a move every ~16 ms, up. */
+async function swipe(cdp, id, ax, ay, bx, by) {
+  const pend = [touch(cdp, 'touchStart', [{ x: ax, y: ay, id }])];
   for (let i = 1; i <= 6; i++) {
     await sleep(16);
-    pend.push(touch(cdp, 'touchMove', [{ x: ax + ((bx - ax) * i) / 6, y, id }]));
+    pend.push(touch(cdp, 'touchMove', [{ x: ax + ((bx - ax) * i) / 6, y: ay + ((by - ay) * i) / 6, id }]));
   }
   await sleep(16);
   pend.push(touch(cdp, 'touchEnd', []));
@@ -112,11 +112,11 @@ async function round(browser, w, h) {
       await sleep(30);
       continue;
     }
-    // once, past the middle and with points to lose: slice a bomb on purpose
+    // once, with points to lose: slice a bomb on purpose
     const victim = bombs.find((b) => b.y > lo + 40 && b.y < hi - 60 && Math.abs(b.vy) < 380);
-    if (!stun && st.left < 34000 && st.score >= 100 && victim) {
+    if (!stun && st.score >= 100 && victim) {
       const y = victim.y + victim.vy * 0.07;
-      await swipe(cdp, id++, victim.x - R * 1.9, y, victim.x + R * 1.9);
+      await swipe(cdp, id++, victim.x - R * 1.9, y, victim.x + R * 1.9, y);
       const after = await read(page);
       if (after.bombsHit > st.bombsHit) {
         stun = { stunned: after.stunned, before: st.score, after: after.score, hit: after.bombsHit - st.bombsHit };
@@ -124,26 +124,40 @@ async function round(browser, w, h) {
       }
       continue;
     }
-    // a target: gold first, then a picture not cut yet, then whatever is lowest; never next to a bomb
+    // a target: gold first, then a picture not cut yet, then whatever is lowest; the cut goes
+    // through it in the first of four directions that stays clear of every bomb
     const lead = 0.075;
-    const cands = inView
-      .filter((t) => t.kind !== 'bomb')
-      .map((t) => ({ ...t, px: t.x + t.vx * lead, py: t.y + t.vy * lead + 0.5 * st.g * lead * lead }))
-      .filter((t) => t.py > lo && t.py < hi && bombs.every((b) => segDist(t.px - R * 1.8, t.py, t.px + R * 1.8, t.py, b.x + b.vx * lead, b.y + b.vy * lead) > b.r * 2.5))
-      .sort((a, b) => (b.kind === 'gold') - (a.kind === 'gold') || !cut.has(b.skin) - !cut.has(a.skin) || b.y - a.y);
-    const t = cands[0];
+    const at = (o) => ({ x: o.x + o.vx * lead, y: o.y + o.vy * lead + 0.5 * st.g * lead * lead });
+    const bombAt = bombs.map((b) => ({ ...at(b), r: b.r }));
+    let t = null;
+    let line = null;
+    for (const c of inView.filter((o) => o.kind !== 'bomb').sort((a, b) => (b.kind === 'gold') - (a.kind === 'gold') || !cut.has(b.skin) - !cut.has(a.skin) || b.y - a.y)) {
+      const p = at(c);
+      if (p.y < lo || p.y > hi) continue;
+      for (const a of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
+        const L = R * 1.7;
+        const l = [p.x - Math.cos(a) * L, p.y - Math.sin(a) * L, p.x + Math.cos(a) * L, p.y + Math.sin(a) * L];
+        if (bombAt.every((b) => segDist(l[0], l[1], l[2], l[3], b.x, b.y) > b.r * 2.3)) {
+          t = { ...c, px: p.x, py: p.y };
+          line = l;
+          break;
+        }
+      }
+      if (t) break;
+    }
     if (!t) {
       await sleep(25);
       continue;
     }
     if (t.kind === 'gold') goldTries++;
-    await swipe(cdp, id++, t.px - R * 1.8, t.py, t.px + R * 1.8);
+    await swipe(cdp, id++, line[0], line[1], line[2], line[3]);
     if (!cut.has(t.skin)) {
-      await sleep(70);
+      // a moment later the halves are apart and the splat has landed
+      await sleep(110);
       const after = await read(page);
       if (after.sliced > st.sliced && !after.ts.some((o) => o.id === t.id)) {
         cut.add(t.skin);
-        await crop(`cut-${t.skin}`, t.px + t.vx * 0.1, t.py + 20, R * 5.6, R * 5.2);
+        await crop(`cut-${t.skin}`, t.px + t.vx * 0.2, t.py + t.vy * 0.1 + 25, R * 5.6, R * 5.6);
       }
     }
     await sleep(40);
@@ -176,13 +190,13 @@ async function round(browser, w, h) {
 async function sheet(browser, r) {
   const img = (name) => {
     const f = path.join(OUT, `${r.tag}-${name}.png`);
-    return fs.existsSync(f) ? `<img src="data:image/png;base64,${fs.readFileSync(f).toString('base64')}" style="height:150px;border:2px solid #ffd21f;border-radius:8px;display:block">` : '<div style="height:150px;width:150px;border:2px dashed #888;border-radius:8px"></div>';
+    return fs.existsSync(f) ? `<img src="data:image/png;base64,${fs.readFileSync(f).toString('base64')}" style="height:200px;border:2px solid #ffd21f;border-radius:8px;display:block">` : '<div style="height:200px;width:200px;border:2px dashed #888;border-radius:8px"></div>';
   };
   const cell = (k) => `<figure style="margin:0"><figcaption style="margin-bottom:4px">${k}</figcaption><div style="display:flex;gap:6px">${img(`air-${k}`)}${img(`cut-${k}`)}</div></figure>`;
-  const bomb = (k) => `<figure style="margin:0"><figcaption style="margin-bottom:4px">${k}</figcaption>${img(`air-${k}`).replace('height:150px', 'height:330px')}</figure>`;
-  const page = await browser.newPage({ viewport: { width: 1500, height: 900 } });
+  const bomb = (k) => `<figure style="margin:0"><figcaption style="margin-bottom:4px">${k}</figcaption>${img(`air-${k}`).replace('height:200px', 'height:360px')}</figure>`;
+  const page = await browser.newPage({ viewport: { width: 1700, height: 900 } });
   await page.setContent(
-    `<body style="margin:0;background:#150a33;font:700 15px system-ui;color:#fff;padding:16px"><div style="font-size:20px;margin-bottom:10px">${r.tag}: in the air | right after the cut</div><div style="display:flex;flex-wrap:wrap;gap:14px;width:1460px">${ALL.map(cell).join('')}</div><div style="display:flex;gap:14px;margin-top:14px">${BOMBS.map(bomb).join('')}</div></body>`,
+    `<body style="margin:0;background:#150a33;font:700 15px system-ui;color:#fff;padding:16px"><div style="font-size:20px;margin-bottom:10px">${r.tag}: in the air | right after the cut</div><div style="display:flex;flex-wrap:wrap;gap:14px;width:1680px">${ALL.map(cell).join('')}</div><div style="display:flex;gap:14px;margin-top:14px">${BOMBS.map(bomb).join('')}</div></body>`,
   );
   await page.waitForTimeout(300);
   const box = await page.evaluate(() => ({ w: document.body.scrollWidth, h: document.body.scrollHeight }));

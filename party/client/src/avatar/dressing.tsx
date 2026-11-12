@@ -855,7 +855,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     for (let i = 0; i < 8; i++) {
       const cand = normalizeLook(randomLook((Math.random() * 2 ** 31) >>> 0, ITEM_IDS));
       next = cand;
-      if (encodeLook(cand) !== encodeLook(prev) && wornIds(cand).length > 0) break;
+      if (encodeLook(cand) !== encodeLook(prev) && wornIds(cand).length >= 2) break;
     }
     for (const f of flights.current.values()) f.cancel();
     flights.current.clear();

@@ -227,6 +227,8 @@ describe('randomLook', () => {
     expect(new Set(sixty).size).toBeGreaterThan(50);
     // nobody is bare or wears a single thing
     expect(looks.every((l) => wornIds(l).length >= 2)).toBe(true);
+    // also after the catalog cut a tower above a hat that cannot carry
+    for (let i = 0; i < 3000; i++) expect(wornIds(normalizeLook(randomLook(i * 31, ITEM_IDS))).length).toBeGreaterThanOrEqual(2);
   });
 
   it('spreads 60 guests of the real catalog: almost never two identical icons', () => {

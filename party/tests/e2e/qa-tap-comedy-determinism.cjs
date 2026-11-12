@@ -9,19 +9,23 @@ const RUNS = [
   { name: '430x932', viewport: { width: 430, height: 932 } },
   { name: '390x844@20fps', viewport: { width: 390, height: 844 }, fps: 20 },
 ];
-// a regular player (7 taps/s, gaps far above the 40 ms minimum) with a pause in the middle
-const TIMES = [...L.steady(7, 1500, 9000, 0, 1), ...L.steady(2, 10600, 2500, 0, 2), ...L.steady(7, 13200, 9000, 0, 3)];
+// a regular player (7 taps/s, gaps far above the 40 ms minimum) with a pause in the middle; the last
+// touch is 1.3 s before the sprint ends (a touch AT the end may arrive a frame late on a 20 fps phone)
+const TIMES = [...L.steady(7, 1500, 9000, 0, 1), ...L.steady(2, 10600, 2500, 0, 2), ...L.steady(7, 13200, 6600, 0, 3)];
+// (every touch lands well inside the 20 s sprint, so CDP delivery jitter at its edges cannot matter)
 
 async function run(browser, r) {
   const { page, cdp, context, errors } = await L.openTap(browser, { viewport: r.viewport, fps: r.fps, seed: 99 });
   const s0 = await L.st(page);
   const left = await page.evaluate(() => window.__party.leftMs);
   const zero = Date.now() - (50000 - left);
+  const pend = [];
   for (let i = 0; i < TIMES.length; i++) {
     const w = zero + TIMES[i] - Date.now();
     if (w > 0) await L.sleep(w);
-    void L.tapAt(cdp, [{ x: s0.x + (i % 2 ? 30 : -30), y: s0.y + 40 }]);
+    pend.push(L.tapAt(cdp, [{ x: s0.x + (i % 2 ? 30 : -30), y: s0.y + 40 }]));
   }
+  await Promise.allSettled(pend);
   await page.waitForFunction(() => window.__tap() && window.__tap().phase === 'done', null, { timeout: 30000 });
   const s = await L.st(page);
   await context.close();

@@ -49,7 +49,7 @@ no picture for an id simply does not draw it. To be strict, pass the catalog's l
 opens the dressing room gets `encodeLook(randomLookAvoiding(seedFromText(playerId), looksOfTheOthers, ITEM_IDS))`.
 
 How alike are random guests (measured, 200 rooms of 60, the 51-item catalog, `npx tsx tests/e2e/avatar-review-distinct.ts`):
-`randomLook` alone gives 6 to 14 pairs of identical icons in all 200 rooms together (it was 92 before every look
+`randomLook` alone gives 5 to 14 pairs of identical icons in all 200 rooms together (it was 92 before every look
 was topped up to two accessories) and no bare doll; `randomLookAvoiding` gives 0 guests sharing a doll, plate ignored.
 
 Encoding, version 1: `"<1>.<bg>.<hats, bottom first, joined by '-', or 0>.<eyes>.<ears>.<face>.<neck>"`, 0 = nothing.

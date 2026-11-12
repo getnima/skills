@@ -16,10 +16,8 @@ import {
   CutsceneOverlay,
   FinalScreen,
   IntroScreen,
-  JoinScreen,
   KickedScreen,
   LateScreen,
-  LobbyScreen,
   ReconnectBanner,
   ResultsScreen,
   ResumeOverlay,
@@ -30,6 +28,7 @@ import {
   WinScreen,
 } from './screens';
 import { useTick } from './ui';
+import { DressingScreen, JoinScreen, LobbyScreen } from './welcome';
 
 import type { JSX } from 'preact';
 import type { PlayerController, Snapshot } from './controller';
@@ -52,6 +51,8 @@ export type ScreenName =
   | 'join'
   | 'kicked'
   | 'closed'
+  /** The dressing room (the room is in the lobby phase; the guest is not dressed yet, or asked for it). */
+  | 'dressing'
   | 'lobby'
   | 'intro'
   | 'late'
@@ -147,8 +148,15 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
     const participant = round !== null && ctl.isParticipant(round.index);
     switch (state.phase) {
       case 'lobby':
+        // Nothing is being played: a guest who has not dressed yet (or asked to) is in the dressing room.
+        // A round that starts changes the phase, so it takes this screen over at once.
+        if (snap.dressing || !snap.dressed) {
+          screen = 'dressing';
+          body = <DressingScreen ctl={ctl} snap={snap} />;
+          break;
+        }
         screen = 'lobby';
-        body = <LobbyScreen snap={snap} state={state} />;
+        body = <LobbyScreen ctl={ctl} snap={snap} state={state} />;
         break;
       case 'intro':
         if (round === null) break;
@@ -233,8 +241,11 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
   const resuming = round !== null && state?.cutscene === null && roundTime(round, now).resumeInMs > 0;
   // Every screen in the room except the game itself (a cutscene over the game counts as outside).
   const inRoom = snap.status === 'in' && state !== null && screen !== 'boot';
-  const mine: MeStanding | null = inRoom && state !== null ? meStanding(state, me, hideRound) : null;
-  const meBarOn = mine !== null && (screen !== 'playing' || overlay !== null);
+  const standing: MeStanding | null = inRoom && state !== null ? meStanding(state, me, hideRound) : null;
+  // this phone's own look is a moment ahead of the server's copy
+  const mine: MeStanding | null = standing !== null && snap.look !== null ? { ...standing, look: snap.look } : standing;
+  // the dressing room is full screen; under a cutscene the bar is back like on every covered screen
+  const meBarOn = mine !== null && ((screen !== 'playing' && screen !== 'dressing') || overlay !== null);
   window.__player = {
     screen,
     cutscene: state?.cutscene !== null && state?.cutscene !== undefined,

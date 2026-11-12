@@ -273,7 +273,7 @@ export function seedFromText(text: string): number {
  * A deterministic, well spread look: the same seed and id list always give the same look.
  * About 88% wear a hat (a quarter of those a second one, a few a third), 45% glasses,
  * 28% something on the face, 22% on the ears, 38% on the neck; the plate is any of the 12.
- * Nobody gets a bare doll or a single accessory: a look with fewer than two things is topped up
+ * Nobody gets a bare doll or a single accessory: a look with fewer than two dressed slots is topped up
  * (that is what keeps 60 random guests apart). `ids` = the accessories to choose from
  * (default: the 17 originals); ids without a slot are ignored.
  */
@@ -317,11 +317,13 @@ export function randomLook(seed: number, ids: Iterable<number> = AVATAR_BASE_IDS
   // top up to two accessories, starting from a seeded slot so the extras are spread too
   const fill: readonly ['eyes' | 'neck' | 'face' | 'ears', number | null][] = [['eyes', eyes], ['neck', neck], ['face', face], ['ears', ears]];
   const start = Math.floor(rFill * fill.length);
-  for (let i = 0; i < fill.length && wornIds(look).length < 2; i++) {
+  // a tower counts once: a client may draw only its first hat (a hat that cannot carry cuts the tower)
+  const parts = (): number => (look.head.length > 0 ? 1 : 0) + [look.eyes, look.ears, look.face, look.neck].filter((v) => v !== null).length;
+  for (let i = 0; i < fill.length && parts() < 2; i++) {
     const f = fill[(start + i) % fill.length];
     if (f !== undefined && look[f[0]] === null) look[f[0]] = f[1];
   }
-  if (wornIds(look).length < 2 && look.head.length === 0 && hats[0] !== null && hats[0] !== undefined) look.head.push(hats[0]);
+  if (parts() < 2 && look.head.length === 0 && hats[0] !== null && hats[0] !== undefined) look.head.push(hats[0]);
   return look;
 }
 
