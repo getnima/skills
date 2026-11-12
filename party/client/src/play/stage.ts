@@ -134,6 +134,8 @@ export async function mountStageWith(
   let shownSecs = -1;
   let shownScore = -1;
   let shownFill = -1;
+  /** GameContext.setClock: the game's own clock, shown instead of the round clock (null = the round clock). */
+  let gameClock: { leftMs: number; totalMs: number } | null = null;
 
   // ── score reporting (throttled, the last value always goes out) ──
   function sendScore(): void {
@@ -220,8 +222,10 @@ export async function mountStageWith(
     shownSecs = -1; // repaint the seconds box
   }
 
-  function paintClock(leftMs: number): void {
-    const frac = Math.min(1, Math.max(0, leftMs / durationMs));
+  function paintClock(roundLeftMs: number): void {
+    const own = gameClock;
+    const leftMs = own ? own.leftMs : roundLeftMs;
+    const frac = Math.min(1, Math.max(0, leftMs / (own ? own.totalMs : durationMs)));
     const fillStep = Math.round(frac * 500);
     if (fillStep !== shownFill) {
       shownFill = fillStep;
@@ -234,7 +238,7 @@ export async function mountStageWith(
       shownSecs = s;
       secs.textContent = frozen ? '⏸' : String(s);
       root.classList.toggle('is-urgent', urgent);
-      if (urgent && !frozen && !first) {
+      if (urgent && !frozen && !first && !own) {
         sfx.tick(s <= 1 ? 1.5 : 1);
         haptic.tap();
       }
@@ -313,6 +317,13 @@ export async function mountStageWith(
     hudHeight: HUD_ROW_PX + safe.top,
     safeBottom: safe.bottom,
     setScore,
+    setClock(leftMs: number | null, totalMs?: number): void {
+      if (over) return;
+      gameClock =
+        leftMs === null || !Number.isFinite(leftMs)
+          ? null
+          : { leftMs: Math.max(0, leftMs), totalMs: Math.max(1, totalMs !== undefined && Number.isFinite(totalMs) ? totalMs : durationMs) };
+    },
     finish(): void {
       if (over || finished || !gameAlive) return;
       finished = true;
