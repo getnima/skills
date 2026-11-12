@@ -168,7 +168,7 @@ export async function makeHeadSprite(look: string | null | undefined, headPx: nu
 
 // ───────────────────────── the "out" view: small heads next to the names ─────────────────────────
 
-/** Small cut-out heads for the "out" view, one per player, made one at a time (one per `pump()`). */
+/** Small cut-out heads for the "out" view, one per player, made one at a time (one per `pump()`): the bird's sprite, fitted into a square. */
 export interface HeadShelf {
   /** The player's head canvas when it is ready (each player has their own element), else null. Asks for it. */
   get(id: string, look: string | undefined): HTMLCanvasElement | null;
@@ -202,11 +202,22 @@ export function createHeadShelf(cssSize: number, onReady: () => void): HeadShelf
       void (async (): Promise<void> => {
         let canvas: HTMLCanvasElement | null = null;
         try {
-          const c = await avatarCanvas(next.look, px, { crop: 'icon', plate: false });
-          if (await isComplete(next.look)) {
-            c.className = 'fl-chip-head';
-            c.setAttribute('aria-hidden', 'true');
-            canvas = c;
+          // the same cut-out as the bird (the whole hat tower, no flat cut at the top), fitted into
+          // the square and standing on its bottom edge
+          const sprite = await makeHeadSprite(next.look, px);
+          if (sprite !== null) {
+            const c = plainCanvas(px, px);
+            const g = c.getContext('2d');
+            if (g !== null) {
+              const k = Math.min(1, 1 / sprite.h, 1 / sprite.w);
+              const dw = sprite.canvas.width * k;
+              const dh = sprite.canvas.height * k;
+              g.imageSmoothingQuality = 'high';
+              g.drawImage(sprite.canvas, (px - dw) / 2, px - dh, dw, dh);
+              c.className = 'fl-chip-head';
+              c.setAttribute('aria-hidden', 'true');
+              canvas = c;
+            }
           }
         } catch {
           canvas = null;

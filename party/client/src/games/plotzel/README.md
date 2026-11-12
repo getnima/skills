@@ -13,7 +13,7 @@ is the true minimum number of steps (BFS over the whole dictionary).
 
 A party round (120 s, `GAMES.plotzel`) is a **sequence** of ladders, the same on every phone
 (derived only from the round seed). Solve one, a short celebration, the next slides in, until
-time is up. Every round opens with **שימי → פלוץ** (the owner's rule, `OPENER` in `round.ts`).
+time is up. Every round opens with the owner's four words, in this order: **חמוד, פוקי, נדיר, שימי** (`OPENERS` in `round.ts`).
 There are **no hints** (the owner's rule: the original's hint button is removed). Skip as in the original.
 
 ## Where each rule lives
@@ -34,11 +34,11 @@ Rejections, in the original's order and words: fewer than 4 letters `צריך 4 
 `X לא נמצאת במילון`; already used `כבר השתמשתם בX`. A rejected word stays in the row (as in the
 original): ⌫ to fix it.
 
-Sequence: puzzle 1 is always שימי. It is a hard one: par 5 (שימי → שימת → שלמת → שלות → פלות → פלוץ),
-and 6 steps when only common words are used. After it the start words have a path through common
-words as short as par (`CDIST = DIST`), never repeat and are never the demo word or שימי. Par ramp
-after the opener: puzzle 2 par 2, puzzle 3 par 2-3, puzzles 4-7 par 3-4, then par 4-5. Par 3-5 come from the original's curated starts, par 2 from common words (rank
-≤ 3400). About 420 ladders per seed: `ctx.finish()` only if they all run out.
+Sequence: puzzles 1-4 are always חמוד (par 3), פוקי (par 5), נדיר (par 5), שימי (par 5). פוקי is not in the
+dictionary: it still starts a ladder (`startPar` = one more than its best neighbour, `startPath` goes through it),
+and its first step must be a real word like any other step. After the openers the start words have a path through
+common words as short as par (`CDIST = DIST`), never repeat and are never the demo word or an opener. Par ramp after
+the openers: par 2, then 2-3, then 3-4 for four puzzles, then 4-5.
 
 ## Scoring (raw, `round.ts` → `ladderScore`)
 

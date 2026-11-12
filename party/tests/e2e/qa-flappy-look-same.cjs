@@ -44,6 +44,7 @@ async function flight(browser, run, look) {
     raw: window.__flappy.raw,
     run: window.__flappy.run,
     score: window.__party.score,
+    head: window.__flappy.head ? { look: window.__flappy.head.look, dressed: window.__flappy.head.dressed } : null,
   }));
   await context.close();
   return { ...run, look: look || null, ...r, errors };
@@ -57,7 +58,7 @@ async function record(label, look) {
     else for (const run of RUNS) results.push(await flight(browser, run, look));
     const file = path.join(OUT, `same-${label}.json`);
     fs.writeFileSync(file, JSON.stringify(results));
-    for (const r of results) console.log(`${r.seed} ${r.size} ${r.q}: steps ${r.traced.length}, passed ${r.run}, raw ${r.raw}, stage score ${r.score}, errors ${r.errors.length}${rejoined(r) ? ', HARNESS REJOIN (record again on a quieter machine)' : ''}`);
+    for (const r of results) console.log(`${r.seed} ${r.size} ${r.q}: steps ${r.traced.length}, passed ${r.run}, raw ${r.raw}, stage score ${r.score}, head ${r.head && r.head.dressed ? 'dressed' : 'token'}, errors ${r.errors.length}${rejoined(r) ? ', HARNESS REJOIN (record again on a quieter machine)' : ''}`);
     console.log('wrote', file);
     const bad = results.filter((r) => r.errors.length > 0);
     if (bad.length) {

@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { COMMON, DICT, STARTS } from '../../client/src/games/plotzel/data';
 import { checkStep, diffCount, diffPos, disp, getLadder, norm, TARGET, TARGET_D, unpack } from '../../client/src/games/plotzel/ladder';
-import { DEMO_WORDS, ladderScore, OPENER, parBand, roundSequence, SCORE, speedFactor, stepsFactor } from '../../client/src/games/plotzel/round';
+import { DEMO_WORDS, ladderScore, OPENERS, parBand, roundSequence, SCORE, speedFactor, startPar, startPath, stepsFactor } from '../../client/src/games/plotzel/round';
 import { GAMES } from '../../shared/protocol';
 
 const ORIGINAL = resolve(import.meta.dirname, '../../client/src/games/plotzel/original/plotzel.netlify.app.html');
@@ -172,15 +172,17 @@ describe('plotzel graph', () => {
   }, 60_000);
 
   it('every shortestPath step is a one-letter change to a dictionary word and ends at פלוץ', () => {
+    // (startPath / startPar cover the openers, one of which is outside the dictionary)
     for (const w of new Set([...ladder.starts, ...roundSequence(7, ladder).slice(0, 30)])) {
-      const p = ladder.shortestPath(w);
+      const p = startPath(ladder, w);
       expect(p[0]).toBe(w);
       expect(p[p.length - 1]).toBe(TARGET);
-      expect(p.length - 1).toBe(ladder.dist(w));
+      expect(p.length - 1).toBe(startPar(ladder, w));
       for (let i = 1; i < p.length; i++) {
         expect(diffCount(p[i] as string, p[i - 1] as string)).toBe(1);
         expect(ladder.has(p[i] as string)).toBe(true);
       }
+      if (ladder.has(w)) expect(p).toEqual(ladder.shortestPath(w));
     }
     expect(ladder.shortestPath(TARGET)).toEqual([TARGET]);
   });
@@ -216,30 +218,44 @@ describe('plotzel round sequence', () => {
     expect(a).not.toBe(b);
   });
 
-  it('always opens with שימי (the owner\'s opener), a real 5-step ladder to פלוץ', () => {
-    expect(OPENER).toBe('שימי');
-    expect(ladder.has(OPENER)).toBe(true);
-    expect(ladder.dist(OPENER)).toBe(5);
-    const path = ladder.shortestPath(OPENER);
-    expect(path[0]).toBe(OPENER);
-    expect(path[path.length - 1]).toBe(TARGET);
-    expect(path.length).toBe(6);
-    for (const seed of [1, 7, 99, 123456, 987654321]) expect(roundSequence(seed, ladder)[0]).toBe(OPENER);
+  it('opens with the owner\'s four words in order: חמוד, פוקי, נדיר, שימי', () => {
+    expect(OPENERS).toEqual(['חמוד', 'פוקי', 'נדיר', 'שימי']);
+    for (const seed of [1, 7, 99, 123456, 987654321]) expect(roundSequence(seed, ladder).slice(0, 4)).toEqual([...OPENERS]);
+    // the minimum steps of each
+    expect(OPENERS.map((w) => startPar(ladder, w))).toEqual([3, 5, 5, 5]);
+    // every opener has a real way to פלוץ, one letter at a time, through dictionary words after the start
+    for (const w of OPENERS) {
+      const path = startPath(ladder, w);
+      expect(path[0]).toBe(w);
+      expect(path[path.length - 1]).toBe(TARGET);
+      expect(path.length - 1).toBe(startPar(ladder, w));
+      for (let k = 1; k < path.length; k++) {
+        expect(ladder.has(path[k] as string), `${disp(path[k] as string)} in the dictionary`).toBe(true);
+        expect(diffCount(path[k] as string, path[k - 1] as string)).toBe(1);
+      }
+    }
   });
 
-  it('after the opener: no repeats, only words with a common path as short as par, and the par ramp from the easy end', () => {
+  it('פוקי is not in the dictionary but still starts a ladder: its first step must be a real word', () => {
+    expect(ladder.has('פוקי')).toBe(false);
+    expect(ladder.dist('פוקי')).toBeUndefined();
+    expect(checkStep(ladder, 'פסקי', ['פוקי'])).toMatchObject({ ok: true });
+    expect(checkStep(ladder, 'פוקא', ['פוקי'])).toMatchObject({ ok: false });
+  });
+
+  it('after the openers: no repeats, only words with a common path as short as par, and the par ramp from the easy end', () => {
     for (const seed of [1, 7, 99, 123456, 987654321]) {
       const seq = roundSequence(seed, ladder);
       expect(seq.length).toBeGreaterThan(300);
       expect(new Set(seq).size).toBe(seq.length);
       for (const w of DEMO_WORDS) expect(seq).not.toContain(w);
-      seq.slice(1).forEach((w, i) => {
+      seq.slice(OPENERS.length).forEach((w, i) => {
         const par = ladder.dist(w);
         expect(par).toBeDefined();
         expect(ladder.cdist(w)).toBe(par);
-        if (i < 60) expect(parBand(i), `${seed}#${i + 1} ${disp(w)} par ${par}`).toContain(par);
+        if (i < 60) expect(parBand(i), `${seed}#${i + OPENERS.length} ${disp(w)} par ${par}`).toContain(par);
       });
-      expect(ladder.dist(seq[1] as string)).toBe(2);
+      expect(ladder.dist(seq[OPENERS.length] as string)).toBe(2);
     }
   });
 });

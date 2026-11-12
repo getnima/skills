@@ -4,7 +4,7 @@
  * (kit rng), so every phone gets the same ladders in the same order.
  */
 import { createRng } from '../../kit/rng';
-import { TARGET } from './ladder';
+import { HEB, TARGET } from './ladder';
 
 import type { Ladder } from './ladder';
 
@@ -48,10 +48,56 @@ export function ladderScore(steps: number, par: number, elapsedMs: number): numb
 // ───────────────────────────── Sequence ─────────────────────────────
 
 /**
- * The owner's opener: every round starts with שימי → פלוץ (the doll's name). It is a par-5 ladder,
- * the hardest band; the puzzles after it start again from the easy end (parBand(0) is the SECOND puzzle).
+ * The owner's openers, in this order, at the start of every round (normalized: no final letters).
+ * פוקי is not in the dictionary: it starts a ladder anyway (the first step must be a real word),
+ * see startPar / startPath. The seeded puzzles after them start again from the easy end
+ * (parBand(0) is the first puzzle after the openers).
  */
-export const OPENER = 'שימי';
+export const OPENERS: readonly string[] = ['חמוד', 'פוקי', 'נדיר', 'שימי'];
+
+/** Dictionary words one letter away from `w` (for a start word that is not in the dictionary). */
+function wordsOneAway(ladder: Ladder, w: string): string[] {
+  const out: string[] = [];
+  for (let p = 0; p < w.length; p++) {
+    for (const ch of HEB) {
+      if (ch === w[p]) continue;
+      const c = w.slice(0, p) + ch + w.slice(p + 1);
+      if (ladder.has(c) && ladder.dist(c) !== undefined) out.push(c);
+    }
+  }
+  return out;
+}
+
+/** The first word of the shortest way out of a start word that is not in the dictionary (common words first). */
+function bestStep(ladder: Ladder, w: string): string | null {
+  let best: string | null = null;
+  for (const c of wordsOneAway(ladder, w)) {
+    if (best === null) {
+      best = c;
+      continue;
+    }
+    const dc = ladder.dist(c) ?? Infinity;
+    const db = ladder.dist(best) ?? Infinity;
+    if (dc < db || (dc === db && ladder.rank(c) < ladder.rank(best))) best = c;
+  }
+  return best;
+}
+
+/** Par of a start word: the dictionary distance, or one more than its best neighbour's for a word outside it. */
+export function startPar(ladder: Ladder, w: string): number | undefined {
+  const d = ladder.dist(w);
+  if (d !== undefined) return d;
+  const n = bestStep(ladder, w);
+  const dn = n !== null ? ladder.dist(n) : undefined;
+  return dn !== undefined ? dn + 1 : undefined;
+}
+
+/** The shortest path from a start word to the goal, both included (works for a word outside the dictionary). */
+export function startPath(ladder: Ladder, w: string): string[] {
+  if (ladder.has(w)) return ladder.shortestPath(w);
+  const n = bestStep(ladder, w);
+  return n !== null ? [w, ...ladder.shortestPath(n)] : [w];
+}
 
 /** Words of the first-puzzle demo (חלום → חלוץ): never a start word, it would give the answer away. */
 export const DEMO_WORDS: readonly string[] = ['חלומ', 'חלוצ'];
@@ -76,7 +122,7 @@ export function startPools(ladder: Ladder): Map<number, string[]> {
   const pools = new Map<number, string[]>();
   const add = (w: string): void => {
     const d = ladder.dist(w);
-    if (d === undefined || d < 2 || d > MAX_PAR || ladder.cdist(w) !== d || w === TARGET || w === OPENER || DEMO_WORDS.includes(w)) return;
+    if (d === undefined || d < 2 || d > MAX_PAR || ladder.cdist(w) !== d || w === TARGET || OPENERS.includes(w) || DEMO_WORDS.includes(w)) return;
     const list = pools.get(d) ?? [];
     if (!list.includes(w)) list.push(w);
     pools.set(d, list);
@@ -90,7 +136,7 @@ const cache = new Map<number, readonly string[]>();
 
 /**
  * Every start word of the round with `seed`, in play order (normalized), no
- * repeats. The first is always OPENER. After it, puzzle i + 1 draws a par from
+ * repeats. It always opens with OPENERS, in order. After them, puzzle i of the seeded part draws a par from
  * parBand(i), then a word of that par; when a par runs out the nearest par that
  * still has words is used.
  */
@@ -104,7 +150,7 @@ export function roundSequence(seed: number, ladder: Ladder): readonly string[] {
   for (const p of pars) queues.set(p, rng.shuffle(pools.get(p) ?? []));
   let left = 0;
   for (const q of queues.values()) left += q.length;
-  const out: string[] = ladder.dist(OPENER) !== undefined ? [OPENER] : [];
+  const out: string[] = OPENERS.filter((w) => startPar(ladder, w) !== undefined);
   for (let i = 0; left > 0; i++) {
     const band = parBand(i);
     let par = band[rng.int(0, band.length - 1)] ?? 2;

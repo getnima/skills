@@ -12,7 +12,7 @@
 //           Hebrew reason, the final score equals the 80% time / 20% steps table recomputed here from the
 //           game's record (steps, par, time), the bot's own ledger agrees on steps, par and (expert) the
 //           time of every ladder, score <= maxRaw. Prints the expert scores (maxRaw is ~1.5x).
-//   shots   320x568 and 390x844: first puzzle (שימי) + demo, celebration, rejection, mid-ladder,
+//   shots   320x568 and 390x844: first puzzle (חמוד) + demo, celebration, rejection, mid-ladder,
 //           collapsed rows, skip reveal, last 10 seconds → tests/e2e/out/plotzel/
 //   checks  freeze mid-typing and mid-celebration, reload restores progress, destroy() twice leaves no
 //           listeners and no hook, landscape, graph build time on a 4x throttled CPU.
@@ -400,7 +400,7 @@ async function botRun(browser, w, h, kind, seed) {
     const off = solvedLedger.map((l, i) => ({ start: l.start, botMs: Math.round(l.botMs), gameMs: gameSolved[i] ? gameSolved[i].ms : null })).filter((x) => x.gameMs === null || Math.abs(x.gameMs - x.botMs) > 1200);
     check(`${label}: the time charged for every ladder matches the bot's stopwatch (within 1.2 s)`, off.length === 0, off.slice(0, 4));
     const slowFirst = gameSolved[0] && gameSolved.length > 3 ? gameSolved[0].points : null;
-    console.log(`   ${label}: ladder points ${gameSolved.map((r) => r.points).join(' ')}; first (שימי) ${slowFirst}`);
+    console.log(`   ${label}: ladder points ${gameSolved.map((r) => r.points).join(' ')}; first (חמוד) ${slowFirst}`);
   }
   // the game's own record agrees on every puzzle the bot finished
   const agree = solvedLedger.every((l, i) => gameSolved[i] && gameSolved[i].steps === l.steps && gameSolved[i].par === l.par);
@@ -457,7 +457,7 @@ async function sectionShots(browser) {
     const km = await keyMap(page);
     await sleep(1300);
     let s = await st(page);
-    check(`${w}x${h}: the round opens with שימי (5 steps to פלוץ)`, s.idx === 0 && s.start === 'שימי' && s.par === 5, { start: s.start, par: s.par });
+    check(`${w}x${h}: the round opens with חמוד (3 steps to פלוץ)`, s.idx === 0 && s.start === 'חמוד' && s.par === 3, { start: s.start, par: s.par });
     {
       const w1 = (await st(page)).worth;
       await sleep(1000);

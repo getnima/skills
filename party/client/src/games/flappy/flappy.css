@@ -274,6 +274,7 @@
   font-weight: 900;
 }
 .fl-winner-head {
+  display: inline-block;
   width: 1.5em;
   height: 1.5em;
   margin: -0.35em 0.1em -0.25em;

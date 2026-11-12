@@ -167,29 +167,28 @@ function numParam(name: string): number | null {
 export const game: GameModule = {
   id: 'flappy',
   async create(ctx: GameContext): Promise<GameInstance> {
-    // the guest's own dressed doll (looks only): its pictures load while the game's art does
-    let myLook: string | null = null;
-    try {
-      myLook = ctx.myLook?.() ?? null;
-    } catch {
-      myLook = null;
-    }
-    const lookNow = myLook;
-    const loadHead = (): Promise<HeadModule | null> =>
-      lookNow === null
-        ? Promise.resolve(null)
-        : import('./head').then(
-            (m) => {
-              void m.warmHead(lookNow);
-              return m;
-            },
-            () => null,
-          );
+    // the guest's own dressed doll (looks only; null: unknown, the game's own round token)
+    const myLook = ((): string | null => {
+      try {
+        const look = ctx.myLook?.() ?? null;
+        return typeof look === 'string' && look.trim() !== '' ? look : null;
+      } catch {
+        return null;
+      }
+    })();
+    /** The head code and the doll's pictures (only a game with a look loads them). */
+    const loadHead = (look: string): Promise<HeadModule | null> =>
+      import('./head').then(
+        (m) => {
+          void m.warmHead(look);
+          return m;
+        },
+        () => null,
+      );
     // Before GO (the countdown: the round clock is frozen) the head loads with the art and the game
     // starts with it. After GO (a reload mid-round, the dev harness) it loads only once the game is
     // up, so it can never delay the boot (a late boot puts the bird back on the live course).
-    const beforeGo = elapsedMs() <= 0;
-    const headEarly = beforeGo ? loadHead() : null;
+    const headEarly = myLook !== null && elapsedMs() <= 0 ? loadHead(myLook) : null;
     const [art] = await Promise.all([loadFlappyArt(), loadDisplayFont()]);
     const view = createGameCanvas(ctx.root);
     const input = createInput(view.canvas);
@@ -302,16 +301,15 @@ export const game: GameModule = {
     // ── the bird's head: the guest's dressed doll, made once at the size it is drawn at ──
     // (no look, or a look that cannot be drawn whole: the game's own round token, as before)
     let head: HeadSprite | null = null;
-    function makeHead(mod: Promise<HeadModule | null>): Promise<HeadSprite | null> {
-      if (lookNow === null) return Promise.resolve(null);
+    function makeHead(look: string, mod: Promise<HeadModule | null>): Promise<HeadSprite | null> {
       const headPx = PHYS.radius * L.U * 2.18 * HEAD_OF_TOKEN * view.dpr;
-      const made = mod.then((m) => (m === null ? null : m.makeHeadSprite(lookNow, headPx)));
+      const made = mod.then((m) => (m === null ? null : m.makeHeadSprite(look, headPx)));
       void made.then((h) => {
         if (!destroyed) head = h;
       });
       return made;
     }
-    if (headEarly !== null) await Promise.race([makeHead(headEarly), new Promise((r) => setTimeout(r, HEAD_WAIT_MS))]);
+    if (myLook !== null && headEarly !== null) await Promise.race([makeHead(myLook, headEarly), new Promise((r) => setTimeout(r, HEAD_WAIT_MS))]);
 
     const feathers: Feather[] = [];
     for (let i = 0; i < MAX_FEATHERS; i++) {
@@ -1098,7 +1096,7 @@ export const game: GameModule = {
     };
 
     loop.start();
-    if (headEarly === null) void makeHead(loadHead());
+    if (myLook !== null && headEarly === null) void makeHead(myLook, loadHead(myLook));
 
     return {
       destroy(): void {

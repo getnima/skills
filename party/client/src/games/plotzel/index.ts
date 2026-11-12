@@ -21,7 +21,7 @@ import { haptic } from '../../kit/haptics';
 import { createLoop, isKitPaused } from '../../kit/loop';
 import { loadPlotzelArt } from './art';
 import { checkStep, diffCount, disp, getLadder, HEB, ladderBuildMs, REGULAR_OF, TARGET, TARGET_D, WORD_LEN } from './ladder';
-import { ladderScore, roundSequence } from './round';
+import { ladderScore, roundSequence, startPar, startPath } from './round';
 import { loadSnapshot, saveSnapshot } from './snapshot';
 
 import type { GameContext, GameInstance, GameModule } from '../types';
@@ -235,7 +235,7 @@ export const game: GameModule = {
     // ── state ──
     let idx = 0;
     let start = seq[0] ?? TARGET;
-    let par = ladder.dist(start) ?? 0;
+    let par = startPar(ladder, start) ?? 0;
     let words: string[] = [start];
     let typed = '';
     let puzzleT0 = 0;
@@ -379,7 +379,7 @@ export const game: GameModule = {
     function setupPuzzle(i: number, restored: Snapshot | null): void {
       idx = i;
       start = seq[i] ?? TARGET;
-      par = ladder.dist(start) ?? 0;
+      par = startPar(ladder, start) ?? 0;
       words = [start];
       if (restored && isValidLadder(restored.words)) words = [...restored.words];
       typed = '';
@@ -572,7 +572,7 @@ export const game: GameModule = {
       typed = '';
       renderHead();
       fitRows();
-      const path = ladder.shortestPath(start);
+      const path = startPath(ladder, start);
       revealEl.replaceChildren(el('div', 'pz-reveal-title', 'המסלול הקצר ביותר'), el('div', 'pz-reveal-sub', `מ${disp(start)} אפשר להגיע ל־${TARGET_D} ב־${par === 1 ? 'צעד אחד' : `${par} צעדים`}`), chips(path));
       replay(revealEl, 'is-on');
       sfx.fart(1, 0.62);
@@ -807,7 +807,7 @@ export const game: GameModule = {
         return results.map((r) => ({ ...r }));
       },
       buildMs: ladderBuildMs(),
-      path: (): string[] => ladder.shortestPath(current()).map(disp),
+      path: (): string[] => startPath(ladder, current()).map(disp),
       sequence: (n: number): string[] => seq.slice(0, Math.max(0, Math.floor(n))).map(disp),
     });
     window.__plotzel = debug;

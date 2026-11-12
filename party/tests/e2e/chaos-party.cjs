@@ -539,7 +539,7 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
     ];
     async function joinPhone(s, viaCode) {
       const ph = await addPage(browser, s.label, 'phone', { ...devices[s.device] });
-      Object.assign(ph, { name: s.name, typedName: s.name, hudFinal: 0, rounds: [] });
+      Object.assign(ph, { name: s.name, typedName: s.name, hudFinal: 0, rounds: [], device: s.device });
       const page = ph.page;
       if (viaCode) {
         await page.goto(BASE + '/');
@@ -632,24 +632,39 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
       }
     }
     /** The owner double-taps the big button (two real taps ~140 ms apart). Returns what the server did next. */
-    async function doubleTapBig(step, expectAction) {
+    async function doubleTapBig(step, expectAction, gapMs = 140) {
       await closeRemoteSheets();
       const b = await remoteBig();
       if (expectAction && b.action !== expectAction) issue('minor', 'remote', `big button is "${b.action}" where "${expectAction}" was expected (${step})`, b);
       const x = b.box.x + b.box.width / 2;
       const y = b.box.y + b.box.height / 2;
       const before = { phase: S().phase, round: S().round ? S().round.index : null, played: S().played.length, trans: obs.trans.length };
-      ev(`remote double-tap big (${step})`, b.action, b.label);
+      ev(`remote double-tap big (${step}, ${gapMs} ms apart)`, b.action, b.label);
+      const flashes = [];
+      const flashWatch = { on: true };
+      const fw = (async () => {
+        while (flashWatch.on) {
+          const f = await r.evaluate(() => {
+            const e = document.querySelector('[data-testid=flash]');
+            const big = document.querySelector('[data-testid=big]');
+            return [e ? e.textContent : '', big ? big.dataset.action + (big.disabled ? '(off)' : '') : ''];
+          }).catch(() => null);
+          if (f && (flashes.length === 0 || flashes[flashes.length - 1] !== f.join('|'))) flashes.push(f.join('|'));
+          await sleep(60);
+        }
+      })();
       await r.touchscreen.tap(x, y);
-      await sleep(140);
+      await sleep(gapMs);
       await r.touchscreen.tap(x, y);
       await sleep(2600);
+      flashWatch.on = false;
+      await fw;
       const after = obs.trans.slice(before.trans).map((t) => `${t.phase}${t.cut ? '+' + t.cut : ''}`);
       const sheet = await r.locator('[data-testid=confirm]').isVisible().catch(() => false);
       const sheetText = sheet ? (await r.locator('[data-testid=confirm]').textContent().catch(() => '')).trim().slice(0, 80) : null;
-      ev(`  after double-tap: transitions ${after.join(' → ') || '(none)'}; sheet ${sheet ? sheetText : 'none'}`);
+      ev(`  after double-tap: transitions ${after.join(' → ') || '(none)'}; sheet ${sheet ? sheetText : 'none'}; remote flash|big: ${flashes.join(' / ')}`);
       if (sheet) await closeRemoteSheets();
-      return { before, after, sheet: sheetText, action: b.action, now: { phase: S().phase, round: S().round ? S().round.index : null } };
+      return { before, after, sheet: sheetText, action: b.action, flashes, now: { phase: S().phase, round: S().round ? S().round.index : null } };
     }
     async function remoteCutscene(id) {
       await closeRemoteSheets();
@@ -696,10 +711,12 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
       const ms = Date.now() - t0;
       w.to = Date.now();
       check(after.code === before.code && after.phase === S().phase && (after.round ? after.round.index : null) === (S().round ? S().round.index : null), `TV reload (${why}) re-attaches to the same room and phase in ${ms} ms`, { code: after.code, phase: after.phase });
-      await tv.mouse.click(960, 60); // the owner clicks once so sound is allowed again (README step 4)
-      await sleep(400);
+      await sleep(600);
       const strip = await tv.locator('[data-testid=strip]').isVisible().catch(() => false);
       check(!strip, `TV strip stays hidden after its reload (${why}) with the remote attached`);
+      await tv.mouse.click(960, 60); // the owner clicks once so sound is allowed again (README step 4); the strip peeks 4 s by design
+      const locked = await tv.evaluate(() => document.body.innerText.includes('לחצו') && document.body.innerText.includes('סאונד')).catch(() => null);
+      ev('TV after reload: audio hint visible before click?', locked);
     }
     async function phoneReload(ph, why) {
       const w = openWindow(ph.label, 'reload');
@@ -788,16 +805,26 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
       const vp = ph.page.viewportSize();
       ev('rotate to landscape', ph.label, vp);
       ph.hold = true;
-      await ph.page.setViewportSize({ width: vp.height, height: vp.width });
-      await sleep(900);
-      const l = await ph.page.evaluate(SAMPLE);
-      await shot('landscape', [ph]);
-      await sleep(Math.max(0, ms - 900));
-      await ph.page.setViewportSize(vp);
-      await sleep(900);
-      const p = await ph.page.evaluate(SAMPLE);
-      w.to = Date.now();
-      ph.hold = false;
+      const dpr = (devices[ph.device] || {}).deviceScaleFactor || 2;
+      const fs0 = await ph.page.evaluate(() => document.fullscreenElement !== null).catch(() => null);
+      let l;
+      let p;
+      try {
+        // a real rotation: the phone may be in fullscreen (Android goes fullscreen on join), so the
+        // window is not resized; the device metrics and the screen orientation change instead
+        await ph.cdp.send('Emulation.setDeviceMetricsOverride', { width: vp.height, height: vp.width, deviceScaleFactor: dpr, mobile: true, screenOrientation: { type: 'landscapePrimary', angle: 90 } });
+        await sleep(900);
+        l = await ph.page.evaluate(SAMPLE);
+        await shot('landscape', [ph]);
+        await sleep(Math.max(0, ms - 900));
+        await ph.cdp.send('Emulation.setDeviceMetricsOverride', { width: vp.width, height: vp.height, deviceScaleFactor: dpr, mobile: true, screenOrientation: { type: 'portraitPrimary', angle: 0 } });
+        await sleep(900);
+        p = await ph.page.evaluate(SAMPLE);
+      } finally {
+        w.to = Date.now();
+        ph.hold = false;
+      }
+      ev('rotation done', ph.label, { fullscreen: fs0, landscape: [l.W, l.H], portrait: [p.W, p.H] });
       check(l.rotate === true, `${ph.label}: landscape shows the "rotate the phone" screen`, { rotate: l.rotate, screen: l.screen, sh: l.sh, H: l.H, sw: l.sw, W: l.W });
       check(p.rotate === false && p.sh <= p.H + 1 && p.sw <= p.W + 1 && p.scale === 1, `${ph.label}: back to portrait, no overlay, no scroll`, { rotate: p.rotate, screen: p.screen, sh: p.sh, H: p.H, sw: p.sw, W: p.W, scale: p.scale });
       return { l, p };
@@ -825,17 +852,25 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
       }
       // the 'before' cutscene (ninja): skipped with the TV's own keyboard (S) while the remote is attached
       if (plan.beforeCut) {
-        await waitObs((s) => s.cutscene && s.cutscene.id === plan.beforeCut, 8000, 'before cutscene').catch(() => null);
-        check(S().cutscene && S().cutscene.id === plan.beforeCut, `round ${n}: automatic "before" cutscene ${plan.beforeCut} plays`);
-        await sleep(1500);
-        await shot(`r${n}-before-cut`, [TV, phones[0]]);
-        await tv.bringToFront().catch(() => undefined);
-        await tv.keyboard.press('KeyS');
-        const skipped = await waitObs((s) => s.cutscene === null, 4000, 'S skips').then(() => true).catch(() => false);
-        check(skipped, `round ${n}: TV keyboard S skips the cutscene while the remote is attached`);
-        if (!skipped) await waitObs((s) => s.cutscene === null, 20000, 'cutscene end');
+        const fired = obs.trans.slice(startTrans).filter((t) => t.cut === plan.beforeCut);
+        check(fired.length > 0, `round ${n}: automatic "before" cutscene ${plan.beforeCut} fires`, dt && dt.after);
+        // the placeholder of a missing video lasts 4 s: a cutscene that is over inside the double-tap window was skipped by the second tap
+        const firstCut = obs.trans.slice(startTrans).find((t) => t.cut === plan.beforeCut);
+        const endCut = firstCut ? obs.trans.slice(startTrans).find((t) => t.t > firstCut.t && t.cut === null) : null;
+        const lasted = firstCut && endCut ? endCut.t - firstCut.t : null;
+        if (lasted !== null && lasted < 3000) issue('major', 'remote', `double-tap on "next" skipped the automatic "${plan.beforeCut}" video (it lasted ${lasted} ms; placeholder is 4000 ms)`, { lasted, dt });
+        check(lasted === null || lasted >= 3000, `round ${n}: the double-tap on "next" does not skip the "${plan.beforeCut}" video`, { lastedMs: lasted, flashes: dt && dt.flashes });
+        if (S().cutscene && S().cutscene.id === plan.beforeCut) {
+          await sleep(800);
+          await shot(`r${n}-before-cut`, [TV, phones[0]]);
+          await tv.bringToFront().catch(() => undefined);
+          await tv.keyboard.press('KeyS');
+          const skipped = await waitObs((s) => s.cutscene === null, 4000, 'S skips').then(() => true).catch(() => false);
+          check(skipped, `round ${n}: TV keyboard S skips the cutscene while the remote is attached`);
+          if (!skipped) await waitObs((s) => s.cutscene === null, 20000, 'cutscene end');
+        } else ev('before cutscene already over: S on the TV not exercised this run');
       }
-      await waitObs((s) => s.phase === 'intro' && s.round && s.round.gameId === gameId, 15000, 'intro');
+      await waitObs((s) => ['intro', 'countdown', 'playing'].includes(s.phase) && s.round && s.round.gameId === gameId, 15000, 'intro');
       const round = S().round;
       for (const p of roundPhones) p.curRound = round.index;
       ev(`intro ${gameId} round index ${round.index}`);
@@ -866,6 +901,16 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
         ev('flappy give-up times (round ms)', players.map((p, k) => `${p.label}:${gives[k % gives.length]}`).join(' '));
       } else if (gameId === 'ninja') drivers = players.map((p, k) => ninjaDriver(p, [260, 420, 120, 60, 200, 300, 150, 90, 240, 180][k % 10]));
       else if (gameId === 'plotzel') drivers = players.map((p, k) => plotzelDriver(p, [60, 140, 220, 320, 100, 180, 260, 80, 160, 120][k % 10]));
+      // the phones' own score, polled fast (the HUD at the end of an early-ended round is the phone's last word)
+      const poll = { on: true };
+      const pollers = players.map(async (p) => {
+        p.stageMax = 0;
+        while (poll.on) {
+          const v = await p.page.evaluate(() => (window.__playerPlay ? { r: window.__playerPlay.round, s: window.__playerPlay.stageScore } : null)).catch(() => null);
+          if (v && v.r === round.index && typeof v.s === 'number') p.stageMax = Math.max(p.stageMax, v.s);
+          await sleep(150);
+        }
+      });
 
       // chaos during the round
       const chaosOut = {};
@@ -896,23 +941,18 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
           await sleep(80);
         }
       })();
+      // the phone's own last word, read before the drivers stop
+      const endedNow = await Promise.all(players.map((p) => pinfo(p).catch(() => null)));
+      players.forEach((p, k) => (p.atEnd = endedNow[k]));
+      poll.on = false;
       await sleep(400);
       await stopDrivers(drivers);
       drivers = [];
-      try {
-        if (plan.results) await plan.results(chaosOut, { res });
-      } catch (e) {
-        issue('minor', 'test', `round ${n}: a results chaos step failed: ${e.message}`, String(e.stack || '').slice(0, 300));
-      }
-      const res2 = S().results; // a cutscene in the suspense moves revealAt
-      const winnerId = res2.winnerIds[0];
-      const winnerRow = res2.rows.find((x) => x.playerId === winnerId);
+      await Promise.race([Promise.all(pollers), sleep(3000)]);
+      const winnerId = res.winnerIds[0];
       const winnerPhone = [...phones, ...late].find((p) => p.id === winnerId);
-      await sleep(Math.max(0, res2.revealAt - 3200 - Date.now()));
-      await shot(`r${n}-suspense`, [TV, phones[0], phones[4]]);
-      const suspenseTv = await tv.locator('.sh-cer-name').count().catch(() => -1);
-      check(suspenseTv === 0, `round ${n}: TV keeps the winner hidden in the suspense`, { cerNames: suspenseTv });
-      // the reveal beat: TV name, the winner's phone, the others
+      const others = [...roundPhones, ...late].filter((p) => p.id !== winnerId && !p.gone);
+      // the reveal is measured WHILE the results chaos runs (a cutscene in the suspense moves revealAt)
       const stamp = async (fn, ms) => {
         try {
           await waitFor(fn, ms, 'reveal', 40);
@@ -921,12 +961,26 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
           return null;
         }
       };
-      const others = [...roundPhones, ...late].filter((p) => p.id !== winnerId && !p.gone);
-      const [tTv, tWin, ...tOthers] = await Promise.all([
-        stamp(async () => (await tv.locator('.sh-cer-name').count()) > 0, 16000),
-        winnerPhone ? stamp(async () => (await screenOf(winnerPhone)) === 'win', 16000) : Promise.resolve(undefined),
-        ...others.map((p) => stamp(async () => ['reveal', 'results'].includes(await screenOf(p)), 16000)),
-      ]);
+      const revealP = (async () => {
+        await waitFor(() => S().results && S().cutscene === null && Date.now() > S().results.revealAt - 3000, 60000, 'late suspense', 50);
+        const sus = await tv.locator('.sh-cer-name').count().catch(() => -1);
+        check(sus === 0, `round ${n}: TV keeps the winner hidden in the suspense`, { cerNames: sus, revealInMs: S().results.revealAt - Date.now() });
+        shot(`r${n}-suspense`, [TV, phones[0], phones[4]]).catch(() => undefined);
+        return Promise.all([
+          stamp(async () => (await tv.locator('.sh-cer-name').count()) > 0, 20000),
+          winnerPhone ? stamp(async () => (await screenOf(winnerPhone)) === 'win', 20000) : Promise.resolve(undefined),
+          ...others.map((p) => stamp(async () => ['reveal', 'results'].includes(await screenOf(p)), 20000)),
+        ]);
+      })();
+      try {
+        if (plan.results) await plan.results(chaosOut, { res });
+      } catch (e) {
+        issue('minor', 'test', `round ${n}: a results chaos step failed: ${e.message}`, String(e.stack || '').slice(0, 300));
+      }
+      const [tTv, tWin, ...tOthers] = await revealP;
+      const res2 = S().results;
+      const winnerRow = res2.rows.find((x) => x.playerId === winnerId);
+      check(res2.winnerIds[0] === winnerId, `round ${n}: the winner did not change during the results`, { before: winnerId, after: res2.winnerIds });
       watch.on = false;
       await watcher;
       const ra = S().results.revealAt;
@@ -940,18 +994,25 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
       check(lateOthers.length === 0, `round ${n}: every other phone shows who won within the beat`, { lateOthers, all: relOthers });
       await sleep(1400);
       await shot(`r${n}-ceremony`, [TV, winnerPhone || phones[1], others[0]]);
-      const tvName = await tv.textContent('.sh-cer-name').catch(() => '');
+      const tvName = await tv.textContent('.sh-cer-name', { timeout: 2000 }).catch(() => '');
       check(winnerRow && tvName.includes(winnerRow.name), `round ${n}: TV ceremony names the round winner "${winnerRow && winnerRow.name}"`, { tvName });
       const prize = await tv.locator('.sh-cer-prize .sh-prize, .sh-prize').count().catch(() => 0);
       check(prize > 0, `round ${n}: TV ceremony shows the prize`);
       const mus = await tv.evaluate(() => (window.__partyMusic ? { playing: window.__partyMusic.playing('victory'), started: window.__partyMusic.started.slice(-4) } : null)).catch(() => null);
       check(mus && mus.playing, `round ${n}: TV plays the victory song in the ceremony`, mus);
       if (winnerPhone) {
-        const wt = await winnerPhone.page.textContent('.pp-win').catch(() => '');
+        const wt = await winnerPhone.page.textContent('.pp-win', { timeout: 2000 }).catch(() => '');
         check(wt.includes('זכית'), `round ${n}: ${winnerPhone.label} WIN screen`, wt.slice(0, 60));
+        const wm = await winnerPhone.page.evaluate(() => (window.__partyMusic ? window.__partyMusic.playing('victory') : null)).catch(() => null);
+        check(wm === true, `round ${n}: victory song on the winner's phone`, wm);
       }
-      const revealTexts = await Promise.all(others.slice(0, 3).map((p) => p.page.textContent('.pp-reveal').catch(() => null)));
+      const revealTexts = await Promise.all(others.slice(0, 3).map((p) => p.page.textContent('.pp-reveal', { timeout: 1500 }).catch(() => null)));
       check(revealTexts.every((t) => t === null || t.includes(winnerRow.name)), `round ${n}: other phones name the winner`, revealTexts.map((t) => (t || '').slice(0, 50)));
+      try {
+        if (plan.afterReveal) await plan.afterReveal(chaosOut, { res: res2 });
+      } catch (e) {
+        issue('minor', 'test', `round ${n}: an after-reveal step failed: ${e.message}`, String(e.stack || '').slice(0, 300));
+      }
 
       // scoring
       const players2 = S().players;
@@ -975,9 +1036,10 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
       const perPhone = [];
       for (const p of players) {
         const row = res2.rows.find((x) => x.playerId === p.id);
-        const i = await pinfo(p).catch(() => null);
-        const own = i && i.endedRound === res2.roundIndex ? i.endedScore : p.hudFinal;
-        perPhone.push({ label: p.label, raw: row ? row.raw : null, own, ended: i ? i.endedRound === res2.roundIndex : null, chaos: [...new Set(windows.filter((w) => w.label === p.label && w.from >= T0).map((w) => w.kind))] });
+        const i = p.atEnd && p.atEnd.endedRound === res2.roundIndex ? p.atEnd : await pinfo(p).catch(() => null);
+        const ended = !!i && i.endedRound === res2.roundIndex;
+        const own = ended ? i.endedScore : Math.max(p.stageMax || 0, p.hudFinal || 0);
+        perPhone.push({ label: p.label, raw: row ? row.raw : null, own, ended, stageMax: p.stageMax, hudMax: p.hudFinal, chaos: [...new Set(windows.filter((w) => w.label === p.label && w.from >= T0).map((w) => w.kind))] });
       }
       for (const x of perPhone) {
         check(x.raw > 0, `round ${n}: ${x.label} scored (raw ${x.raw})`);
@@ -1012,7 +1074,7 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
         const rm = await r.evaluate(() => document.querySelector('[data-testid=main]').dataset.phase).catch(() => null);
         check(rm === 'lobby', `after round ${n}: the remote follows the TV's key press (phase ${rm})`);
       } else {
-        const dt = await doubleTapBig(`continue after round ${n}`, 'continue');
+        const dt = await doubleTapBig(`continue after round ${n}`, 'continue', n === 3 ? 320 : 140);
         const went = dt.after.map((x) => x.split('+')[0]);
         const skipped = went.includes('intro') || ['intro', 'countdown', 'playing'].includes(S().phase);
         check(went[0] === 'lobby' && !skipped, `after round ${n}: remote double-tap "continue" goes to the lobby once (does not also start the next game)`, dt);
@@ -1120,9 +1182,11 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
         const fr = await Promise.all(phones.slice(0, 4).map((p) => pinfo(p).then((i) => `${p.label}:${i.screen}:${i.frozen}:${i.cutscene}`)));
         check(fr.every((x) => /:true:true$/.test(x)), 'round 2: manual cutscene from the remote freezes the phones', fr);
         await waitObs((s) => s.cutscene === null, 30000, 'joker_1 ends');
+        const frozenSt = obs.states.find((x) => x.st.cutscene && x.st.cutscene.id === 'joker_1' && x.st.round && x.st.round.frozenAt !== null);
         const rr = S().round;
-        const leftAfter = roundTime(rr, rr.resumeAt || Date.now()).leftMs;
-        check(Math.abs(leftAfter - leftBefore) < 400, 'round 2: the round continues with the same time left after the manual cutscene', { leftBefore, leftAfter });
+        const leftAtFreeze = frozenSt ? frozenSt.st.round.endAt - frozenSt.st.round.frozenAt : null;
+        const leftAtResume = rr.resumeAt !== null ? rr.endAt - rr.resumeAt : null;
+        check(leftAtFreeze !== null && leftAtFreeze === leftAtResume, 'round 2: the round continues with exactly the time left it froze at (manual cutscene)', { leftBefore, leftAtFreeze, leftAtResume });
         out.offline = await offlineP;
         if (!(await waitElapsed(16500, 'tv reload'))) return;
         await tvReload('mid-round');
@@ -1193,6 +1257,8 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
         const ra1 = S().results.revealAt;
         check(ra1 > ra0 + 1000, 'round 3: a cutscene in the suspense pushes revealAt back by its length', { pushedMs: ra1 - ra0 });
         out.revealPushedMs = ra1 - ra0;
+      },
+      async afterReveal(out) {
         // places, not distances: on the phones and the TV
         await waitFor(() => Date.now() > S().results.revealAt + 7000, 30000, 'personal results');
         const rows = S().results.rows;
@@ -1241,9 +1307,16 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
     // ═════════════ the podium ═════════════
     ev('══════ podium ══════');
     check(GAME_IDS.every((g) => S().played.includes(g)), 'all five games played', S().played);
+    const podT = obs.trans.length;
     const dt = await doubleTapBig('podium', 'podium');
     const cutOk = await waitObs((s) => s.phase === 'final', 8000, 'final').then(() => true).catch(() => false);
     check(cutOk && !dt.after.some((x) => x.startsWith('lobby')), 'remote double-tap: the podium, once', dt);
+    const pc = obs.trans.slice(podT).find((t) => t.cut === 'before_podium');
+    const pe = pc ? obs.trans.slice(podT).find((t) => t.t > pc.t && t.cut === null) : null;
+    const podLasted = pc && pe ? pe.t - pc.t : null;
+    check(pc !== undefined, "the 'final' cutscene before_podium fires", dt.after);
+    check(podLasted === null || podLasted >= 3000, 'the double-tap on "podium" does not skip the before_podium video', { lastedMs: podLasted, flashes: dt.flashes });
+    if (podLasted !== null && podLasted < 3000) issue('major', 'remote', `double-tap on "podium" skipped the before_podium video (it lasted ${podLasted} ms)`, dt);
     if (S().cutscene) {
       check(S().cutscene.id === 'before_podium', "the 'final' cutscene plays before the podium");
       await sleep(1500);
