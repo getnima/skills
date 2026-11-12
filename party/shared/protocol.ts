@@ -24,6 +24,13 @@ export interface GameMeta {
    * to [0, maxRaw] (cheap sanity check, friends-only anti-cheat).
    */
   readonly maxRaw: number;
+  /**
+   * 'score': the round runs its full time and the best raw score wins.
+   * 'elimination': one life. The raw score is survival (see the game), a player who is out
+   * sends its final at once, and the server ends the round shortly after one is left
+   * (ELIMINATION_END_DELAY_MS); `durationMs` is then only the hard cap.
+   */
+  readonly mode: 'score' | 'elimination';
 }
 
 export const GAMES: Readonly<Record<GameId, GameMeta>> = {
@@ -34,6 +41,7 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     instructions: 'לחצו על הפרצוף של שימי כמה שיותר מהר! כשהוא מחטט באף זה שווה הרבה יותר.',
     durationMs: 60_000,
     maxRaw: 5_000,
+    mode: 'score',
   },
   icy: {
     id: 'icy',
@@ -42,14 +50,18 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     instructions: 'טפסו כמה שיותר גבוה על מדרגות הקרח. צוברים מהירות – קופצים גבוה יותר. לא ליפול!',
     durationMs: 75_000,
     maxRaw: 100_000,
+    mode: 'score',
   },
   flappy: {
     id: 'flappy',
     title: 'פלאפי תבורי',
     emoji: '🐤',
-    instructions: 'הקישו על המסך כדי לעוף ועברו בין המכשולים. הריצה הכי טובה שלכם נחשבת.',
-    durationMs: 60_000,
-    maxRaw: 500,
+    instructions: 'הקישו כדי לעוף. מי שמתרסק - בחוץ! האחרון שנשאר באוויר מנצח.',
+    // Hard cap only: the round ends 1.5 s after one player is left (normally 20-50 s).
+    durationMs: 90_000,
+    // Raw = distance flown in tenths of a course unit (at most ~60 units/s for 90 s).
+    maxRaw: 100_000,
+    mode: 'elimination',
   },
   plotzel: {
     id: 'plotzel',
@@ -58,6 +70,7 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     instructions: 'מגיעים מהמילה שעל המסך ל״פלוץ״. בכל צעד משנים אות אחת, וכל צעד חייב להיות מילה אמיתית. כמה שיותר מילים, בכמה שפחות צעדים!',
     durationMs: 120_000,
     maxRaw: 12_000,
+    mode: 'score',
   },
   ninja: {
     id: 'ninja',
@@ -66,6 +79,7 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     instructions: 'חתכו את כל מה שעף באוויר – אבל לא את הפצצה עם הפתיל. זה אנחנו!',
     durationMs: 60_000,
     maxRaw: 20_000,
+    mode: 'score',
   },
 };
 
@@ -83,6 +97,16 @@ export const RESUME_COUNTDOWN_MS = 3_000;
 export const CUTSCENE_MAX_MS = 90_000;
 /** Suspense between the start of the results phase and the round winner's reveal. */
 export const WINNER_REVEAL_MS = 8_000;
+/** Elimination rounds: the round ends this long after one player (or nobody) is left. */
+export const ELIMINATION_END_DELAY_MS = 1_500;
+/** Elimination rounds: the finale begins this long (of round time) after the server announces it. */
+export const FINALE_LEAD_MS = 3_000;
+/** Elimination rounds: this many players left starts the finale (fewer when the round started with 4 or fewer, see RoundPublic.finale). */
+export const FINALE_PLAYERS = 3;
+/** Elimination rounds with 1 or 2 participants: the finale begins at this elapsed round time. */
+export const FINALE_SMALL_FIELD_MS = 20_000;
+/** Elimination rounds: the finale begins at this elapsed round time at the latest, however many are left. */
+export const FINALE_LATEST_MS = 60_000;
 /** Clients send `player:score` at most this often while playing. */
 export const SCORE_SEND_INTERVAL_MS = 250;
 /** Server broadcasts the live `scores` event at most this often. */
@@ -150,6 +174,17 @@ export interface RoundPublic {
    * Always read round time through `roundTime()` in shared/round-clock.ts.
    */
   readonly resumeAt: number | null;
+  /**
+   * Elimination rounds only (null for score rounds and until it is decided): the finale
+   * ("only 3 left") begins when the round's ELAPSED time (roundTime().elapsedMs) reaches
+   * `atElapsedMs`. Set once by the server and never changed: at the moment the number of
+   * active players drops to the threshold (3; participants - 1 when the round started with
+   * 3 or 4), as that moment's elapsed time + FINALE_LEAD_MS; for a round of 1 or 2 at round
+   * start, as FINALE_SMALL_FIELD_MS; and at FINALE_LATEST_MS at the latest. Being round
+   * time, a cutscene freeze shifts nothing. From then on the game gets harder as a pure
+   * function of (seed, elapsed - atElapsedMs), the same on every phone.
+   */
+  readonly finale: { readonly atElapsedMs: number } | null;
 }
 
 /** A cutscene is playing on the TV; every phone is frozen and told to watch. */
@@ -353,8 +388,11 @@ export interface S2C {
    * same order the results use. A player's live place is its index + 1, and
    * the last message of a round is in the order of the results' `roundRank`.
    * Lists every participant of the round, including those still on 0.
+   * `active`: participants still playing (connected, or disconnected for less than the 5 s
+   * grace, and no final sent). `out`: ids of the participants whose final is in (in an
+   * elimination round: who is out). Both are sent for every game.
    */
-  scores: (msg: { round: number; scores: ReadonlyArray<readonly [string, number]> }) => void;
+  scores: (msg: { round: number; scores: ReadonlyArray<readonly [string, number]>; active: number; out: readonly string[] }) => void;
   /** This player was removed by the host. */
   kicked: () => void;
   /** Host sockets only: what another host socket of the same room sent with `host:relay`. */

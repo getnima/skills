@@ -204,7 +204,9 @@ describe('scoring truth', () => {
       const appeared = new Set<string>();
       const rounds = 1 + Math.floor(rnd() * 5);
       for (let r = 0; r < rounds; r++) {
-        const gameId: GameId = GAME_IDS[Math.floor(rnd() * GAME_IDS.length)] ?? 'tap';
+        // score games only: an elimination round has its own rules (tests/unit/elimination.test.ts)
+        const scoreGames = GAME_IDS.filter((g) => GAMES[g].mode === 'score');
+        const gameId: GameId = scoreGames[Math.floor(rnd() * scoreGames.length)] ?? 'tap';
         const maxRaw = GAMES[gameId].maxRaw;
         expect(h.room.start(gameId)).toEqual({ ok: true });
         const participants = [...totals.keys()];
@@ -392,7 +394,7 @@ describe('scoring truth', () => {
   it('one player alone wins with 1100; with a zero there is no winner', () => {
     const h = makeRoom();
     const a = h.join('solo');
-    h.room.start('flappy');
+    h.room.start('ninja');
     h.toPlaying();
     h.room.final(a, 0, 3);
     expect(h.results()).toMatchObject({ winnerIds: [a], rows: [{ points: 1100, roundRank: 1, rank: 1, prevRank: null, total: 1100 }] });
@@ -406,7 +408,7 @@ describe('scoring truth', () => {
     const h = makeRoom();
     const a = h.join('a');
     const b = h.join('b');
-    h.room.start('flappy');
+    h.room.start('ninja');
     h.toPlaying();
     h.room.score(a, 0, 7);
     for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '999', null, undefined, {}, [], true, 10n]) {
@@ -427,7 +429,7 @@ describe('scoring truth', () => {
     h.room.score(a, 0, 7.6);
     vi.advanceTimersByTime(500);
     expect(h.scores.at(-1)?.scores).toEqual([
-      [b, GAMES.flappy.maxRaw],
+      [b, GAMES.ninja.maxRaw],
       [a, 8],
     ]);
     expect(h.room.final(b, 0, -1e9)).toEqual({ ok: true });

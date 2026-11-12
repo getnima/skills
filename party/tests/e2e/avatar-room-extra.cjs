@@ -383,6 +383,34 @@ async function layoutProblems(page) {
       await ctx.close();
     }
 
+    // ── 5b. thumbnails are composed for the tiles on screen only, and cached ──
+    {
+      const { ctx, page, errors } = await newPage(browser, { width: 390, height: 844 });
+      await mount(page, {});
+      await sleep(3000);
+      const t1 = await page.evaluate(() => ({
+        made: window.__dressingRoom.thumbs().made,
+        tiles: document.querySelectorAll('.dr-shelf .dr-tile').length,
+        shown: document.querySelectorAll('.dr-shelf .dr-tile img').length,
+      }));
+      await page.$eval('.dr-shelf', (e) => (e.scrollLeft = -e.scrollWidth));
+      await sleep(2500);
+      const t2 = await page.evaluate(() => ({ made: window.__dressingRoom.thumbs().made, shown: document.querySelectorAll('.dr-shelf .dr-tile img').length }));
+      await tapSel(page, '.dr-tab[data-tab="EYES"]');
+      await sleep(1500);
+      await tapSel(page, '.dr-tab[data-tab="HEAD"]');
+      await sleep(150);
+      const t3 = await page.evaluate(() => ({ made: window.__dressingRoom.thumbs().made, shown: document.querySelectorAll('.dr-shelf .dr-tile img').length }));
+      check(
+        'thumbnails: lazy (only tiles seen), more after scrolling, cached on return',
+        t1.made < t1.tiles && t1.shown === t1.made && t2.made > t1.made && t3.shown >= t1.shown,
+        `${t1.tiles} hat tiles; on open ${t1.made} made; after scrolling ${t2.made}; back to hats: ${t3.shown} shown at once`,
+      );
+      await shot(page, 'extra-thumbs-scrolled');
+      if (errors.length) check('thumbs: no errors', false, errors.slice(0, 2).join(' | '));
+      await ctx.close();
+    }
+
     // ── 6. a missing picture: placeholder tile, no throw, the rest works ──
     {
       const { ctx, page, errors } = await newPage(browser, {

@@ -44,8 +44,11 @@ const OUT_FRAME_S = 0.45;
 const BORED_AFTER_MS = 1_500;
 const SIDE_PAD = 6;
 const PILE_STAMPS = 160;
+/** Columns of a head frame that hold the head (ears included); the rest of the square is transparent. */
+const HEAD_CROP_L = 0.15;
+const HEAD_CROP_R = 0.87;
 /** The pile grows up to this share of the head size (it must not bury the doll's mouth). */
-const PILE_LIFT_MAX = 0.08;
+const PILE_LIFT_MAX = 0.05;
 
 // ───────────────────────────── Words (the owner's voice) ─────────────────────────────
 
@@ -313,10 +316,10 @@ export const game: GameModule = {
       const col = clamp(Math.floor((gd.x / Math.max(1, geo.w)) * PILE_COLS), 0, PILE_COLS - 1);
       const h0 = pileH[col] ?? 0;
       const k = (gd.size / geo.S) * (gd.kind === BOOGER.Boss ? 0.55 : 1);
-      const s: Stamp = { u: gd.x / Math.max(1, geo.w), lift: Math.min(h0, PILE_LIFT_MAX), kind: gd.kind, k: k * 0.85, rot: gd.rot };
+      const s: Stamp = { u: gd.x / Math.max(1, geo.w), lift: Math.min(h0, PILE_LIFT_MAX), kind: gd.kind, k: k * 0.62, rot: gd.rot };
       for (let c = col - 1; c <= col + 1; c++) {
         if (c < 0 || c >= PILE_COLS) continue;
-        pileH[c] = Math.min(PILE_LIFT_MAX, (pileH[c] ?? 0) + k * (c === col ? 0.12 : 0.05));
+        pileH[c] = Math.min(PILE_LIFT_MAX, (pileH[c] ?? 0) + k * (c === col ? 0.08 : 0.035));
       }
       stamps.push(s);
       if (stamps.length > PILE_STAMPS) stamps.shift();
@@ -366,7 +369,7 @@ export const game: GameModule = {
       }
       const tr = boogerTraits(ctx.seed, index);
       const w = geo.w;
-      const size = big ? geo.S * 0.36 : geo.S * (0.085 + tr.size * 0.05) * (kind === BOOGER.Hairy ? 1.1 : kind === BOOGER.Golden ? 1.15 : 1);
+      const size = big ? geo.S * 0.3 : geo.S * (0.085 + tr.size * 0.05) * (kind === BOOGER.Hairy ? 1.1 : kind === BOOGER.Golden ? 1.15 : 1);
       gd.live = true;
       gd.kind = kind;
       gd.stage = 0;
@@ -397,7 +400,7 @@ export const game: GameModule = {
       const hangs = kind === BOOGER.Stretchy;
       gd.rot = hangs ? (tr.spin - 0.5) * 0.3 : (tr.spin - 0.5) * 0.8;
       gd.vrot = hangs ? 0 : (tr.spin - 0.5) * 14;
-      gd.vy = (28 + tr.slide * 40) * (big ? 0.45 : 1);
+      gd.vy = (28 + tr.slide * 40) * (big ? 0.9 : 1);
       gd.stretch = 1;
       gd.born = gooSerial++;
     }
@@ -472,6 +475,7 @@ export const game: GameModule = {
 
     // ── sounds (kit synth; silent until unlocked, never throws) ──
     function oncePerStep(): boolean {
+      if (((window as unknown as { __tapSkip?: string }).__tapSkip ?? '').includes('snd')) return false; // TEMP-PERF
       if (loop.steps === lastSfxStep) return false;
       lastSfxStep = loop.steps;
       return true;
@@ -726,7 +730,8 @@ export const game: GameModule = {
       const { w, h, S, hx, hy } = geo;
       const t = loop.timeMs / 1000;
       const s = engine.state;
-      backdrop.draw(g, w, h, view.dpr, w / 2, hy + S * 0.5);
+      const SK = (window as unknown as { __tapSkip?: string }).__tapSkip ?? ''; // TEMP-PERF
+      if (!SK.includes('bg')) backdrop.draw(g, w, h, view.dpr, w / 2, hy + S * 0.5);
 
       if (s.frenzy) {
         const k = 0.5 + 0.5 * Math.sin(t * (ctx.timeLeftMs() < 5_000 ? 14 : 7));
@@ -742,20 +747,31 @@ export const game: GameModule = {
 
       // the head: squash and stretch on the chin, a twist around the nostril per dig
       const frame = headFrame();
-      if (frame) {
+      if (frame && !SK.includes('head')) {
         const sq = clamp(squash * 0.05, -0.12, 0.12);
         const sway = s.frenzy ? Math.sin(t * 9) * S * 0.012 : 0;
+        const rot = clamp(twist * 0.012, -0.08, 0.08);
         const nx = geo.noseX + sway;
         const ny = geo.noseY;
-        g.save();
-        g.translate(nx, hy + S);
-        g.scale(1 + sq, 1 - sq);
-        g.translate(0, ny - (hy + S));
-        g.rotate(clamp(twist * 0.012, -0.08, 0.08));
-        g.scale(1 - digAnim * 0.025, 1 + digAnim * 0.05); // the nose stretches with every dig
-        g.translate(-nx, -ny);
-        frame.draw(g, hx + S / 2 + sway, hy + S / 2, S, S);
-        g.restore();
+        // only the content columns of the square (its sides are transparent: no need to fill them)
+        const src = frame.source;
+        const sx = src.width * HEAD_CROP_L;
+        const sw = src.width * (HEAD_CROP_R - HEAD_CROP_L);
+        const still = Math.abs(sq) < 0.002 && Math.abs(rot) < 0.0015 && digAnim < 0.01;
+        if (still) {
+          g.drawImage(src, sx, 0, sw, src.height, hx + sway + S * HEAD_CROP_L, hy, S * (HEAD_CROP_R - HEAD_CROP_L), S);
+        } else {
+          // squash and stretch on the chin, a twist around the nostril per dig, the nose stretching
+          g.save();
+          g.translate(nx, hy + S);
+          g.scale(1 + sq, 1 - sq);
+          g.translate(0, ny - (hy + S));
+          if (Math.abs(rot) >= 0.0015) g.rotate(rot);
+          g.scale(1 - digAnim * 0.025, 1 + digAnim * 0.05);
+          g.translate(-nx, -ny);
+          g.drawImage(src, sx, 0, sw, src.height, hx + sway + S * HEAD_CROP_L, hy, S * (HEAD_CROP_R - HEAD_CROP_L), S);
+          g.restore();
+        }
       }
 
       // the BIG booger growing on the end of the strand
@@ -785,10 +801,10 @@ export const game: GameModule = {
 
       // tray (in front of the chin and the forearm)
       const tray = trayLayer();
-      g.drawImage(tray, 0, geo.trayTop, w, h - geo.trayTop);
+      if (!SK.includes('tray')) g.drawImage(tray, 0, geo.trayTop, w, h - geo.trayTop);
       g.restore();
 
-      drawGlass(g);
+      if (!SK.includes('glass')) drawGlass(g);
       drawTrayUi(g, t);
       fx.draw(g);
       drawFloaters(g);

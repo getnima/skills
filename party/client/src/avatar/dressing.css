@@ -83,6 +83,8 @@
     40% 22%
   );
 
+  /* 1% of the room's width (set from the measured size; the room is not always the whole viewport) */
+  --u: 3.75px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -396,9 +398,9 @@
 .dr-star {
   position: absolute;
   z-index: 2;
-  top: 12px;
-  right: calc(12px + var(--sar));
-  width: clamp(66px, 19vw, 96px);
+  top: 14px;
+  right: calc(20px + var(--sar));
+  width: clamp(66px, calc(19 * var(--u)), 92px);
   aspect-ratio: 1;
   display: grid;
   place-items: center;
@@ -423,7 +425,7 @@
 .dr-star span {
   position: relative;
   z-index: 1;
-  font: 700 clamp(16px, 4.6vw, 22px) / 1 var(--disp);
+  font: 700 clamp(15px, calc(4.3 * var(--u)), 20px) / 1 var(--disp);
   color: #fff;
   -webkit-text-stroke: 2px var(--ink);
   paint-order: stroke fill;
@@ -520,7 +522,7 @@
   display: flex;
   align-items: center;
   padding: 5px 11px 5px 9px;
-  font: 700 clamp(14px, 4vw, 17px) / 1.2 var(--disp);
+  font: 700 clamp(14px, calc(4 * var(--u)), 17px) / 1.2 var(--disp);
   color: var(--ink);
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -568,7 +570,7 @@
   border: 2.5px solid var(--ink);
   background: var(--cob-d);
   color: #fff;
-  font: 700 clamp(14px, 4.5vw, 17px) / 1 var(--disp);
+  font: 700 clamp(14px, calc(4.5 * var(--u)), 17px) / 1 var(--disp);
   white-space: nowrap;
   box-shadow: 0 3px 0 var(--ink);
   transition:
@@ -774,7 +776,7 @@
   border-radius: 999px;
   border: 3px solid var(--ink);
   box-shadow: 0 5px 0 var(--ink);
-  font: 700 clamp(15px, 4.9vw, 22px) / 1 var(--disp);
+  font: 700 clamp(15px, calc(4.9 * var(--u)), 22px) / 1 var(--disp);
   white-space: nowrap;
   transition:
     transform 0.08s,
@@ -795,7 +797,7 @@
 .dr-done {
   background: var(--red);
   color: #fff;
-  font-size: clamp(20px, 6.2vw, 27px);
+  font-size: clamp(20px, calc(6.2 * var(--u)), 27px);
   -webkit-text-stroke: 1.2px var(--ink);
   paint-order: stroke fill;
   text-shadow: 2px 2px 0 var(--ink);
@@ -906,41 +908,40 @@
 .dr-compact .dr-say.top {
   top: 56px;
 }
-@media (max-width: 350px) {
-  .dr-bar {
-    height: 54px;
-  }
-  .dr-live {
-    font-size: 15px;
-    padding: 0 8px;
-  }
-  .dr-chip-t b {
-    font-size: 14px;
-  }
-  .dr-tabs {
-    gap: 3px;
-  }
-  .dr-tab {
-    border-radius: 9px;
-    border-width: 2px;
-    padding: 0 1px;
-  }
-  .dr-name {
-    font-size: 16px;
-    padding: 5px 9px 6px;
-  }
-  .dr-say {
-    min-height: 46px;
-  }
-  .dr-say-text {
-    font-size: 13.5px;
-  }
-  .dr-acts {
-    gap: 6px;
-  }
-  .dr-say-tag {
-    width: 64px;
-  }
+/* the room is narrower than 350 px (class set from the measured width, not the viewport) */
+.dr-narrow .dr-bar {
+  height: 54px;
+}
+.dr-narrow .dr-live {
+  font-size: 15px;
+  padding: 0 8px;
+}
+.dr-narrow .dr-chip-t b {
+  font-size: 14px;
+}
+.dr-narrow .dr-tabs {
+  gap: 3px;
+}
+.dr-narrow .dr-tab {
+  border-radius: 9px;
+  border-width: 2px;
+  padding: 0 1px;
+}
+.dr-narrow .dr-name {
+  font-size: 16px;
+  padding: 5px 9px 6px;
+}
+.dr-narrow .dr-say {
+  min-height: 46px;
+}
+.dr-narrow .dr-say-text {
+  font-size: 13.5px;
+}
+.dr-narrow .dr-acts {
+  gap: 6px;
+}
+.dr-narrow .dr-say-tag {
+  width: 64px;
 }
 
 /* ───────── paused (tab hidden) and reduced motion ───────── */

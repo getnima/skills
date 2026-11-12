@@ -38,7 +38,7 @@ const PORT = process.env.AVATAR_PORT || 5293;
         const url = await m.avatarUrl(r.look, s, r.crop || 'icon');
         const img = new Image();
         img.src = url;
-        img.style.cssText = `width:${s}px;height:${s}px;${r.round === false ? '' : 'border-radius:50%;'}`;
+        img.style.cssText = `width:${s}px;height:${s}px;${r.round === true ? 'border-radius:50%;' : 'border-radius:24%;'}`;
         await img.decode().catch(() => {});
         row.append(img);
       }

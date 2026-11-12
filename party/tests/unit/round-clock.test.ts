@@ -5,7 +5,7 @@ import { roundTime } from '../../shared/round-clock';
 import type { RoundPublic } from '../../shared/protocol';
 
 function round(over: Partial<RoundPublic> = {}): RoundPublic {
-  return { index: 0, number: 1, gameId: 'tap', seed: 1, startAt: 10_000, endAt: 70_000, frozenAt: null, resumeAt: null, ...over };
+  return { index: 0, number: 1, gameId: 'tap', seed: 1, startAt: 10_000, endAt: 70_000, frozenAt: null, resumeAt: null, finale: null, ...over };
 }
 
 describe('roundTime', () => {

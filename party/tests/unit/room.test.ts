@@ -218,6 +218,7 @@ describe('round lifecycle', () => {
       endAt: T0 + INTRO_MS + COUNTDOWN_MS + TAP_MS,
       frozenAt: null,
       resumeAt: null,
+      finale: null,
     });
 
     vi.advanceTimersByTime(INTRO_MS - 1);
@@ -246,7 +247,7 @@ describe('round lifecycle', () => {
       new Map([[a, 10], [b, 40], [c, 40]]),
       new Map([[a, 0], [b, 0], [c, 7]]),
     ];
-    const games = ['tap', 'flappy', 'ninja'] as const;
+    const games = ['tap', 'icy', 'ninja'] as const;
     const expected = new Map<string, number>([[a, 0], [b, 0], [c, 0]]);
 
     games.forEach((gameId, i) => {
@@ -274,7 +275,7 @@ describe('round lifecycle', () => {
     });
 
     const s = h.state();
-    expect(s.played).toEqual(['tap', 'flappy', 'ninja']);
+    expect(s.played).toEqual(['tap', 'icy', 'ninja']);
     for (const p of s.players) expect(p.total).toBe(expected.get(p.id));
     // Round 2: b and c both on 40 in the same millisecond, b joined first: b 1100, c 1060.
     // Round 3: only c scored. Totals: a = 1100 + 280, b = 560 + 1100, c = 0 + 1060 + 1100.
@@ -349,7 +350,7 @@ describe('round lifecycle', () => {
     expect(row).toMatchObject({ raw: 0, points: 0, total: 0, roundRank: 2, prevRank: null });
     expect(h.results().winnerIds).toEqual([a]);
 
-    h.room.start('flappy');
+    h.room.start('ninja');
     h.toPlaying();
     h.room.final(late, 1, 9);
     h.room.final(a, 1, 3);
@@ -431,7 +432,7 @@ describe('round lifecycle', () => {
     const b = h.join('b');
     const c = h.join('c');
     const d = h.join('d');
-    h.room.start('flappy');
+    h.room.start('ninja');
     h.toPlaying();
     h.room.score(a, 0, 1e9);
     h.room.score(b, 0, -20);
@@ -443,9 +444,9 @@ describe('round lifecycle', () => {
     expect(h.room.final(d, 0, 30)).toEqual({ ok: true });
     expect(h.room.final(d, 0, 499)).toEqual({ ok: true });
     h.room.score(d, 0, 499);
-    vi.advanceTimersByTime(GAMES.flappy.durationMs + FINAL_GRACE_MS);
+    vi.advanceTimersByTime(GAMES.ninja.durationMs + FINAL_GRACE_MS);
     const raw = Object.fromEntries(h.results().rows.map((r) => [r.playerId, r.raw]));
-    expect(raw).toEqual({ [a]: GAMES.flappy.maxRaw, [b]: 0, [c]: 12, [d]: 30 });
+    expect(raw).toEqual({ [a]: GAMES.ninja.maxRaw, [b]: 0, [c]: 12, [d]: 30 });
   });
 
   it('prefers the final over the last live score', () => {
@@ -497,13 +498,13 @@ describe('round lifecycle', () => {
     h.toPlaying();
     h.room.score(a, 0, 1);
     vi.advanceTimersByTime(0);
-    expect(h.scores).toEqual([{ round: 0, scores: [[a, 1], [b, 0]] }]);
+    expect(h.scores).toEqual([{ round: 0, scores: [[a, 1], [b, 0]], active: 2, out: [] }]);
     for (let i = 2; i <= 10; i++) h.room.score(a, 0, i);
     h.room.score(b, 0, 4);
     expect(h.scores).toHaveLength(1);
     vi.advanceTimersByTime(SCORE_BROADCAST_INTERVAL_MS);
     expect(h.scores).toHaveLength(2);
-    expect(h.scores[1]).toEqual({ round: 0, scores: [[a, 10], [b, 4]] });
+    expect(h.scores[1]).toEqual({ round: 0, scores: [[a, 10], [b, 4]], active: 2, out: [] });
     // Nothing changed: nothing is sent.
     h.room.score(a, 0, 10);
     vi.advanceTimersByTime(5 * SCORE_BROADCAST_INTERVAL_MS);
@@ -781,7 +782,7 @@ describe('cutscenes', () => {
     const h = makeRoom({ cutscenes: all });
     const a = h.join('a');
     const b = h.join('b');
-    h.room.start('flappy');
+    h.room.start('icy');
     h.toPlaying();
     h.room.startCutscene('joker');
     h.room.final(a, 0, 4);
@@ -826,7 +827,7 @@ describe('cutscenes', () => {
   it("'after': results and cutscene arrive together and the reveal moves past the video", () => {
     const h = makeRoom({ cutscenes: all });
     const a = h.join('a');
-    h.room.start('flappy');
+    h.room.start('icy');
     h.toPlaying();
     const before = h.states.length;
     h.room.final(a, 0, 4);
@@ -846,7 +847,7 @@ describe('cutscenes', () => {
   it('a manual cutscene before the reveal pushes it back; one after it does not', () => {
     const h = makeRoom({ cutscenes: [manual] });
     const a = h.join('a');
-    h.room.start('flappy');
+    h.room.start('icy');
     h.toPlaying();
     h.room.final(a, 0, 4);
     const revealAt = h.results().revealAt;

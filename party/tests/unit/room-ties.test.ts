@@ -21,7 +21,7 @@ interface Harness {
   row(id: string): ResultRow;
   join(name: string): string;
   /** Starts a round and advances to the first ms of `playing`; returns the round index. */
-  play(gameId?: 'tap' | 'flappy' | 'ninja' | 'icy' | 'plotzel'): number;
+  play(gameId?: 'tap' | 'ninja' | 'ninja' | 'icy' | 'plotzel'): number;
   /** Lets the round run out. */
   finish(): void;
 }
@@ -51,7 +51,7 @@ function makeRoom(): Harness {
       if (!res.ok) throw new Error(`join failed: ${res.error}`);
       return res.playerId;
     },
-    play: (gameId = 'flappy') => {
+    play: (gameId = 'ninja') => {
       expect(room.start(gameId)).toEqual({ ok: true });
       const r = room.snapshot().round;
       if (r === null) throw new Error('no round');
@@ -103,7 +103,7 @@ describe('the strict round order', () => {
   it('four phones on the same raw score: one winner, the order they got there, four different points', () => {
     const h = makeRoom();
     const [a, b, c, d] = ['a', 'b', 'c', 'd'].map((n) => h.join(n)) as [string, string, string, string];
-    const i = h.play('flappy');
+    const i = h.play('ninja');
     const t = Date.now();
     h.room.score(c, i, 6);
     vi.advanceTimersByTime(1_000);
@@ -362,7 +362,7 @@ describe('the live scores broadcast', () => {
   it('the order at the end of the round is the order of the results', () => {
     const h = makeRoom();
     const ids = ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => h.join(n));
-    const i = h.play('flappy');
+    const i = h.play('ninja');
     const plan: Array<[number, number, number]> = [
       [3, 2, 0], [0, 2, 0], [5, 1, 100], [1, 3, 100], [4, 2, 300], [0, 3, 400], [2, 3, 400], [3, 3, 900], [5, 3, 900],
     ];
@@ -404,7 +404,7 @@ describe('strict overall ranks', () => {
     const h = makeRoom();
     const ids = Array.from({ length: 12 }, (_, k) => h.join(`p${k}`));
     for (let round = 0; round < 5; round++) {
-      const i = h.play(round % 2 === 0 ? 'flappy' : 'ninja');
+      const i = h.play(round % 2 === 0 ? 'icy' : 'ninja');
       // everyone ends on 6, in a different order every round
       ids.forEach((_, k) => {
         vi.advanceTimersByTime(50);

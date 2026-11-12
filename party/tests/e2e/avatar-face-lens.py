@@ -44,6 +44,7 @@ def main():
     ap.add_argument('--dark', type=int, default=110)
     ap.add_argument('--chroma', type=int, default=0, help='frame = colourful pixels (max-min channel above this) instead of dark ones (a gold rim)')
     ap.add_argument('--glass', type=int, default=36)
+    ap.add_argument('--sheen', type=int, default=0, help='glass alpha rises to this towards the top-left of each lens (a reflection that reads at icon size)')
     ap.add_argument('--grow', type=int, default=2)
     ap.add_argument('--pale', type=int, default=0, help='frame = pale grey pixels (max-min channel up to this): white cardboard')
     ap.add_argument('--tint', type=int, default=0, help='keep the lens colour at this alpha instead of white glass (tinted lenses)')
@@ -89,6 +90,11 @@ def main():
     else:
         out[lens_all, 0:3] = 255
         out[lens_all, 3] = a.glass
+        if a.sheen > a.glass:
+            ys, xs = np.nonzero(lens_all)
+            d = (xs - xs.min()) / max(1, xs.max() - xs.min()) + (ys - ys.min()) / max(1, ys.max() - ys.min())
+            t = np.clip(1.25 - d, 0, 1) ** 1.5   # 1 at the top-left, 0 past the middle
+            out[ys, xs, 3] = (a.glass + (a.sheen - a.glass) * t).astype(np.int16)
     res = Image.fromarray(out.astype(np.uint8), 'RGBA')
     res.save(a.dst, optimize=True)
     if a.check:

@@ -1072,7 +1072,8 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
   return (
     <div
       ref={rootRef}
-      class={`dr${compact ? ' dr-compact' : ''}${tall ? ' dr-tall' : ''}${reduced ? ' dr-reduced' : ''}${hidden ? ' dr-paused' : ''} dr-${mode}`}
+      style={{ '--u': `${(sizes.rw > 0 ? sizes.rw : 375) / 100}px` }}
+      class={`dr${compact ? ' dr-compact' : ''}${sizes.rw > 0 && sizes.rw < 350 ? ' dr-narrow' : ''}${tall ? ' dr-tall' : ''}${reduced ? ' dr-reduced' : ''}${hidden ? ' dr-paused' : ''} dr-${mode}`}
       dir="rtl"
       lang="he"
     >

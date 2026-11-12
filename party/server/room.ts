@@ -7,7 +7,12 @@
 import { CUTSCENES } from '../shared/cutscenes';
 import {
   CUTSCENE_MAX_MS,
+  ELIMINATION_END_DELAY_MS,
   FINAL_GRACE_MS,
+  FINALE_LATEST_MS,
+  FINALE_LEAD_MS,
+  FINALE_PLAYERS,
+  FINALE_SMALL_FIELD_MS,
   GAME_IDS,
   GAMES,
   MAX_PLAYERS,
@@ -56,6 +61,10 @@ export const SYSTEM_SCHEDULER: Scheduler = {
 export interface ScoresMessage {
   readonly round: number;
   readonly scores: ReadonlyArray<readonly [string, number]>;
+  /** Participants still playing: no final, and connected or inside the disconnect grace. */
+  readonly active: number;
+  /** Participants whose final is in (elimination: who is out). */
+  readonly out: readonly string[];
 }
 
 export interface RoomSink {
@@ -104,6 +113,8 @@ interface PlayerRec {
   /** Was in a results table before (prevRank is null on a first appearance). */
   appeared: boolean;
   readonly conns: Set<string>;
+  /** Server ms at which the last connection left; null while connected. */
+  goneAt: number | null;
 }
 
 interface RoundRec {
@@ -129,6 +140,16 @@ interface RoundRec {
   readonly duringDone: Set<string>;
   /** host:endRound arrived while a cutscene was playing. */
   pendingEnd: boolean;
+  /** GAMES[gameId].mode === 'elimination'. */
+  readonly elimination: boolean;
+  /** See RoundPublic.finale. */
+  finale: { readonly atElapsedMs: number } | null;
+  /** Participants connected when `playing` began (the finale threshold and the end rule read it). */
+  fieldSize: number;
+  /** Server ms since which the round clock has been running without a freeze (disconnect grace counts from here). */
+  runningSince: number;
+  /** The "one is left" end timer is armed. */
+  elimEndArmed: boolean;
 }
 
 /** How long a disconnected participant is waited for before the others' finals may end the round early. */
@@ -179,6 +200,8 @@ export class Room {
   private prevOrder: string[] = [];
 
   private phaseTimers: TimerHandle[] = [];
+  /** Disconnect-grace timers: not phase timers, a freeze must not drop them. */
+  private graceTimers: TimerHandle[] = [];
   private cutsceneTimer: TimerHandle | null = null;
   private scoresTimer: TimerHandle | null = null;
   private scoresDirty = false;
@@ -313,8 +336,10 @@ export class Room {
         existing.name = uniqueName(name, this.namesExcept(existing.id));
       }
       existing.conns.add(connId);
+      existing.goneAt = null;
       this.playerConns.set(connId, existing.id);
       this.emptySince = null;
+      if (this.phase === 'playing' && this.round?.participants.has(existing.id) === true) this.markScoresDirty();
       this.broadcast();
       return { ok: true, playerId: existing.id, secret: existing.secret, state: this.snapshot() };
     }
@@ -337,6 +362,7 @@ export class Room {
       lastPos: null,
       appeared: false,
       conns: new Set([connId]),
+      goneAt: null,
     };
     this.players.set(player.id, player);
     this.playerConns.set(connId, player.id);
@@ -361,8 +387,8 @@ export class Room {
     // A phone that drops for a moment (screen lock, Wi-Fi blip) must not end the round
     // for itself: only when it stays away is the round ended early without it.
     const r = this.round;
-    if (r !== null && this.phase === 'playing' && r.finals.size > 0 && r.participants.has(playerId) && !r.finals.has(playerId)) {
-      this.phaseTimers.push(this.later(DISCONNECT_END_GRACE_MS, () => void this.maybeEndEarly()));
+    if (r !== null && this.phase === 'playing' && r.participants.has(playerId) && !r.finals.has(playerId)) {
+      this.armGrace(DISCONNECT_END_GRACE_MS);
     }
     this.broadcast();
   }
@@ -390,6 +416,11 @@ export class Room {
       reachedAt: new Map(),
       duringDone: new Set(),
       pendingEnd: false,
+      elimination: GAMES[gameId].mode === 'elimination',
+      finale: null,
+      fieldSize: 0,
+      runningSince: startAt,
+      elimEndArmed: false,
     };
     this.phase = 'intro';
     this.scoresDirty = false;
@@ -443,6 +474,7 @@ export class Room {
 
   reset(): OkAck {
     this.clearPhaseTimers();
+    this.clearGraceTimers();
     this.clearCutsceneTimer();
     this.clearScoresTimer();
     this.cutscene = null;
@@ -482,7 +514,7 @@ export class Room {
     this.dropFromResults(playerId);
     if (this.connectionCount === 0) this.emptySince = this.scheduler.now();
     this.sink.kicked(conns);
-    if (this.maybeEndEarly()) return OK;
+    if (this.settle()) return OK;
     this.broadcast();
     return OK;
   }
@@ -522,6 +554,7 @@ export class Room {
       r.endAt += delta;
       r.frozenAt = null;
       r.resumeAt = playing ? resumePoint : null;
+      r.runningSince = resumePoint;
       const elapsedAtResume = roundTime(this.roundPublic(r), resumePoint).elapsedMs;
       if (elapsedAtResume !== elapsedAtFreeze) {
         this.onError(new Error(`round clock drifted over a freeze: ${elapsedAtFreeze} -> ${elapsedAtResume}`));
@@ -531,8 +564,10 @@ export class Room {
         this.endRoundNow();
         return OK;
       }
-      if (this.maybeEndEarly()) return OK;
+      if (!r.elimination && this.maybeEndEarly()) return OK;
       this.armPhaseTimers();
+      // phones that dropped during the video get the grace again from the moment the round continues
+      if (this.phase === 'playing') this.armGrace(resumePoint - now + DISCONNECT_END_GRACE_MS);
     }
     this.broadcast();
     return OK;
@@ -577,7 +612,7 @@ export class Room {
     if ((r.live.get(playerId) ?? 0) !== value) r.reachedAt.set(playerId, this.scheduler.now());
     r.finals.set(playerId, value);
     this.markScoresDirty();
-    this.maybeEndEarly();
+    this.settle();
     return OK;
   }
 
@@ -587,6 +622,7 @@ export class Room {
     this.clearPhaseTimers();
     this.clearCutsceneTimer();
     this.clearScoresTimer();
+    this.clearGraceTimers();
   }
 
   // ───────────────────────────── Internals ─────────────────────────────
@@ -601,6 +637,7 @@ export class Room {
       endAt: r.endAt,
       frozenAt: r.frozenAt,
       resumeAt: r.resumeAt,
+      finale: r.finale,
     };
   }
 
@@ -621,7 +658,11 @@ export class Room {
     const playerId = this.playerConns.get(connId);
     if (playerId === undefined) return false;
     this.playerConns.delete(connId);
-    this.players.get(playerId)?.conns.delete(connId);
+    const player = this.players.get(playerId);
+    if (player !== undefined) {
+      player.conns.delete(connId);
+      if (player.conns.size === 0) player.goneAt = this.scheduler.now();
+    }
     return true;
   }
 
@@ -644,6 +685,11 @@ export class Room {
   private clearPhaseTimers(): void {
     for (const t of this.phaseTimers) this.scheduler.clearTimeout(t);
     this.phaseTimers = [];
+  }
+
+  private clearGraceTimers(): void {
+    for (const t of this.graceTimers) this.scheduler.clearTimeout(t);
+    this.graceTimers = [];
   }
 
   private clearCutsceneTimer(): void {
@@ -685,6 +731,15 @@ export class Room {
           const fireAt = Math.max(r.startAt + target, r.resumeAt ?? 0);
           this.phaseTimers.push(this.later(fireAt - now, () => this.fireDuring(def)));
         }
+        if (r.elimination) {
+          if (r.finale === null) {
+            // however many are left, the finale begins at FINALE_LATEST_MS of round time at the latest
+            const announceAt = Math.max(r.startAt + FINALE_LATEST_MS * scale - FINALE_LEAD_MS, r.resumeAt ?? 0);
+            this.phaseTimers.push(this.later(announceAt - now, () => this.announceFinale()));
+          }
+          r.elimEndArmed = false;
+          this.checkElimination();
+        }
         return;
       }
       case 'lobby':
@@ -700,7 +755,113 @@ export class Room {
 
   private enterPhase(phase: 'countdown' | 'playing'): void {
     this.phase = phase;
+    const r = this.round;
+    if (phase === 'playing' && r !== null) {
+      const now = this.scheduler.now();
+      r.runningSince = now;
+      let connected = 0;
+      for (const id of r.participants) if ((this.players.get(id)?.conns.size ?? 0) > 0) connected++;
+      r.fieldSize = connected;
+      if (r.elimination) {
+        if (connected <= 2) {
+          // 1 or 2 players: "N left" means nothing, the finale comes at a fixed round time
+          const scale = (r.endAt - r.startAt) / GAMES[r.gameId].durationMs;
+          r.finale = { atElapsedMs: Math.round(FINALE_SMALL_FIELD_MS * scale) };
+        }
+        // everybody learns the head count at GO
+        this.markScoresDirty();
+      }
+      // a phone that was already away when the round began gets the same grace, from GO
+      this.armGrace(DISCONNECT_END_GRACE_MS);
+    }
     this.armPhaseTimers();
+    this.broadcast();
+  }
+
+  // ───────────────────────────── Elimination ─────────────────────────────
+
+  /** Still playing: no final, and connected or away for less than the grace (which never runs out during a freeze). */
+  private isActive(r: RoundRec, playerId: string, now: number): boolean {
+    const p = this.players.get(playerId);
+    if (p === undefined || r.finals.has(playerId)) return false;
+    if (p.conns.size > 0 || r.frozenAt !== null) return true;
+    return now - Math.max(p.goneAt ?? now, r.runningSince) < DISCONNECT_END_GRACE_MS;
+  }
+
+  private activeCount(r: RoundRec, now: number): number {
+    let n = 0;
+    for (const id of r.participants) if (this.isActive(r, id, now)) n++;
+    return n;
+  }
+
+  /** Runs `afterGrace` in `ms` when a participant without a final is away right now. */
+  private armGrace(ms: number): void {
+    const r = this.round;
+    if (r === null) return;
+    let away = false;
+    for (const id of r.participants) {
+      if (!r.finals.has(id) && (this.players.get(id)?.conns.size ?? 0) === 0) away = true;
+    }
+    if (!away) return;
+    const index = r.index;
+    this.graceTimers.push(
+      this.later(ms, () => {
+        if (this.round?.index === index) this.afterGrace();
+      }),
+    );
+  }
+
+  /** A disconnected phone's grace may be over: the round goes on (or ends) without it. */
+  private afterGrace(): void {
+    const r = this.round;
+    if (r === null || this.phase !== 'playing' || r.frozenAt !== null) return;
+    const now = this.scheduler.now();
+    let changed = false;
+    for (const id of r.participants) {
+      const p = this.players.get(id);
+      if (p === undefined || r.finals.has(id) || this.isActive(r, id, now)) continue;
+      changed = true;
+      // elimination: away for longer than the grace = out, with the score it had (no second life on a late return)
+      if (r.elimination) r.finals.set(id, r.live.get(id) ?? 0);
+    }
+    if (changed) this.markScoresDirty();
+    this.settle();
+  }
+
+  /** After anything that can end a round early. True when the round was finished right now. */
+  private settle(): boolean {
+    const r = this.round;
+    if (r !== null && r.elimination) {
+      this.checkElimination();
+      return false;
+    }
+    return this.maybeEndEarly();
+  }
+
+  /** Elimination round: announce the finale at the threshold, and arm the end once one (or nobody) is left. */
+  private checkElimination(): void {
+    const r = this.round;
+    if (r === null || this.phase !== 'playing' || !r.elimination) return;
+    const now = this.scheduler.now();
+    const n = this.activeCount(r, now);
+    if (r.finale === null && r.fieldSize > 2 && n > 1) {
+      const threshold = Math.min(FINALE_PLAYERS, r.fieldSize - 1);
+      if (n <= threshold) this.announceFinale();
+    }
+    if (this.cutscene !== null || r.frozenAt !== null || r.elimEndArmed) return;
+    // a solo round (a test) runs until that one player is out
+    const last = r.fieldSize >= 2 ? 1 : 0;
+    if (n > last) return;
+    r.elimEndArmed = true;
+    this.phaseTimers.push(this.later(ELIMINATION_END_DELAY_MS, () => this.finishRound()));
+  }
+
+  /** Sets RoundPublic.finale, once: FINALE_LEAD_MS of round time from now. */
+  private announceFinale(): void {
+    const r = this.round;
+    if (r === null || this.phase !== 'playing' || !r.elimination || r.finale !== null) return;
+    const elapsed = Math.max(0, roundTime(this.roundPublic(r), this.scheduler.now()).elapsedMs);
+    r.finale = { atElapsedMs: Math.round(elapsed) + FINALE_LEAD_MS };
     this.broadcast();
   }
 
@@ -846,17 +1007,39 @@ export class Room {
     if (!this.scoresDirty || r === null) return;
     this.scoresDirty = false;
     this.lastScoresAt = this.scheduler.now();
-    this.sink.scores({ round: r.index, scores: this.liveOrder(r).map((e) => [e.id, e.raw] as const) });
+    const now = this.lastScoresAt;
+    const out: string[] = [];
+    for (const id of r.finals.keys()) if (r.participants.has(id)) out.push(id);
+    this.sink.scores({
+      round: r.index,
+      scores: this.liveOrder(r).map((e) => [e.id, e.raw] as const),
+      active: this.activeCount(r, now),
+      out,
+    });
   }
 
   private finishRound(): void {
     const r = this.round;
     if (r === null || this.phase !== 'playing') return;
     this.clearPhaseTimers();
+    this.clearGraceTimers();
+    const now = this.scheduler.now();
+    if (r.elimination && r.finals.size > 0) {
+      // Whoever is still in the air outlasted everyone who is out: their survival score is
+      // above every final, whatever their phone managed to report last.
+      let top = 0;
+      for (const v of r.finals.values()) top = Math.max(top, v);
+      const floor = Math.min(GAMES[r.gameId].maxRaw, top + 1);
+      for (const id of r.participants) {
+        if (!this.isActive(r, id, now) || (r.live.get(id) ?? 0) >= floor) continue;
+        r.live.set(id, floor);
+        r.reachedAt.set(id, now);
+        this.scoresDirty = true;
+      }
+    }
     if (this.scoresTimer !== null) this.scheduler.clearTimeout(this.scoresTimer);
     this.scoresTimer = null;
     this.flushScores();
-    const now = this.scheduler.now();
 
     // Everyone in the room gets a row; someone who joined mid-round did not play (raw 0).
     const all = [...this.players.values()];
