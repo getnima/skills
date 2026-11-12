@@ -816,7 +816,8 @@ export const game: GameModule = {
 
     function drawGlass(g: CanvasRenderingContext2D): void {
       // the pile
-      if (pileCanvas && stamps.length > 0) {
+      const SK = (window as unknown as { __tapSkip?: string }).__tapSkip ?? ''; // TEMP-PERF
+      if (pileCanvas && stamps.length > 0 && !SK.includes('pile')) {
         const H = pileMax() * 1.8;
         g.drawImage(pileCanvas, 0, geo.trayTop + 8 - H, geo.w, H);
       }
@@ -830,9 +831,9 @@ export const game: GameModule = {
         g.moveTo(gd.x, Math.max(gd.ty, gd.y - gd.size * 1.3));
         g.lineTo(gd.x, gd.y);
       }
-      g.stroke();
+      if (!SK.includes('trail')) g.stroke();
       for (const gd of goos) {
-        if (!gd.live) continue;
+        if (!gd.live || SK.includes('goo')) continue;
         const d = art.boogers[gd.kind];
         if (!d) continue;
         let w = gd.size;
