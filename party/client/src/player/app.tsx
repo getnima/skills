@@ -6,6 +6,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { roundTime } from '../../../shared/round-clock';
+import { preloadIntroArt } from './intro-art';
 import { MeBar } from './me-bar';
 import { meStanding } from './me-standing';
 import { Play } from './play';
@@ -141,10 +142,18 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
     (state.phase === 'countdown' || (state.phase === 'playing' && roundTime(round, now).elapsedMs < 0));
   useTick(200, timed || beforeGo);
 
+  // The games' intro pictures (the ones that exist): fetched once this phone is in a room, ahead of the first intro.
+  const inside = snap.status === 'in';
+  useEffect(() => {
+    if (inside) preloadIntroArt();
+  }, [inside]);
+
   let screen: ScreenName = 'boot';
   let body: JSX.Element = <BootScreen />;
   let overlay: JSX.Element | null = null;
   const me = snap.playerId ?? '';
+  // This phone's own doll, for the screens that show it big (its own copy is a moment ahead of the server's).
+  const myLook = snap.look ?? state?.players.find((p) => p.id === me)?.look ?? null;
   // The round that just ended stays secret on this phone until the TV reveals the winner
   // (the 'sending' beat and the suspense below): the me bar keeps the standing from before it.
   let hideRound = false;
@@ -175,20 +184,20 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
       case 'intro':
         if (round === null) break;
         screen = participant ? 'intro' : 'late';
-        body = participant ? <IntroScreen round={round} /> : <LateScreen round={round} />;
+        body = participant ? <IntroScreen round={round} /> : <LateScreen round={round} look={myLook} />;
         break;
       case 'countdown':
       case 'playing': {
         if (round === null) break;
         if (!participant) {
           screen = 'late';
-          body = <LateScreen round={round} />;
+          body = <LateScreen round={round} look={myLook} />;
           break;
         }
         if (snap.endedRound === round.index) {
           const sending = performance.now() - snap.endedAt < SENDING_MS || !snap.finalAcked;
           screen = sending ? 'sending' : 'suspense';
-          body = sending ? <SendingScreen score={snap.endedScore} acked={snap.finalAcked} /> : <SuspenseScreen />;
+          body = sending ? <SendingScreen score={snap.endedScore} acked={snap.finalAcked} gameId={round.gameId} /> : <SuspenseScreen />;
           break;
         }
         const t = roundTime(round, now);
@@ -215,7 +224,7 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
         if (justEnded) {
           hideRound = true;
           screen = 'sending';
-          body = <SendingScreen score={snap.endedScore} acked={snap.finalAcked} />;
+          body = <SendingScreen score={snap.endedScore} acked={snap.finalAcked} gameId={results.gameId} />;
           break;
         }
         if (now < revealAt || state.cutscene !== null) {
@@ -230,19 +239,19 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
         if (moment) {
           screen = winner ? 'win' : 'reveal';
           body = winner ? (
-            <WinScreen key={`win-${idx}`} onDone={() => setDismissed(idx)} />
+            <WinScreen key={`win-${idx}`} onDone={() => setDismissed(idx)} look={myLook} />
           ) : (
             <RevealScreen key={`rev-${idx}`} results={results} onDone={() => setDismissed(idx)} />
           );
           break;
         }
         screen = 'results';
-        body = <ResultsScreen key={`res-${idx}`} results={results} me={me} />;
+        body = <ResultsScreen key={`res-${idx}`} results={results} me={me} look={myLook} />;
         break;
       }
       case 'final':
         screen = 'final';
-        body = <FinalScreen state={state} me={me} active={state.cutscene === null} />;
+        body = <FinalScreen state={state} me={me} active={state.cutscene === null} look={myLook} />;
         break;
       default: {
         const never: never = state.phase;

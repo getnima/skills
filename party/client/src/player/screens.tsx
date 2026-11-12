@@ -17,6 +17,7 @@ import { sfx } from '../kit/audio';
 import { findPublicFile } from '../kit/files';
 import { haptic, vibrate } from '../kit/haptics';
 import { playTrack, stopTrack } from '../kit/music';
+import { GameArt } from './intro-art';
 import { Avatar, Burst, Confetti, Num, dollPx, fmt, medal, standings, useCountUp, useTick, useViewport } from './ui';
 
 import type { ComponentChildren, JSX } from 'preact';
@@ -135,9 +136,7 @@ export function IntroScreen(props: { readonly round: RoundPublic }): JSX.Element
       </header>
       <div class="pw-stage ps-intro-stage">
         <StageLight />
-        <div class="pp-intro-emoji ps-emoji" aria-hidden="true">
-          <span>{game.emoji}</span>
-        </div>
+        <GameArt id={game.id} size="big" class="pp-intro-emoji" />
         <Logo text={game.title} class="pp-intro-title" />
       </div>
       <div class="pw-tray ps-intro-tray">
@@ -176,7 +175,7 @@ export function CountdownOverlay(props: { readonly ctl: PlayerController; readon
   return (
     <div class={`pp-countdown ps ${go ? 'is-go' : ''}`}>
       <div class="pp-cd-game">
-        {game.emoji} {game.title}
+        <GameArt id={game.id} size="chip" /> {game.title}
       </div>
       <div class="pp-cd-num" key={String(key)} dir={go ? 'rtl' : 'ltr'}>
         {go ? 'יאללה!' : n}
@@ -201,10 +200,13 @@ export function LateScreen(props: { readonly round: RoundPublic; readonly look: 
           <Burst text="עוד רגע!" class="ps-hero-burst" />
         </div>
         <div class="pp-title">הסיבוב כבר התחיל</div>
-        <div class="pp-text">
-          עכשיו משחקים {game.emoji} {game.title}.
-          <br />
-          את/ה בפנים מהסיבוב הבא!
+        <div class="pp-text ps-now">
+          <GameArt id={game.id} size="mid" />
+          <span>
+            עכשיו משחקים <b>{game.title}</b>.
+            <br />
+            את/ה בפנים מהסיבוב הבא!
+          </span>
         </div>
         <div class="pp-tv-hint">📺 בינתיים תסתכלו על הטלוויזיה</div>
       </div>
@@ -292,9 +294,7 @@ export function SendingScreen(props: { readonly score: number; readonly acked: b
         <StageLight />
         {elimination ? (
           <>
-            <div class="ps-emoji" aria-hidden="true">
-              <span>{GAMES[props.gameId].emoji}</span>
-            </div>
+            <GameArt id={props.gameId} size="mid" />
             <div class="pp-title">נחתנו!</div>
           </>
         ) : (
@@ -340,9 +340,7 @@ export function SuspenseScreen(): JSX.Element {
       </header>
       <div class="ps-night">
         <div class="pp-spot" aria-hidden="true" />
-        <div class="pp-drum ps-emoji" aria-hidden="true">
-          <span>🥁</span>
-        </div>
+        <GameArt id="show" emoji="🥁" size="big" class="pp-drum" />
         <div class="pp-title pp-xl">מי זכה?</div>
         <div class="pp-tv-hint">📺 תסתכלו על הטלוויזיה</div>
       </div>
@@ -445,9 +443,9 @@ export function RevealScreen(props: { readonly results: RoundResults; readonly o
           </>
         ) : (
           <>
-            <div class="ps-emoji" aria-hidden="true">
+            <span class="ps-emoji is-mid" aria-hidden="true">
               <span>🤷</span>
-            </div>
+            </span>
             <div class="pp-title">אף אחד לא קלע הפעם</div>
             <div class="pp-text">השימי נשאר על המדף… בסיבוב הבא!</div>
           </>
@@ -486,6 +484,7 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
         <Live>
           {game.title} · סיבוב <Num>{results.roundNumber}</Num>
         </Live>
+        <GameArt id={game.id} size="chip" class="ps-bar-art" />
       </header>
       <div class="pw-stage ps-res-stage">
         <StageLight />
