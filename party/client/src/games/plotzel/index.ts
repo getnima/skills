@@ -2,7 +2,9 @@
  * פלוצל (Plotzel): the owner's word ladder (original/plotzel.netlify.app.html),
  * native in our kit and party look. From a start word reach פלוץ; every step
  * changes exactly one letter and must be a dictionary word. One round = a
- * seeded sequence of ladders (round.ts), solve one and the next slides in.
+ * seeded sequence of ladders (round.ts) that always opens with שימי; solve one
+ * and the next slides in. No hints (the owner's rule); "דלג" shows the shortest
+ * path for no points.
  *
  * Rules and texts: ladder.ts (the original's logic) and round.ts (sequence,
  * scoring). DOM board + on-screen keyboard; every timer is a kit loop timer and
@@ -17,8 +19,8 @@ import { clamp, createFx, ease } from '../../kit/fx';
 import { haptic } from '../../kit/haptics';
 import { createLoop, isKitPaused } from '../../kit/loop';
 import { loadPlotzelArt } from './art';
-import { checkStep, diffCount, diffPos, disp, getLadder, HEB, hintText, ladderBuildMs, REGULAR_OF, TARGET, TARGET_D, WORD_LEN } from './ladder';
-import { ladderScore, roundSequence, SCORE } from './round';
+import { checkStep, diffCount, disp, getLadder, HEB, ladderBuildMs, REGULAR_OF, TARGET, TARGET_D, WORD_LEN } from './ladder';
+import { ladderScore, roundSequence } from './round';
 import { loadSnapshot, saveSnapshot } from './snapshot';
 
 import type { GameContext, GameInstance, GameModule } from '../types';
@@ -36,7 +38,6 @@ const SKIP_AFTER_MS = 15_000;
 /** The confirm tap must come within this. */
 const SKIP_ARM_MS = 3000;
 const TOAST_MS = 1800;
-const HINT_TOAST_MS = 2400;
 const DEMO_MS = 3400;
 const HURRY_MS = 10_000;
 const PUFF_S = 1.3;
@@ -70,7 +71,6 @@ export interface PlotzelDebug {
   readonly puzzleIndex: number;
   readonly solved: number;
   readonly score: number;
-  readonly hints: number;
   readonly phase: Phase;
   readonly typed: string;
   readonly skipReady: boolean;
@@ -201,9 +201,6 @@ export const game: GameModule = {
     }
 
     const tools = el('div', 'pz-tools');
-    const hintBtn = el('button', 'pz-tool is-hint');
-    hintBtn.dataset.act = 'hint';
-    hintBtn.append(el('span', 'pz-tool-label', '💡 רמז'), el('span', 'pz-tool-cost', `‎−${SCORE.hint}`));
     const countEl = el('div', 'pz-count');
     const countNum = el('span', 'pz-count-num');
     const doneEl = el('span', 'pz-done');
@@ -213,11 +210,9 @@ export const game: GameModule = {
     skipBtn.dataset.act = 'skip';
     const skipLabel = el('span', 'pz-tool-label', 'דלג');
     skipBtn.append(el('span', 'pz-skip-fill'), skipLabel);
-    for (const b of [hintBtn, skipBtn]) {
-      b.setAttribute('type', 'button');
-      b.tabIndex = -1;
-    }
-    tools.append(hintBtn, countEl, skipBtn);
+    skipBtn.setAttribute('type', 'button');
+    skipBtn.tabIndex = -1;
+    tools.append(countEl, skipBtn);
 
     const fxRoot = el('div', 'pz-fx');
     root.append(head, board, kb, tools, fxRoot);
@@ -233,10 +228,6 @@ export const game: GameModule = {
     let par = ladder.dist(start) ?? 0;
     let words: string[] = [start];
     let typed = '';
-    let hints = 0;
-    let hintFor: string | null = null;
-    let hintLevel = 0;
-    let hintPos: number | null = null;
     let puzzleT0 = 0;
     let score = 0;
     let results: PuzzleResult[] = [];
@@ -265,9 +256,6 @@ export const game: GameModule = {
       saveSnapshot(ctx.seed, {
         idx,
         words,
-        hints,
-        hintFor,
-        hintLevel,
         spentMs: phase === 'play' ? Math.max(0, loop.timeMs - puzzleT0) : 0,
         score,
         results,
@@ -277,7 +265,7 @@ export const game: GameModule = {
     /** The committed state after a solve / skip: the next puzzle, fresh. */
     function snapshotNext(): void {
       const next = seq[idx + 1];
-      snapshot({ idx: idx + 1, words: next !== undefined ? [next] : [], hints: 0, hintFor: null, hintLevel: 0, spentMs: 0 });
+      snapshot({ idx: idx + 1, words: next !== undefined ? [next] : [], spentMs: 0 });
     }
 
     // ── layout (sizes only, never gameplay) ──
@@ -341,7 +329,6 @@ export const game: GameModule = {
       countNum.textContent = `חידה ${idx + 1}`;
       doneEl.textContent = `✓ ${solveCount}`;
       doneEl.hidden = solveCount === 0;
-      hintBtn.toggleAttribute('disabled', phase !== 'play');
     }
 
     function renderActive(popAt = -1): void {
@@ -352,7 +339,6 @@ export const game: GameModule = {
         t.textContent = shown[j] ?? '';
         t.classList.toggle('is-filled', typed[j] !== undefined);
         t.classList.toggle('is-cursor', j === typed.length);
-        t.classList.toggle('is-hinted', hintPos === j);
         if (j === popAt) replay(t, 'is-pop');
       }
     }
@@ -371,17 +357,8 @@ export const game: GameModule = {
       start = seq[i] ?? TARGET;
       par = ladder.dist(start) ?? 0;
       words = [start];
-      hints = 0;
-      hintFor = null;
-      hintLevel = 0;
-      if (restored) {
-        if (isValidLadder(restored.words)) words = [...restored.words];
-        hints = Math.max(0, Math.floor(restored.hints));
-        hintFor = restored.hintFor;
-        hintLevel = clamp(Math.floor(restored.hintLevel), 0, 2);
-      }
+      if (restored && isValidLadder(restored.words)) words = [...restored.words];
       typed = '';
-      hintPos = null;
       phase = 'play';
       puzzleT0 = loop.timeMs - (restored ? clamp(restored.spentMs, 0, SKIP_AFTER_MS) : 0);
       disarmSkip();
@@ -402,7 +379,7 @@ export const game: GameModule = {
     }
 
     // ── toast ──
-    function toast(msg: string, kind: 'bad' | 'hint' | 'info' | 'hurry' = 'info', ms = TOAST_MS): void {
+    function toast(msg: string, kind: 'bad' | 'info' | 'hurry' = 'info', ms = TOAST_MS): void {
       toastEl.textContent = msg;
       toastEl.dataset.kind = kind;
       replay(toastEl, 'is-on');
@@ -459,7 +436,6 @@ export const game: GameModule = {
       const prev = current();
       words.push(r.word);
       typed = '';
-      hintPos = null;
       const row = wordRow(r.word, prev, r.solved ? 'is-win' : 'is-new');
       rowsEl.insertBefore(row, activeRow);
       wordRows.push(row);
@@ -477,10 +453,10 @@ export const game: GameModule = {
 
     function solved(row: HTMLElement): void {
       const s = steps();
-      const points = ladderScore(s, par, hints);
+      const points = ladderScore(s, par);
       score = Math.min(MAX_RAW, score + points);
       ctx.setScore(score);
-      results = [...results, { start, par, steps: s, hints, points }];
+      results = [...results, { start, par, steps: s, points }];
       solveCount++;
       phase = 'celebrate';
       snapshotNext();
@@ -534,28 +510,6 @@ export const game: GameModule = {
       sfx.whoosh(1.2);
     }
 
-    function hint(): void {
-      if (destroyed || phase !== 'play' || isPaused()) return;
-      const cur = current();
-      const n = ladder.bestNext(cur);
-      if (n === null) return;
-      const pos = diffPos(cur, n);
-      if (hintFor !== cur) {
-        hintFor = cur;
-        hintLevel = 0;
-      }
-      if (hintLevel < 2) {
-        hintLevel++;
-        hints++;
-      }
-      hintPos = pos;
-      toast(hintText(hintLevel === 1 ? 1 : 2, pos, n), 'hint', HINT_TOAST_MS);
-      renderActive();
-      snapshot();
-      sfx.coin(0.8);
-      haptic.tap();
-    }
-
     function skipReady(): boolean {
       return phase === 'play' && loop.timeMs - puzzleT0 >= SKIP_AFTER_MS;
     }
@@ -581,7 +535,7 @@ export const game: GameModule = {
       }
       disarmSkip();
       // the original's give-up: reveal the shortest path, nothing scored
-      results = [...results, { start, par, steps: null, hints, points: 0 }];
+      results = [...results, { start, par, steps: null, points: 0 }];
       phase = 'reveal';
       snapshotNext();
       typed = '';
@@ -646,8 +600,7 @@ export const game: GameModule = {
       e.preventDefault();
       const target = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]') : null;
       if (!target) return;
-      if (target.dataset.act === 'hint') hint();
-      else if (target.dataset.act === 'skip') skip();
+      if (target.dataset.act === 'skip') skip();
     };
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -697,7 +650,9 @@ export const game: GameModule = {
           if (left > 0 && left <= HURRY_MS) {
             hurry = true;
             root.classList.add('is-hurry');
-            toast('10 שניות אחרונות!', 'hurry', 1600);
+            // never over a "why was my word rejected" toast: the blinking start chip and the beep say it too
+            const rejecting = toastEl.classList.contains('is-on') && toastEl.dataset.kind === 'bad';
+            if (!rejecting) toast('10 שניות אחרונות!', 'hurry', 1600);
             sfx.beep();
           }
         }
@@ -794,9 +749,6 @@ export const game: GameModule = {
       },
       get score(): number {
         return score;
-      },
-      get hints(): number {
-        return hints;
       },
       get phase(): Phase {
         return phase;

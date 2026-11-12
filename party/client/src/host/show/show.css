@@ -149,7 +149,7 @@
   inset: 0;
 }
 /* ── elimination round (flappy): who is out, how many are left, the finale ── */
-.sh-playing .sh-row.is-out .sh-row-in {
+.sh-playing .sh-row.is-out .sh-row-in > :not(.sh-badges) {
   filter: grayscale(1);
   opacity: 0.45;
 }
@@ -232,14 +232,21 @@
   display: flex;
   animation: sh-finale-in 0.5s cubic-bezier(0.2, 1.7, 0.4, 1) both;
 }
-/* once the 3-2-1 is over the banner steps aside: a strip at the top */
+/* once the 3-2-1 is over the banner leaves the race alone: the counter card carries the word */
 .sh-finale.is-on:not(.is-counting) {
-  top: calc(70 * var(--u));
-  font-size: calc(56 * var(--u));
-  padding: calc(10 * var(--u)) calc(40 * var(--u));
-  border-width: calc(5 * var(--u));
-  box-shadow: calc(7 * var(--u)) calc(7 * var(--u)) 0 #16120e;
-  animation: none;
+  display: none;
+}
+.sh-playing.is-finale .sh-left::after {
+  content: 'הגמר! מחורחר';
+  margin-top: calc(10 * var(--u));
+  padding: calc(4 * var(--u)) calc(16 * var(--u));
+  border: calc(4 * var(--u)) solid #16120e;
+  border-radius: 999px;
+  background: #ffd21f;
+  color: #16120e;
+  font-size: calc(30 * var(--u));
+  white-space: nowrap;
+  animation: sh-left-bump 0.45s cubic-bezier(0.2, 1.7, 0.4, 1) both;
 }
 @keyframes sh-finale-in {
   from {

@@ -9,8 +9,8 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { COMMON, DICT, STARTS } from '../../client/src/games/plotzel/data';
-import { checkStep, diffCount, diffPos, disp, getLadder, hintText, norm, TARGET, TARGET_D, unpack } from '../../client/src/games/plotzel/ladder';
-import { DEMO_WORDS, ladderScore, parBand, roundSequence, SCORE } from '../../client/src/games/plotzel/round';
+import { checkStep, diffCount, diffPos, disp, getLadder, norm, TARGET, TARGET_D, unpack } from '../../client/src/games/plotzel/ladder';
+import { DEMO_WORDS, ladderScore, OPENER, parBand, roundSequence, SCORE } from '../../client/src/games/plotzel/round';
 import { GAMES } from '../../shared/protocol';
 
 const ORIGINAL = resolve(import.meta.dirname, '../../client/src/games/plotzel/original/plotzel.netlify.app.html');
@@ -206,12 +206,6 @@ describe('plotzel step validation (the original submit)', () => {
     expect(checkStep(ladder, 'חלוא', ['חלוא'])).toMatchObject({ reason: 'same' });
     expect(checkStep(ladder, 'חלאא', ['חלומ'])).toMatchObject({ reason: 'multi' });
   });
-
-  it('hint texts', () => {
-    expect(hintText(1, 0, 'חלוצ')).toBe('החליפו את האות הראשונה');
-    expect(hintText(1, 3, 'חלוצ')).toBe('החליפו את האות הרביעית');
-    expect(hintText(2, 3, 'חלוצ')).toBe('נסו: חלוץ');
-  });
 });
 
 describe('plotzel round sequence', () => {
@@ -222,35 +216,42 @@ describe('plotzel round sequence', () => {
     expect(a).not.toBe(b);
   });
 
-  it('has no repeats, only words with a common path as short as par, and follows the par ramp', () => {
+  it('always opens with שימי (the owner\'s opener), a real 5-step ladder to פלוץ', () => {
+    expect(OPENER).toBe('שימי');
+    expect(ladder.has(OPENER)).toBe(true);
+    expect(ladder.dist(OPENER)).toBe(5);
+    const path = ladder.shortestPath(OPENER);
+    expect(path[0]).toBe(OPENER);
+    expect(path[path.length - 1]).toBe(TARGET);
+    expect(path.length).toBe(6);
+    for (const seed of [1, 7, 99, 123456, 987654321]) expect(roundSequence(seed, ladder)[0]).toBe(OPENER);
+  });
+
+  it('after the opener: no repeats, only words with a common path as short as par, and the par ramp from the easy end', () => {
     for (const seed of [1, 7, 99, 123456, 987654321]) {
       const seq = roundSequence(seed, ladder);
       expect(seq.length).toBeGreaterThan(300);
       expect(new Set(seq).size).toBe(seq.length);
       for (const w of DEMO_WORDS) expect(seq).not.toContain(w);
-      seq.forEach((w, i) => {
+      seq.slice(1).forEach((w, i) => {
         const par = ladder.dist(w);
         expect(par).toBeDefined();
         expect(ladder.cdist(w)).toBe(par);
-        if (i < 60) expect(parBand(i), `${seed}#${i} ${disp(w)} par ${par}`).toContain(par);
+        if (i < 60) expect(parBand(i), `${seed}#${i + 1} ${disp(w)} par ${par}`).toContain(par);
       });
-      expect(ladder.dist(seq[0] as string)).toBe(2);
+      expect(ladder.dist(seq[1] as string)).toBe(2);
     }
   });
 });
 
 describe('plotzel scoring', () => {
   it('follows the table', () => {
-    expect(ladderScore(3, 3, 0)).toBe(400); // perfect
-    expect(ladderScore(4, 3, 0)).toBe(350); // par + 1
-    expect(ladderScore(5, 3, 0)).toBe(300);
-    expect(ladderScore(9, 3, 0)).toBe(300);
-    expect(ladderScore(3, 3, 1)).toBe(370);
-    expect(ladderScore(3, 3, 2)).toBe(340);
-    expect(ladderScore(4, 3, 2)).toBe(290);
-    expect(ladderScore(6, 3, 4)).toBe(180);
-    expect(ladderScore(6, 3, 7)).toBe(100); // 300 - 210 = 90 → the floor
-    expect(ladderScore(3, 3, 20)).toBe(SCORE.floor);
+    expect(ladderScore(3, 3)).toBe(400); // perfect
+    expect(ladderScore(4, 3)).toBe(350); // par + 1
+    expect(ladderScore(5, 3)).toBe(300);
+    expect(ladderScore(9, 3)).toBe(300);
+    expect(ladderScore(5, 5)).toBe(SCORE.solve + SCORE.perfect); // the opener, solved in its 5 steps
+    expect(ladderScore(6, 5)).toBe(SCORE.solve + SCORE.near);
   });
 
   it('maxRaw sits above what a fast expert can reach', () => {

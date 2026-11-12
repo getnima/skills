@@ -62,3 +62,21 @@ stick to the "glass", slide down and melt into the pile at the bottom.
 The yellow sunburst stage, the halftone dots, the blue tray, the stickers and the teaching hint's white ghost
 finger are drawn by the code (the design system in `../shimi/README.md`). A `background.jpg` (portrait, cover-
 scaled, keep the middle calm) dropped here replaces the painted sunburst.
+
+## New pictures (comedy pass)
+
+Generated one at a time (nano_banana_2_1, 1k), cut out locally, untouched originals in
+`tests/e2e/out/tap-art2/originals/`, contact sheet `tests/e2e/out/tap-art2/sheet.png`. Head frames are 512x512 and
+aligned to `face_normal.png` by the width and top of the hat/hair (hat top at y 0, same x centre), so they swap
+with the existing frames without the hat jumping.
+
+| File | Size | What it is for |
+| --- | --- | --- |
+| `face_whistle.png` | 512x512 | Whistling innocently, lips pursed, eyes sliding sideways away from the player, no hand. The fake-innocence gag (waiting sneak bit, every slowdown); the music note is drawn by the code. |
+| `face_caught.png` | 512x512 | Same hand and finger-to-the-knuckle as `pick_knuckle.png` (matches it pixel-close), eyes wide straight into the camera, flat deadpan mouth. Paparazzi first tap, caught again after a slowdown, the sneak bit, the ear beat. |
+| `face_glass_press.png` | 512x512 | Final frame: face squashed wide, snout nose with both nostrils showing, huge goofy grin, bulging eyes. Reads as "squashed and delighted" rather than literally flattened on glass; the code's 1.08 picture scale + squeak sells the press. Its face is a little wider than the others (ear edge at x 0.15 instead of 0.166). |
+| `face_dizzy.png` | 512x512 | Copy of `../shimi/faces/dizzy.png` (spiral eyes, tongue out, hat tilted) rescaled x1.061 and shifted (-16, -13) to the face_normal framing. Bobble spin and cork landing. |
+| `face_squeeze.png` | 512x512 | Copy of `../shimi/faces/flap.png` (eyes shut, cheeks puffed) with the same x1.061 / (-16, -13) alignment. Wind-up of the sneeze and the cork. |
+| `fingertip_ear.png` | 256x256 | One toy fingertip (two joints, nail at the top, flat cut base at the bottom) pointing up, centred. Rotate it to point left for the ear beat; hide the base inside the ear. The left ear's outer edge is at about frame x 0.166, y 0.60. |
+| `squeegee.png` | 384x384 | Toy window squeegee, black rubber blade on top, yellow handle down (the hang hole is transparent). Sweeps the glass at 80 taps. No ink outline, and the yellow handle is close to the sunburst yellow: give it the hard ink shadow. |
+| `splat.png` | 256x256 | Flat lime-green slime splat seen from above, eight rounded arms and drips at the bottom. Decal under every booger hit, the sneeze splats and the squeegee smear end (stretched 3:1). |

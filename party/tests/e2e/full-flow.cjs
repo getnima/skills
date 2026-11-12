@@ -159,6 +159,8 @@ function drive(ph, step) {
     while (d.alive) {
       try {
         const i = await pinfo(ph);
+        // what the phone's HUD last showed in the game (an elimination round ends without a time-up on the phone)
+        if (i && i.screen === 'playing' && typeof i.score === 'number') ph.hudFinal = i.score;
         if (!i || i.screen !== 'playing' || i.frozen !== false || i.cutscene || ph.hold) {
           await sleep(50);
           continue;
@@ -206,7 +208,7 @@ function flappyDriver(ph, skill) {
   return drive(ph, async () => {
     const s = await ph.page.evaluate(() => {
       const f = window.__flappy;
-      return f ? { mode: f.mode, y: f.birdY, vy: f.vy, next: f.next } : null;
+      return f ? { mode: f.mode, y: f.birdY, vy: f.vy, next: f.next, hint: f.hint } : null;
     });
     if (!s) return sleep(30);
     const vp = ph.page.viewportSize();
@@ -214,11 +216,12 @@ function flappyDriver(ph, skill) {
       await ph.page.touchscreen.tap(vp.width * (0.3 + Math.random() * 0.4), vp.height * (0.4 + Math.random() * 0.3));
       lastTap = Date.now();
     };
-    if (s.mode === 'hover') {
-      await tap();
-    } else if (s.mode === 'fly' || s.mode === 'glide') {
+    // one life (elimination): once the bird is down ('dead' / 'out') this phone only watches
+    if (s.mode === 'fly' && s.hint > 0.5 && Date.now() - lastTap > 300) {
+      await tap(); // the bird hangs until the first tap
+    } else if (s.mode === 'fly') {
       const aim = (s.next.x < 30 ? s.next.gapY + s.next.gap * 0.18 : 48) + (1 - skill) * (Math.random() - 0.5) * 22;
-      if (s.mode === 'fly' && s.y > aim && s.vy > -25 && Date.now() - lastTap > 150) await tap();
+      if (s.y > aim && s.vy > -25 && Date.now() - lastTap > 150) await tap();
     }
     await sleep(8);
   });
@@ -524,7 +527,10 @@ function plotzelDriver(ph, keyGapMs) {
         const i = await pinfo(p);
         check(row !== undefined && row.raw > 0, `${p.label} scored in ${gameId} (raw ${row && row.raw})`);
         const own = i.endedRound === res.roundIndex ? i.endedScore : p.hudFinal; // a game that finished early never hits the round's end on the phone
-        check(row !== undefined && own === row.raw, `${p.label}: server raw = the phone's final score`, { phone: own, server: row && row.raw });
+        if (GAMES[gameId].mode === 'elimination' && row !== undefined && row.playerId === res.winnerIds[0] && i.endedRound !== res.roundIndex) {
+          // the last one standing never sends a final: the server has its last live report (or one more than the best final)
+          check(row.raw > 0 && row.raw <= own + 10 && res.rows.every((r) => r === row || r.raw < row.raw), `${p.label}: the last one standing is above every final`, { phone: own, server: row.raw });
+        } else check(row !== undefined && own === row.raw, `${p.label}: server raw = the phone's final score`, { phone: own, server: row && row.raw });
         const e = expect.get(p.id);
         if (!(row && e && e.points === row.points && e.roundRank === row.roundRank)) prevTotalsOk = false;
         totals.set(p.id, totals.get(p.id) + (e ? e.points : 0));

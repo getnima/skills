@@ -179,7 +179,15 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
       },
     };
     /** While flying, the "place" among the fliers is noise (everybody is at the same distance): shown once out. */
-    const shownStanding = (msg: LiveScores): LiveStanding | null => (elimination && outRaw() === null ? null : standingOf(msg));
+    const shownStanding = (msg: LiveScores): LiveStanding | null => {
+      if (!elimination) return standingOf(msg);
+      const me = ctl.snapshot().playerId;
+      // only once the server has this phone's final (then the strict order knows its place);
+      // no chase line: the gap would be a survival distance, not points to win back
+      if (me === null || !msg.out.includes(me)) return null;
+      const standing = standingOf(msg);
+      return standing === null ? null : { ...standing, chase: null };
+    };
 
     // Only this round's list counts: never a place from a previous round.
     const onScores = (msg: LiveScores): void => {

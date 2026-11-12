@@ -18,19 +18,20 @@ export const SCORE = {
   perfect: 100,
   /** Solved in par + 1 steps. */
   near: 50,
-  /** Per hint level used on that ladder. */
-  hint: 30,
-  /** A solved ladder is never worth less than this. */
-  floor: 100,
 } as const;
 
-/** Points for a solved ladder: `steps` taken, its `par`, hint levels used. */
-export function ladderScore(steps: number, par: number, hints: number): number {
-  const bonus = steps <= par ? SCORE.perfect : steps === par + 1 ? SCORE.near : 0;
-  return Math.max(SCORE.floor, SCORE.solve + bonus - SCORE.hint * Math.max(0, hints));
+/** Points for a solved ladder: `steps` taken and its `par`. There are no hints (the owner's rule). */
+export function ladderScore(steps: number, par: number): number {
+  return SCORE.solve + (steps <= par ? SCORE.perfect : steps === par + 1 ? SCORE.near : 0);
 }
 
 // ───────────────────────────── Sequence ─────────────────────────────
+
+/**
+ * The owner's opener: every round starts with שימי → פלוץ (the doll's name). It is a par-5 ladder,
+ * the hardest band; the puzzles after it start again from the easy end (parBand(0) is the SECOND puzzle).
+ */
+export const OPENER = 'שימי';
 
 /** Words of the first-puzzle demo (חלום → חלוץ): never a start word, it would give the answer away. */
 export const DEMO_WORDS: readonly string[] = ['חלומ', 'חלוצ'];
@@ -55,7 +56,7 @@ export function startPools(ladder: Ladder): Map<number, string[]> {
   const pools = new Map<number, string[]>();
   const add = (w: string): void => {
     const d = ladder.dist(w);
-    if (d === undefined || d < 2 || d > MAX_PAR || ladder.cdist(w) !== d || w === TARGET || DEMO_WORDS.includes(w)) return;
+    if (d === undefined || d < 2 || d > MAX_PAR || ladder.cdist(w) !== d || w === TARGET || w === OPENER || DEMO_WORDS.includes(w)) return;
     const list = pools.get(d) ?? [];
     if (!list.includes(w)) list.push(w);
     pools.set(d, list);
@@ -69,8 +70,9 @@ const cache = new Map<number, readonly string[]>();
 
 /**
  * Every start word of the round with `seed`, in play order (normalized), no
- * repeats. Puzzle i draws a par from parBand(i), then a word of that par; when
- * a par runs out the nearest par that still has words is used.
+ * repeats. The first is always OPENER. After it, puzzle i + 1 draws a par from
+ * parBand(i), then a word of that par; when a par runs out the nearest par that
+ * still has words is used.
  */
 export function roundSequence(seed: number, ladder: Ladder): readonly string[] {
   const hit = cache.get(seed);
@@ -82,7 +84,7 @@ export function roundSequence(seed: number, ladder: Ladder): readonly string[] {
   for (const p of pars) queues.set(p, rng.shuffle(pools.get(p) ?? []));
   let left = 0;
   for (const q of queues.values()) left += q.length;
-  const out: string[] = [];
+  const out: string[] = ladder.dist(OPENER) !== undefined ? [OPENER] : [];
   for (let i = 0; left > 0; i++) {
     const band = parBand(i);
     let par = band[rng.int(0, band.length - 1)] ?? 2;

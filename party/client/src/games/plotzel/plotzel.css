@@ -4,7 +4,7 @@
  * under .pz. Every colour is a variable below with the README's values, so a
  * global restyle can map them in one place. Semantics to keep:
  *   green tile = letter already in its place in פלוץ, red underline = the changed letter,
- *   yellow tile = the cursor, pink dashed tile = the hinted position, dashed row = the goal.
+ *   yellow tile = the cursor, dashed row = the goal.
  * Every animation is a CSS animation (never a transition) so .is-paused can freeze it.
  */
 @font-face {
@@ -273,10 +273,6 @@
   background: var(--pz-yel);
   animation: pz-cursor 0.9s steps(2, jump-none) infinite;
 }
-.pz-row.is-active .pz-tile.is-hinted {
-  border-style: dashed;
-  background: var(--pz-pink);
-}
 @keyframes pz-cursor {
   0% {
     background-color: var(--pz-yel);
@@ -378,10 +374,6 @@
 .pz-toast[data-kind='bad'] {
   color: var(--pz-red);
   border-inline-start: 10px solid var(--pz-red);
-}
-.pz-toast[data-kind='hint'] {
-  color: var(--pz-cob);
-  border-inline-start: 10px solid var(--pz-pink);
 }
 .pz-toast[data-kind='hurry'] {
   background: var(--pz-yel);
@@ -682,7 +674,7 @@
   box-shadow: 0 0 0 var(--pz-ink);
 }
 
-/* ── tools: hint, puzzle count, skip ── */
+/* ── tools: puzzle count, skip (no hint: the owner's rule) ── */
 .pz-tools {
   flex: none;
   display: flex;
@@ -715,15 +707,6 @@
   background: var(--pz-cob-l);
   color: var(--pz-cob-d);
   box-shadow: 0 3px 0 var(--pz-ink);
-}
-.pz-tool.is-hint:not([disabled]) {
-  background: var(--pz-yel);
-  color: var(--pz-ink);
-}
-.pz-tool-cost {
-  font-size: 12px;
-  color: var(--pz-red);
-  direction: ltr;
 }
 .pz-tool-label {
   position: relative;

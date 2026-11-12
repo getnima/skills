@@ -42,6 +42,9 @@ def main():
     ap.add_argument('--span', required=True)
     ap.add_argument('--parts', type=int, default=2)
     ap.add_argument('--max', type=int, default=640)
+    ap.add_argument('--fade-split', type=int, default=0, help='px: fade the alpha towards the split line (two pieces that touched)')
+    ap.add_argument('--mirror-outer', action='store_true', help='rebuild each piece from its mirrored outer half (two round muffs that touched)')
+    ap.add_argument('--clear-thin', type=int, default=0, help='px: clear rows from the top while no opaque run in the row is this wide (band stubs above muffs)')
     ap.add_argument('--rotate', type=float, default=0.0, help='degrees counter-clockwise, before placing (a phone tilted from the ear to the mouth)')
     a = ap.parse_args()
     pic = Image.open(a.src).convert('RGBA')
@@ -61,6 +64,14 @@ def main():
             bb = half.getchannel('A').point(lambda v: 255 if v > 40 else 0).getbbox()
             parts.append((0, bb[0] + off, bb[1], bb[2] + off, bb[3]))
         print(f'split at column {mid} ({cols[mid]} opaque px there)')
+        if a.fade_split > 0:
+            arr = np.asarray(pic).copy()
+            for i in range(a.fade_split):
+                k = (i + 0.5) / a.fade_split
+                for x in (mid - 1 - i, mid + i):
+                    if 0 <= x < w:
+                        arr[:, x, 3] = (arr[:, x, 3] * k).astype(np.uint8)
+            pic = Image.fromarray(arr, 'RGBA')
     centers = [float(v) for v in a.centers.split(',')]
     L, R = (float(v) for v in a.span.split(','))
     s = a.width / (parts[0][3] - parts[0][1])  # doll % per source px
@@ -71,8 +82,35 @@ def main():
     canvas = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
     for (n, x0, y0, x1, y1), c in zip(parts, centers):
         piece = pic.crop((x0, y0, x1, y1))
+        if a.mirror_outer:
+            pw, ph = piece.size
+            half = pw // 2
+            if x0 == parts[0][1]:  # left piece: the outer half is its left half
+                outer = piece.crop((0, 0, half, ph))
+                piece = Image.new('RGBA', (half * 2, ph), (0, 0, 0, 0))
+                piece.paste(outer, (0, 0))
+                piece.paste(outer.transpose(Image.FLIP_LEFT_RIGHT), (half, 0))
+            else:
+                outer = piece.crop((pw - half, 0, pw, ph))
+                piece = Image.new('RGBA', (half * 2, ph), (0, 0, 0, 0))
+                piece.paste(outer.transpose(Image.FLIP_LEFT_RIGHT), (0, 0))
+                piece.paste(outer, (half, 0))
+            x1 = x0 + half * 2
         # keep only this piece's pixels (a neighbour's edge may reach into the box)
         canvas.alpha_composite(piece, (round((c - L) / s - (x1 - x0) / 2), y0 - top))
+    if a.clear_thin > 0:
+        arr = np.asarray(canvas).copy()
+        for y in range(arr.shape[0]):
+            row = arr[y, :, 3] > 60
+            best = run = 0
+            for v in row:
+                run = run + 1 if v else 0
+                best = max(best, run)
+            if best >= a.clear_thin:
+                break
+            arr[y] = 0
+        canvas = Image.fromarray(arr, 'RGBA')
+        canvas = canvas.crop(canvas.getchannel('A').point(lambda v: 255 if v > 8 else 0).getbbox())
     if max(canvas.size) > a.max:
         k = a.max / max(canvas.size)
         canvas = canvas.resize((round(canvas.size[0] * k), round(canvas.size[1] * k)), Image.LANCZOS)

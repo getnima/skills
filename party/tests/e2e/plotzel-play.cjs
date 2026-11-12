@@ -7,11 +7,11 @@
 // Sections (default: all):
 //   bots    on six phone sizes a full 120 s round each for an expert bot (types shortest paths at ~4
 //           keys/s) and a clumsy bot (short words, same word, two-letter changes, non-words, repeats,
-//           detours, hints, skips at ~3 keys/s). Asserts: no page scroll, keys never overlap (and are
+//           detours, skips at ~3 keys/s). Asserts: no page scroll, keys never overlap (and are
 //           >= 30x44 px on portrait phones), the same sequence on every size, every rejection shows its
 //           Hebrew reason, the final score equals the scoring table recomputed here from the bot's own
-//           ledger (steps, hints, par), score <= maxRaw. Prints the expert scores (maxRaw is ~1.5x).
-//   shots   320x568 and 390x844: first puzzle + demo, celebration, rejection, hint, mid-ladder,
+//           ledger (steps, par), score <= maxRaw. Prints the expert scores (maxRaw is ~1.5x).
+//   shots   320x568 and 390x844: first puzzle (שימי) + demo, celebration, rejection, mid-ladder,
 //           collapsed rows, skip reveal, last 10 seconds → tests/e2e/out/plotzel/
 //   checks  freeze mid-typing and mid-celebration, reload restores progress, destroy() twice leaves no
 //           listeners and no hook, landscape, graph build time on a 4x throttled CPU.
@@ -63,8 +63,8 @@ async function waitFor(fn, ms, label) {
 }
 
 // ── the scoring table, written again here (not imported) ──
-const T = { solve: 300, perfect: 100, near: 50, hint: 30, floor: 100 };
-const tableScore = (steps, par, hints) => Math.max(T.floor, T.solve + (steps <= par ? T.perfect : steps === par + 1 ? T.near : 0) - T.hint * hints);
+const T = { solve: 300, perfect: 100, near: 50 };
+const tableScore = (steps, par) => T.solve + (steps <= par ? T.perfect : steps === par + 1 ? T.near : 0);
 const MSG = {
   short: 'צריך 4 אותיות',
   same: 'זו אותה מילה',
@@ -100,7 +100,7 @@ const st = (page) =>
   page.evaluate(() => {
     const p = window.__plotzel;
     if (!p) return null;
-    return { start: p.start, par: p.par, words: [...p.words], idx: p.puzzleIndex, solved: p.solved, score: p.score, hints: p.hints, phase: p.phase, typed: p.typed, skipReady: p.skipReady, party: window.__party.score, ended: window.__party.ended, leftMs: window.__party.leftMs, frozen: window.__party.frozen };
+    return { start: p.start, par: p.par, words: [...p.words], idx: p.puzzleIndex, solved: p.solved, score: p.score, phase: p.phase, typed: p.typed, skipReady: p.skipReady, party: window.__party.score, ended: window.__party.ended, leftMs: window.__party.leftMs, frozen: window.__party.frozen };
   });
 const party = (page) => page.evaluate(() => ({ score: window.__party.score, ended: window.__party.ended, leftMs: window.__party.leftMs, frozen: window.__party.frozen }));
 
@@ -210,7 +210,7 @@ async function layoutIssues(page) {
 
 async function keyChecks(page, label, portrait) {
   const km = await keyMap(page);
-  const keys = Object.entries(km).filter(([k]) => !['hint', 'skip'].includes(k));
+  const keys = Object.entries(km).filter(([k]) => k !== 'skip');
   check(`${label}: 29 keys (27 letters with finals, ⌫, אישור)`, keys.length === 29, keys.length);
   let overlap = [];
   for (let i = 0; i < keys.length; i++)
@@ -225,9 +225,9 @@ async function keyChecks(page, label, portrait) {
   const minW = Math.min(...keys.map(([, k]) => k.w));
   const minH = Math.min(...keys.map(([, k]) => k.h));
   if (portrait) check(`${label}: keys >= 30 px wide and 44 px tall (min ${minW.toFixed(1)}x${minH.toFixed(1)})`, minW >= 29.9 && minH >= 43.9, { minW, minH });
-  // hint / skip do not overlap the keyboard
+  // skip does not overlap the keyboard, and there is no hint button (the owner's rule)
   const kbBottom = Math.max(...keys.map(([, k]) => k.t + k.h));
-  check(`${label}: tools under the keyboard`, km.hint.t >= kbBottom - 0.5 && km.skip.t >= kbBottom - 0.5, { kbBottom, hint: km.hint.t });
+  check(`${label}: tools under the keyboard, no hint button`, km.hint === undefined && km.skip.t >= kbBottom - 0.5, { kbBottom, skip: km.skip.t, hint: km.hint });
   // the order of the original: ק at the left of the top row, ⌫ at its right end, אישור at the right of the bottom row
   check(`${label}: Israeli layout`, km['ק'].x < km['ר'].x && km['פ'].x < km.BACK.x && km['ש'].x < km['ף'].x && km['ץ'].x < km.ENTER.x && km['ז'].x < km['ס'].x, null);
   return km;
@@ -247,7 +247,7 @@ async function expertBot(page, km, perKeyMs, until) {
       await sleep(60);
       continue;
     }
-    if (!cur || cur.idx !== s.idx) cur = { idx: s.idx, start: s.start, par: s.par, steps: 0, hints: 0 };
+    if (!cur || cur.idx !== s.idx) cur = { idx: s.idx, start: s.start, par: s.par, steps: 0 };
     const p = await page.evaluate(() => (window.__plotzel ? window.__plotzel.path() : null)).catch(() => null);
     if (!p || p.length < 2) {
       await sleep(60);
@@ -265,7 +265,7 @@ async function expertBot(page, km, perKeyMs, until) {
   return ledger;
 }
 
-/** The clumsy one: every kind of mistake, hints, detours and skips, at ~3 keys / s. */
+/** The clumsy one: every kind of mistake, detours and skips, at ~3 keys / s. */
 async function clumsyBot(page, km, perKeyMs, until, rejects) {
   const ledger = [];
   const seen = new Set();
@@ -301,7 +301,7 @@ async function clumsyBot(page, km, perKeyMs, until, rejects) {
       continue;
     }
     seen.add(s.idx);
-    const led = { idx: s.idx, start: s.start, par: s.par, steps: 0, hints: 0, skipped: false, solved: false };
+    const led = { idx: s.idx, start: s.start, par: s.par, steps: 0, skipped: false, solved: false };
     ledger.push(led);
     const i = s.idx;
     const cur = s.words[s.words.length - 1];
@@ -325,19 +325,6 @@ async function clumsyBot(page, km, perKeyMs, until, rejects) {
       const a = await st(page);
       if (a && a.phase === 'reveal') led.skipped = true;
       continue;
-    }
-    if (i % 3 >= 1) {
-      // hint: level 1, and on every third puzzle level 2 too
-      await tapAt(page, km, 'hint');
-      led.hints++;
-      await sleep(perKeyMs);
-      if (i % 3 === 2) {
-        await tapAt(page, km, 'hint');
-        led.hints++;
-        await sleep(perKeyMs);
-        await tapAt(page, km, 'hint'); // a third press on the same word costs nothing more
-        await sleep(perKeyMs);
-      }
     }
     if (i % 2 === 1) {
       // a detour (not on a shortest path), then try to go back (repeat)
@@ -394,13 +381,13 @@ async function botRun(browser, w, h, kind, seed) {
   // the score from the bot's own ledger and the table above
   let expected = 0;
   const solvedLedger = kind === 'expert' ? ledger : ledger.filter((l) => l.solved);
-  for (const l of solvedLedger) expected += tableScore(l.steps, l.par, l.hints);
+  for (const l of solvedLedger) expected += tableScore(l.steps, l.par);
   if (maxRaw) expected = Math.min(maxRaw, expected);
   check(`${label}: final ${final} = scoring table from the bot's ledger (${solvedLedger.length} solved)`, final === expected && final > 0, { final, expected, ledger: solvedLedger.slice(0, 3) });
   check(`${label}: score <= maxRaw ${maxRaw}`, maxRaw !== null && final <= maxRaw);
   // the game's own record agrees on every puzzle the bot finished
   const gameSolved = lastResults.filter((r) => r.steps !== null);
-  const agree = solvedLedger.every((l, i) => gameSolved[i] && gameSolved[i].steps === l.steps && gameSolved[i].hints === l.hints && gameSolved[i].par === l.par);
+  const agree = solvedLedger.every((l, i) => gameSolved[i] && gameSolved[i].steps === l.steps && gameSolved[i].par === l.par);
   check(`${label}: the game's results match the ledger`, agree && gameSolved.length === solvedLedger.length, { game: gameSolved.slice(0, 3), ledger: solvedLedger.slice(0, 3) });
   check(`${label}: played starts follow the sequence`, lastResults.every((r, i) => r.start === undefined || seq[i] === undefined || r.start === norm(seq[i])), lastResults.slice(0, 3).map((r) => r.start));
   if (kind === 'expert') check(`${label}: every expert ladder solved in exactly par`, ledger.every((l) => l.steps === l.par), ledger.filter((l) => l.steps !== l.par).slice(0, 3));
@@ -453,10 +440,12 @@ async function sectionShots(browser) {
     };
     const km = await keyMap(page);
     await sleep(1300);
+    let s = await st(page);
+    check(`${w}x${h}: the round opens with שימי (5 steps to פלוץ)`, s.idx === 0 && s.start === 'שימי' && s.par === 5, { start: s.start, par: s.par });
+    check(`${w}x${h}: no hint button`, (await page.locator('[data-act="hint"], .pz-tool.is-hint').count()) === 0);
     check(`${w}x${h}: first puzzle shows the demo or its toast`, await page.evaluate(() => !!document.querySelector('.pz-demo.is-on') || !!document.querySelector('.pz-toast.is-on')));
     await shot('1-first-demo');
     // puzzle 1: type the path, the solve celebration
-    let s = await st(page);
     const p1 = await page.evaluate(() => window.__plotzel.path());
     for (let i = 1; i < p1.length - 1; i++) await typeWord(page, km, p1[i], 200);
     await typeWord(page, km, p1[p1.length - 1], 200);
@@ -473,14 +462,6 @@ async function sectionShots(browser) {
     await sleep(120);
     await shot('3-rejection');
     await sleep(1900);
-    // a hint (two levels) with the hinted tile
-    await tapAt(page, km, 'hint');
-    await sleep(300);
-    await tapAt(page, km, 'hint');
-    await sleep(250);
-    const hintToast = await toast(page);
-    check(`${w}x${h}: hint toast`, hintToast && hintToast.kind === 'hint' && hintToast.text.startsWith('נסו: '), hintToast);
-    await shot('4-hint');
     // finish puzzle 2
     for (;;) {
       s = await st(page);
@@ -587,7 +568,7 @@ async function sectionChecks(browser) {
     const fill1 = await page.evaluate(() => getComputedStyle(document.querySelector('.pz-tool.is-skip')).getPropertyValue('--p'));
     await page.evaluate(() => window.__party.freeze(3500));
     await waitFor(async () => (await st(page)).frozen, 2000, 'frozen');
-    for (const k of ['ש', 'ד', 'ENTER', 'BACK', 'hint']) await tapAt(page, km, k);
+    for (const k of ['ש', 'ד', 'ENTER', 'BACK']) await tapAt(page, km, k);
     await page.keyboard.press('KeyA');
     await page.keyboard.press('Backspace');
     await page.keyboard.press('Enter');
@@ -598,7 +579,7 @@ async function sectionChecks(browser) {
       const a = document.querySelector('.pz-row.is-active .pz-tile.is-cursor');
       return a ? a.getAnimations().map((x) => x.playState) : [];
     });
-    check('freeze mid-typing: typed letters, words, hints, score and the skip timer stand still', s2.frozen && s2.typed === s1.typed && s2.words.join() === s1.words.join() && s2.hints === s1.hints && s2.score === s1.score && fill1 === fill2, { s1: [s1.typed, s1.words, s1.hints, s1.score], s2: [s2.typed, s2.words, s2.hints, s2.score], fill1, fill2 });
+    check('freeze mid-typing: typed letters, words, score and the skip timer stand still', s2.frozen && s2.typed === s1.typed && s2.words.join() === s1.words.join() && s2.score === s1.score && fill1 === fill2, { s1: [s1.typed, s1.words, s1.score], s2: [s2.typed, s2.words, s2.score], fill1, fill2 });
     check('freeze: CSS animations are paused', anims.length > 0 && anims.every((x) => x === 'paused'), anims);
     await waitFor(async () => !(await st(page)).frozen, 5000, 'unfrozen');
     await sleep(150);
@@ -637,7 +618,6 @@ async function sectionChecks(browser) {
     // reload restores progress (same seed)
     const p3 = await page.evaluate(() => window.__plotzel.path());
     await typeWord(page, km, p3[1], 130);
-    await tapAt(page, km, 'hint');
     await sleep(300);
     const r1 = await st(page);
     const res1 = await page.evaluate(() => window.__plotzel.results);
@@ -646,7 +626,7 @@ async function sectionChecks(browser) {
     await sleep(300);
     const r2 = await st(page);
     const res2 = await page.evaluate(() => window.__plotzel.results);
-    check('reload restores puzzle, words, hints and score', r2.idx === r1.idx && r2.words.join() === r1.words.join() && r2.hints === r1.hints && r2.score === r1.score && r2.party === r1.score && JSON.stringify(res1) === JSON.stringify(res2), { r1: [r1.idx, r1.words, r1.hints, r1.score], r2: [r2.idx, r2.words, r2.hints, r2.score, r2.party] });
+    check('reload restores puzzle, words and score', r2.idx === r1.idx && r2.words.join() === r1.words.join() && r2.score === r1.score && r2.party === r1.score && JSON.stringify(res1) === JSON.stringify(res2), { r1: [r1.idx, r1.words, r1.score], r2: [r2.idx, r2.words, r2.score, r2.party] });
     check('reload: no demo on a restored round', !(await page.evaluate(() => !!document.querySelector('.pz-demo.is-on'))));
     check('freeze / reload: no console / page errors', g.errors.length === 0, g.errors.slice(0, 4));
     await g.context.close();

@@ -295,6 +295,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
         }
       }
       if (r === null || r.finale === null) shown.left = null;
+      rootRef.current?.classList.toggle('is-finale', on && count === '');
       if (on !== shown.on) {
         shown.on = on;
         box.classList.toggle('is-on', on);

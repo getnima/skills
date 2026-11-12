@@ -34,6 +34,10 @@
  *   --cutscene-ms <ms>   self-hosted: how long the host bot lets a cutscene play (default 2500)
  *   --churn <0..1>       chance per bot per second to drop its connection and come back
  *                        0.3-2s later with the same identity (default 0)
+ *   --elim-by <ms>       elimination rounds (flappy): every bot is out by this round time,
+ *                        spread evenly from 2.5 s (default: each bot's own seeded time, the
+ *                        best ones last into the finale). For scripts that need the last
+ *                        places for their own phones.
  *   --prefix <text>      bot name prefix                    (default "בוט")
  *   --quiet              only print the summary
  *
@@ -71,6 +75,8 @@ interface Options {
   churn: number;
   prefix: string;
   quiet: boolean;
+  /** Elimination rounds: every bot is out by this round time (null: its own seeded time). */
+  elimBy: number | null;
 }
 
 function parseArgs(argv: readonly string[]): Options {
@@ -87,6 +93,7 @@ function parseArgs(argv: readonly string[]): Options {
     churn: 0,
     prefix: 'בוט',
     quiet: false,
+    elimBy: null,
   };
   const value = (i: number, flag: string): string => {
     const v = argv[i];
@@ -135,6 +142,9 @@ function parseArgs(argv: readonly string[]): Options {
         break;
       case '--quiet':
         opts.quiet = true;
+        break;
+      case '--elim-by':
+        opts.elimBy = Number(value(++i, flag));
         break;
       default:
         throw new Error(`unknown flag ${String(flag)} (see the top of tests/load/bots.ts)`);
@@ -369,7 +379,13 @@ class Bot {
         // time; the bot is "dead" at its seeded time (in the finale: soon after it begins)
         // and sends its final then. Whoever is last simply keeps reporting.
         const finaleAt = round.finale?.atElapsedMs ?? null;
-        const dieAt = finaleAt !== null && plan.dieAtMs > finaleAt ? finaleAt + plan.finaleLastMs : plan.dieAtMs;
+        const by = this.opts.elimBy;
+        const dieAt =
+          by !== null
+            ? 2_500 + ((by - 2_500) * (this.index + 1)) / this.opts.players
+            : finaleAt !== null && plan.dieAtMs > finaleAt
+              ? finaleAt + plan.finaleLastMs
+              : plan.dieAtMs;
         const flight = flightOf(round.seed, finaleAt);
         const rawAt = (ms: number): number => Math.min(GAMES[round.gameId].maxRaw, survivalRaw(flight.distAt(Math.floor(ms / STEP_MS))));
         if (time.elapsedMs >= dieAt || over) {

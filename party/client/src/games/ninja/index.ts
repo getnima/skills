@@ -1068,13 +1068,7 @@ export const game: GameModule = {
         // a red warning burst that throbs behind it (flat, ink outlined)
         const pulse = 0.5 + 0.5 * Math.sin(f.age * 0.3);
         const kb = R * (2.9 + pulse * 0.45);
-        g.save();
-        g.translate(x, y);
-        g.rotate(f.age * 0.02);
-        g.globalAlpha = 0.85;
-        g.drawImage(art.kaboom, -kb / 2, -kb / 2, kb, kb);
-        g.restore();
-        g.globalAlpha = 1;
+        g.drawImage(art.kaboom, x - kb / 2, y - kb / 2, kb, kb);
         const wob = Math.sin(rot) * 0.4;
         g.save();
         g.translate(x, y);

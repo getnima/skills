@@ -862,6 +862,11 @@ export class Room {
     if (r === null || this.phase !== 'playing' || !r.elimination || r.finale !== null) return;
     const elapsed = Math.max(0, roundTime(this.roundPublic(r), this.scheduler.now()).elapsedMs);
     r.finale = { atElapsedMs: Math.round(elapsed) + FINALE_LEAD_MS };
+    // the head count first (not throttled), then the finale: every screen announces "N left" with the right N
+    if (this.scoresTimer !== null) this.scheduler.clearTimeout(this.scoresTimer);
+    this.scoresTimer = null;
+    this.scoresDirty = true;
+    this.flushScores();
     this.broadcast();
   }
 

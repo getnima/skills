@@ -7,7 +7,7 @@
  * for the screen. The graph links words that differ in exactly one position.
  *
  *   DIST   true minimum number of steps to פלוץ over the whole dictionary (= par)
- *   CDIST  the same, walking common words only (the original's hint / shown path)
+ *   CDIST  the same, walking common words only (the path shown after a skip)
  *
  * The original builds string buckets and string Maps; this port keeps the same
  * iteration order (dictionary order inside every bucket, positions 0..3) on
@@ -326,13 +326,4 @@ export function checkStep(ladder: Ladder, typed: string, words: readonly string[
   if (!ladder.has(typed)) return { ok: false, reason: 'unknown', message: `${disp(typed)} לא נמצאת במילון` };
   if (words.includes(typed)) return { ok: false, reason: 'repeat', message: `כבר השתמשתם ב${disp(typed)}` };
   return { ok: true, word: typed, solved: typed === TARGET };
-}
-
-// ───────────────────────────── Hints (the original's hint) ─────────────────────────────
-
-const ORDINALS = ['הראשונה', 'השנייה', 'השלישית', 'הרביעית'] as const;
-
-/** Level 1 = which letter to change, level 2 = the word itself. */
-export function hintText(level: 1 | 2, pos: number, next: string): string {
-  return level === 1 ? `החליפו את האות ${ORDINALS[pos] ?? ''}` : `נסו: ${disp(next)}`;
 }

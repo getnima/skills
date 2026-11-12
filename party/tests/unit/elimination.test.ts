@@ -295,6 +295,8 @@ describe('the finale trigger', () => {
     h.crash(3);
     expect(h.states.length).toBe(before + 1);
     expect(h.states.at(-1)?.round?.finale).toEqual({ atElapsedMs: 4_000 + FINALE_LEAD_MS });
+    // the head count goes out first, unthrottled: every screen says "3 left" with the right number
+    expect(h.scores.at(-1)).toMatchObject({ active: 3, out: [h.ids[4], h.ids[3]] });
   });
 
   it('however many are left, it begins at 60 s of round time at the latest', () => {
