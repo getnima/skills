@@ -128,6 +128,15 @@ const pinfo = (ph) =>
     // the score on the phone's HUD (the stage reports it to the app throttled, so stageScore can lag)
     const hud = document.querySelector('.pa-hud-num');
     const hudScore = hud ? Number(hud.textContent.replace(/[^\d]/g, '')) : null;
+    // the best score this tab reported for the round (controller.sendScore keeps it in sessionStorage)
+    const ri = st && st.round ? st.round.index : st && st.results ? st.results.roundIndex : null;
+    let sent = null;
+    try {
+      const v = ri === null ? null : sessionStorage.getItem(`party.score.${p.snap.code}.${ri}`);
+      sent = v === null ? null : Number(v);
+    } catch {
+      sent = null;
+    }
     return {
       screen: p.screen,
       cutscene: p.cutscene,
@@ -139,6 +148,7 @@ const pinfo = (ph) =>
       frozen: pl ? pl.frozen : null,
       endedRound: p.snap.endedRound,
       endedScore: p.snap.endedScore,
+      sent,
       revealAt: st && st.results ? st.results.revealAt : null,
       phase: st ? st.phase : null,
     };
@@ -553,7 +563,10 @@ function plotzelDriver(ph, keyGapMs) {
         const row = res.rows.find((r) => r.playerId === p.id);
         const i = await pinfo(p);
         check(row !== undefined && row.raw > 0, `${p.label} scored in ${gameId} (raw ${row && row.raw})`);
-        const own = i.endedRound === res.roundIndex ? i.endedScore : p.hudFinal; // a game that finished early never hits the round's end on the phone
+        // A game that finished early never hits the round's end on the phone (and the server ends the round as soon as
+        // every final is in): then the phone's final is the larger of its HUD's last reading (polled, it can miss the
+        // last tap) and the best score the tab reported.
+        const own = i.endedRound === res.roundIndex ? i.endedScore : Math.max(p.hudFinal ?? 0, i.sent ?? 0);
         if (GAMES[gameId].mode === 'elimination' && row !== undefined && row.playerId === res.winnerIds[0] && i.endedRound !== res.roundIndex) {
           // the last one standing never sends a final: the server has its last live report (or one more than the best final)
           check(row.raw > 0 && row.raw <= own + 10 && res.rows.every((r) => r === row || r.raw < row.raw), `${p.label}: the last one standing is above every final`, { phone: own, server: row.raw });
