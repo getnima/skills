@@ -6,11 +6,13 @@ import { sfx } from '../../kit/audio';
 import { roundFeed } from '../../net/round-feed';
 import { backdropUrl, crownUrl, lastPlaceArt } from './art';
 import { Avatar, avatarColor, CountUp, GameArt, useFrame, useStage, useTicker } from './common';
+import { banterStillTrue, createBanterDirector } from './banter';
 import { useFunnyLayer } from './funny';
 import { createMomentEngine } from './moments';
-import { cueNarration } from './narrator-bus';
+import { cueNarration, isNarratorOn, narratorQuietMs } from './narrator-bus';
 
 import type { JSX } from 'preact';
+import type { BanterEntry, BanterLine } from './banter';
 import type { StickerZone } from './funny';
 import type { Moment, RaceEntry } from './moments';
 import type { PlayingSceneProps } from './types';
@@ -55,6 +57,8 @@ export function injectMoment(m: Moment): boolean {
 }
 
 const PAGE_MS = 4_500;
+/** A take of the hosts' race banter waits at most this long for its turn (the race moves on). */
+const BANTER_TTL_MS = 3_500;
 /** The rows re-order at most this often (the numbers still tick every frame). */
 const ORDER_HOLD_MS = 650;
 /** The crown's big hop to a new leader plays at most this often. */
@@ -106,6 +110,8 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const funny = useFunnyLayer(props.roundIndex * 7919 + 17, () => stickerZone(rootRef.current));
   const tick = useTicker(300);
   const engine = useMemo(() => createMomentEngine(), [props.roundIndex, props.game.id]);
+  // the two hosts talk the race through on the TV, with the guests' names (show/banter.ts)
+  const banter = useMemo(() => createBanterDirector(Math.random), [props.roundIndex, props.game.id]);
 
   // ── elimination round (flappy): who is out and how many are left, from the round feed ──
   // (the scene is only handed a scores map; `out`, `active` and the finale come with the same messages)
@@ -154,6 +160,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   }, [props.players, props.scores, elimination]);
   const racersRef = useRef(racers);
   racersRef.current = racers;
+  const banterEntries = (): BanterEntry[] => racersRef.current.map((r) => ({ id: r.id, name: r.name, score: r.score, out: r.out === true }));
 
   // ── what the rows show: the ranking, re-ordered at most every ORDER_HOLD_MS so a race
   //    where places change on every score update stays readable from across the room ──
@@ -263,7 +270,10 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
     if (m.type === 'final10' && !force) {
       cueNarration({ id: `final10:${props.game.id}:${props.roundIndex}:${sceneId.current}`, moment: 'final10', ttlMs: 3_000, valid: () => clockRef.current().leftMs > 3_500 });
     }
-    if (!(funny.layer()?.moment(m, force, valid) ?? false)) return;
+    // with the hosts on the TV, they talk the race through with the names; the commentator keeps its effects
+    const hosts = isNarratorOn() && m.type !== 'final10';
+    if (hosts) sayBanter(banter.moment(m, t, force));
+    if (!(funny.layer()?.moment(m, force, valid, hosts) ?? false)) return;
     if (m.a) {
       if (m.type === 'drop') rowFx(m.a.id).dropUntil = t + 1_100;
       if (m.type === 'streak' || m.type === 'comeback') rowFx(m.a.id).fireUntil = t + 5_000;
@@ -274,6 +284,41 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   /** One id per mounted scene: each of its moments is narrated once. */
   const sceneId = useRef(Math.floor(Math.random() * 1e9).toString(36));
   handleRef.current = handleMoment;
+
+  /** A take of the hosts' banter goes to the narrator; by its turn it must still be true, and the round still on. */
+  const banterSeq = useRef(0);
+  const sayBanter = (line: BanterLine | null): void => {
+    if (line === null) return;
+    banterSeq.current++;
+    const names: { a?: string; b?: string } = {};
+    if (line.a !== null) names.a = line.a.name;
+    if (line.b !== null) names.b = line.b.name;
+    cueNarration({
+      id: `banter:${props.game.id}:${props.roundIndex}:${sceneId.current}:${banterSeq.current}`,
+      moment: 'race',
+      priority: line.priority,
+      ttlMs: BANTER_TTL_MS,
+      take: line.take,
+      names,
+      valid: () => clockRef.current().leftMs > 1_500 && banterStillTrue(line, banterEntries()),
+      onDropped: () => banter.unsay(line),
+    });
+  };
+
+  // ── an elimination round: the hosts call each fall (the first one as such) ──
+  const seenOut = useRef<ReadonlySet<string> | null>(null);
+  useEffect(() => {
+    if (elimination === null) return;
+    const before = seenOut.current;
+    seenOut.current = elimination.out;
+    // the first look (a TV opened mid-round): the falls so far are old news
+    if (before === null || !isNarratorOn()) return;
+    const fresh = [...elimination.out].filter((id) => !before.has(id));
+    const id = fresh[fresh.length - 1];
+    const fell = id === undefined ? undefined : racersRef.current.find((r) => r.id === id);
+    if (fell === undefined) return;
+    sayBanter(banter.out({ id: fell.id, name: fell.name }, before.size === 0, performance.now()));
+  }, [elimination, banter]);
 
   useEffect(() => {
     const mine: MomentInjector = (m) => handleRef.current(m, true);
@@ -291,18 +336,21 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const eliminationRef = useRef(elimination);
   eliminationRef.current = elimination;
   useEffect(() => {
-    // overtakes, streaks and comebacks mean nothing while everybody flies side by side
-    if (eliminationRef.current !== null) return;
     const sample = clockRef.current();
-    const entries: RaceEntry[] = racersRef.current;
-    const moments = engine.update({
-      elapsedMs: durationRef.current - sample.leftMs,
-      leftMs: sample.leftMs,
-      frozen: sample.frozen,
-      entries,
-    });
-    for (const m of moments) handleRef.current(m);
-  }, [tick, engine]);
+    const elapsedMs = durationRef.current - sample.leftMs;
+    // overtakes, streaks and comebacks mean nothing while everybody flies side by side
+    if (eliminationRef.current === null) {
+      const entries: RaceEntry[] = racersRef.current;
+      const moments = engine.update({ elapsedMs, leftMs: sample.leftMs, frozen: sample.frozen, entries });
+      for (const m of moments) handleRef.current(m);
+    }
+    // a quiet race: the hosts fill it with a jab at somebody
+    if (isNarratorOn()) {
+      const t = performance.now();
+      const race = { gameId: props.game.id, elimination: eliminationRef.current !== null, elapsedMs, leftMs: sample.leftMs, frozen: sample.frozen, entries: banterEntries() };
+      sayBanter(banter.ambient(race, narratorQuietMs(t), t));
+    }
+  }, [tick, engine, banter]);
 
   // ── per-frame: the clock ring (no re-render); the scores are odometers (CountUp) ──
   const rootRef = useRef<HTMLElement | null>(null);

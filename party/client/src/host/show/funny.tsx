@@ -57,8 +57,9 @@ export interface FunnyLayer {
    * React to a race moment: a mix of commentary, stickers, punches and sfx.
    * `force`: speak right now (the demo's moment buttons). Each kind of moment
    * has a cooldown; returns false when this one was dropped (nothing happened).
+   * `silent`: the effects only, no line (the hosts on the TV talk the race through).
    */
-  moment(m: Moment, force?: boolean, valid?: () => boolean): boolean;
+  moment(m: Moment, force?: boolean, valid?: () => boolean, silent?: boolean): boolean;
   dispose(): void;
 }
 
@@ -422,7 +423,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () =
   const momentAt = new Map<MomentType, number>();
   let anyMomentAt = Number.NEGATIVE_INFINITY;
 
-  function moment(m: Moment, force = false, valid?: () => boolean): boolean {
+  function moment(m: Moment, force = false, valid?: () => boolean, silent = false): boolean {
     if (disposed) return false;
     const t = performance.now();
     if (!force) {
@@ -436,7 +437,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () =
     const mood = MOMENT_MOOD[m.type];
     // no line twice in one round: a pool that ran dry stays quiet (the effects still play)
     // with the hosts narrating on the TV, the last ten seconds are theirs (the effects stay)
-    const quiet = m.type === 'final10' && isNarratorOn() && !force;
+    const quiet = silent || (m.type === 'final10' && isNarratorOn() && !force);
     const line = quiet ? null : force ? picker.pick(m.type, args) : picker.fresh(m.type, args);
     if (line !== null) say(line, mood, { priority: m.priority, force, valid });
     const showy = force || m.priority >= 8 || t - lastSticker >= STICKER_GAP_MS;

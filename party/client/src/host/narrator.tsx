@@ -45,6 +45,8 @@ const EXIT_MS = 300;
 const PAIR_GAP_MS = 120;
 /** Between two takes. */
 const TAKE_GAP_MS = 900;
+/** After race banter cut short by a moment of the show: that moment comes at once. */
+const CUT_GAP_MS = 250;
 /** Calm mode keeps only the big moments. */
 const CALM_MIN_PRIORITY = 7;
 /** The playing screen's margin under the timer must be at least this tall (design units) for a host to stand in it. */
@@ -302,8 +304,8 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     schedule(gap);
   };
 
-  /** The current beat leaves; then the next beat of the take, or the take is over. */
-  const leave = (abort: boolean): void => {
+  /** The current beat leaves; then the next beat of the take, or the take is over (`gap`: until the next take). */
+  const leave = (abort: boolean, gap = TAKE_GAP_MS): void => {
     const live = e.live;
     if (live === null) return;
     if (live.timer !== null) clearTimeout(live.timer);
@@ -311,7 +313,7 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     live.timer = setTimeout(() => {
       live.timer = null;
       if (abort || live.beat + 1 >= live.take.length) {
-        finish(TAKE_GAP_MS);
+        finish(gap);
         return;
       }
       live.beat++;
@@ -415,7 +417,7 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     const now = performance.now();
     if (!e.queue.offer({ ...cue, at: now }, now)) return;
     // a moment of the show (GO, the last ten seconds, the finale, the results) cuts the hosts' race banter short
-    if (e.live !== null && e.live.cue.moment === 'race' && cue.moment !== 'race') leave(true);
+    if (e.live !== null && e.live.cue.moment === 'race' && cue.moment !== 'race') leave(true, CUT_GAP_MS);
     schedule(0);
   };
   const offerRef = useRef(offer);
@@ -519,8 +521,10 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
   const live = e.live;
   useEffect(() => {
     if (live === null) return;
-    if (cutscene !== null) leave(true);
-    else if (slotNow !== live.slot) leave(false);
+    // a cutscene: gone at once (no exit under the video)
+    if (cutscene !== null) finish(TAKE_GAP_MS);
+    // the round is over: its banter never goes on to the next screen
+    else if (slotNow !== live.slot) leave(live.cue.moment === 'race', live.cue.moment === 'race' ? CUT_GAP_MS : TAKE_GAP_MS);
   }, [cutscene !== null, slotNow]);
   useEffect(() => {
     if (cutscene === null) schedule(300);
