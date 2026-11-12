@@ -918,29 +918,28 @@ export const game: GameModule = {
 
     function drawBackground(g: CanvasRenderingContext2D): void {
       if (!bgOpaque) view.clear();
-      backdrop.draw(g, W, H, view.dpr);
+      backdrop.draw(g, W, H, view.dpr, top);
     }
 
     function drawSplats(g: CanvasRenderingContext2D): void {
       for (const s of splats) {
-        if (!s.active) continue;
-        g.globalAlpha = Math.min(1, s.life * 1.6) * 0.62;
-        g.fillStyle = s.color;
-        g.beginPath();
-        g.arc(s.x, s.y, s.r * 0.36, 0, Math.PI * 2);
-        for (let i = 0; i < 7; i++) {
-          const a = s.rot + i * 0.898;
-          const dist = s.r * (0.5 + (i % 3) * 0.2);
-          const rr = s.r * (0.07 + (i % 2) * 0.06);
-          g.moveTo(s.x + Math.cos(a) * dist + rr, s.y + Math.sin(a) * dist);
-          g.arc(s.x + Math.cos(a) * dist, s.y + Math.sin(a) * dist, rr, 0, Math.PI * 2);
-        }
-        g.fill();
+        if (!s.active || !s.img) continue;
+        // lands with a quick pop, stays, then fades over the last 40% of its life
+        const age = 1 - s.life;
+        const k = age < 0.06 ? 0.6 + (age / 0.06) * 0.4 : 1;
+        g.globalAlpha = Math.min(1, s.life / 0.4) * 0.9;
+        const d = s.r * 2 * k;
+        g.save();
+        g.translate(s.x, s.y);
+        g.rotate(s.rot);
+        g.drawImage(s.img, -d / 2, -d / 2, d, d);
+        g.restore();
       }
       g.globalAlpha = 1;
     }
 
     function drawHalves(g: CanvasRenderingContext2D, alpha: number): void {
+      const d = box * DRAW_K;
       for (const h of halves) {
         if (!h.active || !h.img) continue;
         const x = lerp(h.px, h.x, alpha);
@@ -949,59 +948,44 @@ export const game: GameModule = {
         g.save();
         g.translate(x, y);
         g.rotate(h.cut + rot);
-        g.drawImage(h.img, -box / 2, -box / 2, box, box);
+        g.drawImage(h.img, -d / 2, -d / 2, d, d);
         g.restore();
       }
     }
 
     function drawFuse(g: CanvasRenderingContext2D, f: Flyer, x: number, y: number, wob: number): void {
+      const r = R * DRAW_K;
       g.save();
       g.translate(x, y);
       g.rotate(wob);
       // cap
       g.save();
-      g.translate(R * 0.5, -R * 0.9);
+      g.translate(r * 0.5, -r * 0.9);
       g.rotate(0.55);
       g.fillStyle = '#4b4560';
-      g.strokeStyle = '#000';
-      g.lineWidth = 2;
-      roundRectPath(g, -R * 0.24, -R * 0.15, R * 0.48, R * 0.3, R * 0.07);
+      g.strokeStyle = PAL.ink;
+      g.lineWidth = 2.5;
+      roundRectPath(g, -r * 0.24, -r * 0.15, r * 0.48, r * 0.3, r * 0.07);
       g.fill();
       g.stroke();
       g.restore();
       // fuse
       g.lineCap = 'round';
-      g.strokeStyle = '#3a2a14';
-      g.lineWidth = R * 0.16;
+      g.strokeStyle = PAL.ink;
+      g.lineWidth = r * 0.18;
       g.beginPath();
-      g.moveTo(R * 0.6, -R * 1.02);
-      g.quadraticCurveTo(R * 0.72, -R * 1.5, R * 1.02, -R * 1.24);
+      g.moveTo(r * 0.6, -r * 1.02);
+      g.quadraticCurveTo(r * 0.72, -r * 1.5, r * 1.02, -r * 1.24);
       g.stroke();
       g.strokeStyle = '#d9b27a';
-      g.lineWidth = R * 0.09;
+      g.lineWidth = r * 0.09;
       g.stroke();
       // spark at the tip: flickers in game steps
       const flick = ((f.age * 7 + f.id * 13) % 10) / 10;
-      const sr = R * (0.2 + flick * 0.14);
-      g.globalCompositeOperation = 'lighter';
-      art.glowGold.draw(g, R * 1.02, -R * 1.24, R * 1.3, R * 1.3);
-      g.globalCompositeOperation = 'source-over';
-      g.translate(R * 1.02, -R * 1.24);
+      const sr = r * (0.62 + flick * 0.3);
+      g.translate(r * 1.02, -r * 1.24);
       g.rotate(flick * 2);
-      g.fillStyle = flick > 0.5 ? '#ffffff' : COLORS.yellow;
-      g.beginPath();
-      for (let i = 0; i < 12; i++) {
-        const a = (i * Math.PI) / 6;
-        const rr = i % 2 === 0 ? sr : sr * 0.38;
-        if (i === 0) g.moveTo(rr, 0);
-        else g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-      }
-      g.closePath();
-      g.fill();
-      g.fillStyle = COLORS.orange;
-      g.beginPath();
-      g.arc(0, 0, sr * 0.3, 0, Math.PI * 2);
-      g.fill();
+      g.drawImage(art.spark, -sr / 2, -sr / 2, sr, sr);
       g.restore();
     }
 
@@ -1018,111 +1002,148 @@ export const game: GameModule = {
       const x = toX(lerp(f.px, f.x, alpha));
       const y = toY(lerp(f.py, f.y, alpha));
       const rot = lerp(f.prot, f.rot, alpha);
+      const bx = box * DRAW_K;
       // pop-in squash and stretch
       const k = f.age < 16 ? ease.outBack(f.age / 16) : 1;
       const sx = lerp(0.7, 1, k);
       const sy = lerp(1.3, 1, k);
       if (f.kind === 'bomb') {
-        const pulse = 0.55 + 0.45 * Math.sin(f.age * 0.25);
-        g.globalAlpha = 0.5 + pulse * 0.4;
-        art.glowRed.draw(g, x, y, R * 3.4, R * 3.4);
+        // a red warning burst that throbs behind it (flat, ink outlined)
+        const pulse = 0.5 + 0.5 * Math.sin(f.age * 0.3);
+        const kb = R * (2.5 + pulse * 0.35);
+        g.save();
+        g.translate(x, y);
+        g.rotate(f.age * 0.02);
+        g.globalAlpha = 0.85;
+        g.drawImage(art.kaboom, -kb / 2, -kb / 2, kb, kb);
+        g.restore();
         g.globalAlpha = 1;
         const wob = Math.sin(rot) * 0.4;
         g.save();
         g.translate(x, y);
         g.scale(sx, sy);
-        art.bomb.draw(g, 0, 0, box, box, wob);
+        art.bomb.draw(g, 0, 0, bx, bx, wob);
         g.restore();
         drawFuse(g, f, x, y, wob);
-        if (f.id === firstBomb && f.age < 150) drawTag(g, x, y - R * 2.1, 'לא לחתוך!', COLORS.red);
+        if (f.id === firstBomb && f.age < 150) drawTag(g, x, y - R * 2.2);
       } else {
-        const d = f.kind === 'gold' ? art.gold : (art.targets[f.variant] ?? art.gold);
-        if (f.kind === 'gold') {
-          g.globalCompositeOperation = 'lighter';
-          g.globalAlpha = 0.8;
-          art.glowGold.draw(g, x, y, R * 3.6, R * 3.6);
-          g.globalAlpha = 1;
-          g.globalCompositeOperation = 'source-over';
+        const gold = f.kind === 'gold';
+        const d = gold ? (art.golds[goldLook(f.id)] ?? art.targets[0]) : art.targets[f.variant];
+        if (!d) return;
+        if (gold) {
+          // turning sunburst behind the golden target
+          const sb = R * 3.1;
+          g.save();
+          g.translate(x, y);
+          g.rotate(f.age * 0.035);
+          g.drawImage(art.sunburst, -sb / 2, -sb / 2, sb, sb);
+          g.restore();
         }
         if (k < 1) {
           g.save();
           g.translate(x, y);
           g.scale(sx, sy);
-          d.draw(g, 0, 0, box, box, rot);
+          d.draw(g, 0, 0, bx, bx, rot);
           g.restore();
         } else {
-          d.draw(g, x, y, box, box, rot);
+          d.draw(g, x, y, bx, bx, gold ? Math.sin(rot) * 0.35 : rot);
         }
       }
     }
 
-    function drawTag(g: CanvasRenderingContext2D, x: number, y: number, text: string, color: string): void {
-      g.font = font(18, 900);
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      const w = g.measureText(text).width + 24;
-      const tx = clamp(x, w / 2 + 6, W - w / 2 - 6);
-      g.fillStyle = color;
-      roundRectPath(g, tx - w / 2, y - 16, w, 32, 16);
-      g.fill();
-      g.strokeStyle = '#ffffff';
-      g.lineWidth = 2.5;
-      g.stroke();
-      g.fillStyle = '#ffffff';
-      drawText(g, text, tx, y + 1);
+    function drawTag(g: CanvasRenderingContext2D, x: number, y: number): void {
+      const t = stickers.get('tag', (old) => renderChip('לא לחתוך!', 19, PAL.red, '#ffffff', old));
+      const tx = clamp(x, t.w / 2 + 6, W - t.w / 2 - 6);
+      blit(g, t, tx, y);
     }
 
     function drawSlashes(g: CanvasRenderingContext2D): void {
-      g.lineCap = 'round';
       for (const s of slashes) {
         if (!s.active) continue;
-        const len = R * (1.6 + (1 - s.life) * 1.4);
-        const cx = Math.cos(s.angle) * len;
-        const cy = Math.sin(s.angle) * len;
-        g.globalAlpha = s.life;
-        g.strokeStyle = s.gold ? COLORS.yellow : '#ffffff';
-        g.lineWidth = 7 * s.life + 1;
-        g.beginPath();
-        g.moveTo(s.x - cx, s.y - cy);
-        g.lineTo(s.x + cx, s.y + cy);
-        g.stroke();
+        // a sharp lens along the cut: yellow (gold: red) edge, white core
+        const len = R * (1.7 + (1 - s.life) * 1.5);
+        const wid = R * 0.32 * s.life + 1.5;
+        g.save();
+        g.translate(s.x, s.y);
+        g.rotate(s.angle);
+        g.globalAlpha = Math.min(1, s.life * 1.5);
+        for (let pass = 0; pass < 2; pass++) {
+          const w = pass === 0 ? wid : wid * 0.45;
+          g.beginPath();
+          g.moveTo(-len, 0);
+          g.quadraticCurveTo(0, -w, len, 0);
+          g.quadraticCurveTo(0, w, -len, 0);
+          g.closePath();
+          g.fillStyle = pass === 0 ? (s.gold ? PAL.red : PAL.yel) : '#ffffff';
+          g.fill();
+          if (pass === 0) {
+            g.lineWidth = 2;
+            g.strokeStyle = PAL.ink;
+            g.stroke();
+          }
+        }
+        g.restore();
       }
       g.globalAlpha = 1;
     }
 
+    /** Ribbon polygon of one blade (both sides of the path), half width `k` x ribW. */
+    function ribbon(g: CanvasRenderingContext2D, b: Blade, k: number, extra: number): void {
+      const n = b.n;
+      g.beginPath();
+      for (let i = 0; i < n; i++) {
+        const w = (ribW[i] ?? 0) * k + extra;
+        const x = (b.tx[i] ?? 0) + (ribX[i] ?? 0) * w;
+        const y = (b.ty[i] ?? 0) + (ribY[i] ?? 0) * w;
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      for (let i = n - 1; i >= 0; i--) {
+        const w = (ribW[i] ?? 0) * k + extra;
+        g.lineTo((b.tx[i] ?? 0) - (ribX[i] ?? 0) * w, (b.ty[i] ?? 0) - (ribY[i] ?? 0) * w);
+      }
+      g.closePath();
+      // round head
+      const hx = b.tx[n - 1] ?? 0;
+      const hy = b.ty[n - 1] ?? 0;
+      const hw = (ribW[n - 1] ?? 0) * k + extra;
+      g.moveTo(hx + hw, hy);
+      g.arc(hx, hy, hw, 0, Math.PI * 2);
+    }
+
     function drawBlades(g: CanvasRenderingContext2D): void {
-      g.lineCap = 'round';
-      g.lineJoin = 'round';
       const dull = stun > 0;
       for (const b of blades) {
         const n = b.n;
         if (n < 2) continue;
-        // glow pass, then the white-hot core; both taper towards the tail
-        for (let pass = 0; pass < 2; pass++) {
-          g.strokeStyle =
-            pass === 0
-              ? dull
-                ? 'rgba(255, 77, 94, 0.35)'
-                : 'rgba(45, 226, 230, 0.42)'
-              : dull
-                ? 'rgba(200, 190, 210, 0.7)'
-                : '#ffffff';
-          const maxW = pass === 0 ? 20 : 7;
-          for (let i = 1; i < n; i++) {
-            // younger points are thicker: the blade tapers towards the tail
-            const t = 1 - (b.ta[i] ?? 0) / (TRAIL_LIFE + 1);
-            g.lineWidth = Math.max(1, maxW * t);
-            g.beginPath();
-            g.moveTo(b.tx[i - 1] ?? 0, b.ty[i - 1] ?? 0);
-            g.lineTo(b.tx[i] ?? 0, b.ty[i] ?? 0);
-            g.stroke();
-          }
+        // half width per point: younger and faster = wider (tapers to a point at the tail)
+        for (let i = 0; i < n; i++) {
+          const i0 = Math.max(0, i - 1);
+          const i1 = Math.min(n - 1, i + 1);
+          let dx = (b.tx[i1] ?? 0) - (b.tx[i0] ?? 0);
+          let dy = (b.ty[i1] ?? 0) - (b.ty[i0] ?? 0);
+          const len = Math.hypot(dx, dy) || 1;
+          dx /= len;
+          dy /= len;
+          ribX[i] = -dy;
+          ribY[i] = dx;
+          const youth = Math.max(0, 1 - (b.ta[i] ?? 0) / (TRAIL_LIFE + 1));
+          const seg = i > 0 ? Math.hypot((b.tx[i] ?? 0) - (b.tx[i - 1] ?? 0), (b.ty[i] ?? 0) - (b.ty[i - 1] ?? 0)) : 0;
+          const fast = clamp(seg / 22, 0.5, 1.35);
+          ribW[i] = youth * youth * fast * (i === 0 ? 0 : 1);
         }
-        if (b.active && !dull) {
-          g.globalCompositeOperation = 'lighter';
-          art.glowWhite.draw(g, b.tx[n - 1] ?? 0, b.ty[n - 1] ?? 0, 34, 34);
-          g.globalCompositeOperation = 'source-over';
-        }
+        const combo = !dull && b.active && b.swipe >= COMBO_MIN - 1;
+        const edge = dull ? '#6d6878' : combo ? PAL.pink : PAL.yel;
+        const core = dull ? '#a9a4b4' : '#ffffff';
+        ribbon(g, b, 11, 2);
+        g.fillStyle = PAL.ink;
+        g.fill();
+        ribbon(g, b, 11, 0);
+        g.fillStyle = edge;
+        g.fill();
+        ribbon(g, b, 5, 0);
+        g.fillStyle = core;
+        g.fill();
       }
     }
 
@@ -1131,27 +1152,25 @@ export const game: GameModule = {
       const t = callout.age;
       const pop = ease.outBack(clamp(t / 0.22, 0, 1));
       const fade = clamp((callout.life - t) / 0.25, 0, 1);
-      const size = clamp(W * 0.105, 32, 48);
-      g.save();
+      const size = Math.round(clamp(W * 0.1, 30, 46));
+      const c = callout;
+      const st = stickers.get(`c|${c.text}|${c.sub}|${c.color}|${size}`, (old) =>
+        renderSticker(c.text, { size, fill: c.color, shadow: PAL.red, sub: c.sub || undefined, subFill: PAL.yel2 }, old),
+      );
       g.globalAlpha = fade;
-      g.translate(callout.x, callout.y - t * 22);
-      g.rotate(-0.07);
-      g.scale(pop, pop);
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.font = font(size, 900);
-      g.lineJoin = 'round';
-      g.strokeStyle = '#2b1436';
-      g.lineWidth = 9;
-      g.fillStyle = callout.color;
-      drawText(g, callout.text, 0, 0, true);
-      if (callout.sub) {
-        g.font = font(size * 0.62, 900);
-        g.lineWidth = 7;
-        g.fillStyle = '#ffffff';
-        drawText(g, callout.sub, 0, size * 0.85, true);
+      blit(g, st, c.x, c.y - t * 22, pop * Math.min(1, (W - 12) / st.w));
+      g.globalAlpha = 1;
+    }
+
+    function drawPops(g: CanvasRenderingContext2D): void {
+      for (const p of pops) {
+        if (!p.active || !p.sticker) continue;
+        const t = p.age / p.life;
+        const k = t < 0.18 ? ease.outBack(t / 0.18) : 1;
+        g.globalAlpha = t > 0.7 ? (1 - t) / 0.3 : 1;
+        blit(g, p.sticker, p.x, p.y - p.rise * ease.outCubic(t), k);
       }
-      g.restore();
+      g.globalAlpha = 1;
     }
 
     function drawHint(g: CanvasRenderingContext2D): void {
@@ -1174,11 +1193,14 @@ export const game: GameModule = {
       const tail = Math.max(0, move - 0.35);
       const tx = lerp(ax, bx, tail);
       const ty = lerp(ay, by, tail);
-      g.strokeStyle = 'rgba(45, 226, 230, 0.5)';
-      g.lineWidth = 16;
+      g.strokeStyle = PAL.ink;
+      g.lineWidth = 18;
       g.beginPath();
       g.moveTo(tx, ty);
       g.lineTo(hx, hy);
+      g.stroke();
+      g.strokeStyle = PAL.yel;
+      g.lineWidth = 13;
       g.stroke();
       g.strokeStyle = '#ffffff';
       g.lineWidth = 5;
@@ -1188,53 +1210,44 @@ export const game: GameModule = {
       art.hand.draw(g, hx + hs * 0.2, hy + hs * 0.42, hs, hs);
       g.restore();
       // label
-      g.save();
+      const px = Math.round(clamp(W * 0.07, 24, 32));
+      const st = stickers.get(`hint|${px}`, (old) => renderSticker('החליקו כדי לחתוך!', { size: px, fill: '#ffffff', shadow: PAL.red }, old));
       g.globalAlpha = hint;
-      g.font = font(clamp(W * 0.065, 22, 30), 900);
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.lineJoin = 'round';
-      g.strokeStyle = '#2b1436';
-      g.lineWidth = 7;
-      g.fillStyle = '#ffffff';
-      drawText(g, 'החליקו כדי לחתוך!', W / 2, toY(0.68), true);
-      g.restore();
+      blit(g, st, W / 2, toY(0.68), Math.min(1, (W - 12) / st.w));
+      g.globalAlpha = 1;
     }
 
     function drawStun(g: CanvasRenderingContext2D): void {
       if (stun <= 0) return;
       const k = stun / STUN_STEPS;
-      // red vignette frame
-      g.save();
-      g.globalAlpha = 0.25 + 0.35 * k;
-      g.strokeStyle = COLORS.red;
+      // red frame (flat, two steps)
+      g.globalAlpha = 0.3 + 0.4 * k;
+      g.strokeStyle = PAL.red;
       g.lineWidth = 26;
       g.strokeRect(0, 0, W, H);
-      g.restore();
-      // "blade down" pill with a draining bar
-      const w = Math.min(240, W - 40);
-      const x = W / 2 - w / 2;
+      g.strokeStyle = PAL.ink;
+      g.lineWidth = 4;
+      g.strokeRect(13, 13, W - 26, H - 26);
+      g.globalAlpha = 1;
+      // "blade down" sticker with a draining bar
+      const st = stickers.get('stun', (old) => renderChip('בום! הלהב מושבת', 19, PAL.ink, '#ffffff', old));
+      const cx = W / 2;
       const y = top + 12;
-      g.fillStyle = 'rgba(43, 20, 54, 0.88)';
-      roundRectPath(g, x, y, w, 50, 16);
-      g.fill();
-      g.strokeStyle = COLORS.red;
-      g.lineWidth = 2.5;
-      g.stroke();
-      g.font = font(19, 900);
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.fillStyle = '#ffffff';
-      drawText(g, 'בום! הלהב מושבת', W / 2, y + 19);
-      g.fillStyle = 'rgba(255, 255, 255, 0.15)';
-      roundRectPath(g, x + 14, y + 35, w - 28, 7, 3.5);
-      g.fill();
-      g.fillStyle = COLORS.red;
-      roundRectPath(g, x + 14, y + 35, (w - 28) * k, 7, 3.5);
-      g.fill();
+      g.drawImage(st.canvas, cx - st.w / 2, y, st.w, st.h);
+      const w = Math.min(200, st.w - 30);
+      const by = y + st.h + 4;
+      g.fillStyle = PAL.ink;
+      g.fillRect(cx - w / 2 - 2, by - 2, w + 4, 11);
+      g.fillStyle = PAL.paper;
+      g.fillRect(cx - w / 2, by, w, 7);
+      g.fillStyle = PAL.red;
+      g.fillRect(cx - w / 2, by, w * k, 7);
     }
 
     function render(alpha: number): void {
+      const now = performance.now();
+      if (lastFrameAt > 0) frameEma = frameEma * 0.9 + Math.min(100, now - lastFrameAt) * 0.1;
+      lastFrameAt = now;
       layout();
       const g = view.ctx;
       drawBackground(g); // outside the shake: the copy stays a 1:1 blit
@@ -1247,15 +1260,19 @@ export const game: GameModule = {
       if (ring.active) {
         const t = ring.age / 0.6;
         g.globalAlpha = 1 - t;
-        g.strokeStyle = '#ffffff';
-        g.lineWidth = 10 * (1 - t) + 2;
+        g.lineWidth = 12 * (1 - t) + 3;
+        g.strokeStyle = PAL.ink;
         g.beginPath();
         g.arc(ring.x, ring.y, R * (1 + t * 5), 0, Math.PI * 2);
+        g.stroke();
+        g.lineWidth = 8 * (1 - t) + 1.5;
+        g.strokeStyle = PAL.yel;
         g.stroke();
         g.globalAlpha = 1;
       }
       drawBlades(g);
       fx.draw(g);
+      drawPops(g);
       drawCallout(g);
       g.restore();
       drawHint(g);
@@ -1370,6 +1387,14 @@ export const game: GameModule = {
         view.dispose();
         backdrop.dispose();
         fx.clear();
+        // release the pre-rendered canvases of this round
+        stickers.dispose();
+        for (const pair of halfArt) for (const c of pair) c.width = 0;
+        for (const set of splatArt.values()) for (const c of set) c.width = 0;
+        splatArt.clear();
+        art.sunburst.width = 0;
+        art.kaboom.width = 0;
+        art.spark.width = 0;
         // window.__ninja keeps the final counters for test scripts
       },
     };
