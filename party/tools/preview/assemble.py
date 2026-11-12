@@ -60,7 +60,7 @@ os.makedirs(site, exist_ok=True)
 open(os.path.join(site, 'index.html'), 'w', encoding='utf-8').write(page)
 
 # the pictures the games and the dressing room can ask for
-KEEP_DIRS = ['assets/tap', 'assets/icy', 'assets/flappy', 'assets/plotzel', 'assets/ninja', 'assets/shimi']
+KEEP_DIRS = ['assets/tap', 'assets/icy', 'assets/flappy', 'assets/plotzel', 'assets/ninja', 'assets/shimi', 'assets/intro']
 EXTS = ('.png', '.webp', '.jpg', '.jpeg', '.svg', '.gif')
 files = []
 for d in KEEP_DIRS:

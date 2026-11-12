@@ -9,8 +9,6 @@ RUN npm ci --no-audit --no-fund
 COPY . .
 # Build-time client switches (see README "Tuning"): deploy/.build-env, written by
 # cloudrun-deploy.sh from every VITE_* in .env, or `docker build --build-arg VITE_PUBLIC_URL=...`.
-ARG VITE_PLOTZEL_MODE=
-ARG VITE_PLOTZEL_URL=
 ARG VITE_PUBLIC_URL=
 # Same-origin build: this server serves the client, so no VITE_SERVER_URL.
 ENV VITE_SERVER_URL=

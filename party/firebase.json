@@ -6,6 +6,7 @@
     "trailingSlash": false,
     "rewrites": [
       { "source": "/host", "destination": "/host.html" },
+      { "source": "/remote", "destination": "/remote.html" },
       { "source": "/show", "destination": "/show.html" },
       { "source": "/dev", "destination": "/dev.html" }
     ],
@@ -19,7 +20,7 @@
         "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
       },
       {
-        "source": "/@(audio|cutscenes|icons|plotzel-bridge)/**",
+        "source": "/@(audio|cutscenes|icons)/**",
         "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
       },
       {
@@ -27,7 +28,7 @@
         "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
       },
       {
-        "source": "/@(host|show|dev)",
+        "source": "/@(host|remote|show|dev)",
         "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
       },
       {

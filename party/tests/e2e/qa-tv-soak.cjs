@@ -105,7 +105,7 @@ const frames = (page, ms) =>
     const code = await page.evaluate(() => window.__host.state().code);
     bots = spawnBots(code, PLAYERS, ['--play', '--churn', '0.02']);
     await page.waitForFunction((n) => window.__host.state().players.length >= n, PLAYERS, { timeout: 30000 });
-    await page.mouse.click(960, 300);
+    await page.mouse.click(960, 8);
     const cdp = await ctx.newCDPSession(page);
 
     const t0 = Date.now();

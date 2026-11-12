@@ -76,7 +76,7 @@ async function play(page, id) {
         headers: { 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${a}-${b}/${body.length}`, 'Cache-Control': 'no-store' },
       });
     });
-    await page.mouse.click(960, 300); // the first click unlocks sound
+    await page.mouse.click(960, 8); // the first click unlocks sound
 
     // ── a portrait clip without audio: plays letterboxed, ends by itself ──
     const t0 = Date.now();
@@ -182,7 +182,7 @@ async function play(page, id) {
 
     // ── longer than CUTSCENE_MAX_MS (90 s): the server ends it, the TV lets go ──
     if (process.env.LONG === '1') {
-      await page.mouse.click(960, 300);
+      await page.mouse.click(960, 8);
       await sleep(500);
       const tl = Date.now();
       await play(page, 'before_ninja');

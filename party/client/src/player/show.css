@@ -17,10 +17,13 @@
   src: url('/fonts/motaleh.woff2') format('woff2');
   font-display: swap;
 }
-/* Rubik (SIL OFL 1.1), self-hosted, one variable file per script, weights 300-900
-   (declared the same way in client/src/games/plotzel/plotzel.css). */
+/* Rubik (SIL OFL 1.1), self-hosted, one variable file per script, weights 300-900 (the files and
+   ranges of client/src/games/plotzel/plotzel.css). Under a family name of its own on purpose:
+   kit/base.css lists 'Rubik' as a FALLBACK of the body font, so declaring 'Rubik' here would switch
+   the waiting room's body text to Rubik wherever the system font has no Hebrew (Android, Linux).
+   Only what asks for --read gets it; the browser fetches each file once for both names. */
 @font-face {
-  font-family: 'Rubik';
+  font-family: 'Party Rubik';
   src: url('/fonts/rubik-hebrew.woff2') format('woff2');
   font-weight: 300 900;
   font-style: normal;
@@ -28,7 +31,7 @@
   unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
 }
 @font-face {
-  font-family: 'Rubik';
+  font-family: 'Party Rubik';
   src: url('/fonts/rubik-latin.woff2') format('woff2');
   font-weight: 300 900;
   font-style: normal;
@@ -52,7 +55,7 @@
   /* "up" in a standing (the me bar, the game HUD) */
   --up: #1fbf6a;
   --disp: 'Motaleh', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
-  --read: 'Rubik', system-ui, -apple-system, 'Segoe UI', 'Arial Hebrew', 'Noto Sans Hebrew', Roboto, Arial, sans-serif;
+  --read: 'Party Rubik', system-ui, -apple-system, 'Segoe UI', 'Arial Hebrew', 'Noto Sans Hebrew', Roboto, Arial, sans-serif;
   --star14: polygon(
     50% 0%, 58.7% 12%, 71.7% 5%, 74.3% 19.5%, 89.1% 18.8%, 85.1% 33.1%, 98.7% 38.9%, 89% 50%, 98.7% 61.1%, 85.1% 66.9%,
     89.1% 81.2%, 74.3% 80.5%, 71.7% 95%, 58.7% 88%, 50% 100%, 41.3% 88%, 28.3% 95%, 25.7% 80.5%, 10.9% 81.2%, 14.9% 66.9%,

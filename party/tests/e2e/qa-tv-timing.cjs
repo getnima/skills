@@ -45,7 +45,7 @@ async function endRoundNow(page) {
   let phones = null;
   try {
     let { page, errors, code, ctx } = await openHost(browser);
-    await page.mouse.click(960, 300);
+    await page.mouse.click(960, 8);
     phones = await scriptedPhones(code, ['דנה', 'Yossi', 'מיכל'], (i, t) => (t / 30) * (i + 1));
     await page.waitForFunction(() => window.__host.state().players.length === 3);
     await sleep(1700);
@@ -95,7 +95,7 @@ async function endRoundNow(page) {
     seen = await revealSeen(page);
     st = await state(page);
     check(Math.abs(seen - st.results.revealAt) < TOL, `after a TV reload mid-suspense the ceremony still lands on revealAt (off by ${Math.round(seen - st.results.revealAt)} ms)`);
-    await page.mouse.click(960, 300);
+    await page.mouse.click(960, 8);
     await sleep(2500);
     mu = await music(page);
     check(mu.victory === 1 && mu.vPlaying, `after the reload the song plays once (${JSON.stringify(mu)})`);

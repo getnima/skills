@@ -25,7 +25,7 @@ const dir = outDir('prod');
     page.on('response', (r) => {
       if (r.status() >= 400) bad.push(r.status() + ' ' + r.url());
     });
-    await page.mouse.click(960, 300);
+    await page.mouse.click(960, 8);
     await page.keyboard.press('KeyC');
     await page.waitForSelector('[data-testid=cutscene-menu]');
     const dots = await page.$$eval('.hs-cm-row [data-status]', (els) => els.map((e) => e.closest('.hs-cm-row').dataset.testid + '=' + e.dataset.status));

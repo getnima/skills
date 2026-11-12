@@ -10,6 +10,7 @@ import './preview.css';
 import { GAMES, GAME_IDS } from '../../../shared/protocol';
 import { randomLook } from '../../../shared/avatar';
 import { sfx, unlockAudio } from '../kit/audio';
+import { findPublicFile } from '../kit/files';
 import { initMobileViewport } from '../kit/mobile';
 import { mountStage } from '../play/stage';
 
@@ -30,6 +31,24 @@ const BLURB: Readonly<Record<GameId, string>> = {
   plotzel: 'משימי לפלוץ. 80% מהירות, 20% צעדים',
   ninja: 'חותכים את כל האוכל. לא את הפצצות',
 };
+
+/** The game's intro picture (client/public/assets/intro/<id>.webp) in a round badge, else its emoji. */
+function badge(id: string, emoji: string): HTMLElement {
+  const url = findPublicFile(`/assets/intro/${id}.webp`, ['webp', 'png']);
+  const box = h('span', `pv-card-emoji${url !== null ? ' has-art' : ''}`, url !== null ? undefined : emoji);
+  if (url !== null) {
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = '';
+    img.decoding = 'async';
+    img.addEventListener('error', () => {
+      box.classList.remove('has-art');
+      box.replaceChildren(emoji);
+    });
+    box.append(img);
+  }
+  return box;
+}
 
 function h(tag: string, className: string, text?: string): HTMLElement {
   const node = document.createElement(tag);
@@ -80,14 +99,14 @@ function renderMenu(): void {
     text.append(h('span', 'pv-card-title', meta.title), h('span', 'pv-card-blurb', BLURB[id]));
     // an elimination game has no fixed length: alone it ends when you fall
     const length = meta.mode === 'elimination' ? 'עד שנופלים' : `${Math.round(meta.durationMs / 1000)} שנ׳`;
-    card.append(h('span', 'pv-card-emoji', meta.emoji), text, h('span', 'pv-card-secs', length));
+    card.append(badge(id, meta.emoji), text, h('span', 'pv-card-secs', length));
     grid.append(card);
   });
   const dress = button('pv-card is-dress', '', () => void dressingRoom());
   dress.dataset.game = 'dress';
   const dressText = h('span', 'pv-card-text');
   dressText.append(h('span', 'pv-card-title', 'חדר הלבשה'), h('span', 'pv-card-blurb', 'מלבישים את שימי. ככה נראים בטבלה'));
-  dress.append(h('span', 'pv-card-emoji', '🎩'), dressText, h('span', 'pv-card-secs', 'חופשי'));
+  dress.append(badge('show', '🎩'), dressText, h('span', 'pv-card-secs', 'חופשי'));
   grid.append(dress);
 
   const foot = h('p', 'pv-foot', 'לא כאן: החדר עם כל האורחים, מסך הטלוויזיה והשלט מהטלפון.');

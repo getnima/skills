@@ -1,17 +1,23 @@
 # Party Arena
 
 A Kahoot-style competition for a house party (10-40 guests). The TV shows the
-**host page**: a QR code, the host controls and a live scoreboard show. Guests
-scan the QR with their own phone, type a name and land in the lobby. The host
-starts a mini game, every phone plays the same game at the same moment for about
-a minute while the TV shows a live race, then the TV runs the **round-winner
-ceremony** (the prize, a custom Shimi angel figurine, plus the victory song) and
-the standings. After the last game: the final podium.
+**host page**: a QR code, a live scoreboard and the show. Guests scan the QR with
+their own phone, type a name, **dress their own Shimi doll** (it is their icon
+everywhere) and wait in the lobby. The owner runs the show from **his own phone**
+(`/remote`, password protected); the TV only shows and plays the music. Every phone
+plays the same game at the same moment while the TV shows a live race, then the TV
+runs the **round-winner ceremony** (the prize, a custom Shimi angel figurine, plus
+the victory song) and the standings. After the last game: the final podium.
 
-Five mini games: **tap** (mash the face), **icy** (ice-tower climber), **flappy**
-(tap to fly), **plotzel** (Hebrew word game), **ninja** (slice everything except
-the bomb). Short **cutscene videos** can interrupt at any moment: phones freeze
-with "watch the TV" and the game continues exactly where it stopped.
+Five mini games:
+- **שימי טאפ** (tap): 30 s to start, then your own 20 s of tapping on Shimi picking his nose. Score = taps.
+- **אייסי שימי** (icy): a tower climber; hold a side to run, he jumps when he lands. Best run counts.
+- **פלאפי תבורי** (flappy): last one in the air wins; when 3 are left a finale makes it harder.
+- **פלוצל** (plotzel): the owner's word ladder to פלוץ, opening with שימי; 80% speed, 20% steps, no hints.
+- **נינג׳ה תבורי** (ninja): slice the Israeli food, never the two host bombs.
+
+Short **cutscene videos** can interrupt at any moment: phones freeze with "watch the
+TV" and the game continues exactly where it stopped.
 
 All guest-facing text is Hebrew (RTL). Every picture, song and video is a named
 file slot with a placeholder, so the real files drop in with no code change.
@@ -67,14 +73,23 @@ and `https://34-77-1-2.sslip.io/host` (TV). Then `deploy/smoke.sh <that https
 address>` must say *All good*. After changing files later: `deploy/gce-deploy.sh`
 (only the app, about 1 minute). Do not deploy during the party: it empties the room.
 
-**4. The TV.** On the laptop, Chrome → `https://<address>/host` → click once
-anywhere (allows sound) → `F` (fullscreen). Control Center → Screen Mirroring →
+**4. The TV and your phone.** On the laptop, Chrome → `https://<address>/host` → click once
+anywhere (allows sound) → `F` (fullscreen). On **your own phone** open
+`https://<address>/remote` and enter the remote password (the default is set in
+`server/config.ts`, server side only; to use another one set `PARTY_REMOTE_PASSWORD`
+on the server). From then on the phone is the remote: the TV hides its own buttons
+and the keyboard keys below keep working as a backup.
+
+**Optional, the Shimi QR code.** A designed QR with Shimi's face (made with QRocodile):
+after step 3, run the two commands in `tools/qr/README.md` with your address, then
+`deploy/gce-deploy.sh` again. The TV shows it only when it matches its own address;
+otherwise it keeps its normal QR. Control Center → Screen Mirroring →
 the Apple TV, and set the Mac's sound output to the Apple TV. Plug in the
 charger and run `caffeinate -dis` in a terminal so the Mac never sleeps.
 
 **5. Run of show.** Guests scan the QR (or type the address and the 4-letter room
-code). `Space` starts the next game → instructions → 3-2-1 → about a minute of
-play (TV shows the race) → 8 s of suspense → the round winner, the prize and the
+code), type a name and dress their Shimi. The remote's big button (or `Space`) starts
+the next game → instructions → 3-2-1 → 50 s to 2 min of play (TV shows the race) → 8 s of suspense → the round winner, the prize and the
 victory song: hand over the figurine → `Space` for the next game. After the last
 game the final podium. `C` = videos menu (jokers), `S` skips a video, `M` mutes.
 Guests can join any time; they play from the next round.
@@ -166,7 +181,9 @@ The server owns the room; every change is broadcast to everyone as one
 `playing` (`round.startAt` .. `round.endAt`) → `results` → back to `lobby` for
 the next game, or `final` (podium).
 
-- Game lengths: tap 60 s, icy 75 s, flappy 60 s, plotzel 120 s, ninja 60 s.
+- Game lengths: tap 53 s (a 30 s start window, then each guest's own 20 s; the round ends
+  early when everybody is done), icy 75 s, flappy until one is left (90 s at most),
+  plotzel 120 s, ninja 60 s.
 - Every phone gets the same `seed`, so the same level.
 - Phones send their live score every 250 ms and a final score at the end; the
   server waits 1.5 s after `endAt` for finals, then scores the round. Reported
@@ -219,15 +236,18 @@ Cutscene triggers (`shared/cutscenes.ts`): `manual` (host button only),
 time (scaled when rounds are shortened for tests), `after` a game (before the
 results), `final` (before the podium). Automatic triggers fire once per
 competition (unless `repeat: true`) and only while the host's "אוטומטי" switch is
-on. Defaults: `opening` (manual), `tap_freeze` (30 s into tap), `before_ninja`,
+on. Defaults: `opening` (manual), `tap_freeze` (8 s into tap), `before_ninja`,
 `before_podium`, `joker_1`, `joker_2` (manual).
 
-**Scoring** (`shared/scoring.ts`). Per round each player's raw game score is
-scaled against the round's best: `points = round(1000 × raw / best)`, plus a
-podium bonus of 100 / 60 / 30 for round ranks 1 / 2 / 3. Ties share a rank and
-a bonus; a raw score of 0 earns 0. Points add up to the overall total.
-The **round winner** is every player with round rank 1 and a score above 0
-(several on a tie, none if nobody scored): that is who gets the figurine. The
+**Scoring** (`shared/scoring.ts`). **There are no ties, anywhere.** Per round each
+player's raw game score is scaled against the round's best: `points = round(1000 × raw /
+best)`, plus a podium bonus of 100 / 60 / 30 for the first three places. On the same raw
+score, whoever reached it first is ahead (server time), then whoever joined first; every
+scorer gets at least one point less than the one above, and a new total that would equal
+somebody else's is nudged down by a point. A raw score of 0 earns 0. The overall rank
+is strict too: total, then round wins, best round, latest round, join order.
+The **round winner** is the one player in first place with a score above 0 (nobody if
+nobody scored): that is who gets the figurine. The
 TV builds suspense for 8 s, reveals the winner with the prize and the victory
 song, then shows the standings. Phones hide their own result until the reveal.
 
@@ -241,16 +261,18 @@ Every slot is a file name. Drop the file in, then:
 **dev:** reload the page. **Production:** re-run the build/deploy
 (`deploy/gce-deploy.sh` or `deploy/cloudrun-deploy.sh`), because the list of
 present files is taken at build time. Any of `.png .webp .jpg .jpeg .svg` works
-for a picture slot with the same base name. Each folder's README has sizes and
-framing rules.
+for a picture slot with the same base name (the game art ships as `.webp`, made with
+`tools/assets/to_webp.py`; a file with the exact slot name wins). Each folder's README
+has sizes and framing rules.
 
 | Folder | Slots (at the time of writing) |
 | --- | --- |
-| `client/public/assets/tap/` ([README](client/public/assets/tap/README.md)) | `face_normal`, `face_happy`, `face_surprised`, `face_angry`, `face_tongue`, `face_wink`, `face_nosepick` (.png), `background.jpg` |
-| `client/public/assets/icy/` ([README](client/public/assets/icy/README.md)) | `face`, `face_jump`, `face_fall`, `platform`, `milestone`, `wall`, `bg` (.png) |
+| `client/public/assets/tap/` ([README](client/public/assets/tap/README.md)) | 19 faces and nose-picking frames (`face_*`, `pick_*`), `hand`, `fist`, `fingertip_ear`, `squeegee`, `splat`, six boogers `booger_*`, `background.jpg` |
+| `client/public/assets/icy/` ([README](client/public/assets/icy/README.md)) | the climber, the tower and the ledges per zone: see its README |
 | `client/public/assets/flappy/` ([README](client/public/assets/flappy/README.md)) | `face`, `face_flap`, `face_dead`, `wing`, `halo`, `obstacle`, `obstacle_pole`, `ground`, `skyline` (.png), `background.jpg` |
-| `client/public/assets/ninja/` ([README](client/public/assets/ninja/README.md)) | `target_1` .. `target_5`, `target_gold`, `bomb` (.png), `background.jpg` |
-| `client/public/assets/plotzel/` ([README](client/public/assets/plotzel/README.md)) | `cloud`, `mascot`, `mascot-happy`, `mascot-oops` (.png) |
+| `client/public/assets/ninja/` ([README](client/public/assets/ninja/README.md)) | `food/` 11 foods + `garden_chair`, `flip_flop`, `gold_falafel`; `bombs/bomb_host_a`, `bomb_host_b`; `background.jpg` |
+| `client/public/assets/plotzel/` ([README](client/public/assets/plotzel/README.md)) | `puff`, `mascot` |
+| `client/public/assets/intro/` ([README](client/public/assets/intro/README.md)) | one picture per game for its intro and lobby card (`tap`, `icy`, `flappy`, `plotzel`, `ninja`) and `show` (the host) |
 | `client/public/assets/host/` ([README](client/public/assets/host/README.md)) | **`prize.jpg` / `prize.png` = the figurine in the round-winner ceremony** (a transparent `prize.png` wins and looks best), `mascot_normal`, `mascot_happy`, `mascot_shocked`, `mascot_laugh`, `mascot_angry`, `sticker_1` .. `sticker_8`, `crown`, `last_place`, `podium_1` .. `podium_3` (.png), `bg_show.jpg` |
 | `client/public/audio/` ([README](client/public/audio/README.md)) | **`victory.mp3` = the round winner's song** (a synth tune plays until it exists), `final.mp3` (champion), `lobby.mp3`, one song per game `tap.mp3` `icy.mp3` `flappy.mp3` `plotzel.mp3` `ninja.mp3`, `round.mp3` (fallback for a game without its own; levels and start offsets in `client/src/host/music-config.ts`). `.m4a` / `.ogg` / `.wav` also work |
 | `client/public/cutscenes/` ([README](client/public/cutscenes/README.md)) | `opening.mp4`, `tap_freeze.mp4`, `before_ninja.mp4`, `before_podium.mp4`, `joker_1.mp4`, `joker_2.mp4` |

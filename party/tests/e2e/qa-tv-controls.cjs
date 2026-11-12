@@ -23,7 +23,7 @@ const dir = outDir('controls');
     const lock = await page.$('[data-testid=audio-lock]');
     check(lock !== null && (await lock.isVisible()), 'sound-blocked banner visible before the first click');
     await shot('01-audio-locked');
-    await page.mouse.click(960, 300);
+    await page.mouse.click(960, 8);
     await sleep(1300);
     check((await page.$('[data-testid=audio-lock]')) === null, 'banner gone after the first click');
 

@@ -100,7 +100,7 @@ function check(name, ok, extra) {
     // the lobby fills up
     addBots(code, 3, 'נועה');
     await waitChips(3);
-    await page.mouse.click(960, 540); // unlock audio (empty area)
+    await page.mouse.click(960, 8); // unlock audio (an empty strip of the stage: the middle of the lobby holds the guests)
     await shot('02-lobby-3');
     const b14 = addBots(code, 11, 'איתי');
     await waitChips(14);
@@ -246,7 +246,7 @@ function check(name, ok, extra) {
     check('round kept running through the refresh', after.phase === 'playing' && leftPost < leftPre && leftPost > 0, { leftPre, leftPost });
     await sleep(800);
     await shot('42-after-refresh-playing');
-    await page.mouse.click(960, 300);
+    await page.mouse.click(960, 8);
     await waitPhase('results', 20000);
     await sleep(800);
 
