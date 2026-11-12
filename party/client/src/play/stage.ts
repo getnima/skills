@@ -348,6 +348,7 @@ export async function mountStageWith(
           field: opts.elimination.field,
         }
       : {}),
+    ...(opts.myLook !== undefined ? { myLook: opts.myLook } : {}),
   };
 
   // ── boot ──

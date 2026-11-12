@@ -10,6 +10,12 @@ import { FINALE_LEAD_MS, FINALE_PLAYERS, FINALE_SMALL_FIELD_MS } from '../../../
 
 import type { FieldPlayer, RoundField } from '../types';
 
+/** Dolls for the simulated guests (encoded looks, shared/avatar.ts): towers, glasses, ears, neck items. */
+const LOOKS = [
+  '1.8.8-17.9.0.11.7', '1.5.10-8-17.201.13.229.325', '1.2.12.206.0.11.0', '1.4.14.9.301.226.15', '1.6.4.202.0.0.329', '1.3.106.0.0.0.0',
+  '1.9.2-16.0.303.227.0', '1.10.104.204.0.225.326', '1.1.0.203.6.0.15', '1.7.112.0.0.228.0', '1.11.110.205.0.0.330', '1.0.3-1.9.13.11.328',
+] as const;
+
 const NAMES = ['נועה', 'איתי', 'מאיה', 'עומר', 'שירה', 'יואב', 'תמר', 'דניאל', 'רוני', 'גיא', 'ליה', 'עידו', 'אלה', 'נדב', 'יעל', 'אורי'] as const;
 
 function rand(seed: number, i: number): number {
@@ -34,6 +40,8 @@ interface Opp {
   readonly id: string;
   readonly name: string;
   readonly avatar: number;
+  /** A doll, as every guest of a room has one (looks only). */
+  readonly look: string;
   /** Round time at which it crashes (pre-finale schedule). */
   dieAt: number;
   out: boolean;
@@ -48,7 +56,7 @@ export function createSimField(seed: number, count: number, forcedFinaleMs: numb
   // deaths spread over 3..26 s, earliest first; the last ones are re-timed when the finale begins
   const opps: Opp[] = [];
   for (let i = 0; i < n; i++) {
-    opps.push({ id: `sim${i}`, name: NAMES[i % NAMES.length] ?? 'שחקן', avatar: i + 1, dieAt: 3_000 + rand(seed, i) * 23_000, out: false, outAt: 0 });
+    opps.push({ id: `sim${i}`, name: NAMES[i % NAMES.length] ?? 'שחקן', avatar: i + 1, look: LOOKS[(i + Math.floor(rand(seed, 200) * LOOKS.length)) % LOOKS.length] ?? '1.0.0.0.0.0.0', dieAt: 3_000 + rand(seed, i) * 23_000, out: false, outAt: 0 });
   }
   opps.sort((a, b) => a.dieAt - b.dieAt);
   let finaleAt: number | null = forcedFinaleMs ?? (field <= 2 ? FINALE_SMALL_FIELD_MS : null);
@@ -98,7 +106,7 @@ export function createSimField(seed: number, count: number, forcedFinaleMs: numb
     field(): RoundField {
       if (cached) return cached;
       // strict live order: still flying first, then out, latest crash first
-      const rows: Array<FieldPlayer & { at: number }> = opps.map((o) => ({ id: o.id, name: o.name, avatar: o.avatar, out: o.out, me: false, at: o.out ? o.outAt : Infinity }));
+      const rows: Array<FieldPlayer & { at: number }> = opps.map((o) => ({ id: o.id, name: o.name, avatar: o.avatar, look: o.look, out: o.out, me: false, at: o.out ? o.outAt : Infinity }));
       rows.push({ id: 'me', name: 'אני', avatar: 0, out: meOut, me: true, at: meOut ? meOutAt : Infinity });
       rows.sort((a, b) => b.at - a.at);
       cached = { players: rows, outRaw: null };

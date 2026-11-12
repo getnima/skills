@@ -8,6 +8,7 @@ import './flappy.css';
 import { PARTY_COLORS } from '../../kit/theme';
 
 import type { FieldPlayer } from '../types';
+import type { HeadShelf } from './head';
 
 export interface SpectatorState {
   /** 'out': crashed. 'win': the last one in the air. 'solo': crashed with no field (the dev harness). */
@@ -28,6 +29,8 @@ export interface SpectatorState {
   readonly finaleLeft: number | null;
   /** Name of the last one standing once the round is decided; null before. */
   readonly winner: string | null;
+  /** The last one standing (for their dressed head), when known. */
+  readonly winnerPlayer?: FieldPlayer | null;
 }
 
 export interface Spectator {
@@ -36,11 +39,24 @@ export interface Spectator {
   hide(): void;
   readonly visible: boolean;
   /** What the view shows right now (test hooks). */
-  shown(): { verdict: string; place: string; air: string; names: string[]; finale: string; count: string; winner: string };
+  shown(): { verdict: string; place: string; air: string; names: string[]; finale: string; count: string; winner: string; heads: number; winnerHead: boolean };
   destroy(): void;
 }
 
 const MAX_CHIPS = 8;
+/** The small dressed heads are made at this CSS size (shown a little smaller in the chips). */
+const HEAD_PX = 52;
+
+/** A copy of a head canvas (an element can be in one place only). */
+function copyHead(src: HTMLCanvasElement, cls: string): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  c.className = cls;
+  c.setAttribute('aria-hidden', 'true');
+  c.getContext('2d')?.drawImage(src, 0, 0);
+  return c;
+}
 
 function el(tag: string, cls: string, text = ''): HTMLElement {
   const n = document.createElement(tag);
@@ -94,6 +110,26 @@ export function createSpectator(parent: HTMLElement, hudHeight: number, safeBott
   let visible = false;
   let listKey = '';
   let names: string[] = [];
+  let headsShown = 0;
+  // the guests' dressed heads: the head code is loaded the first time a guest with a look is shown;
+  // a head that became ready repaints the list and the winner line on the next show()
+  let heads: HeadShelf | null = null;
+  let headsAsked = false;
+  const repaint = (): void => {
+    listKey = '';
+    winner.dataset.key = '';
+  };
+  function wantHeads(players: readonly (FieldPlayer | null | undefined)[]): void {
+    if (headsAsked || !players.some((p) => typeof p?.look === 'string' && p.look !== '')) return;
+    headsAsked = true;
+    import('./head').then(
+      (m) => {
+        heads = m.createHeadShelf(HEAD_PX, repaint);
+        repaint();
+      },
+      () => undefined,
+    );
+  }
 
   return {
     root,
@@ -130,13 +166,17 @@ export function createSpectator(parent: HTMLElement, hudHeight: number, safeBott
 
       winner.classList.toggle('is-on', decided && s.kind !== 'win');
       if (decided && s.kind !== 'win') {
-        const key = `w:${s.winner ?? ''}`;
+        const wp = s.winnerPlayer ?? null;
+        wantHeads([wp]);
+        const head = wp !== null ? (heads?.get(wp.id, wp.look) ?? null) : null;
+        const key = `w:${s.winner ?? ''}:${head !== null ? 1 : 0}`;
         if (winner.dataset.key !== key) {
           winner.dataset.key = key;
           winner.replaceChildren();
           const name = document.createElement('bdi');
           name.textContent = s.winner ?? '';
-          winner.append('👑 ', name, ' ניצח/ה!');
+          winner.append('👑 ', ...(head !== null ? [copyHead(head, 'fl-winner-head')] : []), name, ' ניצח/ה!');
+          winner.classList.toggle('has-head', head !== null);
         }
       }
 
@@ -147,20 +187,34 @@ export function createSpectator(parent: HTMLElement, hudHeight: number, safeBott
         listKey = key;
         list.replaceChildren();
         names = [];
+        headsShown = 0;
         const shownPlayers = s.flying.slice(0, s.flying.length > MAX_CHIPS ? MAX_CHIPS - 1 : MAX_CHIPS);
+        wantHeads(shownPlayers);
         for (const p of shownPlayers) {
           const chip = el('span', 'fl-chip');
-          const dot = document.createElement('i');
-          dot.style.background = PARTY_COLORS[Math.abs(p.avatar) % PARTY_COLORS.length] ?? '#ffd21f';
+          // the guest's dressed head when it is ready, else the coloured dot (as before)
+          const head = heads?.get(p.id, p.look) ?? null;
+          let mark: HTMLElement;
+          if (head !== null) {
+            chip.classList.add('has-head');
+            mark = head;
+            headsShown++;
+          } else {
+            mark = document.createElement('i');
+            mark.style.background = PARTY_COLORS[Math.abs(p.avatar) % PARTY_COLORS.length] ?? '#ffd21f';
+          }
           const name = document.createElement('b');
           name.dir = 'auto';
           name.textContent = p.name === '' ? 'מישהו' : p.name;
-          chip.append(dot, name);
+          chip.append(mark, name);
           list.append(chip);
           names.push(name.textContent ?? '');
         }
         if (s.flying.length > shownPlayers.length) list.append(el('span', 'fl-chip is-more', `+${s.flying.length - shownPlayers.length}`));
+        list.classList.toggle('has-heads', headsShown > 0);
       }
+      // one small head per step at most, so the "out" view never stalls a frame
+      heads?.pump();
     },
     hide(): void {
       if (!visible) return;
@@ -175,6 +229,8 @@ export function createSpectator(parent: HTMLElement, hudHeight: number, safeBott
       finale: finale.classList.contains('is-on') ? (finaleWords.textContent ?? '') : '',
       count: finale.classList.contains('is-on') ? (finaleCount.textContent ?? '') : '',
       winner: winner.classList.contains('is-on') ? (winner.textContent ?? '') : '',
+      heads: list.classList.contains('is-hidden') ? 0 : headsShown,
+      winnerHead: winner.classList.contains('is-on') && winner.classList.contains('has-head'),
     }),
     destroy(): void {
       root.remove();

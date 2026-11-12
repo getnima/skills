@@ -4,6 +4,7 @@
  *   /dev.html                                         the list
  *   /dev.html?game=tap&seed=1&duration=20000          play (duration in ms)
  *   ...&freezeAt=5000&freezeMs=4000                   freeze once at 5s of round time, for 4s
+ *   ...&look=1.8.8-17.9.0.11.7                        the guest's own doll (an encoded look) for GameContext.myLook
  *   /dev.html?game=demo                               the kit's reference game
  *   /dev.html?kit=1                                   placeholder art + every sound and song
  *
@@ -125,6 +126,8 @@ async function play(gameId: string): Promise<void> {
   const seed = numParam('seed', 1);
   const freezeAt = numParam('freezeAt', -1);
   const freezeMs = numParam('freezeMs', 4000);
+  // ?look=<encoded look>: the guest's own doll (the game decodes and checks it; none = unknown)
+  const lookParam = (params.get('look') ?? '').trim() || null;
 
   // Local round clock: round time only advances while not frozen.
   let playedMs = 0;
@@ -226,6 +229,7 @@ async function play(gameId: string): Promise<void> {
     seed,
     durationMs,
     clock,
+    myLook: (): string | null => lookParam,
     onScore: (): void => undefined,
     onEnd(finalScore: number): void {
       ended = true;

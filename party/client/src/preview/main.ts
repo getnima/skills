@@ -8,7 +8,7 @@ import '../kit/base.css';
 import './preview.css';
 
 import { GAMES, GAME_IDS } from '../../../shared/protocol';
-import { randomLook } from '../../../shared/avatar';
+import { encodeLook, randomLook } from '../../../shared/avatar';
 import { sfx, unlockAudio } from '../kit/audio';
 import { findPublicFile } from '../kit/files';
 import { initMobileViewport } from '../kit/mobile';
@@ -155,6 +155,8 @@ async function play(gameId: GameId): Promise<void> {
     seed,
     durationMs,
     clock,
+    // the doll dressed in this page's dressing room (flappy flies it)
+    myLook: (): string | null => encodeLook(myLook),
     onScore: (): void => undefined,
     onFinish(score: number): void {
       window.setTimeout(() => finish(score, true), FINISH_HOLD_MS);

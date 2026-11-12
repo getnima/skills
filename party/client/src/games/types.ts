@@ -17,6 +17,8 @@ export interface FieldPlayer {
   /** Already out (the server has its final). */
   readonly out: boolean;
   readonly me: boolean;
+  /** PlayerPublic.look (an encoded look, shared/avatar.ts) when known. Optional: looks only. */
+  readonly look?: string;
 }
 
 /** Who is still in, in an elimination round (from the server's `scores` broadcast). */
@@ -79,6 +81,11 @@ export interface GameContext {
   finaleInMs?(): number | null;
   /** Elimination rounds: the field for the "out" view (names of who is still in), or null when unknown. */
   field?(): RoundField | null;
+  /**
+   * Optional: this guest's own dressed doll, PlayerPublic.look (an encoded look, shared/avatar.ts),
+   * or null when unknown. Looks only: a game may draw it, never derive anything else from it.
+   */
+  myLook?(): string | null;
 }
 
 export interface GameInstance {
@@ -137,6 +144,8 @@ export interface StageOptions {
     finaleInMs(): number | null;
     field(): RoundField | null;
   };
+  /** Optional: where the stage gets GameContext.myLook from (this guest's encoded look, or null). */
+  myLook?(): string | null;
 }
 
 export interface Stage {

@@ -196,6 +196,24 @@
   padding: 0 10px;
   background: var(--paper);
 }
+/* the guest's own dressed head (a cut-out with its sticker outline) instead of the dot; the hats may stick out of the chip */
+/* the list makes room above each row for the hats */
+.fl-list.has-heads {
+  padding-top: 12px;
+  padding-bottom: 4px;
+  row-gap: 16px;
+}
+.fl-chip.has-head {
+  padding-inline-start: 0;
+  overflow: visible;
+}
+.fl-chip-head {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  margin: -16px -6px -2px -4px;
+  pointer-events: none;
+}
 
 /* the finale banner (also the winner line) */
 .fl-finale {
@@ -254,6 +272,12 @@
   color: var(--red);
   font-family: system-ui, -apple-system, 'Arial Hebrew', 'Noto Sans Hebrew', sans-serif;
   font-weight: 900;
+}
+.fl-winner-head {
+  width: 1.5em;
+  height: 1.5em;
+  margin: -0.35em 0.1em -0.25em;
+  vertical-align: middle;
 }
 @media (max-height: 600px) {
   .fl-out {

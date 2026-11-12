@@ -31,6 +31,7 @@ import { createSpectator, finaleText } from './spectator';
 
 import type { FieldPlayer, GameContext, GameInstance, GameModule } from '../types';
 import type { Obstacle } from './course';
+import type { HeadSprite } from './head';
 import type { Sticker } from './look';
 import type { SimField } from './sim-field';
 import type { SpectatorState } from './spectator';
@@ -83,7 +84,12 @@ interface FlappyDebug {
   readonly banner: string;
   readonly countdown: string;
   /** The "out" view (null while flying). */
-  readonly out: { verdict: string; place: string; air: string; names: string[]; finale: string; count: string; winner: string } | null;
+  readonly out: { verdict: string; place: string; air: string; names: string[]; finale: string; count: string; winner: string; heads: number; winnerHead: boolean } | null;
+  /**
+   * The bird's head: the guest's look (null: unknown), whether the dressed head is drawn (false: the
+   * game's own round token) and its drawn size in CSS px (0 x 0 with the token).
+   */
+  readonly head: { look: string | null; dressed: boolean; w: number; h: number };
   /** Let the strong pilot fly (true) / hand the bird back (false). `untilStep`: it stops tapping at that step. */
   autopilot(on: boolean, untilStep?: number): void;
 }
@@ -124,6 +130,13 @@ const MAX_CATCHUP = 12;
  * sees 47-49 units ahead. Physics never depends on it (all in field units).
  */
 const VIEW_W = 68;
+/** The dressed head's height (chin to crown, hats not counted) in face-token diameters: about the token's size on screen. */
+const HEAD_OF_TOKEN = 1.12;
+/** Before GO the game waits this long at most for the dressed head, so it starts with it; later it is swapped in when ready. */
+const HEAD_WAIT_MS = 600;
+
+/** The head code (and the avatar compositor) is loaded only by a game that has a look to draw. */
+type HeadModule = typeof import('./head');
 
 /** The owner's words, at these obstacle counts. */
 const STREAK_WORDS: ReadonlyArray<readonly [number, string]> = [
@@ -154,6 +167,24 @@ function numParam(name: string): number | null {
 export const game: GameModule = {
   id: 'flappy',
   async create(ctx: GameContext): Promise<GameInstance> {
+    // the guest's own dressed doll (looks only): its pictures load while the game's art does
+    let myLook: string | null = null;
+    try {
+      myLook = ctx.myLook?.() ?? null;
+    } catch {
+      myLook = null;
+    }
+    const lookNow = myLook;
+    const headMod: Promise<HeadModule | null> =
+      lookNow === null
+        ? Promise.resolve(null)
+        : import('./head').then(
+            (m) => {
+              void m.warmHead(lookNow);
+              return m;
+            },
+            () => null,
+          );
     const [art] = await Promise.all([loadFlappyArt(), loadDisplayFont()]);
     const view = createGameCanvas(ctx.root);
     const input = createInput(view.canvas);
@@ -261,6 +292,20 @@ export const game: GameModule = {
     let destroyed = false;
     let traceLeft = 0;
     const traced: Array<Array<number | string>> = [];
+    let winnerPlayer: FieldPlayer | null = null;
+
+    // ── the bird's head: the guest's dressed doll, made once at the size it is drawn at ──
+    // (no look, or a look that cannot be drawn whole: the game's own round token, as before)
+    let head: HeadSprite | null = null;
+    if (lookNow !== null) {
+      const headPx = PHYS.radius * L.U * 2.18 * HEAD_OF_TOKEN * view.dpr;
+      const made = headMod.then((m) => (m === null ? null : m.makeHeadSprite(lookNow, headPx)));
+      void made.then((h) => {
+        if (!destroyed) head = h;
+      });
+      // before GO there is time: start with the head (the clock is frozen until GO)
+      if (elapsedMs() <= 0) await Promise.race([made, new Promise((r) => setTimeout(r, HEAD_WAIT_MS))]);
+    }
 
     const feathers: Feather[] = [];
     for (let i = 0; i < MAX_FEATHERS; i++) {
@@ -513,7 +558,10 @@ export const game: GameModule = {
       const at = players.findIndex((p) => p.me);
       if (at >= 0 && players[at]?.out === true && !won) place = at + 1;
       if (players.length > 0) total = players.length;
-      if (winnerName === null && hasField && n !== null && n <= 1 && (total ?? 0) >= 2 && flying.length === 1) winnerName = flying[0]?.name ?? null;
+      if (winnerName === null && hasField && n !== null && n <= 1 && (total ?? 0) >= 2 && flying.length === 1) {
+        winnerName = flying[0]?.name ?? null;
+        winnerPlayer = flying[0] ?? null;
+      }
       return {
         kind: won ? 'win' : hasField ? 'out' : 'solo',
         place,
@@ -524,6 +572,7 @@ export const game: GameModule = {
         finaleInMs: finaleAtMs === null ? null : finaleAtMs - elapsedMs(),
         finaleLeft: leftForBanner(),
         winner: winnerName,
+        winnerPlayer,
       };
     }
 
@@ -731,26 +780,37 @@ export const game: GameModule = {
       g.translate(bx, by);
       g.rotate(tilt);
       g.scale(sqX * birdScale, sqY * birdScale);
-      // wings behind the round token: their roots sit on the circle's sides
+      const D = r * 2.18;
+      // the guest's dressed head (a cached cut-out: one blit), else the game's round token
+      const hs = head;
+      const headH = D * HEAD_OF_TOKEN;
+      // wings behind the head: their roots sit on its sides (the circle's sides for the token)
       const wa = dead ? 0.7 : Math.sin(wingT) * (0.45 + flapBoost * 0.35) - 0.15;
       const ww = r * 1.7;
       const wh = ww * (SLOT_SIZES.wing.h / SLOT_SIZES.wing.w);
+      const rootX = hs !== null ? Math.max(r * 0.7, hs.halfW * headH * 0.9) : r * 0.86;
       for (let side = -1; side <= 1; side += 2) {
         g.save();
-        g.translate(side * r * 0.86, -r * 0.05);
+        g.translate(side * rootX, -r * 0.05);
         g.scale(side, 1);
         g.rotate(-wa);
         art.wing.draw(g, ww / 2, 0, ww, wh);
         g.restore();
       }
-      // the face is a finished round token (paper disc + ink ring): drawn as it is
-      const face = dead ? art.face_dead : flapFaceT > 0 ? art.face_flap : art.face;
-      const D = r * 2.18;
-      face.draw(g, 0, 0, D, D);
-      // halo over the top of the circle (tilts off when dead)
+      if (hs !== null) {
+        // the flap and the fall read through the wings, the squash and the tilt (the whole group);
+        // a crash keeps the guest's own head, with the dizzy stars and the knocked halo
+        g.drawImage(hs.canvas, -hs.cx * headH, -hs.cy * headH, hs.w * headH, hs.h * headH);
+      } else {
+        // the face is a finished round token (paper disc + ink ring): drawn as it is
+        const face = dead ? art.face_dead : flapFaceT > 0 ? art.face_flap : art.face;
+        face.draw(g, 0, 0, D, D);
+      }
+      // halo over the top of the circle, or over the top of the hat tower (tilts off when dead)
       const hw = r * 1.45;
       const hh = hw * (SLOT_SIZES.halo.h / SLOT_SIZES.halo.w);
-      const hy = -r * 1.3 + (dead ? -r * 0.15 : Math.sin(bobT * 5) * r * 0.06);
+      const top = hs !== null ? Math.min(-r * 1.3, -hs.cy * headH - hh * 0.15) : -r * 1.3;
+      const hy = top + (dead ? -r * 0.15 : Math.sin(bobT * 5) * r * 0.06);
       art.halo.draw(g, dead ? r * 0.35 : 0, hy, hw, hh, dead ? 0.5 : 0);
       g.restore();
       g.globalAlpha = 1;
@@ -1019,6 +1079,11 @@ export const game: GameModule = {
       },
       get out(): ReturnType<typeof spectator.shown> | null {
         return spectator.visible ? spectator.shown() : null;
+      },
+      get head(): { look: string | null; dressed: boolean; w: number; h: number } {
+        const hs = head;
+        const headH = PHYS.radius * L.U * 2.18 * HEAD_OF_TOKEN;
+        return { look: myLook, dressed: hs !== null, w: hs !== null ? hs.w * headH : 0, h: hs !== null ? hs.h * headH : 0 };
       },
       autopilot(on: boolean, untilStep?: number): void {
         pilot = on;

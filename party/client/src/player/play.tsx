@@ -173,6 +173,7 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
             avatar: byId.get(id)?.avatar ?? 0,
             out: out.has(id),
             me: id === me,
+            look: byId.get(id)?.look,
           }));
         }
         return { players: fieldPlayers, outRaw: outRaw() };
@@ -256,6 +257,11 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
           ctl.endRound(index, finalScore);
         },
         ...(elimination ? { elimination: eliminationSource } : {}),
+        // this guest's own doll (its own copy is a moment ahead of the server's, as on the other screens)
+        myLook: (): string | null => {
+          const snap = ctl.snapshot();
+          return snap.look ?? snap.state?.players.find((p) => p.id === snap.playerId)?.look ?? null;
+        },
       },
       { onPlaceShown },
     ).then((s) => {
