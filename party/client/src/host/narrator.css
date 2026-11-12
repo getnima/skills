@@ -95,6 +95,11 @@
   transform: rotate(45deg) skew(8deg, 8deg);
 }
 /* a guest's name as a tag on the bubble (never inside the line) */
+/* a round's banter: the guest's name inside the line, in the room's blue, never broken across lines */
+.nr-who {
+  color: var(--cob);
+  white-space: nowrap;
+}
 .nr-name {
   position: absolute;
   top: calc(-28 * var(--nu));

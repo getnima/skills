@@ -37,6 +37,7 @@ export const NARRATION_MOMENTS = [
   'go', // the round starts
   'final10', // ten seconds left
   'finale', // flappy: the last few in the air
+  'race', // the hosts talking through a round, with the guests' names (show/banter.ts hands the take)
   'resume', // the round continues after a cutscene
   'timeup', // the round is over
   'suspense', // the drum roll before the round winner
@@ -101,6 +102,11 @@ export const NARRATION: Readonly<Record<NarrationMoment, MomentScript>> = {
     priority: 7,
     takes: [[a('shocked', 'הגמר באוויר! מחורחר!')], [b('shush', 'רק האחרונים נשארו. אף אחד לא נושם.')]],
   },
+  // a round's banter comes with its own take (show/banter.ts): these are only the fallback, with no names
+  race: {
+    priority: 4,
+    takes: [[a('cheer', 'איזה מרוץ! מחורחר!')], [b('cheer', 'איזה ערב! בן פורת יוסף!')]],
+  },
   resume: {
     priority: 6,
     takes: [[a('present', 'חזרנו מהפרסומות! הטלפונים ביד.')], [b('laugh', 'איפה היינו? אה כן, בחלק שבו אני מושלמת.')]],
@@ -160,7 +166,7 @@ export function beatHoldMs(text: string): number {
   return Math.round(Math.min(4_000, Math.max(2_800, 1_700 + Array.from(text).length * 52)));
 }
 
-/** Every line of the script, in order (for the tests and the design doc). */
+/** Every line of the script, in order (for the tests and the design doc). The round's banter is show/banter.ts. */
 export function allBeats(script: Readonly<Record<NarrationMoment, MomentScript>> = NARRATION): readonly (Beat & { readonly moment: NarrationMoment })[] {
   const out: (Beat & { readonly moment: NarrationMoment })[] = [];
   for (const moment of NARRATION_MOMENTS) for (const take of script[moment].takes) for (const beat of take) out.push({ ...beat, moment });
@@ -240,6 +246,15 @@ export interface NarrationCue {
   readonly valid?: () => boolean;
   /** A guest's name the TV shows as a tag next to the bubble (never inside the line). */
   readonly name?: string;
+  /**
+   * The take to say instead of the moment's own script: a round's banter (show/banter.ts), whose
+   * lines carry {a} / {b} for the guests' names.
+   */
+  readonly take?: Take;
+  /** The guests' names for {a} / {b} in `take` (the TV highlights them in the bubble). */
+  readonly names?: { readonly a?: string; readonly b?: string };
+  /** Called when the cue goes unsaid (stale, no longer true, crowded out, calm mode, nowhere to stand). */
+  readonly onDropped?: () => void;
   /** Overrides the hold of every beat of the take. */
   readonly holdMs?: number;
 }

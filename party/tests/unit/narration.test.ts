@@ -35,9 +35,9 @@ const cue = (id: string, moment: NarrationMoment, at: number, extra: Partial<Nar
 describe('the script', () => {
   const beats = allBeats();
 
-  it('has 30 to 40 short lines, every moment at least one take', () => {
+  it('has 30 to 45 short lines, every moment at least one take', () => {
     expect(beats.length).toBeGreaterThanOrEqual(30);
-    expect(beats.length).toBeLessThanOrEqual(40);
+    expect(beats.length).toBeLessThanOrEqual(45);
     for (const m of NARRATION_MOMENTS) expect(NARRATION[m].takes.length).toBeGreaterThan(0);
     for (const b of beats) {
       expect(Array.from(b.text).length).toBeLessThanOrEqual(55);

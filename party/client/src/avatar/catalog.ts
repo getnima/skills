@@ -358,7 +358,8 @@ export function itemProblem(it: AvatarItem, range?: readonly [number, number]): 
   if (slot === null) return `id ${it.id} is in no id range`;
   if (it.slot !== slot) return `id ${it.id} must be slot ${slot}, not ${String(it.slot)}`;
   if (typeof it.name !== 'string' || it.name.trim() === '') return 'no name';
-  if (typeof it.file !== 'string' || !/^\/assets\/[\w./-]+\.(png|webp)$/.test(it.file)) return 'file must be a /assets/... .webp or .png path';
+  // (the no-server previews make the paths relative: tools/preview/make.sh)
+  if (typeof it.file !== 'string' || !/^\.?\/assets\/[\w./-]+\.(png|webp)$/.test(it.file)) return 'file must be a /assets/... .webp or .png path';
   const p = it.place as readonly unknown[];
   if (!Array.isArray(p) || p.length !== 4 || !p.every(finite)) return 'place must be 4 numbers';
   const [l, t, w, h] = p as unknown as [number, number, number, number];

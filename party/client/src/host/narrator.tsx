@@ -6,7 +6,9 @@
  * One overlay above every scene (app.tsx mounts it inside the stage). It cues the room's own
  * moments from the room state (the opening, the first guests, each game's intro, GO, the 3-2-1
  * after a cutscene); the scenes cue theirs through show/narrator-bus.ts at the right beat of their
- * own timelines (the last ten seconds, the flappy finale, the results, the podium, goodbye).
+ * own timelines (the last ten seconds, the flappy finale, the results, the podium, goodbye). During
+ * a round the hosts also talk the race through with the guests' names (show/banter.ts): the round
+ * hands over a ready take with {a} / {b}, and the names show highlighted in the bubble.
  *
  * Rules it keeps:
  * - one at a time: a queue with priorities, and a cue that is no longer true when its turn comes
@@ -22,6 +24,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { roundTime } from '../../../shared/round-clock';
 import { hostHeadUrl, hostPoseUrl } from './show/art';
+import { fillBanter } from './show/banter';
 import { micAvailable, onMicFree, releaseMic, takeMic } from './show/mic';
 import { beatHoldMs, createNarrationQueue, createTakePicker, introMoment, NARRATION } from './show/narration';
 import { narrationSlot, onNarrationSlot, registerNarrator, setNarratorSpeaking } from './show/narrator-bus';
@@ -70,6 +73,8 @@ interface Shown {
   readonly pose: Pose;
   readonly text: string;
   readonly name: string | null;
+  /** A round's banter: the guests' names for {a} / {b} in the text. */
+  readonly names: { readonly a?: string; readonly b?: string } | null;
   readonly slot: NarrationSlot;
   readonly box: Box | null;
   readonly leaving: boolean;
@@ -234,7 +239,10 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
   if (engine.current === null) {
     const dropped: { id: string; reason: string }[] = [];
     engine.current = {
-      queue: createNarrationQueue(4, (cue, reason) => dropped.push({ id: cue.id, reason })),
+      queue: createNarrationQueue(4, (cue, reason) => {
+        dropped.push({ id: cue.id, reason });
+        cue.onDropped?.();
+      }),
       picker: createTakePicker(Math.random),
       live: null,
       nextAt: 0,
@@ -271,7 +279,8 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     if (root === null || slot === null) return null;
     const { unit } = stageUnit(root);
     if (slot === 'side') {
-      const box = measureSide(root, unit) ?? (moment === 'finale' ? measureSideTop(root, unit) : null);
+      // an elimination round has no margin under the timer: the finale and the banter take the title block
+      const box = measureSide(root, unit) ?? (moment === 'finale' || moment === 'race' ? measureSideTop(root, unit) : null);
       return box === null ? null : { slot, box };
     }
     if (slot === 'lobby') {
@@ -319,8 +328,12 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     if (live === null) return;
     const beat = live.take[live.beat];
     const where = place(live.cue.moment);
-    if (beat === undefined || where === null || blocked() || (live.cue.valid !== undefined && !live.cue.valid())) {
+    // a banter pair's answer is never cut for the race having moved on: the set-up was already said
+    const stillTrue = live.cue.valid === undefined || (live.beat > 0 && live.cue.moment === 'race') || live.cue.valid();
+    if (beat === undefined || where === null || blocked() || !stillTrue) {
       if (beat !== undefined) e.dropped.push({ id: `${live.cue.id}#${live.beat}`, reason: where === null ? 'no place' : 'gone' });
+      // nothing of it was said
+      if (live.beat === 0) live.cue.onDropped?.();
       finish(0);
       return;
     }
@@ -330,8 +343,9 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     // the first guests: the tag names whoever came in last, at the moment it is said
     const players = stateRef.current?.players ?? [];
     const name = live.cue.moment === 'arrive' ? (players[players.length - 1]?.name ?? null) : (live.cue.name ?? null);
-    setShown({ key: e.key, moment: live.cue.moment, host: beat.host, pose: beat.pose, text: beat.text, name, slot: where.slot, box: where.box, leaving: false });
-    e.log.push({ moment: live.cue.moment, host: beat.host, pose: beat.pose, text: beat.text, slot: where.slot, at: Date.now() });
+    const names = live.cue.names ?? null;
+    setShown({ key: e.key, moment: live.cue.moment, host: beat.host, pose: beat.pose, text: beat.text, name, names, slot: where.slot, box: where.box, leaving: false });
+    e.log.push({ moment: live.cue.moment, host: beat.host, pose: beat.pose, text: names === null ? beat.text : fillBanter(beat.text, names), slot: where.slot, at: Date.now() });
     live.timer = setTimeout(() => {
       live.timer = null;
       leave(false);
@@ -368,6 +382,7 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     if (isShowCalm() && priority < CALM_MIN_PRIORITY) {
       e.queue.next(now);
       e.dropped.push({ id: first.id, reason: 'calm' });
+      first.onDropped?.();
       schedule(0);
       return;
     }
@@ -379,7 +394,8 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
     }
     const cue = e.queue.next(now);
     if (cue === null) return;
-    const picked = e.picker.pick(cue.moment);
+    // a round's banter brings its own take; every other moment rotates through its script
+    const picked = cue.take !== undefined ? { take: cue.take } : e.picker.pick(cue.moment);
     if (picked === null || picked.take.length === 0) {
       schedule(0);
       return;
@@ -397,7 +413,10 @@ export function Narrator(props: { readonly state: RoomState | null; readonly clo
 
   const offer = (cue: SceneCue): void => {
     const now = performance.now();
-    if (e.queue.offer({ ...cue, at: now }, now)) schedule(0);
+    if (!e.queue.offer({ ...cue, at: now }, now)) return;
+    // a moment of the show (GO, the last ten seconds, the finale, the results) cuts the hosts' race banter short
+    if (e.live !== null && e.live.cue.moment === 'race' && cue.moment !== 'race') leave(true);
+    schedule(0);
   };
   const offerRef = useRef(offer);
   offerRef.current = offer;
@@ -537,6 +556,28 @@ function keepTogether(text: string): string {
   return text.replace(/בן פורת יוסף/g, 'בן\u00a0פורת\u00a0יוסף').replace(/דוז פואה/g, 'דוז\u00a0פואה');
 }
 
+/** The line, with the guests' names (a round's banter) set apart in colour and isolated from the Hebrew around them. */
+function Line(props: { readonly text: string; readonly names: { readonly a?: string; readonly b?: string } | null }): JSX.Element {
+  const { text, names } = props;
+  if (names === null) return <span class="nr-text">{keepTogether(text)}</span>;
+  const parts = text.split(/(\{[ab]\})/);
+  return (
+    <span class="nr-text">
+      {parts.map((part, i) => {
+        if (part === '{a}' || part === '{b}') {
+          const who = part === '{a}' ? names.a : names.b;
+          return who === undefined ? null : (
+            <bdi key={i} class="nr-who">
+              {who}
+            </bdi>
+          );
+        }
+        return keepTogether(part);
+      })}
+    </span>
+  );
+}
+
 /** One host on screen: the pose (or the head when the picture is missing) and the bubble. */
 function Speaker(props: { readonly shown: Shown }): JSX.Element {
   const { shown } = props;
@@ -572,7 +613,7 @@ function Speaker(props: { readonly shown: Shown }): JSX.Element {
             <bdi>{shown.name}</bdi>
           </span>
         ) : null}
-        <span class="nr-text">{keepTogether(shown.text)}</span>
+        <Line text={shown.text} names={shown.names} />
       </div>
     </div>
   );

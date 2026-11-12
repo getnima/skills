@@ -22,6 +22,8 @@ const slotListeners = new Set<Listener>();
 const speakListeners = new Set<Listener>();
 const slots = new Map<'results' | 'final', NarrationSlot>();
 let speaking: HostId | null = null;
+/** performance.now() when the hosts last stopped talking (0: never talked). */
+let quietSince = 0;
 
 /** True while a narrator is on the page: scenes leave their big moments to it. */
 export function isNarratorOn(): boolean {
@@ -66,12 +68,18 @@ export function onNarrationSlot(fn: Listener): () => void {
 /** The narrator says which host is on screen (the lobby's waiting dolls step aside for them). */
 export function setNarratorSpeaking(who: HostId | null): void {
   if (speaking === who) return;
+  if (who === null) quietSince = performance.now();
   speaking = who;
   for (const fn of speakListeners) fn();
 }
 
 export function narratorSpeaking(): HostId | null {
   return speaking;
+}
+
+/** How long the hosts have been quiet at `now` (performance.now()); 0 while one of them talks. */
+export function narratorQuietMs(now: number): number {
+  return speaking !== null ? 0 : now - quietSince;
 }
 
 export function onNarratorSpeaking(fn: Listener): () => void {
