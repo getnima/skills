@@ -62,9 +62,31 @@ const layoutCheck = (page) =>
     for (const el of document.querySelectorAll(sel)) {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
+      // an entrance / exit animation in flight (a pop that overshoots, the ceremony flying out) is not a layout
+      let moving = false;
+      for (let e = el, d = 0; e && d < 6 && !moving; e = e.parentElement, d++) {
+        moving = e.getAnimations().some((a) => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity);
+      }
+      if (moving) continue;
+      // gone (faded out, kept in the DOM): not on screen
+      let op = 1;
+      for (let e = el; e; e = e.parentElement) op *= Number(getComputedStyle(e).opacity);
+      if (op < 0.05) continue;
       if (getComputedStyle(el).visibility === 'hidden') continue;
       if (r.left < -2 || r.top < -2 || r.right > W + 2 || r.bottom > H + 2) out.outside.push(`${el.className} ${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.right)},${Math.round(r.bottom)}`);
     }
+    // on the podium the commentator's bubble never covers a name or a score
+    out.covered = [];
+    const bub = document.querySelector('.sh-final .sh-comm.is-on .sh-comm-bubble');
+    if (bub) {
+      const b = bub.getBoundingClientRect();
+      for (const el of document.querySelectorAll('.sh-pod-name, .sh-pod-total, .sh-pod-also')) {
+        const r = el.getBoundingClientRect();
+        if (Math.min(b.right, r.right) - Math.max(b.left, r.left) > 2 && Math.min(b.bottom, r.bottom) - Math.max(b.top, r.top) > 2) out.covered.push(el.textContent);
+      }
+    }
+    // a strip button whose label is cut ("…") is unreadable for the host
+    out.cut = [...document.querySelectorAll('.hs-strip-main .hs-btn-label')].filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent);
     return out;
   });
 
@@ -76,14 +98,18 @@ const layoutCheck = (page) =>
       const dir = outDir(`tour-${n}`);
       const { ctx, page, errors, code } = await openHost(browser, { viewport: { width: 1920, height: 1080 } });
       let k = 0;
-      const shoot = async (scene) => {
+      // short scenes (a 3 s countdown) are photographed at fewer sizes; 4K is a JPEG (a 4K PNG takes a second)
+      const shoot = async (scene, sizes = SIZES) => {
         k++;
-        for (const [w, h] of SIZES) {
+        for (const [w, h] of sizes) {
           await page.setViewportSize({ width: w, height: h });
-          await sleep(w > 3000 ? 900 : 700);
-          await page.screenshot({ path: path.join(dir, `${String(k).padStart(2, '0')}-${scene}-${w}x${h}.png`) });
+          await sleep(w > 3000 ? 500 : 350);
+          const big = w > 3000;
+          await page.screenshot({ path: path.join(dir, `${String(k).padStart(2, '0')}-${scene}-${w}x${h}.${big ? 'jpg' : 'png'}`), type: big ? 'jpeg' : 'png', quality: big ? 80 : undefined });
           const l = await layoutCheck(page);
           check(l.sw <= l.W && l.sh <= l.H && l.outside.length === 0, `${n}p ${scene} ${w}x${h}: no scroll, text inside the screen`, l);
+          check(l.cut.length === 0, `${n}p ${scene} ${w}x${h}: no strip label cut short`, l.cut);
+          check(l.covered.length === 0, `${n}p ${scene} ${w}x${h}: the commentator covers no podium name`, l.covered);
         }
         await page.setViewportSize({ width: 1920, height: 1080 });
       };
@@ -127,11 +153,13 @@ const layoutCheck = (page) =>
         await waitPhase(page, 'intro', 10000);
         const first = await page.evaluate(() => window.__introFirst);
         check(first !== null && first.opacity === 1 && first.textOpacity === 1 && first.h > 50, `${n}p intro: title and instructions readable on the first frame`, first);
-        await sleep(1200);
-        await shoot(`intro-r${r}`);
-        await waitPhase(page, 'countdown', 15000);
-        await sleep(300);
-        await shoot(`countdown-r${r}`);
+        await sleep(800);
+        await shoot(`intro-r${r}`, [SIZES[0], SIZES[2], SIZES[1]]);
+        await page.waitForFunction(() => ['countdown', 'playing'].includes(window.__host.state().phase), null, { timeout: 15000 });
+        if ((await state(page)).phase === 'countdown') {
+          await sleep(200);
+          await shoot(`countdown-r${r}`, [SIZES[0]]);
+        }
         await waitPhase(page, 'playing', 10000);
         await sleep(4000);
         await shoot(`race-r${r}`);
@@ -145,14 +173,14 @@ const layoutCheck = (page) =>
           }
           await page.click('[data-testid=cm-play-joker_1]');
           await waitCut(page, true);
-          await sleep(1500);
-          await shoot(`cutscene-r${r}`);
+          await sleep(1200);
+          await shoot(`cutscene-r${r}`, [SIZES[0]]);
           await waitCut(page, false, 20000);
           await sleep(300);
           // the frozen race under the 3-2-1
           const frozen = await page.evaluate(() => document.querySelector('.sh-playing').classList.contains('is-frozen') && !!document.querySelector('[data-testid=resume]'));
           check(frozen, `${n}p: race frozen under the resume 3-2-1`);
-          await shoot(`resume-r${r}`);
+          await shoot(`resume-r${r}`, [SIZES[0], SIZES[2]]);
         }
         await waitPhase(page, 'results', 40000);
         await sleep(2500);
@@ -171,6 +199,10 @@ const layoutCheck = (page) =>
         await sleep(1700);
         await shoot(`lobby-after-r${r}`);
       }
+      // the early podium asks "sure?" first
+      await page.click('[data-testid=btn-final]');
+      await sleep(700);
+      check((await state(page)).phase === 'lobby', `${n}p: one click on the early podium only asks`);
       await page.click('[data-testid=btn-final]');
       await waitPhase(page, 'final', 10000);
       await page.waitForSelector('.sh-champ', { timeout: 30000 });

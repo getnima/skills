@@ -32,6 +32,8 @@ const { check, failures } = checker();
       const frames = stop ? await stop() : 0;
       console.log(`   ${n}: ${r.frames} animation frames checked, ${frames} screenshots, order changed ${r.orders}x`, r.examples.join('; '));
       check(r.bad === 0, `${n} players ${VW}x${VH}: no overlapping rows / label on any of ${r.frames} frames over 6 s`, r.examples);
+      check(r.blink === 0, `${n} players: the board never blinks (frames with most rows faded: ${r.blink})`);
+      check(r.misorder <= r.frames * 0.1, `${n} players: scores agree with the places (frames where a row shows more than the one above: ${r.misorder}/${r.frames})`);
       check(r.orders >= 3, `${n} players: the board really re-ordered during the burst (${r.orders})`);
       check(!SHOTS || frames >= 30, `${n} players: burst screenshots (${frames} in 6 s, one per compositor frame, at most every 100 ms)`);
       const rowsShown = (await raceGeometry(page)).rows.length;

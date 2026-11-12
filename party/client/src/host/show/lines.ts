@@ -6,7 +6,7 @@ import { isolate } from './common';
 
 import type { MomentType } from './moments';
 
-export type LinePool = MomentType | 'roast' | 'winner' | 'tieWin' | 'nobody' | 'climber' | 'newLeader' | 'champion' | 'finalIntro';
+export type LinePool = MomentType | 'roast' | 'winner' | 'tieWin' | 'nobody' | 'climber' | 'newLeader' | 'champion' | 'finalIntro' | 'suspense';
 
 export const LINES: Readonly<Record<LinePool, readonly string[]>> = {
   lead: [
@@ -114,6 +114,15 @@ export const LINES: Readonly<Record<LinePool, readonly string[]>> = {
   climber: ['{a} טיפס {n} מקומות! מעלית פרטית', 'הקפיצה של הסיבוב: {a}, {n} מקומות למעלה!', '{a} עלה {n} מקומות. מישהו אכל ארוחת בוקר'],
   newLeader: ['יש מוביל חדש בטבלה הכללית: {a}!', '{a} תופס את המקום הראשון בטבלה! להחזיק חזק', 'הטבלה התהפכה! {a} למעלה'],
   champion: ['{a} לוקח את הערב!!! מישהו יביא כתר אמיתי', 'גבירותיי ורבותיי: {a}! בלי עוררין!', 'היסטוריה נכתבת! {a} לוקח את הכול!'],
+  // the suspense before the winner when there is (almost) nobody to reveal: fills the quiet
+  suspense: [
+    'רגע... אני סופר את הנקודות על האצבעות',
+    'המלאך כבר פרש כנפיים. לאן הוא יעוף?',
+    'שקט בבקשה, השופטים מתייעצים',
+    'הלב שלי דופק כמו בסיבוב של שימי טאפ',
+    'מי שמחזיק אצבעות, זה הזמן',
+    'עוד רגע... עוד רגע... עוד לא',
+  ],
   finalIntro: ['רגע האמת! מי עולה על הפודיום?', 'תופים בבקשה... הפודיום של הערב!', 'זה הזמן. שלושה מקומות, כתר אחד'],
 };
 

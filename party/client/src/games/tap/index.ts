@@ -2,8 +2,8 @@
  * שימי טאפ: mash the big face. It changes expressions, hops around more and
  * more as the round goes on, and now and then picks its nose: taps in that
  * window are worth a flat +5. Consecutive hits build a combo (x2 at 20, x3 at
- * 40) that multiplies the normal +1;
- * a tap that misses the face breaks it.
+ * 40) that multiplies the normal +1; a tap that misses the face breaks it and
+ * costs 1 point. Counted hits are capped at HIT_RATE per second (all fingers).
  *
  * All gameplay time is kit loop game time (the level is precomputed from the
  * seed in schedule.ts), so a cutscene freeze needs no code here.
@@ -29,9 +29,15 @@ const MAX_RAW = GAMES.tap.maxRaw;
 const PICK_POINTS = 5;
 const COMBO_STEP = 20;
 const MAX_MULT = 3;
-/** Counted hits per second (all fingers together) and burst size: keeps scores human. */
-const HIT_RATE = 20;
-const HIT_BURST = 10;
+/**
+ * Counted hits per second (all fingers together) and burst size. A fast human taps
+ * 8-10 times a second with one finger; above ~12/s it is a multi-finger slap, which
+ * then scores like the fastest single finger, not 2x it (measured: qa-tap-play.cjs).
+ */
+const HIT_RATE = 12;
+const HIT_BURST = 4;
+/** A tap that misses the face costs this much (never below 0): slapping the whole screen loses. */
+const MISS_COST = 1;
 const HOP_S = 0.3;
 const TUTORIAL_MS = 2_600;
 /** Bottom strip for the combo meter. */
@@ -47,6 +53,7 @@ const T_PICK = 'מחטט!';
 const T_FRENZY = 'שימי משתולל!';
 const T_BREAK = 'קומבו נשבר!';
 const T_HINT = 'הקישו מהר!';
+const T_MISS = '-1';
 const COMBO_LABELS: string[] = [];
 function comboLabel(n: number): string {
   if (n < 400) {
@@ -78,6 +85,7 @@ const TEXT_HIT = [
   { color: COLORS.yellow, size: 36, rise: 90, life: 0.8 },
 ] as const;
 const TEXT_PICK = { color: COLORS.yellow, size: 44, rise: 110, life: 0.9 } as const;
+const TEXT_MISS = { color: '#ff6b7d', size: 24, rise: 40, life: 0.55 } as const;
 const TEXT_MULT = { color: COLORS.yellow, size: 56, rise: 90, life: 1.2 } as const;
 
 // ───────────────────────────── Debug (tests) ─────────────────────────────
@@ -337,6 +345,11 @@ export const game: GameModule = {
       misses++;
       spawnRipple(p.x, p.y, false);
       fx.burst(p.x, p.y, BURST_MISS);
+      if (score > 0) {
+        score = Math.max(0, score - MISS_COST);
+        ctx.setScore(score);
+        fx.text(p.x, Math.max(ctx.hudHeight + 24, p.y - 24), T_MISS, TEXT_MISS);
+      }
       if (combo >= 5) {
         breakFlash = 1;
         fx.text(view.width / 2, geo.bottom - 4, T_BREAK, { color: COLORS.red, size: 26, rise: 50, life: 0.9 });

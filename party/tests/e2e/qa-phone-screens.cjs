@@ -199,7 +199,7 @@ const NOTCH = { iphone14: [47, 34], promax: [59, 34], se375: [20, 0] };
 
     await Promise.all(
       all().map(async (p) => {
-        await L.waitScreen(p, ['sending', 'suspense'], 15000);
+        await L.waitScreen(p, ['sending', 'suspense'], 50000);
         if ((await L.screen(p)) === 'sending') await L.shot(p, OUT, '11-sending', check);
       }),
     );

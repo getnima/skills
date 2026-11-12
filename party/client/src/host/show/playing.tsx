@@ -77,21 +77,28 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
 
   // ── what the rows show: the ranking, re-ordered at most every ORDER_HOLD_MS so a race
   //    where places change on every score update stays readable from across the room ──
+  //    While an order is held, the rows also keep the scores of the moment it was taken, so
+  //    a row never shows more points than the row above it.
   const shownOrder = useRef<readonly string[]>([]);
   const shownOrderAt = useRef(0);
+  const shownScores = useRef(new Map<string, number>());
   const frameNow = performance.now();
   const byId = new Map(racers.map((r) => [r.id, r]));
   const wanted = racers.map((r) => r.id);
   const sameSet = wanted.length === shownOrder.current.length && shownOrder.current.every((id) => byId.has(id));
-  if (!sameSet || (frameNow - shownOrderAt.current >= ORDER_HOLD_MS && !sameOrder(wanted, shownOrder.current))) {
-    if (!sameOrder(wanted, shownOrder.current)) shownOrderAt.current = frameNow;
+  const inOrder = sameOrder(wanted, shownOrder.current);
+  if (!sameSet || inOrder || frameNow - shownOrderAt.current >= ORDER_HOLD_MS) {
+    if (!inOrder) shownOrderAt.current = frameNow;
     shownOrder.current = wanted;
+    shownScores.current = new Map(racers.map((r) => [r.id, r.score]));
   }
   const board: Racer[] = [];
   for (const id of shownOrder.current) {
     const r = byId.get(id);
-    if (r) board.push(r);
+    if (r) board.push({ ...r, score: shownScores.current.get(id) ?? r.score });
   }
+  const boardRef = useRef(board);
+  boardRef.current = board;
 
   const n = board.length;
   const topScore = board[0]?.score ?? 0;
@@ -212,8 +219,10 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const scoreEls = useRef(new Map<string, HTMLSpanElement>());
   const shown = useRef(new Map<string, number>());
   const lastSecond = useRef(-1);
-  useFrame(() => {
+  useFrame((dt) => {
     const sample = clockRef.current();
+    // the numbers close 22% of the gap per 60 Hz frame, whatever the real frame rate
+    const ease = 1 - Math.pow(0.78, Math.min(10, Math.max(0, dt) / 16.7));
     const root = rootRef.current;
     const frac = durationRef.current > 0 ? Math.min(1, Math.max(0, sample.leftMs / durationRef.current)) : 0;
     if (ringRef.current) ringRef.current.style.strokeDashoffset = String(RING_LEN * (1 - frac));
@@ -236,7 +245,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
         }
       }
     }
-    for (const r of racersRef.current) {
+    for (const r of boardRef.current) {
       let el = scoreEls.current.get(r.id);
       if (el && !el.isConnected) {
         scoreEls.current.delete(r.id);
@@ -248,7 +257,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
         continue;
       }
       const from = shown.current.get(r.id) ?? r.score;
-      let next = from + (r.score - from) * 0.22;
+      let next = from + (r.score - from) * ease;
       if (Math.abs(r.score - next) < 0.6) next = r.score;
       if (next !== from || el.textContent === '') {
         shown.current.set(r.id, next);
@@ -318,7 +327,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
                 if (el) {
                   if (!scoreEls.current.has(r.id) || scoreEls.current.get(r.id) !== el) {
                     // a row that just came on screen shows its real score at once
-                    shown.current.set(r.id, racersRef.current.find((x) => x.id === r.id)?.score ?? r.score);
+                    shown.current.set(r.id, r.score);
                     el.textContent = formatScore(shown.current.get(r.id) ?? r.score);
                   }
                   scoreEls.current.set(r.id, el);

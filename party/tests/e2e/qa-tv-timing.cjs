@@ -128,6 +128,9 @@ async function endRoundNow(page) {
       await page.waitForFunction(() => !/מדלג/.test(document.querySelector('[data-testid=btn-primary]').textContent), null, { timeout: 30000 });
       await page.keyboard.press('Space');
       await waitPhase(page, 'lobby', 5000);
+      // the early podium asks "sure?" first
+      await page.click('[data-testid=btn-final]');
+      await sleep(700);
       await page.click('[data-testid=btn-final]');
     });
     await waitPhase(page, 'final', 8000);

@@ -138,6 +138,13 @@
   border-top: calc(2 * var(--hu)) solid var(--hs-line);
   backdrop-filter: blur(8px);
 }
+/* on the TV the strip steps back when the host is not using it; the mouse or any key brings it back */
+.hs-strip {
+  transition: opacity 600ms ease;
+}
+.hs-strip.is-idle {
+  opacity: 0.38;
+}
 .hs-strip-side {
   display: flex;
   align-items: center;
@@ -182,6 +189,49 @@
   100% {
     box-shadow: 0 0 0 calc(9 * var(--hu)) rgba(255, 210, 63, 0.55);
   }
+}
+/* the "sure?" question of an armed button floats above it (the button itself never changes size) */
+.hs-btn {
+  position: relative;
+}
+.hs-btn-armed {
+  position: absolute;
+  bottom: calc(100% + 14 * var(--hu));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: calc(10 * var(--hu)) calc(22 * var(--hu));
+  border-radius: calc(16 * var(--hu));
+  font-size: calc(28 * var(--hu));
+  font-weight: 900;
+  white-space: nowrap;
+  color: var(--hs-ink);
+  background: var(--hs-gold);
+  box-shadow: 0 calc(6 * var(--hu)) calc(24 * var(--hu)) rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.hs-btn-armed::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: calc(-12 * var(--hu));
+  border: calc(12 * var(--hu)) solid transparent;
+  border-top-color: var(--hs-gold);
+}
+/* the strip never overflows: long labels shrink with an ellipsis instead of covering the tools */
+.hs-strip-main > .hs-btn {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* the main action is the last to give up room */
+.hs-strip-main > .hs-primary {
+  flex-shrink: 0.15;
+}
+.hs-strip-main .hs-btn-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .hs-next-hint {
   font-size: calc(24 * var(--hu));

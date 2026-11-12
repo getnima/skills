@@ -387,7 +387,8 @@
   }
 }
 
-@container (max-height: 440px) {
+/* keyboard open on a big phone (or a short window): the tip is for later */
+@container (max-height: 500px) {
   .pp-join .pp-tip {
     display: none;
   }
@@ -395,6 +396,11 @@
 /* the tip takes the faces' room on short screens (never clip the hero) */
 @container (max-height: 640px) {
   .pp-join:has(.pp-tip) .pp-join-faces {
+    display: none;
+  }
+  /* an error needs the room more than the tip (iPhone SE: code field + name + error) */
+  .pp-join:has(.pp-error) .pp-tip,
+  .pp-join:has(.pp-error) .pp-sub {
     display: none;
   }
 }

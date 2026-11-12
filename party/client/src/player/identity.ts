@@ -37,8 +37,22 @@ function write(key: string, value: string | null): void {
   }
 }
 
+/**
+ * A guest typing the code on a Hebrew keyboard gets Hebrew letters: read them as the
+ * Latin keys they sit on (standard Israeli layout), so "שנבג" is ABCD.
+ */
+const HEBREW_KEYS: Readonly<Record<string, string>> = {
+  ש: 'A', נ: 'B', ב: 'C', ג: 'D', ק: 'E', כ: 'F', ע: 'G', י: 'H', ן: 'I', ח: 'J', ל: 'K', ך: 'L', צ: 'M',
+  מ: 'N', ם: 'O', פ: 'P', '/': 'Q', ר: 'R', ד: 'S', א: 'T', ו: 'U', ה: 'V', "'": 'W', ס: 'X', ט: 'Y', ז: 'Z',
+};
+
 export function normalizeCode(raw: string | null | undefined): string {
-  return (raw ?? '').trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, ROOM_CODE_LEN);
+  return (raw ?? '')
+    .trim()
+    .replace(/[א-ת/']/g, (ch) => HEBREW_KEYS[ch] ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '')
+    .slice(0, ROOM_CODE_LEN);
 }
 
 export function isValidCode(code: string): boolean {

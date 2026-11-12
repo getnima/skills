@@ -191,7 +191,7 @@ async function audit(page) {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0;
     };
-    const topLayer = document.querySelector('.pp-rotate.is-on, .pp-cutscene, .pp-countdown, .pp-resume');
+    const topLayer = document.querySelector('.pp-landscape .pp-rotate, .pp-cutscene, .pp-countdown, .pp-resume');
     const leaves = [];
     for (const el of document.querySelectorAll('#app *')) {
       if (el.closest(decor)) continue;

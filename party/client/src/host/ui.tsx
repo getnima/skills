@@ -13,6 +13,11 @@ export interface BtnProps {
   readonly title?: string;
   readonly class?: string;
   readonly testId?: string;
+  /**
+   * A risky action waiting for its second press: this question floats above the button.
+   * The button keeps its label and its size, so the second press lands on the same spot.
+   */
+  readonly armed?: string | null;
   onClick(): void;
 }
 
@@ -20,7 +25,7 @@ export function Btn(props: BtnProps): JSX.Element {
   return (
     <button
       type="button"
-      class={`hs-btn hs-btn--${props.tone ?? 'plain'} ${props.class ?? ''}`}
+      class={`hs-btn hs-btn--${props.tone ?? 'plain'} ${props.class ?? ''} ${typeof props.armed === 'string' ? 'is-armed' : ''}`}
       disabled={props.disabled}
       title={props.title}
       data-testid={props.testId}
@@ -33,6 +38,11 @@ export function Btn(props: BtnProps): JSX.Element {
       {props.icon !== undefined ? <span class="hs-btn-icon">{props.icon}</span> : null}
       <span class="hs-btn-label">{props.label}</span>
       {props.kbd !== undefined ? <kbd class="hs-kbd">{props.kbd}</kbd> : null}
+      {typeof props.armed === 'string' ? (
+        <span class="hs-btn-armed" role="status" data-testid="armed-hint">
+          {props.armed}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -80,13 +90,19 @@ export interface ConfirmRequest {
   run(): void;
 }
 
+/** A confirm dialog ignores its "yes" this long after it opened (Enter-Enter must not reset the night). */
+const CONFIRM_GUARD_MS = 700;
+
 export function ConfirmDialog(props: { readonly req: ConfirmRequest; onClose(): void }): JSX.Element {
   const { req } = props;
+  const [openedAt] = useState(() => performance.now());
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.key === ' ') {
+        // Space would "click" whatever button kept the focus: only Enter answers, and only on purpose
         e.preventDefault();
         e.stopImmediatePropagation();
+        if (e.key !== 'Enter' || e.repeat || performance.now() - openedAt < CONFIRM_GUARD_MS) return;
         props.onClose();
         req.run();
       }

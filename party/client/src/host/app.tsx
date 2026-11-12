@@ -68,6 +68,32 @@ function useEvery(ms: number, on: boolean): void {
   }, [ms, on]);
 }
 
+/** The control strip dims after this long without the mouse or a key (it is on the TV too). */
+const STRIP_IDLE_MS = 7_000;
+
+/** True after STRIP_IDLE_MS without pointer movement or a key press. */
+function useIdle(ms: number): boolean {
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    let t = setTimeout(() => setIdle(true), ms);
+    const wake = (): void => {
+      clearTimeout(t);
+      setIdle(false);
+      t = setTimeout(() => setIdle(true), ms);
+    };
+    window.addEventListener('pointermove', wake, true);
+    window.addEventListener('pointerdown', wake, true);
+    window.addEventListener('keydown', wake, true);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('pointermove', wake, true);
+      window.removeEventListener('pointerdown', wake, true);
+      window.removeEventListener('keydown', wake, true);
+    };
+  }, [ms]);
+  return idle;
+}
+
 function useFullscreen(): boolean {
   const [fs, setFs] = useState(document.fullscreenElement !== null);
   useEffect(() => {
@@ -181,6 +207,7 @@ export function App(): JSX.Element {
   /** A risky action waiting for its second press: which one and until when (performance.now()). */
   const [armed, setArmed] = useState<{ readonly id: string; readonly until: number } | null>(null);
   const phaseAt = useRef(performance.now());
+  const stripIdle = useIdle(STRIP_IDLE_MS);
 
   const hookRef = useRef(room);
   hookRef.current = room;
@@ -391,18 +418,29 @@ export function App(): JSX.Element {
   const stripButtons: JSX.Element[] = [];
   if (state !== null) {
     if (phase === 'lobby' && state.played.length > 0) {
-      if (!allPlayed) stripButtons.push(<Btn key="final" label="פודיום סופי" icon="🏆" testId="btn-final" onClick={() => void room.final()} />);
-      stripButtons.push(<Btn key="reset" label="איפוס תחרות" icon="♻️" tone="ghost" testId="btn-reset" onClick={askReset} />);
+      // ending the night before every game was played is a decision: it asks for a second press
+      if (!allPlayed)
+        stripButtons.push(
+          <Btn
+            key="final"
+            label="לפודיום"
+            icon="🏆"
+            armed={isArmed('early-final') ? 'עוד לא שיחקנו הכל. לסיים? לחצו שוב' : null}
+            testId="btn-final"
+            onClick={() => twice('early-final', () => void room.final())}
+          />,
+        );
+      stripButtons.push(<Btn key="reset" label="איפוס" icon="♻️" tone="ghost" title="איפוס התחרות" testId="btn-reset" onClick={askReset} />);
     }
     if (roundRunning) {
       stripButtons.push(
         <Btn
           key="end"
-          label={phase !== 'playing' ? 'בטל סיבוב' : isArmed('end-round') ? 'בטוח? לחצו שוב לסיום' : 'סיים סיבוב עכשיו'}
+          label={phase !== 'playing' ? 'בטל סיבוב' : 'סיים סיבוב עכשיו'}
           icon="⏹"
           kbd="E"
           tone="danger"
-          class={isArmed('end-round') ? 'is-armed' : ''}
+          armed={isArmed('end-round') ? 'לסיים את הסיבוב? לחצו שוב (E)' : null}
           testId="btn-end"
           onClick={endRound}
         />,
@@ -425,7 +463,7 @@ export function App(): JSX.Element {
     <div class={`hs-root hs-phase-${phase ?? 'boot'}`} data-phase={phase ?? 'boot'}>
       <main class="hs-stage">{scene}</main>
 
-      <footer class="hs-strip" data-testid="strip">
+      <footer class={`hs-strip ${stripIdle && armed === null ? 'is-idle' : ''}`} data-testid="strip">
         <div class="hs-strip-side">
           <span class="hs-brand">🎉 Party Arena</span>
           <Connection room={room} />
@@ -434,11 +472,12 @@ export function App(): JSX.Element {
           {stripButtons}
           {primary !== null ? (
             <Btn
-              label={primary.confirm !== undefined && isArmed(primary.confirm) ? 'בטוח? לחצו שוב כדי לדלג' : primary.label}
+              label={primary.label}
               icon={primary.icon}
               kbd="Space"
               tone={primary.confirm !== undefined ? 'plain' : 'primary'}
-              class={`hs-primary ${primary.confirm !== undefined && isArmed(primary.confirm) ? 'is-armed' : ''}`}
+              class="hs-primary"
+              armed={primary.confirm !== undefined && (isArmed(primary.confirm) || isArmed(`${primary.confirm}-next`)) ? 'לדלג על הטקס? לחצו שוב' : null}
               testId="btn-primary"
               onClick={runPrimary}
             />

@@ -73,7 +73,10 @@ function buildPlan(rows: readonly ResultRow[], winnerIds: readonly string[], top
   const top = rest.slice(0, Math.max(0, topCount - 1));
   const tail = rest.length > top.length ? (rest[rest.length - 1] ?? null) : null;
   const reveal = [...(tail ? [tail] : []), ...[...top].reverse()];
-  const last = byRound.length >= 3 ? (rest[rest.length - 1] ?? null) : null;
+  // the clear last place only: when the bottom is a tie (everyone on 0, say) nobody gets the snail
+  const lastRow = byRound[byRound.length - 1];
+  const aboveLast = byRound[byRound.length - 2];
+  const last = byRound.length >= 3 && lastRow !== undefined && aboveLast !== undefined && lastRow.raw < aboveLast.raw && !winnerSet.has(lastRow.playerId) ? lastRow : null;
 
   const newOrder = [...rows].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'he'));
   const prevOrder = [...rows].sort(
@@ -165,6 +168,8 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
   const revealRef = useRef(props.results.revealAt);
   revealRef.current = props.results.revealAt;
   const cueAt = useRef({ confetti: 0, landed: false, raved: false });
+  /** The suspense line of a near-empty board was said (once per round). */
+  const suspCue = useRef(false);
 
   const stopSong = (fadeMs: number): void => {
     if (!song.current) return;
@@ -178,6 +183,7 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
   useEffect(() => {
     clock.current = { t: Number.NEGATIVE_INFINITY, post: -1, started: false };
     cueAt.current = { confetti: 0, landed: false, raved: false };
+    suspCue.current = false;
     stopSong(300);
   }, [props.results.roundIndex]);
 
@@ -269,6 +275,11 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
       setView(next);
       onEnter(next, prev, live, t);
     }
+    // a small room has (almost) no rows to reveal: the commentator fills the quiet, once
+    if (next.phase === 'suspense' && live && !suspCue.current && p.reveal.length <= 2 && t >= -6_800 && t < TENSE_FROM - 1_000) {
+      suspCue.current = true;
+      funny.layer()?.sayLine('suspense', {}, 'shocked', { force: true, holdMs: 3_400 });
+    }
     // ceremony cues that are not stage changes
     if (next.phase === 'ceremony' && p.winners.length > 0) {
       const e = t - NAME_AT;
@@ -359,7 +370,7 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string 
             <div class={`sh-rrow ${on ? 'is-on' : ''} ${isTail ? 'is-tail' : ''} ${isLast ? 'is-last' : ''}`} key={r.playerId}>
               {on ? (
                 <div class="sh-rrow-in">
-                  <span class="sh-rank">{medal(r.roundRank)}</span>
+                  <span class="sh-rank">{r.raw > 0 ? medal(r.roundRank) : '·'}</span>
                   <Avatar avatar={r.avatar} name={r.name} />
                   <span class="sh-name" dir="auto">
                     <bdi>{r.name}</bdi>

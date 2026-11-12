@@ -63,7 +63,18 @@ async function play(page, id) {
       const name = decodeURIComponent(route.request().url().split('/').pop().split('?')[0]);
       const file = map[name];
       if (!file) return route.continue();
-      return route.fulfill({ path: path.join(CLIPS, file), contentType: 'video/webm', headers: { 'Cache-Control': 'no-store' } });
+      // like the real servers (express static, vite): byte ranges, so the player can seek
+      const body = fs.readFileSync(path.join(CLIPS, file));
+      const range = /bytes=(\d+)-(\d*)/.exec(route.request().headers()['range'] || '');
+      if (!range) return route.fulfill({ status: 200, body, contentType: 'video/webm', headers: { 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' } });
+      const a = Number(range[1]);
+      const b = range[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
+      return route.fulfill({
+        status: 206,
+        body: body.subarray(a, b + 1),
+        contentType: 'video/webm',
+        headers: { 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${a}-${b}/${body.length}`, 'Cache-Control': 'no-store' },
+      });
     });
     await page.mouse.click(960, 300); // the first click unlocks sound
 
@@ -101,7 +112,7 @@ async function play(page, id) {
     const tb = Date.now();
     await play(page, 'before_podium');
     await page.waitForFunction(() => document.querySelector('[data-testid=cutscene]')?.dataset.mode === 'placeholder', null, { timeout: 12000 });
-    check(Date.now() - tb < 10500, `a broken file falls back to the card (${Date.now() - tb} ms)`);
+    check(Date.now() - tb < 3000, `a broken file falls back to the card at once (${Date.now() - tb} ms)`);
     await page.screenshot({ path: `${dir}/03-broken.png` });
     await waitCut(page, false, 10000);
 
@@ -146,6 +157,28 @@ async function play(page, id) {
     await waitCut(page, false, 12000);
     const total = (await page.evaluate(() => window.__host.now())) - startedAt;
     check(total < 14500, `and it still ends with the clip (${total} ms after it began)`);
+
+    // ── the tab in the background: no animation frames at all; the placeholder card still ends on time ──
+    {
+      // its own context: its own room, so no other TV can end the cutscene for it
+      const ctx3 = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+      const page3 = await ctx3.newPage();
+      await page3.goto(page.url().split('?')[0]);
+      await page3.waitForFunction(() => window.__host && window.__host.status() === 'online');
+      await sleep(1700);
+      await page3.keyboard.press('KeyC');
+      await page3.click('[data-testid=cm-play-joker_2]');
+      await page3.waitForFunction(() => document.querySelector('[data-testid=cutscene]')?.dataset.mode === 'placeholder', null, { timeout: 5000 });
+      const tb = Date.now();
+      // what a hidden tab does: requestAnimationFrame never calls back
+      await page3.evaluate(() => {
+        window.requestAnimationFrame = () => 0;
+      });
+      await page3.waitForFunction(() => !window.__host.state().cutscene, null, { timeout: 15000 });
+      const bt = Date.now() - tb;
+      check(bt < 6000, `in a background tab the placeholder card still ends on time (${bt} ms)`);
+      await ctx3.close();
+    }
 
     // ── longer than CUTSCENE_MAX_MS (90 s): the server ends it, the TV lets go ──
     if (process.env.LONG === '1') {

@@ -48,6 +48,8 @@ async function openHost(browser, opts = {}) {
   }
   await page.waitForFunction(() => window.__host && window.__host.state() && window.__host.status() === 'online', null, { timeout: 20000 });
   const code = await page.evaluate(() => window.__host.state().code);
+  // the page ignores keys for 1.5 s after any screen change (the room just appeared)
+  await sleep(1700);
   return { ctx, page, errors, code };
 }
 
@@ -158,7 +160,7 @@ const raceGeometry = (page) =>
 /**
  * Check the race geometry on EVERY animation frame for `ms` inside the page:
  * the visible part of each row (content clipped by its slot) against every other
- * row and the rotating-places label. Returns { frames, bad, examples, orders }.
+ * row and the rotating-places label. Returns { frames, bad, examples, orders, blink }.
  */
 const raceOverlapFrames = (page, ms) =>
   page.evaluate(
@@ -168,6 +170,8 @@ const raceOverlapFrames = (page, ms) =>
         let frames = 0;
         let bad = 0;
         let orders = 0;
+        let blink = 0;
+        let misorder = 0;
         let prev = '';
         const examples = [];
         const t0 = performance.now();
@@ -182,6 +186,15 @@ const raceOverlapFrames = (page, ms) =>
             const v = { left: Math.max(s.left, r.left), right: Math.min(s.right, r.right), top: Math.max(s.top, r.top), bottom: Math.min(s.bottom, r.bottom) };
             if (v.bottom - v.top > 1) vis.push({ v, name: (slot.querySelector('.sh-name') || {}).textContent || '' });
           }
+          // a board that blinks: fewer than half of the rows readable (entrance animations all at once)
+          const enters = [...document.querySelectorAll('.sh-row-enter')];
+          const readable = enters.filter((e) => Number(getComputedStyle(e).opacity) >= 0.5).length;
+          if (enters.length > 0 && readable < enters.length / 2) blink++;
+          // the numbers agree with the places: no row shows clearly more than the row above it
+          const nums = [...document.querySelectorAll('.sh-row')]
+            .sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot))
+            .map((r) => Number(((r.querySelector('.sh-score') || {}).textContent || '').replace(/[^0-9]/g, '')));
+          if (nums.some((v, k) => k > 0 && v > nums[k - 1] * 1.02 + 1)) misorder++;
           const order = vis.map((x) => x.name).join('|');
           if (order !== prev) orders++;
           prev = order;
@@ -197,7 +210,7 @@ const raceOverlapFrames = (page, ms) =>
             if (examples.length < 5) examples.push(Math.round(performance.now() - t0) + 'ms ' + problem);
           }
           if (performance.now() - t0 < dur) requestAnimationFrame(step);
-          else resolve({ frames, bad, examples, orders });
+          else resolve({ frames, bad, examples, orders, blink, misorder });
         };
         requestAnimationFrame(step);
       }),

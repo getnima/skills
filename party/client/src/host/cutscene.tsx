@@ -88,7 +88,12 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    // a hidden tab gets no animation frames: the card still ends on time
+    const done = setTimeout(finish, left + 50);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(done);
+    };
   }, [mode.kind]);
 
   // video: play with sound, else muted with a one-click unmute; progress line
@@ -138,6 +143,11 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
     v.addEventListener('playing', onPlaying);
     v.addEventListener('error', onError);
     v.addEventListener('ended', onEnded);
+    // the file may have failed (or loaded) before these listeners existed
+    if (v.error !== null) {
+      nextSource();
+      return undefined;
+    }
     if (v.readyState >= 1) start();
     const watchdog = setTimeout(() => {
       if (!startedRef.current) nextSource();

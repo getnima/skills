@@ -331,7 +331,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
   function flash(color = '#ffffff'): void {
     if (!punchAllowed()) return;
     flashEl.style.backgroundColor = color;
-    flashEl.animate([{ opacity: 0.6 }, { opacity: 0 }], { duration: 520, easing: 'ease-out' });
+    flashEl.animate([{ opacity: 0.35 }, { opacity: 0 }], { duration: 520, easing: 'ease-out' });
   }
 
   function zoom(): void {

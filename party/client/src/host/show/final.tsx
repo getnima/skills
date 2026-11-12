@@ -61,7 +61,12 @@ function Column(props: { place: 1 | 2 | 3; entry: Ranked | undefined; up: boolea
           {also.length > 0 ? (
             <div class="sh-pod-also" dir="rtl">
               תיקו עם <bdi>{also[0]?.player.name}</bdi>
-              {also.length > 1 ? ` +${also.length - 1}` : ''}
+              {also.length > 1 ? (
+                <>
+                  {' '}
+                  <bdi dir="ltr">+{also.length - 1}</bdi>
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -88,8 +93,11 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
   tlRef.current = tl;
   const champion = ranked[0];
   // everyone who shares first place (a tie for first crowns them all)
-  const champs = useMemo(() => (champion !== undefined && champion.player.total > 0 ? ranked.filter((r) => r.rank === 1) : ranked.slice(0, 1)), [ranked, champion]);
-  const champName = champs.map((c) => c.player.name).join(' · ');
+  // (nobody scored all night: everyone shares it). The header names at most three, then "+N".
+  const champs = useMemo(() => ranked.filter((r) => r.rank === 1), [ranked]);
+  const champsShown = champs.slice(0, 3);
+  const champsMore = champs.length - champsShown.length;
+  const champName = champsShown.map((c) => c.player.name).join(' · ') + (champsMore > 0 ? ` +${champsMore}` : '');
   const championRef = useRef(champName);
   championRef.current = champName;
   // tied with the third podium spot but off the podium: named under that column
@@ -188,12 +196,18 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
           <div class="sh-champ" key="champ">
             <div class="sh-champ-kicker">{champs.length > 1 ? '🏆 תיקו במקום הראשון! 🏆' : '🏆 המקום הראשון של הערב 🏆'}</div>
             <div class="sh-champ-name" style={{ fontSize: `calc(${Math.min(size.portrait ? 110 : 190, Math.round((size.portrait ? 590 : 1500) / (Math.max(4, Array.from(champName).length) * 0.6)))} * var(--u))` }}>
-              {champs.map((c, i) => (
+              {champsShown.map((c, i) => (
                 <span key={c.player.id}>
                   {i > 0 ? <span class="sh-champ-and"> · </span> : null}
                   <bdi>{c.player.name}</bdi>
                 </span>
               ))}
+              {champsMore > 0 ? (
+                <span class="sh-champ-and">
+                  {' '}
+                  <bdi dir="ltr">+{champsMore}</bdi>
+                </span>
+              ) : null}
             </div>
           </div>
         ) : (

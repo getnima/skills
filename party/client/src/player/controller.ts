@@ -107,7 +107,9 @@ export function createController(): PlayerController {
   const urlCode = normalizeCode(params.get('room'));
   const codeFromUrl = isValidCode(urlCode);
   // No ?room (e.g. launched from the home screen): resume the last room this phone played in.
-  const startCode = codeFromUrl ? urlCode : loadLastRoom();
+  // (Only while this phone still has a seat there: a room it was dropped from is not offered again.)
+  const lastRoom = loadLastRoom();
+  const startCode = codeFromUrl ? urlCode : isValidCode(lastRoom) && loadIdentity(lastRoom) !== null ? lastRoom : '';
   const stored = isValidCode(startCode) ? loadIdentity(startCode) : null;
 
   let identity: Identity | null = stored;
@@ -184,6 +186,7 @@ export function createController(): PlayerController {
     } catch {
       // ignore
     }
+    suspect = false;
     snap = { ...snap, status: 'in', online: true, code, codeLocked: true, playerId, name, joinError: null, lateRound };
     applyState(state);
     void clock.sync();
@@ -258,27 +261,41 @@ export function createController(): PlayerController {
   let healthInFlight = false;
   let healthFails = 0;
 
+  /** Bumped by every forced reconnect: an answer to a ping sent before it is stale. */
+  let linkGen = 0;
+  /** Last time this page's timers ran. A frozen / suspended page (iOS lock) stops them. */
+  let lastAlive = Date.now();
+
+  let forcedAt = 0;
+
   function forceReconnect(): void {
+    forcedAt = Date.now();
+    linkGen++;
     healthFails = 0;
+    // disconnect() + connect() also skips socket.io's reconnect back-off and a connect
+    // attempt left hanging from before the lock: a new attempt starts right now.
     socket.disconnect();
     socket.connect();
   }
 
   function onReturn(awayMs: number): void {
+    // How long nothing ran here: the hidden time, or longer when the page was frozen
+    // (an 'online' or 'pageshow' event after a lock does not know about the lock).
+    const silentMs = Math.max(awayMs, Date.now() - lastAlive);
+    lastAlive = Date.now();
+    // One unlock fires several events ('online', 'visibilitychange', 'pageshow'): one reconnect.
+    if (Date.now() - forcedAt < 3_000) return;
     // Away longer than the server's ping window: the server has dropped this socket for
-    // sure (a frozen page answered no pings). Reconnect at once instead of waiting for
-    // socket.io to notice and then for its reconnection delay.
-    if (awayMs >= DEAD_AFTER_MS && socket.connected) {
+    // sure. Not connected: socket.io may sit in a back-off delay. Either way, reconnect now.
+    if (silentMs >= DEAD_AFTER_MS || !socket.connected) {
       forceReconnect();
       return;
     }
-    if (!socket.connected) {
-      if (!socket.active) socket.connect();
-      return; // socket.io is reconnecting; 'connect' re-joins and re-syncs
-    }
+    const gen = linkGen;
     socket.timeout(RETURN_CHECK_MS).emit('time:ping', Date.now(), (err) => {
+      if (gen !== linkGen) return; // a reconnect already happened since
       if (err) {
-        if (socket.connected) forceReconnect();
+        forceReconnect();
         return;
       }
       void clock.sync(3);
@@ -287,16 +304,37 @@ export function createController(): PlayerController {
     });
   }
 
+  /**
+   * The link looks dead (an unanswered ping, the browser says offline) while the socket
+   * still claims to be up: show "reconnecting" now instead of after the reconnect.
+   * Cleared by the next answered ping or by the re-join after a reconnect.
+   */
+  let suspect = false;
+  function markSuspect(): void {
+    if (suspect || snap.status !== 'in') return;
+    suspect = true;
+    if (snap.online) set({ online: false });
+  }
+  function clearSuspect(): void {
+    if (!suspect) return;
+    suspect = false;
+    if (!snap.online && socket.connected && !resumeInFlight && snap.status === 'in') set({ online: true });
+  }
+
   function heartbeat(): void {
     if (document.visibilityState !== 'visible' || !socket.connected || healthInFlight) return;
     healthInFlight = true;
+    const gen = linkGen;
     socket.timeout(HEALTH_TIMEOUT_MS).emit('time:ping', Date.now(), (err) => {
       healthInFlight = false;
+      if (gen !== linkGen) return;
       if (!err) {
         healthFails = 0;
+        clearSuspect();
         return;
       }
       healthFails++;
+      markSuspect();
       if (healthFails >= 2 && socket.connected) forceReconnect();
     });
   }
@@ -315,7 +353,16 @@ export function createController(): PlayerController {
       if (e.persisted) onReturn(0);
     });
     window.addEventListener('online', () => onReturn(0));
+    window.addEventListener('offline', markSuspect);
     setInterval(heartbeat, HEALTH_EVERY_MS);
+    setInterval(() => {
+      // Timers that did not run for a long while = the page was frozen: treat it as a return.
+      const gap = Date.now() - lastAlive;
+      lastAlive = Date.now();
+      if (gap >= DEAD_AFTER_MS && document.visibilityState === 'visible') onReturn(gap);
+      // The phone's own clock was set back (or forward a little, NTP): measure the offset again.
+      else if ((gap < -1_000 || gap > 3_000) && socket.connected) void clock.sync(3);
+    }, 1_000);
   }
 
   // ── final score ──
@@ -416,7 +463,21 @@ export function createController(): PlayerController {
       clearIdentity(snap.code);
       identity = null;
       pendingFinal = null;
+      const closed = snap.status === 'closed';
+      if (closed) {
+        // That room is gone: an empty code field, and a reload must not try it again.
+        try {
+          const url = new URL(window.location.href);
+          if (url.searchParams.has('room')) {
+            url.searchParams.delete('room');
+            window.history.replaceState(null, '', url.toString());
+          }
+        } catch {
+          // ignore
+        }
+      }
       set({
+        code: closed ? '' : snap.code,
         status: 'join',
         state: null,
         playerId: null,

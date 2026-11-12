@@ -141,7 +141,9 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
               if (v !== el.value) el.value = v;
               ctl.setName(v);
             }}
-            maxLength={NAME_MAX_LEN}
+            // maxLength counts UTF-16 units (an emoji is 2, a family emoji 8): only a loose cap
+            // here, the real cut is cutName() in graphemes, like the server's.
+            maxLength={NAME_MAX_LEN * 8}
             placeholder="השם שלך"
             autocapitalize="off"
             autocomplete="off"
@@ -469,6 +471,18 @@ export function SendingScreen(props: { readonly score: number; readonly acked: b
 }
 
 export function SuspenseScreen(): JSX.Element {
+  // Whoever wins sees the prize picture in a few seconds: have it in the cache by then.
+  useEffect(() => {
+    const url = prizeUrl();
+    if (url === null) return;
+    try {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = url;
+    } catch {
+      // ignore
+    }
+  }, []);
   return (
     <div class="pp-screen pp-center pp-suspense">
       <div class="pp-spot" aria-hidden="true" />
