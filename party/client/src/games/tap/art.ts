@@ -10,8 +10,11 @@ import { COLORS } from '../../kit/theme';
 
 import type { Drawable, Painter } from '../../kit/assets';
 
-/** Logical box of a face slot in CSS px (pre-rendered at 2x = 600px). */
-export const FACE_BOX = 300;
+/**
+ * Logical box of a face slot in CSS px, pre-rendered at 2x = 800 px: on a big phone the
+ * face is drawn up to ~400 CSS px wide (800 device px), so a real photo stays sharp.
+ */
+export const FACE_BOX = 400;
 /** Share of the face box the head covers (radius / box). Used for hit testing. */
 export const HEAD_RADIUS = 0.46;
 

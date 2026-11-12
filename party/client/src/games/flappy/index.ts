@@ -35,6 +35,14 @@ interface FlappyDebug {
   readonly next: { readonly x: number; readonly gapY: number; readonly gap: number };
   /** First n obstacles of the course (for determinism checks). */
   course(n: number): Array<{ x: number; gapY: number; gap: number }>;
+  /** Physics constants (field units, seconds) and the scroll speed now. */
+  readonly phys: typeof PHYS;
+  readonly speed: number;
+  /** Screen mapping: px per field unit, bird x in px, units visible ahead of the bird. */
+  readonly layout: { U: number; birdX: number; W: number; top: number; groundTop: number; ahead: number };
+  /** Start (n > 0) or stop (0) recording [step, mode, birdY, vy, dist, run] per fixed step. */
+  trace(n: number): void;
+  readonly traced: ReadonlyArray<readonly (number | string)[]>;
 }
 
 declare global {
@@ -64,6 +72,13 @@ const HOVER_Y = FIELD * 0.42;
 const MAX_FEATHERS = 48;
 const FEATHER_COLORS = ['#ffffff', '#fff3c4', '#ffd6ea', '#ffffff'] as const;
 const MAX_RAW = GAMES.flappy.maxRaw;
+/**
+ * The screen is at most this many field units wide. Tall phones (19.5:9) would
+ * otherwise get a bigger zoom from their height and see ~38 units of course
+ * ahead of the bird against ~48 on a 16:9 phone; capped, every portrait phone
+ * sees 47-49 units ahead. Physics never depends on it (all in field units).
+ */
+const VIEW_W = 68;
 
 const STREAK_WORDS: ReadonlyArray<readonly [number, string]> = [
   [5, 'יפה!'],
@@ -100,7 +115,10 @@ export const game: GameModule = {
     const sparkle = paintDrawable('sparkle', starPainter('#ffe680'), 32);
 
     // ── layout (CSS px), recomputed from the view each step / frame ──
-    const L = { W: 0, H: 0, top: 0, groundTop: 0, groundH: 0, playH: 0, U: 1, birdX: 0, sized: '' };
+    // `top` = top of the FIELD (field y 0); `hudTop` = first px below the HUD. On a tall
+    // phone the field is narrower than the screen height (see VIEW_W), so the sky
+    // between them is open air: the bird may fly up to `ceil` (field units, <= 0).
+    const L = { W: 0, H: 0, top: 0, hudTop: 0, ceil: 0, groundTop: 0, groundH: 0, playH: 0, U: 1, birdX: 0, sized: '' };
     const fonts = { counter: '', best: '', banner: '', hint: '', card: '', cardBig: '' };
     function measure(): void {
       const W = view.width;
@@ -110,11 +128,16 @@ export const game: GameModule = {
       L.sized = key;
       L.W = W;
       L.H = H;
-      L.top = Math.min(ctx.hudHeight + 4, H * 0.3);
+      L.hudTop = Math.min(ctx.hudHeight + 4, H * 0.3);
       L.groundH = Math.round(clamp(H * 0.085, 40, 80));
       L.groundTop = H - ctx.safeBottom - L.groundH;
-      L.playH = Math.max(120, L.groundTop - L.top);
-      L.U = L.playH / FIELD;
+      const availH = Math.max(120, L.groundTop - L.hudTop);
+      // px per field unit: the field fills the height, but never so large that a tall
+      // phone sees less of the course ahead than a 16:9 one (fairness, see VIEW_W)
+      L.U = Math.min(availH / FIELD, W / VIEW_W);
+      L.playH = FIELD * L.U;
+      L.top = L.groundTop - L.playH;
+      L.ceil = Math.min(0, (L.hudTop - L.top) / L.U);
       L.birdX = Math.round(clamp(Math.min(W * 0.3, 34 * L.U + 20), 60, W * 0.45));
       fonts.counter = font(Math.round(L.playH * 0.3), 900);
       fonts.best = font(15, 800);
@@ -167,6 +190,8 @@ export const game: GameModule = {
     let bannerT = 0;
     let bannerMax = 1;
     let destroyed = false;
+    let traceLeft = 0;
+    const traced: Array<Array<number | string>> = [];
 
     const feathers: Feather[] = [];
     for (let i = 0; i < MAX_FEATHERS; i++) {
@@ -427,8 +452,11 @@ export const game: GameModule = {
           if (wantFlap) flap();
           vy = Math.min(PHYS.maxFall, vy + PHYS.gravity * dt);
           birdY += vy * dt;
-          if (birdY < PHYS.radius * 0.6) {
-            birdY = PHYS.radius * 0.6;
+          // the top of the visible sky (on a 16:9 phone exactly the field top);
+          // above the field there is only microphone stand, so a higher sky gives nothing
+          const ceil = L.ceil + PHYS.radius * 0.6;
+          if (birdY < ceil) {
+            birdY = ceil;
             if (vy < 0) vy = 0;
           }
           const sp = speedAt(dist);
@@ -499,6 +527,10 @@ export const game: GameModule = {
       if (bannerT > 0) bannerT = Math.max(0, bannerT - dt);
       updateFeathers(dt);
       fx.update(dt);
+      if (traceLeft > 0) {
+        traceLeft--;
+        traced.push([loop.steps, mode, birdY, vy, dist, run]);
+      }
     }
 
     // ── drawing ──
@@ -638,7 +670,7 @@ export const game: GameModule = {
       const w = g.measureText(text).width + 22;
       const h = 26;
       const x = L.W - 10 - w;
-      const y = L.top + 4;
+      const y = L.hudTop + 4;
       g.fillStyle = 'rgba(12, 5, 32, 0.55)';
       roundRectPath(g, x, y, w, h, 13);
       g.fill();
@@ -833,6 +865,20 @@ export const game: GameModule = {
       get next(): { x: number; gapY: number; gap: number } {
         const o = course.get(nextIdx);
         return { x: o.x - dist, gapY: o.gapY, gap: o.gap };
+      },
+      phys: PHYS,
+      get speed(): number {
+        return speedAt(dist);
+      },
+      get layout(): { U: number; birdX: number; W: number; top: number; groundTop: number; ahead: number } {
+        return { U: L.U, birdX: L.birdX, W: L.W, top: L.top, groundTop: L.groundTop, ahead: (L.W - L.birdX) / L.U };
+      },
+      trace(n: number): void {
+        traced.length = 0;
+        traceLeft = Math.max(0, n);
+      },
+      get traced(): ReadonlyArray<readonly (number | string)[]> {
+        return traced;
       },
       course(n: number): Array<{ x: number; gapY: number; gap: number }> {
         const out: Array<{ x: number; gapY: number; gap: number }> = [];

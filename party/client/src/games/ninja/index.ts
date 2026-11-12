@@ -46,6 +46,8 @@ const COMBO_WINDOW_STEPS = 30;
 /** No throw is launched with less than this left: it could not be sliced. */
 const MIN_LEFT_TO_LAUNCH_MS = 700;
 const HINT_MAX_MS = 3400;
+/** The game clock catches up with the round clock when it falls this far behind. */
+const RESYNC_MS = 400;
 
 const MAX_FLYERS = 32;
 const MAX_HALVES = 48;
@@ -318,7 +320,7 @@ export const game: GameModule = {
     // Round time already gone when the game starts (slow load, late mount), snapped to whole
     // steps: the schedule is in round time, so a late phone sees the same throws at the same
     // moments as the others and skips the ones it was not there for.
-    const startOffset = clamp(Math.round((ctx.durationMs - ctx.timeLeftMs()) / (1000 / 60)) * (1000 / 60), 0, ctx.durationMs);
+    let startOffset = clamp(Math.round((ctx.durationMs - ctx.timeLeftMs()) / (1000 / 60)) * (1000 / 60), 0, ctx.durationMs);
 
     const flyers: Flyer[] = Array.from({ length: MAX_FLYERS }, makeFlyer);
     const halves: Half[] = Array.from({ length: MAX_HALVES }, makeHalf);
@@ -518,7 +520,8 @@ export const game: GameModule = {
         gravity: -80,
         shape: 'dot',
       });
-      fx.text(x, y - R, `-${BOMB_PENALTY}`, {
+      // below the "blade down" pill (top + 12 .. top + 62) for its whole 80 px rise
+      fx.text(x, Math.max(top + 150, y - R), `-${BOMB_PENALTY}`, {
         color: COLORS.red,
         size: 48,
         life: 1.2,
@@ -732,6 +735,15 @@ export const game: GameModule = {
 
     function update(dt: number): void {
       layout();
+      // Behind the round clock (the page slept: locked phone, another app, very long frames)?
+      // Catch up so the throws stay in step with everyone else's; the ones that flew while
+      // this phone slept are skipped, never launched all at once.
+      const roundElapsed = ctx.durationMs - ctx.timeLeftMs();
+      if (roundElapsed - (startOffset + loop.timeMs) > RESYNC_MS) {
+        startOffset = Math.round((roundElapsed - loop.timeMs) / (1000 / 60)) * (1000 / 60);
+        const skipBefore = startOffset + loop.timeMs - 250;
+        while (nextThrow < schedule.length && (schedule[nextThrow]?.atMs ?? 0) < skipBefore) nextThrow++;
+      }
       const now = startOffset + loop.timeMs;
       // launches
       while (nextThrow < schedule.length) {

@@ -59,6 +59,8 @@ async function openGame(browser, game, opts = {}) {
   page.on('pageerror', (e) => errors.push('pageerror ' + e.message));
   const cdp = await context.newCDPSession(page);
   if (opts.cpu) await cdp.send('Emulation.setCPUThrottlingRate', { rate: opts.cpu });
+  // notch + home indicator: env(safe-area-inset-*) as on an iPhone
+  if (opts.safe) await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: opts.safe.top || 0, bottom: opts.safe.bottom || 0, left: opts.safe.left || 0, right: opts.safe.right || 0 } });
   await page.goto(`${BASE}/dev.html?game=${game}&${opts.query || ''}`);
   await page.waitForSelector('.pa-stage-game canvas');
   // the harness' own ❄️ / 🔇 / ✕ buttons sit over the bottom-left of the game: a bot tap

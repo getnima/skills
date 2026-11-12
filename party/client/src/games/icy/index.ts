@@ -21,33 +21,52 @@ import { STEP_HZ, createLoop } from '../../kit/loop';
 import { COLORS, PARTY_COLORS, font } from '../../kit/theme';
 import { HEAD_SHARE, loadIcyArt } from './art';
 import { FLOOR_H, INNER_L, INNER_R, WALL_W, WORLD_W, buildLevel, floorAtOrBelow, isMilestone } from './level';
+import { MAX_VX, R, copyBody, createBody, createEvents, stepBody } from './physics';
 
 import type { GameContext, GameInstance, GameModule } from '../types';
 import type { KitPointer } from '../../kit/input';
+import type { Body } from './physics';
+
+/** Test hook (QA bots and e2e): live state plus a predictor that runs the real physics. */
+export interface IcyDebug {
+  readonly state: {
+    mode: string;
+    x: number;
+    py: number;
+    vx: number;
+    vy: number;
+    grounded: number;
+    cam: number;
+    camV: number;
+    camOn: boolean;
+    follow: number;
+    runs: number;
+    runFloor: number;
+    best: number;
+    dir: number;
+    steps: number;
+    paused: boolean;
+  };
+  floors(from: number, n: number): Array<{ i: number; alt: number; x: number; half: number }>;
+  /** Start (n > 0) or stop (0) recording [step, dir, x, py, vx, vy, grounded, cam] per fixed step. */
+  trace(n: number): void;
+  readonly traced: ReadonlyArray<readonly number[]>;
+  /**
+   * Run the real physics from the current state with `plan` ([dir, steps] pairs,
+   * the last one repeats; dir 2 = push the way the face moves), at most `maxSteps` steps. Returns every landing and
+   * whether the face would fall off the bottom (camera modelled as in the game).
+   */
+  predict(plan: ReadonlyArray<readonly [number, number]>, maxSteps: number): { landings: Array<{ step: number; floor: number; x: number }>; deadAt: number; x: number; py: number; vx: number };
+}
+
+declare global {
+  interface Window {
+    __icy?: IcyDebug;
+  }
+}
 
 // ───────────────────────────── Tuning (world units, seconds) ─────────────────────────────
 
-/** Radius of the head. */
-const R = 22;
-const GRAVITY = 2400;
-const JUMP_V0 = 820;
-const JUMP_K1 = 0.5;
-const JUMP_K2 = 0.0006;
-const ACC_GROUND = 1800;
-const ACC_AIR = 1000;
-/** Pushing against the current direction turns around faster. */
-const TURN_MULT = 2.2;
-const MAX_VX = 780;
-/** Ice: very little friction once the side is released. */
-const FRICTION = 360;
-const AIR_DRAG = 0.08;
-const MAX_FALL = 1750;
-/** Share of the speed a wall gives back. */
-const WALL_KEEP = 0.97;
-const WALL_KICK_MIN_VX = 360;
-const WALL_KICK_VY = 130;
-/** How far past a floor's end the face still stands on it (share of R). */
-const EDGE = 0.3;
 /** Jumps this strong spin the face and leave a streak. */
 const SUPER_JUMP_VY = 1250;
 /** A combo dies when no 2+ floor jump lands within this many steps. */
@@ -62,8 +81,14 @@ const CAM_V0 = 55;
 const CAM_ACC = 5.5;
 const CAM_MAX = 320;
 const CAM_SPEEDUP_EVERY = 15 * STEP_HZ;
-/** Camera keeps the face below this share of the visible height. */
-const CAM_FOLLOW = 0.6;
+/**
+ * Camera keeps the head at most this many world units above the bottom edge
+ * (the death line). A world constant, not a share of the screen: a tall phone
+ * sees further up but gets exactly the same room below the face as a small one.
+ * Only a very short play area (landscape) uses less, so the face stays on screen.
+ */
+const CAM_FOLLOW_WORLD = 360;
+const CAM_FOLLOW_MAX_SHARE = 0.62;
 /** The camera bottom starts a bit below the ground so the ground slab is visible. */
 const START_CAM = -48;
 /** The beat between a fall and the next run. */
@@ -80,6 +105,53 @@ const SNOW = 34;
 const BANNER_POP = 12;
 
 const INK = '#2b1436';
+
+// ───────────────────────────── Camera (pure, shared with the predictor) ─────────────────────────────
+
+interface CamState {
+  /** Altitude of the bottom edge of the view (the death line). */
+  cam: number;
+  camOn: boolean;
+  /** Seconds since the floors started scrolling in this run. */
+  camT: number;
+}
+const CAM_STARTED = 1;
+const CAM_FASTER = 2;
+
+function camSpeed(camT: number): number {
+  return Math.min(CAM_MAX, CAM_V0 + CAM_ACC * camT);
+}
+
+function resetCam(c: CamState): void {
+  c.cam = START_CAM;
+  c.camOn = false;
+  c.camT = 0;
+}
+
+/** One step of the camera. Returns CAM_STARTED / CAM_FASTER when that happened, else 0. */
+function advanceCam(c: CamState, runFloor: number, runSteps: number, head: number, follow: number, dt: number): number {
+  let r = 0;
+  if (!c.camOn && (runFloor >= CAM_START_FLOOR || runSteps >= CAM_START_STEPS)) {
+    c.camOn = true;
+    c.camT = 0;
+    r = CAM_STARTED;
+  }
+  if (c.camOn) {
+    const before = Math.floor((c.camT * STEP_HZ) / CAM_SPEEDUP_EVERY);
+    c.camT += dt;
+    const after = Math.floor((c.camT * STEP_HZ) / CAM_SPEEDUP_EVERY);
+    if (after > before) r = CAM_FASTER;
+    c.cam += camSpeed(c.camT) * dt;
+  }
+  const limit = c.cam + follow;
+  if (head > limit) c.cam += (head - limit) * Math.min(1, 10 * dt);
+  return r;
+}
+
+/** The head left the bottom of the view. */
+function fellOff(b: Body, cam: number): boolean {
+  return b.py + 2 * R < cam - 8;
+}
 const DASH: number[] = [10, 8];
 const NO_DASH: number[] = [];
 
@@ -127,6 +199,8 @@ export const game: GameModule = {
     let offX = 0;
     let scale = 1;
     let visH = 1;
+    /** Camera follow distance in world units (see CAM_FOLLOW_WORLD). */
+    let follow = CAM_FOLLOW_WORLD;
     /** UI scale for short play areas (landscape phones). */
     let ui = 1;
     let zoneGrads: CanvasGradient[] = [];
@@ -141,7 +215,8 @@ export const game: GameModule = {
       offX = (view.width - playW) / 2;
       scale = playW / WORLD_W;
       visH = playH / scale;
-      ui = clamp(Math.min(playW / 360, playH / 560), 0.62, 1.1);
+      follow = Math.min(CAM_FOLLOW_WORLD, visH * CAM_FOLLOW_MAX_SHARE);
+      ui =clamp(Math.min(playW / 360, playH / 560), 0.62, 1.1);
       zoneGrads = ZONES.map(([a, b]) => {
         const gr = g.createLinearGradient(0, 0, 0, view.height);
         gr.addColorStop(0, a);
@@ -159,19 +234,30 @@ export const game: GameModule = {
     layout();
     const offResize = view.onResize(layout);
 
-    // ── input: which halves are held ──
-    const sides = new Map<number, number>();
-    let tapL = 0;
-    let tapR = 0;
+    // ── input: which half is held. Several fingers: the last one pressed wins. ──
+    const sides = new Map<number, number>(); // insertion order = press order
+    let tapDir = 0;
+    let tapSteps = 0;
     let jumpBuffer = 0;
     function sideOf(p: KitPointer): number {
       return p.x < view.width / 2 ? -1 : 1;
     }
+    /** Side of the most recently pressed finger that is still down (0 = none). */
+    function fingerDir(): number {
+      let d = 0;
+      for (const v of sides.values()) d = v;
+      return d;
+    }
+    /** The side pushed now: a fresh tap (always the newest touch), else the newest held finger. */
+    function heldDir(): number {
+      return tapSteps > 0 ? tapDir : fingerDir();
+    }
     const offDown = input.onDown((p) => {
       const s = sideOf(p);
+      sides.delete(p.id);
       sides.set(p.id, s);
-      if (s < 0) tapL = TAP_HOLD_STEPS;
-      else tapR = TAP_HOLD_STEPS;
+      tapDir = s;
+      tapSteps = TAP_HOLD_STEPS;
       jumpBuffer = JUMP_BUFFER_STEPS;
     });
     const offMove = input.onMove((p) => {
@@ -179,18 +265,19 @@ export const game: GameModule = {
     });
     const offUp = input.onUp((p) => {
       sides.delete(p.id);
+      // a cancelled touch (freeze, notification, system gesture) leaves nothing pushed
+      if (p.cancelled) {
+        tapSteps = 0;
+        jumpBuffer = 0;
+      }
     });
 
     // ── state ──
     let mode: Mode = 'run';
-    let x = WORLD_W / 2;
-    let py = 0; // altitude of the feet
-    let vx = 0;
-    let vy = 0;
-    let prevX = x;
-    let prevPy = py;
-    let grounded = 0; // floor index, -1 = in the air
-    let lastFloor = 0; // floor of the last take-off / landing
+    const body: Body = createBody();
+    const ev = createEvents();
+    let prevX = body.x;
+    let prevPy = body.py;
     let runFloor = 0;
     let runBonus = 0;
     let best = 0;
@@ -209,10 +296,8 @@ export const game: GameModule = {
     let rot = 0;
     let squash = 0;
     let squashV = 0;
-    let cam = START_CAM;
-    let prevCam = cam;
-    let camOn = false;
-    let camT = 0;
+    const cam: CamState = { cam: START_CAM, camOn: false, camT: 0 };
+    let prevCam = cam.cam;
     let deadSteps = 0;
     let deathCam = 0;
     let deathX = 0;
@@ -224,6 +309,8 @@ export const game: GameModule = {
     let lowFloor = 0;
     let steps = 0;
     let destroyed = false;
+    let traceLeft = 0;
+    const traced: number[][] = [];
 
     const trailX = new Float64Array(TRAIL);
     const trailA = new Float64Array(TRAIL);
@@ -294,16 +381,13 @@ export const game: GameModule = {
       comboTimer = 0;
     }
 
-    function jump(): void {
-      const power = Math.abs(vx);
-      vy = JUMP_V0 + JUMP_K1 * power + JUMP_K2 * power * power;
-      lastFloor = grounded >= 0 ? grounded : lastFloor;
-      grounded = -1;
-      superAir = vy >= SUPER_JUMP_VY;
+    /** Effects of a take-off (the physics already happened in stepBody). */
+    function onJump(power: number): void {
+      superAir = body.vy >= SUPER_JUMP_VY;
       squash = -0.28 - (superAir ? 0.12 : 0);
       squashV = 0;
       sfx.jump(0.85 + power / 1600);
-      fx.burst(wx(x), fy(py), {
+      fx.burst(wx(body.x), fy(body.py), {
         count: superAir ? 14 : 6,
         colors: ['#ffffff', '#cfefff', COLORS.cyan],
         speed: superAir ? 300 : 170,
@@ -316,19 +400,14 @@ export const game: GameModule = {
       if (superAir) haptic.tap();
     }
 
-    function land(j: number): void {
-      const impact = -vy;
-      py = level.alt[j] ?? 0;
-      vy = 0;
-      grounded = j;
+    /** Effects and score of a landing on floor `j`, `delta` floors above the take-off. */
+    function onLand(j: number, delta: number, impact: number): void {
       if (superAir) rot = Math.atan2(Math.sin(rot), Math.cos(rot));
       superAir = false;
       squash = Math.min(0.42, 0.12 + impact / 4200);
       squashV = 0;
-      const delta = j - lastFloor;
-      lastFloor = j;
-      const sx = wx(x);
-      const sy = fy(py);
+      const sx = wx(body.x);
+      const sy = fy(level.alt[j] ?? 0);
       if (delta >= 2) {
         comboJumps++;
         comboFloors += delta;
@@ -360,7 +439,7 @@ export const game: GameModule = {
         if (Math.floor(j / 10) > before && j >= 10) {
           const m = Math.floor(j / 10) * 10;
           showBanner(`קומה ${m}!`, m % 50 === 0 ? 'אגדה של קרח 🧊' : '', COLORS.yellow, 1.3);
-          const ma = level.alt[m] ?? py;
+          const ma = level.alt[m] ?? body.py;
           fx.confetti({ x: view.width / 2, y: fy(ma) });
           sfx.success();
           haptic.success();
@@ -382,8 +461,8 @@ export const game: GameModule = {
       runs++;
       mode = 'dead';
       deadSteps = 0;
-      deathCam = cam;
-      deathX = x;
+      deathCam = cam.cam;
+      deathX = body.x;
       popY = -30;
       prevPopY = popY;
       popV = 1250;
@@ -396,14 +475,9 @@ export const game: GameModule = {
 
     function restart(): void {
       mode = 'run';
-      x = WORLD_W / 2;
-      py = 0;
-      vx = 0;
-      vy = 0;
-      prevX = x;
-      prevPy = py;
-      grounded = 0;
-      lastFloor = 0;
+      copyBody(createBody(), body);
+      prevX = body.x;
+      prevPy = body.py;
       runFloor = 0;
       runBonus = 0;
       bestBefore = best;
@@ -413,13 +487,11 @@ export const game: GameModule = {
       rot = 0;
       squash = 0.3;
       squashV = 0;
-      cam = START_CAM;
-      prevCam = cam;
-      camOn = false;
-      camT = 0;
+      resetCam(cam);
+      prevCam = cam.cam;
       lowFloor = 0;
       trailLen = 0;
-      fx.burst(wx(x), fy(py + R), { count: 18, shape: 'star', speed: 260, life: 0.5 });
+      fx.burst(wx(body.x), fy(body.py + R), { count: 18, shape: 'star', speed: 260, life: 0.5 });
       sfx.pop(1.2);
     }
 
@@ -433,83 +505,45 @@ export const game: GameModule = {
     }
 
     function updateCamera(dt: number): void {
-      if (!camOn && (runFloor >= CAM_START_FLOOR || runSteps >= CAM_START_STEPS)) {
-        camOn = true;
-        camT = 0;
-        sfx.whoosh(0.8);
+      const r = advanceCam(cam, runFloor, runSteps, body.py + 2 * R, follow, dt);
+      if (r === CAM_STARTED) sfx.whoosh(0.8);
+      else if (r === CAM_FASTER) {
+        showBanner('מהר יותר!', '', COLORS.cyan, 1.1);
+        sfx.whoosh(1.3);
       }
-      if (camOn) {
-        const before = Math.floor((camT * STEP_HZ) / CAM_SPEEDUP_EVERY);
-        camT += dt;
-        const after = Math.floor((camT * STEP_HZ) / CAM_SPEEDUP_EVERY);
-        if (after > before) {
-          showBanner('מהר יותר!', '', COLORS.cyan, 1.1);
-          sfx.whoosh(1.3);
-        }
-        cam += Math.min(CAM_MAX, CAM_V0 + CAM_ACC * camT) * dt;
-      }
-      const head = py + 2 * R;
-      const limit = cam + visH * CAM_FOLLOW;
-      if (head > limit) cam += (head - limit) * Math.min(1, 10 * dt);
     }
 
     function stepRun(dt: number): void {
       runSteps++;
-      const leftHeld = tapL > 0 || hasSide(-1);
-      const rightHeld = tapR > 0 || hasSide(1);
-      if (tapL > 0) tapL--;
-      if (tapR > 0) tapR--;
-      const dir = (leftHeld ? -1 : 0) + (rightHeld ? 1 : 0);
-      const held = leftHeld || rightHeld;
+      const dir = heldDir();
+      if (tapSteps > 0) tapSteps--;
+      const held = dir !== 0;
 
-      // horizontal: icy inertia
-      if (dir !== 0) {
-        let acc = grounded >= 0 ? ACC_GROUND : ACC_AIR;
-        if (vx !== 0 && Math.sign(vx) !== dir) acc *= TURN_MULT;
-        vx = clamp(vx + dir * acc * dt, -MAX_VX, MAX_VX);
-      } else if (grounded >= 0) {
-        const f = FRICTION * dt;
-        vx = Math.abs(vx) <= f ? 0 : vx - Math.sign(vx) * f;
-      } else {
-        vx *= 1 - AIR_DRAG * dt;
+      stepBody(body, dir, held, held || jumpBuffer > 0, level, dt, ev);
+      if (traceLeft > 0) {
+        traceLeft--;
+        traced.push([steps, dir, body.x, body.py, body.vx, body.vy, body.grounded, cam.cam]);
       }
+      if (ev.jumped) jumpBuffer = 0;
+      else if (jumpBuffer > 0) jumpBuffer--;
 
-      // auto-jump while a side is held, or a quick tap
-      if (grounded >= 0 && (held || jumpBuffer > 0)) {
-        jumpBuffer = 0;
-        jump();
-      }
-      if (jumpBuffer > 0) jumpBuffer--;
+      // a take-off from the ground (a landing + jump comes after the landing below)
+      if (ev.jumped && ev.landed < 0) onJump(ev.jumpPower);
 
-      const fromPy = py;
-      if (grounded < 0) {
-        vy = Math.max(-MAX_FALL, vy - GRAVITY * dt);
-        py += vy * dt;
-      }
-      x += vx * dt;
-
-      // side walls bounce back, keeping the speed (wall kicks)
-      const minX = INNER_L + R;
-      const maxX = INNER_R - R;
-      if (x < minX || x > maxX) {
-        const hitLeft = x < minX;
-        x = hitLeft ? minX + (minX - x) : maxX - (x - maxX);
-        const speed = Math.abs(vx);
-        vx = (hitLeft ? 1 : -1) * speed * WALL_KEEP;
-        const sx = wx(hitLeft ? INNER_L : INNER_R);
-        if (grounded < 0 && speed >= WALL_KICK_MIN_VX) {
-          vy = Math.min(vy + WALL_KICK_VY, Math.max(vy, JUMP_V0));
-          fx.burst(sx, fy(py + R), {
+      if (ev.wall !== 0) {
+        if (ev.wallKick) {
+          const sx = wx(ev.wall < 0 ? INNER_L : INNER_R);
+          fx.burst(sx, fy(body.py + R), {
             count: 8,
             colors: ['#ffffff', COLORS.cyan],
             speed: 240,
             size: 3.5,
             life: 0.35,
-            angle: hitLeft ? 0 : Math.PI,
+            angle: ev.wall < 0 ? 0 : Math.PI,
             spread: 1.4,
           });
-          sfx.tap(0.7 + speed / 1400);
-          if (speed > 600) {
+          sfx.tap(0.7 + ev.wallSpeed / 1400);
+          if (ev.wallSpeed > 600) {
             fx.shake(4, 140);
             haptic.bump();
           }
@@ -517,33 +551,10 @@ export const game: GameModule = {
         squash = 0.18;
       }
 
-      // walked off the end of a floor
-      if (grounded >= 0) {
-        const fx0 = level.x[grounded] ?? 0;
-        const fh = level.half[grounded] ?? 0;
-        if (Math.abs(x - fx0) > fh + R * EDGE) {
-          lastFloor = grounded;
-          grounded = -1;
-          vy = 0;
-        }
-      }
-
-      // one-way floors: land when the feet cross a floor top on the way down
-      if (grounded < 0 && vy <= 0) {
-        let j = floorAtOrBelow(level, fromPy);
-        while (j >= 0) {
-          const a = level.alt[j] ?? 0;
-          if (a < py) break;
-          if (Math.abs(x - (level.x[j] ?? 0)) <= (level.half[j] ?? 0) + R * EDGE) {
-            land(j);
-            if (held) {
-              jumpBuffer = 0;
-              jump();
-            } else sfx.land(1 + Math.min(0.6, -vy / 3000));
-            break;
-          }
-          j--;
-        }
+      if (ev.landed >= 0) {
+        onLand(ev.landed, ev.landedDelta, ev.impact);
+        if (ev.jumped) onJump(ev.jumpPower);
+        else sfx.land(1 + Math.min(0.6, ev.impact / 3000));
       }
 
       // combo clock
@@ -553,23 +564,18 @@ export const game: GameModule = {
       }
 
       // looks
-      if (superAir && grounded < 0) rot += Math.sign(vx || 1) * 13 * dt;
+      if (superAir && body.grounded < 0) rot += Math.sign(body.vx || 1) * 13 * dt;
       else rot *= 0.78;
       if ((comboJumps > 0 || superAir) && steps % 2 === 0) {
-        trailX[trailHead] = x;
-        trailA[trailHead] = py;
+        trailX[trailHead] = body.x;
+        trailA[trailHead] = body.py;
         trailR[trailHead] = rot;
         trailHead = (trailHead + 1) % TRAIL;
         if (trailLen < TRAIL) trailLen++;
       } else if (trailLen > 0 && steps % 3 === 0) trailLen--;
 
       updateCamera(dt);
-      if (py + 2 * R < cam - 8) die();
-    }
-
-    function hasSide(s: number): boolean {
-      for (const v of sides.values()) if (v === s) return true;
-      return false;
+      if (fellOff(body, cam.cam)) die();
     }
 
     function stepDead(dt: number): void {
@@ -579,7 +585,7 @@ export const game: GameModule = {
       popY += popV * dt;
       if (deadSteps >= DEAD_SWOOSH_AT) {
         const t = (deadSteps - DEAD_SWOOSH_AT) / (DEAD_STEPS - DEAD_SWOOSH_AT);
-        cam = lerp(deathCam, START_CAM, ease.inOutCubic(Math.min(1, t)));
+        cam.cam = lerp(deathCam, START_CAM, ease.inOutCubic(Math.min(1, t)));
       }
       if (deadSteps >= DEAD_STEPS) restart();
     }
@@ -587,9 +593,9 @@ export const game: GameModule = {
     const loop = createLoop({
       update(dt: number): void {
         steps++;
-        prevX = x;
-        prevPy = py;
-        prevCam = cam;
+        prevX = body.x;
+        prevPy = body.py;
+        prevCam = cam.cam;
         if (mode === 'run') stepRun(dt);
         else stepDead(dt);
         // spring for squash and stretch
@@ -757,17 +763,17 @@ export const game: GameModule = {
 
     function faceFor(): typeof art.face {
       if (mode === 'dead') return art.faceFall;
-      if (grounded >= 0) return art.face;
-      if (vy < -1100 || py + R < cam + 70) return art.faceFall;
-      return vy > 0 ? art.faceJump : art.face;
+      if (body.grounded >= 0) return art.face;
+      if (body.vy < -1100 || body.py + R < cam.cam + 70) return art.faceFall;
+      return body.vy > 0 ? art.faceJump : art.face;
     }
 
     function drawPlayer(c: number, alpha: number): void {
       const g = view.ctx;
-      const px = wx(lerp(prevX, x, alpha));
-      const feet = bottom - (lerp(prevPy, py, alpha) - c) * scale;
+      const px = wx(lerp(prevX, body.x, alpha));
+      const feet = bottom - (lerp(prevPy, body.py, alpha) - c) * scale;
       const box = (2 * R * scale) / (2 * HEAD_SHARE);
-      const stretch = grounded < 0 ? clamp(vy / 3200, -0.14, 0.16) : 0;
+      const stretch = body.grounded < 0 ? clamp(body.vy / 3200, -0.14, 0.16) : 0;
       const sq = clamp(squash, -0.4, 0.45);
       const sw = box * (1 + sq) * (1 - stretch * 0.5);
       const sh = box * (1 - sq) * (1 + stretch);
@@ -793,9 +799,9 @@ export const game: GameModule = {
       }
 
       // speed lines
-      const speed = Math.abs(vx);
+      const speed = Math.abs(body.vx);
       if (speed > 560) {
-        const back = -Math.sign(vx);
+        const back = -Math.sign(body.vx);
         g.strokeStyle = 'rgba(255, 255, 255, 0.7)';
         g.lineWidth = 3;
         g.lineCap = 'round';
@@ -811,13 +817,13 @@ export const game: GameModule = {
       }
 
       // shadow on the floor below while standing
-      if (grounded >= 0) {
+      if (body.grounded >= 0) {
         g.fillStyle = 'rgba(10, 20, 60, 0.25)';
         g.beginPath();
         g.ellipse(px, feet + 2, R * scale * (1 + sq), 4 * scale + 2, 0, 0, Math.PI * 2);
         g.fill();
       }
-      const lean = (vx / MAX_VX) * 0.2;
+      const lean = (body.vx / MAX_VX) * 0.2;
       faceFor().draw(g, px, cy, sw, sh, rot + lean);
     }
 
@@ -883,14 +889,16 @@ export const game: GameModule = {
     }
 
     function drawHeldGlow(): void {
-      if (mode !== 'run' || sides.size === 0) return;
+      // the side that pushes now (the newest finger), so two fingers never light both
+      const d = heldDir();
+      if (mode !== 'run' || d === 0) return;
       const g = view.ctx;
       const edge = Math.min(140, view.width * 0.3);
-      if (hasSide(-1) && glowL) {
+      if (d < 0 && glowL) {
         g.fillStyle = glowL;
         g.fillRect(0, top, edge, playH);
       }
-      if (hasSide(1) && glowR) {
+      if (d > 0 && glowR) {
         g.fillStyle = glowR;
         g.fillRect(view.width - edge, top, edge, playH);
       }
@@ -997,7 +1005,7 @@ export const game: GameModule = {
     function draw(alpha: number): void {
       if (destroyed) return;
       const g = view.ctx;
-      const c = lerp(prevCam, cam, alpha);
+      const c = lerp(prevCam, cam.cam, alpha);
       drawBackground(c);
       drawSnow();
       g.save();
@@ -1031,6 +1039,82 @@ export const game: GameModule = {
       drawUi();
     }
 
+    // ── test hook ──
+    const simBody = createBody();
+    const simEv = createEvents();
+    const simCam: CamState = { cam: 0, camOn: false, camT: 0 };
+    const debug: IcyDebug = {
+      get state() {
+        return {
+          mode,
+          x: body.x,
+          py: body.py,
+          vx: body.vx,
+          vy: body.vy,
+          grounded: body.grounded,
+          cam: cam.cam,
+          camV: cam.camOn ? camSpeed(cam.camT) : 0,
+          camOn: cam.camOn,
+          follow,
+          runs,
+          runFloor,
+          best,
+          dir: heldDir(),
+          steps,
+          paused: ctx.isPaused(),
+        };
+      },
+      floors(from: number, n: number) {
+        const out: Array<{ i: number; alt: number; x: number; half: number }> = [];
+        for (let i = Math.max(0, from); i < Math.min(level.count, from + n); i++) {
+          out.push({ i, alt: level.alt[i] ?? 0, x: level.x[i] ?? 0, half: level.half[i] ?? 0 });
+        }
+        return out;
+      },
+      trace(n: number): void {
+        traced.length = 0;
+        traceLeft = Math.max(0, n);
+      },
+      get traced() {
+        return traced;
+      },
+      predict(plan, maxSteps) {
+        copyBody(body, simBody);
+        simCam.cam = cam.cam;
+        simCam.camOn = cam.camOn;
+        simCam.camT = cam.camT;
+        let floor = runFloor;
+        let rs = runSteps;
+        const landings: Array<{ step: number; floor: number; x: number }> = [];
+        let deadAt = -1;
+        let k = 0;
+        let left = plan[0]?.[1] ?? maxSteps;
+        for (let s = 1; s <= maxSteps && mode === 'run'; s++) {
+          while (left <= 0 && k < plan.length - 1) {
+            k++;
+            left = plan[k]?.[1] ?? maxSteps;
+          }
+          left--;
+          const want = plan[k]?.[0] ?? 0;
+          // 2 = "follow the motion": push the way the face is moving
+          const d = want === 2 ? (simBody.vx < 0 ? -1 : 1) : want;
+          rs++;
+          stepBody(simBody, d, d !== 0, d !== 0, level, 1 / STEP_HZ, simEv);
+          if (simEv.landed >= 0) {
+            landings.push({ step: s, floor: simEv.landed, x: simBody.x });
+            if (simEv.landed > floor) floor = simEv.landed;
+          }
+          advanceCam(simCam, floor, rs, simBody.py + 2 * R, follow, 1 / STEP_HZ);
+          if (fellOff(simBody, simCam.cam)) {
+            deadAt = s;
+            break;
+          }
+        }
+        return { landings, deadAt, x: simBody.x, py: simBody.py, vx: simBody.vx };
+      },
+    };
+    window.__icy = debug;
+
     loop.start();
     view.canvas.dataset.icy = '0|0|0|0|0';
 
@@ -1046,6 +1130,7 @@ export const game: GameModule = {
         input.dispose();
         fx.clear();
         view.dispose();
+        if (window.__icy === debug) delete window.__icy;
       },
     };
   },

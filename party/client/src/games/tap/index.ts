@@ -40,6 +40,8 @@ const HIT_BURST = 4;
 const MISS_COST = 1;
 const HOP_S = 0.3;
 const TUTORIAL_MS = 2_600;
+/** The game clock catches up with the round clock when it falls this far behind. */
+const RESYNC_MS = 400;
 /** Bottom strip for the combo meter. */
 const METER_H = 74;
 const SIDE_PAD = 12;
@@ -146,7 +148,8 @@ export const game: GameModule = {
     const fx = createFx(260);
 
     // Round time already gone when we start (slow load / late join), snapped to whole steps.
-    const startOffset = clamp(Math.round((ctx.durationMs - ctx.timeLeftMs()) / (1000 / 60)) * (1000 / 60), 0, ctx.durationMs);
+    let startOffset = clamp(Math.round((ctx.durationMs - ctx.timeLeftMs()) / (1000 / 60)) * (1000 / 60), 0, ctx.durationMs);
+    const firstOffset = startOffset;
 
     // ── state ──
     let score = 0;
@@ -218,7 +221,8 @@ export const game: GameModule = {
       const dance = frenzy ? Math.sin(elapsed * 0.011) * r * 0.07 : 0;
       const lift = hopT >= 1 ? 0 : Math.sin(Math.PI * hopT) * baseR * 0.32;
       geo.x = left + m + u * spanX + dance + (spanX === 0 ? (fw - 2 * m) / 2 : 0);
-      geo.y = top + m + v * spanY - lift + (spanY === 0 ? (fh - 2 * m) / 2 : 0);
+      // the hop arc never lifts the face under the HUD (a tap there would not count)
+      geo.y = Math.max(top + r, top + m + v * spanY - lift + (spanY === 0 ? (fh - 2 * m) / 2 : 0));
       geo.r = r;
       geo.baseR = baseR;
       geo.lift = lift;
@@ -322,7 +326,7 @@ export const game: GameModule = {
         fx.text(p.x, textY, PLUS[pts] ?? '+', TEXT_PICK);
       } else {
         fx.burst(p.x, p.y, BURST_HIT);
-
+        fx.text(p.x, textY, PLUS[pts] ?? '+', TEXT_HIT[nextMult] ?? TEXT_HIT[1]);
       }
 
       const step = loop.steps;
@@ -384,6 +388,12 @@ export const game: GameModule = {
     const trace = Array.isArray(window.__tapTrace) ? window.__tapTrace : null;
     const loop = createLoop({
       update(dt: number): void {
+        // Behind the round clock (the page slept: locked phone, another app, very long frames)?
+        // Catch up so the level stays in step with everyone else's; the skipped part is lost.
+        const roundElapsed = ctx.durationMs - ctx.timeLeftMs();
+        if (roundElapsed - (startOffset + loop.timeMs) > RESYNC_MS) {
+          startOffset = Math.round((roundElapsed - loop.timeMs) / (1000 / 60)) * (1000 / 60);
+        }
         elapsed = startOffset + loop.timeMs;
         leftMs = ctx.timeLeftMs();
         tokens = Math.min(HIT_BURST, tokens + HIT_RATE * dt);
@@ -444,7 +454,7 @@ export const game: GameModule = {
         const target = mult >= MAX_MULT ? 1 : (combo % COMBO_STEP) / COMBO_STEP;
         meterFill += (target - meterFill) * Math.min(1, dt * 14);
 
-        const tutorialOn = elapsed - startOffset < TUTORIAL_MS && hits < 3;
+        const tutorialOn = elapsed - firstOffset < TUTORIAL_MS && hits < 3;
         tutorialAlpha = tutorialOn ? Math.min(1, tutorialAlpha + dt * 4) : Math.max(0, tutorialAlpha - dt * 4);
 
         for (const rp of ripples) {
