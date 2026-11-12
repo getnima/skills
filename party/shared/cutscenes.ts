@@ -46,7 +46,9 @@ export const CUTSCENES: readonly CutsceneDef[] = [
     id: 'tap_freeze',
     title: 'עצירה באמצע שימי טאפ',
     file: 'tap_freeze.mp4',
-    when: { at: 'during', gameId: 'tap', atMs: 30_000 },
+    // 8 s in: every guest is still waiting or in the middle of a sprint (a sprint is 20 s), so the round
+    // cannot have ended early yet, and it is well before the 30 s auto-start
+    when: { at: 'during', gameId: 'tap', atMs: 8_000 },
     phoneText: '✋ עוצרים הכל! תסתכלו על הטלוויזיה',
   },
   { id: 'before_ninja', title: 'לפני הנינג׳ה', file: 'before_ninja.mp4', when: { at: 'before', gameId: 'ninja' } },

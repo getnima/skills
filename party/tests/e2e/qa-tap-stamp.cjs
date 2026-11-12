@@ -2,7 +2,9 @@
 // player at 11 taps/s must score the same on a fast phone and under a 4x CPU throttle. Taps
 // are stamped with the pointer event's own time (when the finger landed), not with when the
 // busy main thread got round to handling them, so bunched delivery does not trip the
-// minimum gap between taps.
+// minimum gap between taps. Tapping starts at 3 s of round time: in the first second after the
+// page loads, Chrome gives CDP-injected touches queued before the renderer was ready one and the
+// same timeStamp (a harness artifact; a phone's OS stamps every touch).
 //   QA_BASE=http://localhost:5321 node tests/e2e/qa-tap-stamp.cjs [cpu=4] [hz=11]
 const L = require('./qa-tap-comedy-lib.cjs');
 
@@ -16,7 +18,7 @@ async function run(browser, cpu) {
   const left = await page.evaluate(() => window.__party.leftMs);
   const roundZero = Date.now() - (DUR - left);
   const times = [];
-  for (let t = 1000; t < 21000; t += 1000 / HZ) times.push(Math.round(t));
+  for (let t = 3000; t < 23000; t += 1000 / HZ) times.push(Math.round(t));
   let i = 0;
   for (const t of times) {
     const wait = roundZero + t - Date.now();

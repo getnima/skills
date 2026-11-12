@@ -715,15 +715,16 @@ describe('cutscenes', () => {
   });
 
   it("'during' is scaled to a shortened round", () => {
-    const timing: RoomTiming = { introMs: 1_500, countdownMs: 1_500, durationMs: () => 12_000 };
+    // a round a fifth as long as the game: 30 s of the nominal length is 6 s of this round, whatever the game's length
+    const short = TAP_MS / 5;
+    const timing: RoomTiming = { introMs: 1_500, countdownMs: 1_500, durationMs: () => short };
     const h = makeRoom({ cutscenes: all, timing });
     h.join('a');
     h.room.start('tap');
-    expect(h.round().endAt - h.round().startAt).toBe(12_000);
+    expect(h.round().endAt - h.round().startAt).toBe(short);
     h.toPlaying();
-    // 30 s of the game's nominal length, scaled into the 12 s round (whatever the game's length is)
-    const at = Math.ceil((30_000 * 12_000) / TAP_MS);
-    expect(at).toBeLessThan(12_000);
+    const at = 30_000 / 5;
+    expect(at).toBeLessThan(short);
     vi.advanceTimersByTime(at - 1);
     expect(h.state().cutscene).toBeNull();
     vi.advanceTimersByTime(1);

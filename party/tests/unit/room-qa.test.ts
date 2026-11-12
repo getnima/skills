@@ -884,24 +884,26 @@ describe('cutscenes and the clock', () => {
   });
 
   it("'during' on a game shorter than atMs is scaled into the round; the real manifest never fires past the end", () => {
-    const timing: RoomTiming = { introMs: 1_500, countdownMs: 1_500, durationMs: () => 12_000 };
+    // a round a fifth as long as the game: the manifest's tap_freeze time lands at a fifth of it, whatever the game's length
+    const short = TAP_MS / 5;
+    const timing: RoomTiming = { introMs: 1_500, countdownMs: 1_500, durationMs: () => short };
     const h = makeRoom({ cutscenes: CUTSCENES, timing });
     h.join('a');
     h.room.start('tap');
     h.toPlaying();
-    // the manifest's tap_freeze time, scaled into the 12 s round (whatever the game's length is)
     const def = CUTSCENES.find((c) => c.id === 'tap_freeze');
     const atMs = def !== undefined && def.when.at === 'during' ? def.when.atMs : -1;
     expect(atMs).toBeGreaterThan(0);
-    expect(atMs).toBeLessThan(TAP_MS);
-    const at = Math.ceil((atMs * 12_000) / TAP_MS);
+    // it must fire before any guest can have finished: a sprint is 20 s, and the round can end early once all are done
+    expect(atMs).toBeLessThan(20_000);
+    const at = atMs / 5;
     vi.advanceTimersByTime(at - 1);
     expect(h.state().cutscene).toBeNull();
     vi.advanceTimersByTime(1);
     expect(h.state().cutscene?.id).toBe('tap_freeze');
-    expect(h.left()).toBe(12_000 - at);
+    expect(h.left()).toBe(short - at);
     h.room.endCutscene();
-    vi.advanceTimersByTime(RESUME_COUNTDOWN_MS + (12_000 - at) + FINAL_GRACE_MS);
+    vi.advanceTimersByTime(RESUME_COUNTDOWN_MS + (short - at) + FINAL_GRACE_MS);
     expect(h.state()).toMatchObject({ phase: 'results', cutscene: null });
 
     // atMs beyond the nominal length: never fires, the round ends on time.
