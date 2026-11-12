@@ -52,6 +52,10 @@ async function step(name, fn) {
     } catch (e) {
       if (attempt === 2) {
         check(name, false, e.message.slice(0, 300));
+        let i = 0;
+        for (const page of openPages) {
+          if (!page.isClosed()) await page.screenshot({ path: path.join(OUT, `zz-fail-${name.slice(0, 20).replace(/\W+/g, '_')}-${i++}.png`) }).catch(() => undefined);
+        }
         return false;
       }
       console.log(`  retry ${name}: ${e.message.slice(0, 160)}`);
@@ -469,6 +473,8 @@ async function joinPlayer(browser, code, name) {
       const sctx = await browser.newContext({ ...devices['iPhone SE'], viewport: { width: 320, height: 568 } });
       const s = await sctx.newPage();
       tapFrames(s, 'remote-se', frames);
+      openPages.push(s);
+      try {
       await s.goto(`${BASE}/remote`);
       await s.waitForSelector('[data-testid=unlock]');
       await shot(s, '320-01-unlock');
@@ -487,13 +493,16 @@ async function joinPlayer(browser, code, name) {
       await s.click('[data-testid=more-close]');
       await big(s);
       await waitFor('playing', async () => (await tvState(tv)).phase === 'playing', 10000);
-      await waitFor('top five', () => s.evaluate(() => document.querySelectorAll('[data-testid=top5-row]').length >= 3), 8000);
+      await waitFor('top five', () => s.evaluate(() => document.querySelectorAll('[data-testid=top5-row]').length >= 3), 15000);
       await shot(s, '320-04-round');
       await s.click('[data-testid=big]');
       await shot(s, '320-05-confirm');
       await confirmSheet(s, false);
       await waitFor('results', async () => (await tvState(tv)).phase === 'results', 8000);
-      await sctx.close();
+      } finally {
+        openPages.splice(openPages.indexOf(s), 1);
+        await sctx.close();
+      }
     });
 
     // ───────── the remote disconnects: the TV's controls come back ─────────
@@ -525,9 +534,10 @@ async function joinPlayer(browser, code, name) {
       await unlock(w, 'nope-last');
       await w.waitForSelector('[data-testid=unlock-wait]', { timeout: 5000 });
       const secs = Number(await w.textContent('[data-testid=unlock-wait-s]'));
-      check('fifth wrong try: throttled with a countdown', secs > 0 && secs <= Math.ceil(LOCK_MS / 1000), { secs });
+      // a lock earlier this quarter of an hour (an earlier run, same address) doubles it: up to 4x
+      check('fifth wrong try: throttled with a countdown', secs > 0 && secs <= Math.ceil((LOCK_MS * 4) / 1000), { secs });
       await shot(w, '390-10-throttled');
-      await w.waitForSelector('[data-testid=unlock-wait]', { state: 'detached', timeout: LOCK_MS + 3000 });
+      await w.waitForSelector('[data-testid=unlock-wait]', { state: 'detached', timeout: secs * 1000 + 3000 });
       await unlock(w);
       await remoteReady(w);
       check('after the wait the right password works', true);

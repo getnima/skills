@@ -1,7 +1,8 @@
 // QA of the phone's live place HUD (top of the game) and the "me bar" (bottom of every other screen).
 //
 //   PARTY_SERVER_PORT=8891 PARTY_TEST_FAST=1 PARTY_TEST_DURATION_MS=20000 npx tsx server/index.ts
-//   PARTY_SERVER_PORT=8891 PARTY_CLIENT_PORT=5301 npx vite
+//   PARTY_SERVER_PORT=8891 PARTY_CLIENT_PORT=5301 npx vite --config tests/e2e/qa-icy-vite.config.mjs
+//     (HMR off: an edit by someone else in the shared tree must not reload the phones mid-round)
 //   node tests/e2e/qa-hud.cjs [flow|games|perf] (default: flow)
 //
 //   flow   TV host page + 3 real phones (320x568, 390x844, 412x915) + ~10 bots, two rounds:

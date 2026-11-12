@@ -1,52 +1,43 @@
 /**
- * The level of "שימי טאפ": every face change, nose-pick window and hop of a
- * round, computed up front from the seed and the round length only, so every
- * phone in the room plays exactly the same show. Times are ms of round time.
+ * The show of "שימי טאפ" that does not depend on the player: which booger comes out at
+ * every dig, after how many digs the BIG booger comes, when the frenzy starts, which bored
+ * faces the doll pulls while nobody taps, and where each booger lands on the glass. All of
+ * it is computed up front from the seed and the round length only, so every phone in the
+ * room gets exactly the same sequence (the player only decides how far into it they get).
+ * Times are ms of round time. Pure: no DOM, no Math.random, no clock.
  */
 import { createRng } from '../../kit/rng';
 
-/** Expressions the face cycles through (indexes into the face slots). */
-export const EXPRESSION_COUNT = 6;
+/** Booger characters (indexes into the booger art slots). */
+export const BOOGER = {
+  Round: 0,
+  Stretchy: 1,
+  Googly: 2,
+  Hairy: 3,
+  Golden: 4,
+  Boss: 5,
+} as const satisfies Record<string, number>;
+export type BoogerKind = (typeof BOOGER)[keyof typeof BOOGER];
+export const BOOGER_KINDS = 6;
 
-export interface PickWindow {
-  readonly start: number;
-  readonly end: number;
-}
+/** Faces the doll pulls while it is bored (nobody taps): indexes into IDLE_FACES of the game. */
+export const IDLE_FACE_COUNT = 4;
 
-export interface Hop {
-  readonly at: number;
-  /** Target center, normalized 0..1 inside the free area of the play field. */
-  readonly u: number;
-  readonly v: number;
-  /** Size factor of the face after the hop. */
-  readonly scale: number;
-}
-
-export interface ExprChange {
-  readonly at: number;
-  readonly expr: number;
-}
+/** Length of the precomputed booger sequence; it repeats after that (nobody digs 512 times in a minute). */
+export const BOOGER_SEQ_LEN = 512;
 
 export interface TapLevel {
   readonly durationMs: number;
-  /** Round time at which the face stops sitting still in the middle. */
-  readonly hopsFrom: number;
   /** Round time at which the frenzy ("last 15 seconds") starts. */
   readonly frenzyFrom: number;
-  readonly picks: readonly PickWindow[];
-  readonly hops: readonly Hop[];
-  readonly exprs: readonly ExprChange[];
+  /** Kind of the booger thrown by dig #i (i from 0), for i < BOOGER_SEQ_LEN (then it repeats). */
+  readonly boogers: readonly BoogerKind[];
+  /** Dig counts (cumulative, ascending) at which the BIG booger comes out. */
+  readonly bigAt: readonly number[];
+  /** Bored faces in order (the doll cycles through them while nobody taps). */
+  readonly idleFaces: readonly number[];
   /** Short stable string of the whole level (for tests and logs). */
   readonly fingerprint: string;
-}
-
-/** Nose-pick windows are protected: no hop inside them or right before. */
-const PICK_GUARD_BEFORE = 350;
-const PICK_GUARD_AFTER = 250;
-
-function inPick(picks: readonly PickWindow[], t: number): PickWindow | null {
-  for (const p of picks) if (t >= p.start - PICK_GUARD_BEFORE && t <= p.end + PICK_GUARD_AFTER) return p;
-  return null;
 }
 
 function hash(parts: readonly number[]): string {
@@ -58,68 +49,104 @@ function hash(parts: readonly number[]): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
+/** Normal digs: everything but the boss (the boss only comes at the BIG moments). */
+const DIG_WEIGHTS: ReadonlyArray<readonly [BoogerKind, number]> = [
+  [BOOGER.Round, 34],
+  [BOOGER.Stretchy, 22],
+  [BOOGER.Googly, 20],
+  [BOOGER.Hairy, 20],
+  [BOOGER.Golden, 4],
+];
+const DIG_WEIGHT_SUM = DIG_WEIGHTS.reduce((s, [, w]) => s + w, 0);
+
+/** First BIG booger after this many digs, then every BIG_GAP digs (both seeded within the range). */
+export const BIG_FIRST: readonly [number, number] = [12, 16];
+export const BIG_GAP: readonly [number, number] = [18, 26];
+
 export function buildLevel(seed: number, durationMs: number): TapLevel {
   const dur = Math.max(1000, durationMs);
   const root = createRng(seed);
-  // Phases scale with the round so a shortened test round still shows them all.
-  const hopsFrom = Math.min(12_000, dur * 0.2);
   const frenzyFrom = dur - Math.min(15_000, dur * 0.25);
 
-  // ── nose picks ──
-  const rp = root.fork('picks');
-  const picks: PickWindow[] = [];
-  let t = Math.min(rp.float(4_500, 6_000), dur * 0.15);
-  while (t < dur - 1_400) {
-    const len = rp.float(1_200, 1_800);
-    picks.push({ start: t, end: Math.min(dur, t + len) });
-    const late = t + len >= frenzyFrom;
-    t += len + (late ? rp.float(4_200, 6_000) : rp.float(6_000, 9_000));
+  // ── booger sequence (no golden twice in a row, never the same character three times) ──
+  const rb = root.fork('boogers');
+  const boogers: BoogerKind[] = [];
+  for (let i = 0; i < BOOGER_SEQ_LEN; i++) {
+    let kind: BoogerKind = BOOGER.Round;
+    for (let tries = 0; tries < 6; tries++) {
+      let x = rb.next() * DIG_WEIGHT_SUM;
+      for (const [k, w] of DIG_WEIGHTS) {
+        x -= w;
+        if (x < 0) {
+          kind = k;
+          break;
+        }
+      }
+      const a = boogers[i - 1];
+      const b = boogers[i - 2];
+      if (kind === BOOGER.Golden && a === BOOGER.Golden) continue;
+      if (kind === a && kind === b) continue;
+      break;
+    }
+    boogers.push(kind);
   }
 
-  // ── hops ──
-  const rh = root.fork('hops');
-  const hops: Hop[] = [];
-  let lastU = 0.5;
-  let lastV = 0.5;
-  t = hopsFrom;
-  while (t < dur - 300) {
-    const blocked = inPick(picks, t);
-    if (blocked) {
-      t = blocked.end + PICK_GUARD_AFTER + 1;
-      continue;
-    }
-    const late = t >= frenzyFrom;
-    let u = 0.5;
-    let v = 0.5;
-    for (let i = 0; i < 12; i++) {
-      u = rh.next();
-      v = rh.next();
-      if (Math.hypot(u - lastU, v - lastV) >= 0.38) break;
-    }
-    const scale = late ? rh.float(0.7, 0.95) : rh.float(0.84, 1.08);
-    hops.push({ at: t, u, v, scale });
-    lastU = u;
-    lastV = v;
-    t += late ? rh.float(1_050, 1_750) : rh.float(2_400, 4_000);
+  // ── BIG booger thresholds (in digs) ──
+  const rg = root.fork('big');
+  const bigAt: number[] = [];
+  let at = rg.int(BIG_FIRST[0], BIG_FIRST[1]);
+  while (at < 2000) {
+    bigAt.push(at);
+    at += rg.int(BIG_GAP[0], BIG_GAP[1]);
   }
 
-  // ── expressions ──
-  const re = root.fork('faces');
-  const exprs: ExprChange[] = [];
-  let cur = 0;
-  t = re.float(500, 1_000);
-  while (t < dur) {
-    let next = re.int(0, EXPRESSION_COUNT - 2);
-    if (next >= cur) next++; // never the same face twice in a row
+  // ── bored faces ──
+  const rf = root.fork('faces');
+  const idleFaces: number[] = [];
+  let cur = -1;
+  for (let i = 0; i < 32; i++) {
+    let next = rf.int(0, IDLE_FACE_COUNT - 2);
+    if (next >= cur && cur >= 0) next++;
     cur = next;
-    exprs.push({ at: t, expr: cur });
-    t += t >= frenzyFrom ? re.float(450, 950) : re.float(550, 1_450);
+    idleFaces.push(cur);
   }
 
-  const parts: number[] = [dur];
-  for (const p of picks) parts.push(p.start, p.end);
-  for (const h of hops) parts.push(h.at, h.u, h.v, h.scale);
-  for (const e of exprs) parts.push(e.at, e.expr);
+  const parts: number[] = [dur, frenzyFrom, ...boogers, ...bigAt.slice(0, 40), ...idleFaces];
+  return { durationMs: dur, frenzyFrom, boogers, bigAt, idleFaces, fingerprint: hash(parts) };
+}
 
-  return { durationMs: dur, hopsFrom, frenzyFrom, picks, hops, exprs, fingerprint: hash(parts) };
+/** Kind of the booger of dig #i. */
+export function boogerOf(level: TapLevel, i: number): BoogerKind {
+  return level.boogers[((i % BOOGER_SEQ_LEN) + BOOGER_SEQ_LEN) % BOOGER_SEQ_LEN] ?? BOOGER.Round;
+}
+
+/**
+ * Cosmetic traits of booger #i (where it lands on the glass, how it spins and slides),
+ * a pure function of the seed and the index: the same on every phone, and no state to keep.
+ * All values are 0..1; the game scales them.
+ */
+export interface BoogerTraits {
+  readonly u: number;
+  readonly v: number;
+  readonly spin: number;
+  readonly slide: number;
+  readonly size: number;
+}
+
+function mix(a: number): number {
+  let t = a >>> 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+export function boogerTraits(seed: number, i: number): BoogerTraits {
+  const base = Math.imul((seed | 0) ^ 0x9e3779b9, 0x85ebca6b) + Math.imul(i + 1, 0xc2b2ae35);
+  return {
+    u: mix(base),
+    v: mix(base + 0x6d2b79f5),
+    spin: mix(base + 0x1b873593),
+    slide: mix(base + 0x27d4eb2f),
+    size: mix(base + 0x165667b1),
+  };
 }
