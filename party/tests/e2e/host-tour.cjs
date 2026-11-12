@@ -80,6 +80,9 @@ function check(name, ok, extra) {
     await page.waitForFunction((v) => !!(window.__host.state() && window.__host.state().cutscene) === v, on, { timeout });
   };
   const chips = () => page.locator('[data-testid=chip]').count();
+  // "continue" during the winner ceremony only arms itself ("skip the ceremony?"): wait for the ceremony to end
+  const ceremonyOver = () =>
+    page.waitForFunction(() => !/מדלג/.test((document.querySelector('[data-testid=btn-primary]') || {}).textContent || ''), null, { timeout: 30000 });
   const waitChips = async (n) => {
     await page.waitForFunction((k) => document.querySelectorAll('[data-testid=chip]').length >= k, n, { timeout: 20000 });
     await sleep(900);
@@ -213,6 +216,7 @@ function check(name, ok, extra) {
     const leftLater = await left();
     check('race continues after resume', leftLater < leftResumed - 800, { leftResumed, leftLater });
     await waitPhase('results', 20000);
+    await ceremonyOver();
     await sleep(500);
     await page.keyboard.press('Space');
     await waitPhase('lobby');
@@ -251,11 +255,16 @@ function check(name, ok, extra) {
     await shot('42-after-refresh-playing');
     await page.mouse.click(960, 8);
     await waitPhase('results', 20000);
+    await ceremonyOver();
     await sleep(800);
 
     // final podium (the before_podium cutscene has no file: placeholder first)
     await page.click('[data-testid=btn-primary]');
     await waitPhase('lobby');
+    // not every game was played: the podium asks "sure?" and wants a second press (not a double click)
+    await sleep(700);
+    await page.click('[data-testid=btn-final]');
+    await sleep(700);
     await page.click('[data-testid=btn-final]');
     await waitPhase('final');
     const fs1 = await st();

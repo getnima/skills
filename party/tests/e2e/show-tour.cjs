@@ -172,8 +172,9 @@ const sections = {
     await shot('ceremony-tie-2-descending');
     await at(5600);
     await shot('ceremony-tie-3-settled');
-    const tie = await page.evaluate(() => ({ kicker: document.querySelector('.sh-cer-kicker').textContent, names: document.querySelectorAll('.sh-cer-tie').length }));
-    check('ceremony: tie shares the stage', tie.kicker.includes('תיקו! שני זוכים') && tie.names === 2, tie);
+    // no ties since the strict ranking: the same raw score is won by whoever reached it first
+    const tie = await page.evaluate(() => ({ names: document.querySelectorAll('.sh-cer-name').length, earlier: !!document.querySelector('.sh-cer-earlier'), text: document.querySelector('.sh-cer-text').textContent }));
+    check('ceremony: the same score has ONE winner, who got there first', tie.names === 1 && tie.earlier && !/תיקו/.test(tie.text), tie);
 
     // nobody
     await start('none', 1200);

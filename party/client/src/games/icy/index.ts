@@ -75,8 +75,8 @@ export interface IcyDebug {
    * whether the face would fall off the bottom (camera modelled as in the game).
    */
   predict(plan: ReadonlyArray<readonly [number, number]>, maxSteps: number): { landings: Array<{ step: number; floor: number; x: number }>; deadAt: number; x: number; py: number; vx: number; margin: number };
-  /** Look only (tests): zone shown, quality flag, offscreen canvases held. */
-  readonly look: { zone: number; lowQuality: boolean; canvases: number };
+  /** Look only (tests): zone shown, quality flag, offscreen canvases held, where the hero's feet were last drawn (CSS px). */
+  readonly look: { zone: number; lowQuality: boolean; canvases: number; heroX: number; heroY: number; heroFrame: string };
 }
 
 declare global {
@@ -559,6 +559,10 @@ export const game: GameModule = {
 
     // ── look-only state (advanced in update so a freeze stands still; never read by the logic) ──
     let runPhase = 0;
+    /** Where the hero was last drawn (test hook only). */
+    let heroAtX = 0;
+    let heroAtY = 0;
+    let heroAtFrame = '';
     /** World units run on a floor (drives the hero's stride frames). */
     let runDist = 0;
     let facing = 1;
@@ -1499,6 +1503,9 @@ export const game: GameModule = {
       const lean = (body.vx / MAX_VX) * 0.22;
       const air = body.grounded >= 0 ? 0 : clamp(body.vy / 650, -1, 1);
       const run = clamp(Math.abs(body.vx) / 380, 0, 1);
+      heroAtX = px;
+      heroAtY = feet;
+      heroAtFrame = art.hero ? heroFrame() : 'runner';
       if (art.hero) drawHero(g, px, feet, sx, sy, rot, lean * 0.5, heroFrame(), 1);
       else drawClimber(g, px, feet, k, sx, sy, rot, lean, air, run, body.vx * scale, -body.vy * scale, headFor(), body.grounded >= 0);
     }
@@ -1836,7 +1843,7 @@ export const game: GameModule = {
         let n = stars.length + stickers.size + signs.size + (hazard ? 1 : 0);
         for (const t of backTiles) if (t) n++;
         for (const t of wallTiles) if (t) n++;
-        return { zone: shownZone, lowQuality, canvases: n + floorSprites.size + heroSprites.size + (greyWall ? 1 : 0) + (greyBg ? 1 : 0) };
+        return { zone: shownZone, lowQuality, canvases: n + floorSprites.size + heroSprites.size + (greyWall ? 1 : 0) + (greyBg ? 1 : 0), heroX: heroAtX, heroY: heroAtY, heroFrame: heroAtFrame };
       },
     };
     window.__icy = debug;

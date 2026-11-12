@@ -76,11 +76,13 @@ const check = (n, ok, x) => console.log(`${ok ? 'PASS' : 'FAIL'} ${n}${x !== und
     await page.keyboard.press('Escape');
 
     // server restart -> the room is gone -> new room + banner
-    execSync('fuser -k 8803/tcp || true');
+    // the server of SERVER_URL (only a test server: this kills whatever listens on its port)
+    const port = new URL(SERVER).port || '80';
+    execSync(`fuser -k ${port}/tcp || true`);
     await page.waitForSelector('[data-testid=offline]', { timeout: 15000 });
     await sleep(500);
     await page.screenshot({ path: `${OUT}/82-offline.png` });
-    spawn('npx', ['tsx', 'server/index.ts'], { cwd: ROOT, env: { ...process.env, PORT: '8803', PARTY_TEST_FAST: '1' }, stdio: 'ignore', detached: true }).unref();
+    spawn('npx', ['tsx', 'server/index.ts'], { cwd: ROOT, env: { ...process.env, PORT: port, PARTY_TEST_FAST: '1' }, stdio: 'ignore', detached: true }).unref();
     await page.waitForSelector('[data-testid=lost-room]', { timeout: 30000 });
     await sleep(800);
     const code2 = (await page.textContent('[data-testid=room-code]')).trim();

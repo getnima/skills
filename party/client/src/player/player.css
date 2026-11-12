@@ -208,6 +208,19 @@
   font: 700 clamp(15.5px, 4.6vw, 18px) / 1.35 var(--read);
   color: var(--ink);
 }
+/* a joke line (design/punchlines.he.md): Rubik, on a paper strip, a little tilted */
+.ps-quip {
+  flex: none;
+  max-width: 100%;
+  padding: 4px 12px 6px;
+  border-radius: 8px;
+  background: var(--paper);
+  border: 2.5px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  color: var(--ink);
+  font: 800 clamp(15px, 4.5vw, 18px) / 1.25 var(--read);
+  transform: rotate(-1.5deg);
+}
 /* a kicker over a headline: a cobalt-dark pill */
 .ps .pp-label-big {
   flex: none;
@@ -928,7 +941,7 @@
 }
 .pp-cut-text {
   max-width: 100%;
-  font: 700 clamp(30px, 9.6vw, 44px) / 1.05 var(--disp);
+  font: 900 clamp(27px, 8.4vw, 38px) / 1.12 var(--read);
   color: #fff;
   -webkit-text-stroke: 0.1em var(--ink);
   paint-order: stroke fill;
@@ -945,7 +958,8 @@
   border: 2.5px solid var(--ink);
   box-shadow: 3px 3px 0 var(--ink);
   color: var(--ink);
-  font: 700 15px/1.2 var(--read);
+  font: 700 15px/1.25 var(--read);
+  max-width: 100%;
 }
 
 /* ───────────────────────── the round is over: sending, the suspense ───────────────────────── */
@@ -1086,6 +1100,13 @@
   position: relative;
   z-index: 2;
 }
+.pp-app.has-mebar .pp-win > .pw-glow,
+.pp-app.has-mebar .pp-win > .pw-dots {
+  bottom: calc(var(--sab) + var(--pp-mebar-h));
+}
+.ps-win-quip {
+  margin-top: -2px;
+}
 .ps-win-me .ps-hero-burst {
   top: auto;
   bottom: -18px;
@@ -1098,12 +1119,23 @@
 }
 .pp-win-title {
   flex: none;
-  font-size: clamp(66px, 22vw, 100px);
+  font-size: clamp(70px, 24vw, 110px);
+  line-height: 1;
   animation: ps-pop 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) both;
 }
-.pp-win-title .is-red {
-  font-size: 0.6em;
-  line-height: 1;
+.ps-win-sub {
+  flex: none;
+  max-width: 100%;
+  margin-top: -4px;
+  padding: 4px 16px 6px;
+  border-radius: 12px;
+  background: var(--red);
+  border: 3px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  color: #fff;
+  font: 900 clamp(22px, 7vw, 30px) / 1.15 var(--read);
+  transform: rotate(-2deg);
+  animation: ps-pop 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) 0.1s both;
 }
 /* the winner's doll next to the prize, which stands on a cobalt disc like the doll in the dressing room */
 .ps-win-show {
@@ -1341,12 +1373,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  padding: 4px 14px 0;
+  padding: 4px 6px 10px;
 }
 .is-winner .ps-res-me {
   padding-top: clamp(25px, 7.4vw, 31px);
+}
+/* the room under the doll is for its sticker */
+.ps-res-me:not(:has(.ps-hero-burst)) {
+  padding-bottom: 2px;
 }
 .ps-res-me .pp-crown {
   font-size: clamp(28px, 8.4vw, 36px);
@@ -1357,8 +1393,8 @@
 }
 .ps-res-me .ps-hero .ps-hero-burst {
   left: auto;
-  right: -3px;
-  bottom: -16px;
+  right: 3px;
+  bottom: -14px;
   width: clamp(54px, 16vw, 66px);
 }
 .ps-res-me .ps-hero-burst span {
@@ -1405,7 +1441,7 @@
   border: 2.5px solid var(--ink);
   color: #fff;
   font: 800 clamp(13.5px, 4vw, 15.5px) / 1.2 var(--read);
-  white-space: nowrap;
+  max-width: 100%;
 }
 /* "+830": the points this round gave */
 .ps-res-gain {
@@ -1899,6 +1935,8 @@
   .pp-prize,
   .pp-prize-shine,
   .pp-win-go,
+  .pp-win-title,
+  .ps-win-sub,
   .pp-intro-emoji,
   .pp-intro-title,
   .ps .pp-xl,

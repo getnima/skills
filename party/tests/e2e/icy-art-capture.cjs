@@ -20,7 +20,6 @@ const CLOCK = () => {
   const q = new Map();
   let id = 0;
   let frame = 0;
-  window.__manual = false;
   const run = () => {
     const cbs = [...q.values()];
     q.clear();
@@ -41,15 +40,10 @@ const CLOCK = () => {
     }
     return frame;
   };
+  // until the game exists, callbacks run with the clock standing still; after that only __advance moves it
   const pump = () => {
-    if (!window.__manual) {
-      if (window.__icy) {
-        vt += STEP;
-        frame++;
-        if (window.__vtInput) window.__vtInput(frame);
-      }
-      run();
-    }
+    if (window.__icy) return;
+    run();
     setTimeout(pump, 4);
   };
   window.requestAnimationFrame = (cb) => {
@@ -69,9 +63,18 @@ const BOT = () => {
     if (!c) return;
     c.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX: x, clientY: y, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true, button: 0, buttons: type === 'pointerup' ? 0 : 1 }));
   };
+  // manual input for the scripted part: __press(dir) / __press(0)
+  window.__botOn = false;
+  window.__press = (dir) => {
+    const w = innerWidth;
+    const h = innerHeight;
+    if (held !== 0) pe('pointerup', held < 0 ? w * 0.2 : w * 0.8, h * 0.6);
+    held = dir;
+    if (dir !== 0) pe('pointerdown', dir < 0 ? w * 0.2 : w * 0.8, h * 0.6);
+  };
   window.__vtInput = (frame) => {
     const d = window.__icy;
-    if (!d || window.__party.ended) return;
+    if (!d || window.__party.ended || !window.__botOn) return;
     const s = d.state;
     if (s.mode !== 'run') return;
     let want = s.vx < -40 ? -1 : s.vx > 40 ? 1 : held || 1;
@@ -94,50 +97,58 @@ const BOT = () => {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`${BASE}/dev.html?game=icy&seed=${seed}&duration=75000`);
-  await page.waitForFunction(() => !!window.__icy, null, { timeout: 20000 });
+  await page.waitForFunction(() => !!window.__icy, null, { timeout: 60000, polling: 100 });
   await page.addStyleTag({ content: '.dv-tools{display:none!important}' });
-  await page.evaluate(() => {
-    window.__manual = true;
-  });
   const where = () =>
     page.evaluate(() => {
-      const s = window.__icy.state;
+      const d = window.__icy;
       const c = document.querySelector('.pa-stage-game canvas');
       const r = c.getBoundingClientRect();
-      const playW = Math.min(r.width, Math.max(260, (r.height - 60) * 0.72));
-      const scale = playW / 400;
-      return { s, x: r.left + (r.width - playW) / 2 + s.x * scale, y: r.top + r.height - (s.py - s.cam) * scale, scale };
+      return { s: d.state, x: r.left + d.look.heroX, y: r.top + d.look.heroY, frame: d.look.heroFrame };
     });
   const shots = [];
   const shoot = async (tag) => {
     const w = await where();
     const file = path.join(OUT, `${size}-${String(shots.length).padStart(2, '0')}.png`);
     await page.screenshot({ path: file });
-    shots.push({ file, tag, x: w.x, y: w.y, scale: w.scale });
+    shots.push({ file, tag: `${tag}:${w.frame}`, x: w.x, y: w.y });
   };
-  // 1. run on the ground: a few frames of the stride
+  // past the opening hint
+  await page.evaluate(() => window.__advance(170));
+  const step = (n) => page.evaluate((k) => window.__advance(k), n);
+  // 1. hold right from the start: the hero hops along the ground floor (jump / landing frames)
+  await page.evaluate(() => window.__press(1));
+  for (let i = 0; i < 7; i++) {
+    await step(i === 0 ? 2 : 5);
+    await shoot('hold');
+  }
+  // 2. let go: he slides on, legs running (the stride frames swap by distance)
+  await page.evaluate(() => window.__press(0));
   let st = (await where()).s;
   let guard = 0;
-  while (!(st.grounded >= 0 && Math.abs(st.vx) > 260) && guard++ < 600) {
-    await page.evaluate(() => window.__advance(1));
+  while (st.grounded < 0 && guard++ < 120) {
+    await step(1);
     st = (await where()).s;
   }
-  for (let i = 0; i < 4; i++) {
-    await shoot('run');
-    await page.evaluate(() => window.__advance(4));
+  for (let i = 0; i < 6; i++) {
+    await shoot('slide');
+    await step(3);
   }
-  // 2. a super jump (spin): wait for one, then every 3rd frame until it lands
-  guard = 0;
+  // 3. the bot plays until a super jump (it spins), then every 3rd frame until it lands
+  await page.evaluate(() => {
+    window.__botOn = true;
+  });
   st = (await where()).s;
+  guard = 0;
   while (!(st.vy >= 1250 && st.mode === 'run') && guard++ < 5000) {
-    await page.evaluate(() => window.__advance(1));
+    await step(1);
     st = (await where()).s;
   }
-  for (let i = 0; i < 14; i++) {
-    await shoot(st.grounded >= 0 ? 'land' : st.vy > 0 ? 'up' : 'down');
-    await page.evaluate(() => window.__advance(3));
+  for (let i = 0; i < 16; i++) {
+    await shoot(st.grounded >= 0 ? 'land' : 'spin');
+    await step(3);
     st = (await where()).s;
-    if (st.grounded >= 0 && i > 4) {
+    if (st.grounded >= 0) {
       await shoot('land');
       break;
     }

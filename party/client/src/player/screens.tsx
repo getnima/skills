@@ -5,7 +5,12 @@
  * The look is the party design system (client/public/assets/shimi/README.md), in the frame
  * the way in uses (show.css): a cobalt-dark bar with the red "live" chip, the yellow sunburst
  * stage, a cobalt tray. Motaleh is for short Hebrew headlines and stickers; names, numbers
- * and instructions are in Rubik (a digit inside a headline goes through <Num />).
+ * and instructions are in Rubik (a digit inside a headline goes through <Num />). Motaleh's
+ * ז reads as a ב ("זכית" as "בכית") and its 2 as a Z: no ז and no digit in Motaleh text.
+ *
+ * Words: instructions and buttons are plain. The jokes follow design/punchlines.he.md (the
+ * הפשוטע register: a grand frame on a small local thing, one image, the funny word last, never
+ * at the guest's expense); the stickers carry the owner's exclamations. There are no ties.
  */
 import { useEffect, useRef, useState } from 'preact/hooks';
 
@@ -196,9 +201,9 @@ export function LateScreen(props: { readonly round: RoundPublic; readonly look: 
         <StageLight />
         <div class="ps-hero">
           <Avatar look={props.look} size={dollPx(v, 0.36, 0.2, 84, 148)} crop="bust" />
-          <Burst text="עוד רגע!" class="ps-hero-burst" />
+          <Burst text="אחשילי" class="ps-hero-burst" />
         </div>
-        <div class="pp-title">הסיבוב כבר התחיל</div>
+        <div class="pp-title">איחור אופנתי.</div>
         <div class="pp-text ps-now">
           <GameArt id={game.id} size="mid" />
           <span>
@@ -223,7 +228,7 @@ export function CutsceneOverlay(props: { readonly id: string }): JSX.Element {
   }, [props.id]);
   return (
     <div class="pp-cutscene ps" role="alert">
-      <Live>עכשיו בטלוויזיה</Live>
+      <Live>עכשיו במסך הגדול</Live>
       <div class="pp-tv" aria-hidden="true">
         <div class="ps-tv-ant" />
         <div class="ps-tv-body">
@@ -246,7 +251,7 @@ export function CutsceneOverlay(props: { readonly id: string }): JSX.Element {
         <div class="pp-tv-legs" />
       </div>
       <div class="pp-cut-text">{text}</div>
-      <div class="pp-cut-sub">הטלפון מחכה בשבילך ⏸</div>
+      <div class="pp-cut-sub">⏸ המשחק מחכה לך. באישור ועד הבית.</div>
     </div>
   );
 }
@@ -294,7 +299,7 @@ export function SendingScreen(props: { readonly score: number; readonly acked: b
         {elimination ? (
           <>
             <GameArt id={props.gameId} size="mid" />
-            <div class="pp-title">נחתנו!</div>
+            <div class="pp-title">נחתנו בנתב״ג!</div>
           </>
         ) : (
           <>
@@ -309,7 +314,7 @@ export function SendingScreen(props: { readonly score: number; readonly acked: b
             <span>✓ נשלח!</span>
           ) : (
             <span>
-              שולחים לטלוויזיה
+              שולחים את הניקוד
               <Dots />
             </span>
           )}
@@ -340,7 +345,8 @@ export function SuspenseScreen(): JSX.Element {
       <div class="ps-night">
         <div class="pp-spot" aria-hidden="true" />
         <GameArt id="show" emoji="🥁" size="big" class="pp-drum" />
-        <div class="pp-title pp-xl">מי זכה?</div>
+        <div class="pp-title pp-xl">והפרס הולך ל…</div>
+        <div class="ps-quip">השופטים מתייעצים. בארומה.</div>
         <div class="pp-tv-hint">📺 תסתכלו על הטלוויזיה</div>
       </div>
     </div>
@@ -392,9 +398,9 @@ export function WinScreen(props: { readonly onDone: () => void; readonly look: s
       <div class="pp-rays" aria-hidden="true" />
       <StageLight />
       <Confetti bursts={5} intensity={1.3} />
-      <h1 class="pp-win-title ps-logo">
-        זכית <span class="is-red">בשימי אנג׳ל!</span>
-      </h1>
+      <h1 class="pp-win-title ps-logo">ניצחת!</h1>
+      <div class="ps-win-sub">זכית בשימי אנג׳ל!</div>
+      <div class="ps-quip ps-win-quip">כמו האוסקר, רק בחנוכת בית.</div>
       <div class="ps-win-show">
         <div class="ps-win-me">
           <span class="pp-crown" aria-hidden="true">
@@ -432,7 +438,7 @@ export function RevealScreen(props: { readonly results: RoundResults; readonly o
         <StageLight />
         {winner !== undefined ? (
           <>
-            <div class="pp-label-big">הזוכה בסיבוב</div>
+            <div class="pp-label-big">הפרס הולך ל…</div>
             <div class="pp-reveal-faces" style={{ height: `${size}px` }}>
               <div class="pp-reveal-face ps-hero">
                 <span class="pp-crown" aria-hidden="true">
@@ -444,9 +450,8 @@ export function RevealScreen(props: { readonly results: RoundResults; readonly o
               <Prize />
             </div>
             <div class="pp-reveal-name">{winner.name}</div>
-            <div class="pp-text">
-              {elimination ? 'נשאר/ה אחרון/ה באוויר, ולוקח/ת הביתה שימי אנג׳ל' : 'לוקח/ת הביתה שימי אנג׳ל. מחיאות כפיים!'}
-            </div>
+            {elimination ? <div class="pp-text">נשאר/ה אחרון/ה באוויר.</div> : null}
+            <div class="ps-quip">הכרזה רשמית: שימי אנג׳ל עובר דירה.</div>
             {byTime ? (
               <div class="pp-earlier">⏱ {elimination ? 'אותו מרחק' : 'אותו ניקוד'}, מי שהגיע אליו קודם מנצח</div>
             ) : null}
@@ -458,7 +463,7 @@ export function RevealScreen(props: { readonly results: RoundResults; readonly o
               <span>🤷</span>
             </span>
             <div class="pp-title">אף אחד לא קלע הפעם</div>
-            <div class="pp-text">השימי נשאר על המדף… בסיבוב הבא!</div>
+            <div class="ps-quip">שימי אנג׳ל נשאר בוויטרינה. כמו בעזריאלי.</div>
           </>
         )}
       </div>
@@ -522,7 +527,7 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
                   )}
                 </div>
                 {row.raw <= 0 ? (
-                  <div class="pp-res-raw">בסיבוב הבא!</div>
+                  <div class="pp-res-raw">רק חימום. כמו במונדיאל.</div>
                 ) : elimination ? (
                   <div class="pp-res-raw">{won ? 'נשארת באוויר עד הסוף!' : `מתוך ${scorers} שעפו`}</div>
                 ) : (
@@ -565,7 +570,7 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
                 <Avatar look={props.look} size={dollPx(v, 0.3, 0.16, 76, 128)} crop="bust" />
               </div>
               <div class="ps-res-say">
-                <div class="pp-res-rank">לא שיחקת בסיבוב הזה</div>
+                <div class="pp-res-rank">לא שיחקת הפעם</div>
                 <div class="pp-res-raw">בסיבוב הבא גם את/ה בפנים</div>
               </div>
             </div>
@@ -647,7 +652,7 @@ export function FinalScreen(props: { readonly state: RoomState; readonly me: str
           ) : null}
           <Avatar look={props.look ?? mine?.player.look} size={dollPx(v, podium ? 0.4 : 0.34, 0.19, 80, 152)} crop="bust" />
           {podium ? <span class="pp-final-medal">{medal(rank)}</span> : null}
-          <Burst text={podium ? (rank === 1 ? 'בן פורת יוסף!' : 'צדיק!') : 'וואו!'} class="ps-hero-burst" tone={podium ? 'red' : 'pink'} />
+          <Burst text={podium ? (rank === 1 ? 'בן פורת יוסף!' : 'צדיק!') : 'נודר'} class="ps-hero-burst" tone={podium ? 'red' : 'pink'} />
         </div>
         <div class="pp-final-place ps-logo">
           {podium ? (
@@ -665,7 +670,7 @@ export function FinalScreen(props: { readonly state: RoomState; readonly me: str
           <span class="ps-star">⭐</span> {fmt(total)} <small>נק׳</small>
         </div>
         <div class="pp-text pp-final-line">
-          {rank === 1 && podium ? 'אלופ/ת הערב! אין עליך' : podium ? 'על הפודיום! כל הכבוד' : 'נודר, איזה ערב! תודה ששיחקת איתנו'}
+          {rank === 1 && podium ? 'אלופ/ת הערב. ככה נראה אייקון.' : podium ? 'על הפודיום. טפו חמסה.' : 'תואר כבוד: אורח/ת השנה.'}
         </div>
       </div>
       <div class="pw-tray ps-final-tray">
@@ -709,7 +714,7 @@ export function ClosedScreen(props: { readonly onRestart: () => void }): JSX.Ele
       <div class="pp-title">החדר נסגר</div>
       <div class="pp-text">המשחק הזה כבר לא קיים. סרקו שוב את הקוד מהטלוויזיה.</div>
       <button type="button" class="pp-btn pp-btn-go pp-btn-mid" onClick={props.onRestart}>
-        להזין קוד חדש
+        לחדר חדש
       </button>
     </OffAir>
   );

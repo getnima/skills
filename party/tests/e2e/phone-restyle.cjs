@@ -212,9 +212,24 @@ const call = (s, ev, req) =>
           await sleep(700);
           await shotAll(`${num()}-cutscene`, { drag: true });
           await host.call('host:cutsceneEnd', {});
-          await Promise.all(phones.map((p) => L.waitFor(() => p.page.evaluate(() => !!document.querySelector('.pp-resume')), 4000, 'resume')));
-          await sleep(350);
-          await shotAll(`${num()}-resume`, { allowOverlap: true });
+          // each phone once its first digit has popped in (full opacity, no zoom left)
+          const label = `${num()}-resume`;
+          await Promise.all(
+            phones.map(async (p) => {
+              const ok = await L.waitFor(
+                () =>
+                  p.page.evaluate(() => {
+                    const n = document.querySelector('.pp-resume .pp-cd-num');
+                    if (!n) return false;
+                    const cs = getComputedStyle(n);
+                    return cs.opacity === '1' && (cs.transform === 'none' || Math.abs(new DOMMatrix(cs.transform).a) <= 1.01);
+                  }),
+                4000,
+                'resume',
+              ).catch(() => false);
+              if (ok) await shot(p.page, label, { allowOverlap: true });
+            }),
+          );
         },
       },
     );

@@ -31,10 +31,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       await page.waitForFunction(() => window.__host.state().phase === 'playing', null, { timeout: 10000 });
       await sleep(3000);
       await page.screenshot({ path: `${OUT}/72-${tag}-playing.png` });
-      await page.waitForFunction(() => window.__host.state().phase === 'results', null, { timeout: 30000 });
+      // the tap round carries an automatic cutscene in the middle (tap_freeze): give it its time
+      await page.waitForFunction(() => window.__host.state().phase === 'results', null, { timeout: 60000 });
       const r = await page.evaluate(() => window.__host.state().results.revealAt - window.__host.now());
       await sleep(Math.max(0, r) + 2000);
       await page.screenshot({ path: `${OUT}/73-${tag}-ceremony.png` });
+      // "continue" during the ceremony only arms itself: wait for the ceremony to end
+      await page.waitForFunction(() => !/מדלג/.test((document.querySelector('[data-testid=btn-primary]') || {}).textContent || ''), null, { timeout: 30000 });
       await page.click('[data-testid=btn-primary]');
       await page.waitForFunction(() => window.__host.state().phase === 'lobby');
       await sleep(1200);
