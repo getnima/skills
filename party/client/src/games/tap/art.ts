@@ -20,6 +20,21 @@ import type { BoogerKind } from './schedule';
  */
 export const FACE_BOX = 256;
 
+/**
+ * Where a head frame sits in the round token (D = token diameter): drawn FRAME_SCALE * D wide,
+ * its top FRAME_TOP * D above the token centre. The frame's bottom edge (the neck cut) is then
+ * at the outer edge of the ring, so the cut never shows.
+ */
+export const FRAME_SCALE = 0.96;
+export const FRAME_TOP = 0.46;
+/**
+ * Every head frame is masked once, at load, to this circle (radius as a share of D, centred
+ * on the token centre): the porthole costs nothing per frame and survives the spin. It sits
+ * just under the ink ring (inner edge 0.465 D), and stays inside the ring's outer edge up to a
+ * picture scale of 1.065 (the glass press).
+ */
+export const MASK_R = 0.468;
+
 /** Points of a head frame, as shares of its box (measured on the pictures). */
 export const FRAME = {
   /** The nostril the finger goes into (the doll's left nostril, right on screen). */
@@ -69,6 +84,7 @@ export const FR = {
   GlassPress: 15,
   Dizzy: 16,
   Squeeze: 17,
+  Double: 18,
 } as const satisfies Record<string, number>;
 export type FrameId = (typeof FR)[keyof typeof FR];
 
@@ -91,6 +107,7 @@ export const FRAME_NAMES: readonly string[] = [
   'face_glass_press',
   'face_dizzy',
   'face_squeeze',
+  'pick_double',
 ];
 
 export interface TapArt {
@@ -100,6 +117,8 @@ export interface TapArt {
   readonly hand: Drawable;
   /** A toy fingertip pointing up (pokes out of the ear). */
   readonly fingertip: Drawable;
+  /** The doll's fist, knuckles to the viewer (knocks on the glass while waiting). */
+  readonly fist: Drawable;
   readonly squeegee: Drawable;
   /** Green slime splat seen from above: the decal under every booger on the glass. */
   readonly splat: Drawable;
@@ -134,8 +153,10 @@ export async function loadTapArt(): Promise<TapArt> {
       { key: 'face_glass_press', file: 'face_glass_press.png', size: FACE_BOX, placeholder: facePainter('laughing', FACE_COLOR) },
       { key: 'face_dizzy', file: 'face_dizzy.png', size: FACE_BOX, placeholder: facePainter('dead', FACE_COLOR) },
       { key: 'face_squeeze', file: 'face_squeeze.png', size: FACE_BOX, placeholder: facePainter('angry', FACE_COLOR) },
+      { key: 'pick_double', file: 'pick_double.png', size: FACE_BOX, placeholder: pickPlaceholder(2) },
       { key: 'hand', file: 'hand.png', size: HAND.w, height: HAND.h, placeholder: handPainter },
       { key: 'fingertip_ear', file: 'fingertip_ear.png', size: 64, placeholder: fingertipPainter },
+      { key: 'fist', file: 'fist.png', size: 128, height: 171, placeholder: fistPainter },
       { key: 'squeegee', file: 'squeegee.png', size: 192, placeholder: squeegeePainter },
       { key: 'splat', file: 'splat.png', size: 128, placeholder: splatPainter },
       { key: 'booger_round', file: 'booger_round.png', size: 128, placeholder: boogerPainter(BOOGER.Round) },
@@ -148,8 +169,7 @@ export async function loadTapArt(): Promise<TapArt> {
     ]),
     loadAssets('shimi', [{ key: 'mini', file: 'faces_round/normal.png', size: 96, placeholder: facePainter('happy', FACE_COLOR) }]),
   ]);
-  return {
-    frames: [
+  const frames = [
       s.face_normal,
       s.face_happy,
       s.face_surprised,
@@ -168,9 +188,14 @@ export async function loadTapArt(): Promise<TapArt> {
       s.face_glass_press,
       s.face_dizzy,
       s.face_squeeze,
-    ],
+      s.pick_double,
+  ];
+  for (const f of frames) maskToToken(f.source);
+  return {
+    frames,
     hand: s.hand,
     fingertip: s.fingertip_ear,
+    fist: s.fist,
     squeegee: s.squeegee,
     splat: s.splat,
     mini: sh.mini,
@@ -178,6 +203,22 @@ export async function loadTapArt(): Promise<TapArt> {
     background: s.background,
     ghost: paintDrawable('tap_ghost', ghostPainter, 96, 120),
   };
+}
+
+/**
+ * Cut a head frame's canvas (in place, idempotent) to the token circle in frame space, so the
+ * game can draw it with a plain drawImage and get a perfect round porthole.
+ */
+function maskToToken(c: HTMLCanvasElement): void {
+  const g = c.getContext('2d');
+  if (!g || c.width === 0) return;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'destination-in';
+  g.beginPath();
+  g.arc(c.width * 0.5, (c.height * FRAME_TOP) / FRAME_SCALE, (c.width * MASK_R) / FRAME_SCALE, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
 }
 
 /** Ghost hand pointing up with the index finger; the fingertip is at (0.5w, 0.04h). */
@@ -324,6 +365,25 @@ function boogerPainter(kind: BoogerKind): Painter {
     }
   };
 }
+
+/** A round fist with three knuckle lines. */
+const fistPainter: Painter = (ctx, w, h) => {
+  ctx.fillStyle = SKIN;
+  ctx.strokeStyle = PAL.ink;
+  ctx.lineWidth = 4;
+  roundRectPath(ctx, w * 0.3, h * 0.6, w * 0.4, h * 0.38, w * 0.08);
+  ctx.fill();
+  ctx.stroke();
+  roundRectPath(ctx, w * 0.08, h * 0.06, w * 0.84, h * 0.6, w * 0.25);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  for (let i = 1; i < 4; i++) {
+    ctx.moveTo(w * (0.08 + 0.21 * i), h * 0.1);
+    ctx.lineTo(w * (0.08 + 0.21 * i), h * 0.32);
+  }
+  ctx.stroke();
+};
 
 /** A fingertip pointing up (nail at the top). */
 const fingertipPainter: Painter = (ctx, w, h) => drawFinger(ctx, w / 2, h * 0.05, w * 0.32, h * 0.9);

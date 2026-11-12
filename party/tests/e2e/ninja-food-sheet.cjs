@@ -1,11 +1,12 @@
 // ninja food LOOK sheet: what the game's own art code makes of every picture.
-// For each target (11 foods, 2 joke items, the gold falafel): the sprite as it flies, fitted
-// into its hit circle (yellow ring), its two halves pulled apart, and its splat decals; then
-// the two host bombs with the hit circle and the point the fuse starts at.
+// For each target (11 foods, 2 joke items, the gold falafel): the sprite as it flies at phone
+// size, fitted into its hit circle (yellow ring; dashed = the trimmed box that is blitted),
+// its two halves as after a diagonal swipe, the halves twice as big, and its splat decals;
+// then the two host bombs with the hit circle and the point the fuse starts at (red).
 //   PARTY_CLIENT_PORT=5261 npx vite --config tests/e2e/qa-icy-vite.config.mjs
 //   QA_BASE=http://localhost:5261 node tests/e2e/ninja-food-sheet.cjs [out.png] [missing=1]
-// missing=1 hides every ninja picture from the page (the kit's file list is emptied by a
-// stubbed module), so the sheet shows the drawn stand-ins.
+// missing=1 makes every request for a ninja picture (and the gold party props) fail, so the
+// sheet shows the drawn stand-ins (the console errors of the failed requests are expected).
 const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');

@@ -4,10 +4,12 @@
  * 60 Hz step, so the same touches give the same score and the same events on every phone
  * and at every frame rate (unit-tested in tests/unit/tap-pick.test.ts).
  *
- * The round is a personal sprint. Phase 'waiting' lasts the start window (60% of the round):
- * the player's first touch starts the sprint and is counted tap #1; with no touch the sprint
- * starts by itself when the window runs out. The sprint lasts 40% of the round; then the
- * phase is 'done' and the score (= counted taps, nothing else) is final.
+ * The round is a personal sprint. Phase 'waiting' lasts the start window (30/53 of the round,
+ * 30 s of 53 s): the player's first touch starts the sprint and is counted tap #1; with no
+ * touch the sprint starts by itself when the window runs out. The sprint lasts 20/53 of the
+ * round (20 s); then the phase is 'done' and the score (= counted taps, nothing else) is
+ * final. The last 3/53 (3 s) is a hold, so even a player who started at the very end of the
+ * window sees their final frame before the round ends.
  *
  * Anti-mash cap: a token bucket (RATE per second, BURST deep) and a minimum gap between
  * counted taps. Touches over the cap "bounce": they count for nothing.
@@ -18,21 +20,21 @@
 
 export const TAP = {
   STEP_MS: 1000 / 60,
-  /** Shares of ctx.durationMs: the start window and the sprint (they add up to the round). */
-  START_SHARE: 0.6,
-  SPRINT_SHARE: 0.4,
+  /** Shares of ctx.durationMs: the start window and the sprint; the rest is the final hold. */
+  START_SHARE: 30 / 53,
+  SPRINT_SHARE: 20 / 53,
   /** The production sprint the tap thresholds are written for. */
   BASE_SPRINT_MS: 20_000,
   /** Counted taps per second (all fingers together), bucket depth and the minimum gap. */
-  RATE: 14,
+  RATE: 12,
   BURST: 3,
-  MIN_GAP_MS: 40,
+  MIN_GAP_MS: 25,
   /** Time constant of the tap rate (s): every counted tap adds 1/TAU. */
   TAU_S: 0.6,
   /** The displayed rate is the rate low-passed over this (s). */
   SMOOTH_S: 0.25,
   /** Smoothed rate at which the hand reaches level 1..5 (taps per second). */
-  LEVEL_UP: [0.8, 2.2, 3.5, 6.5, 9.5],
+  LEVEL_UP: [0.8, 1.8, 2.8, 5, 8],
   /** A level is left downwards only below its threshold minus this. */
   LEVEL_HYST: 0.6,
   /** Minimum ms in a level before going down; once the finger is in (level >= 3), at least this long in. */
@@ -42,7 +44,7 @@ export const TAP = {
   LAST_SHARE: 0.25,
   LAST_MIN_LEVEL: 3,
   /** Milestone beats at these counted taps (for a 20 s sprint; scaled by tapScale). */
-  MILESTONES: [8, 18, 30, 45, 62, 80, 100, 140, 190],
+  MILESTONES: [8, 18, 30, 45, 62, 80, 100, 130, 160],
   /** Final rank tiers: under 70 / 70-129 / 130-189 / 190+ (scaled the same way). */
   RANKS: [70, 130, 190],
 } as const;
@@ -63,7 +65,7 @@ export interface TapTiming {
 export function tapTiming(durationMs: number): TapTiming {
   const dur = Math.max(1000, durationMs);
   const startWindowMs = Math.round(dur * TAP.START_SHARE);
-  const sprintMs = dur - startWindowMs;
+  const sprintMs = Math.round(dur * TAP.SPRINT_SHARE);
   return { durationMs: dur, startWindowMs, sprintMs, tapScale: sprintMs / TAP.BASE_SPRINT_MS };
 }
 
@@ -146,6 +148,12 @@ export interface TapEngine {
   step(elapsedMs: number, flush?: boolean): void;
   /** Touches waiting for their step. */
   readonly queued: number;
+  /**
+   * Continue a sprint this phone already played (the page was reloaded): the sprint keeps
+   * its start `t0` and its `taps`, so it still ends at t0 + sprintMs; `done` = it was over.
+   * Fires no events. Only while still 'waiting' (before the first step that starts anything).
+   */
+  resume(t0: number, taps: number, done: boolean): void;
 }
 
 const DT = 1 / 60;
@@ -277,6 +285,16 @@ export function createTapEngine(durationMs: number, on: TapListener = {}, joined
         while (i > 0 && (queue[i - 1] ?? 0) > t) i--;
         queue.splice(i, 0, t);
       }
+    },
+    resume(t0: number, taps: number, done: boolean): void {
+      if (st.phase !== 'waiting') return;
+      st.phase = done ? 'done' : 'sprint';
+      st.t0 = t0;
+      st.endAt = Math.min(timing.durationMs, t0 + timing.sprintMs);
+      st.auto = false;
+      st.taps = Math.max(0, Math.round(taps));
+      while (st.milestones < milestoneAt.length && st.taps >= (milestoneAt[st.milestones] ?? Infinity)) st.milestones++;
+      queue.length = 0;
     },
     step(elapsedMs: number, flush = false): void {
       st.elapsedMs = elapsedMs;

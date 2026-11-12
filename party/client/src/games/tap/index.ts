@@ -1,14 +1,16 @@
 /**
- * שימי טאפ: a personal 20-second sprint of tapping Shimi (the round is 50 s: a 30 s start
+ * שימי טאפ: a personal 20-second sprint of tapping Shimi (the round is 53 s: a 30 s start
  * window, then 20 s of tapping from the player's own first touch, or from the end of the
- * window when they never touch). Score = counted taps, nothing else (rules in pick.ts).
+ * window when they never touch, then a 3 s hold). Score = counted taps, nothing else (rules in
+ * pick.ts; how to change a line or a threshold: README.md next to this file).
  *
- * The comedy is graphics only: the doll lives in a round token (a porthole: everything of
- * the doll is clipped to the circle), his hand climbs into his nose as the tap rate rises,
- * boogers fly at the glass, splat, slide and pile up under the token, and every so many taps
- * a set piece plays (the ladder in the plan: Yossi, the rope, the ear, mini Shimi, the
- * sneeze, the squeegee, the king, the bobble spin, the cork). When the sprint is over he
- * presses his face against the snotty glass with the tap count written in his breath.
+ * The comedy is graphics only: the doll lives in a round token (a porthole: every head frame
+ * is masked to the circle once at load), his finger goes deeper into his nose as the tap rate
+ * rises, boogers fly at the glass, splat, slide and pile up under the token, and every so many
+ * taps a set piece plays (Yossi, the rope, the ear, mini Shimi, the sneeze, the squeegee, the
+ * king, the bobble spin, the cork). The last 5 s grow one last booger on his fingertip; when
+ * the sprint is over it lands on his head and the final frame (a trophy picture per rank,
+ * with the tap count on a star sticker) stays until the round ends.
  *
  * Fairness: taps are stamped with their round time and applied by the pure engine at the
  * fixed step that covers that time, so frame rate does not change the score; beats are
@@ -21,9 +23,9 @@ import { clamp, createFx, ease, lerp } from '../../kit/fx';
 import { haptic } from '../../kit/haptics';
 import { createInput } from '../../kit/input';
 import { createLoop } from '../../kit/loop';
-import { createBackdrop, FR, FRAME, FRAME_NAMES, HAND, loadTapArt } from './art';
-import { blit, createStickerCache, loadDisplayFont, makeLayer, PAL, renderChip, renderSticker } from './look';
-import { drawBarWell, freeLayer, paintCounter, paintDigits, paintFingerprint, paintFog, paintNote, paintStar } from './paint';
+import { createBackdrop, FR, FRAME, FRAME_NAMES, FRAME_SCALE, FRAME_TOP, HAND, loadTapArt } from './art';
+import { blit, createStickerCache, loadDisplayFont, makeLayer, PAL, renderChip, renderSticker, STAR14, stickerShape } from './look';
+import { drawBarWell, freeLayer, paintCounter, paintFingerprint, paintNote, paintStar } from './paint';
 import { createTapEngine, rankOf, scaledThresholds, TAP } from './pick';
 import { BOOGER, boogerOf, boogerTraits, buildLevel, FILLER, IDLE_BIT, ALIVE, seeded } from './schedule';
 
@@ -40,10 +42,14 @@ import type { BoogerKind } from './schedule';
 const STEP_MS = 1000 / 60;
 /** The game clock catches up with the round clock when it falls this far behind. */
 const RESYNC_MS = 400;
-/** Taps wait for the step that covers their round time, unless the game lags more than this. */
-const FLUSH_LAG_MS = 120;
-/** Live boogers on the glass (flying + sliding); a new one bakes the oldest into the pile. */
-const MAX_LIVE = 14;
+/** Taps wait for the step that covers their round time, unless the game lags more than this (a 20 fps phone lags ~130 ms). */
+const FLUSH_LAG_MS = 250;
+/** A touch is stamped with when the finger landed (the event's own timeStamp), at most this far back. */
+const MAX_TOUCH_AGE_MS = 250;
+/** Live boogers on the glass (flying + sliding); a new one sends the oldest to the pile at once. */
+const MAX_LIVE = 6;
+/** Splat decals on the glass (a ring: the 7th replaces the oldest). */
+const DECALS_N = 6;
 const SNEEZE_N = 8;
 const CORK_N = 20;
 const FP_N = 10;
@@ -59,7 +65,16 @@ const FILLER_QUIET_S = 2.5;
 const INNOCENT_GAP_MS = 900;
 const PILE_ROW1 = 12;
 const PILE_ROW2 = 10;
-const GLASS_OPS_CAP = 500;
+/** Booger size on the glass (share of D) and the close-up of the first one of each kind. */
+const GOO_MIN = 0.14;
+const GOO_SPAN = 0.04;
+const INTRO_SCALE = 2;
+const INTRO_S = 0.6;
+/** The last-5-seconds booger on the fingertip: start and maximum size (share of D). */
+const TROPHY_MIN = 0.05;
+const TROPHY_MAX = 0.3;
+/** Final frame: one small alive gag every this many seconds. */
+const ALIVE_EVERY_S = 2;
 
 // ───────────────────────────── Words (the owner's voice) ─────────────────────────────
 
@@ -85,14 +100,22 @@ const W = {
   squeegee: 'ניקיתי. בערך.',
   king: 'בן פורת יוסף!',
   kingChip: 'מלך הנזלת',
-  spin: 'סחרחורת של כוכבים.',
-  cork: 'יום הולדת שמח לאף!',
+  sleep: 'רק עצמתי עיניים.',
+  peek: 'ששש. הוא ביישן.',
+  spin: 'סיבוב חינם.',
+  spinSub: 'לונה פארק.',
+  cork: 'פקק באיילון.',
+  corkSub: 'סוף סוף משהו זז.',
   gold: 'מטמון!',
-  double: 'דאבל אצבע. שף.',
+  double: 'דאבל.',
+  doubleSub: 'כמו בטוטו.',
   wow: 'וואו!',
   notMe: 'לא אני.',
-  fillers: ['לאט. כמו האוטובוס לפתח תקווה.', 'צדיק! לאט ובטוח.', 'אני מגרד יותר מהר בשינה.'],
-  last: 'חמש שניות.',
+  fillers: [
+    ['לאט.', 'כמו האוטובוס לפתח תקווה.'],
+    ['צדיק!', 'לאט ובטוח.'],
+    ['בקצב של הרכבת הקלה.', 'מגיעים בסוף.'],
+  ],
   lastSub: 'תן הכול!',
   ranks: ['חוטט מתלמד.', 'חוטט מוסמך.', 'דוקטור לחטטנות.', 'האף של המדינה.'],
   wait: 'תראו לשכן. מחכים לכולם.',
@@ -328,8 +351,44 @@ const DEG = Math.PI / 180;
 
 // ───────────────────────────── Game ─────────────────────────────
 
+/** The sprint this phone played in this round, kept across a reload (sessionStorage). */
+interface SavedSprint {
+  readonly t0: number;
+  readonly taps: number;
+  readonly done: boolean;
+  /** Round time when it was written (a later create() at an earlier round time is a new round). */
+  readonly at: number;
+}
+
+function saveKey(ctx: GameContext): string {
+  return `party.tap.${ctx.seed}.${ctx.durationMs}`;
+}
+
+function readSaved(ctx: GameContext): SavedSprint | null {
+  try {
+    const raw = window.sessionStorage.getItem(saveKey(ctx));
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<SavedSprint>;
+    if (typeof v.t0 !== 'number' || typeof v.taps !== 'number' || typeof v.at !== 'number') return null;
+    return { t0: v.t0, taps: v.taps, done: v.done === true, at: v.at };
+  } catch {
+    return null;
+  }
+}
+
+function writeSaved(ctx: GameContext, v: SavedSprint | null): void {
+  try {
+    if (v) window.sessionStorage.setItem(saveKey(ctx), JSON.stringify(v));
+    else window.sessionStorage.removeItem(saveKey(ctx));
+  } catch {
+    // private mode / storage full: a reload then simply starts over
+  }
+}
+
 export const game: GameModule = {
   id: 'tap',
+  // the final frame (the trophy and the tap count) IS the "waiting for the others" screen
+  ownsFinalScreen: true,
   async create(ctx: GameContext): Promise<GameInstance> {
     const [art] = await Promise.all([loadTapArt(), loadDisplayFont()]);
     const backdrop = createBackdrop(art.background);
@@ -337,13 +396,16 @@ export const game: GameModule = {
     const input = createInput(view.canvas);
     const fx = createFx(180);
 
-    // The stage covers a finished game with its "waiting for the others" overlay; the tap
-    // game's final frame IS that screen (the count written on the glass), so hide the overlay
-    // while this canvas says so. Scoped to this canvas: gone with it (and on a crash the stage
-    // empties the game root first, so its crash overlay is never hidden).
-    const style = document.createElement('style');
-    style.textContent = '.pa-stage-game:has(> canvas[data-tap-final="1"]) ~ .pa-overlay{display:none!important}';
-    ctx.root.appendChild(style);
+    // When did the finger land? The kit's pointer has no event time, so a capture listener on
+    // the game root (it runs before the canvas' own listener) keeps each pointerdown's
+    // timeStamp: a touch handled late (a long frame on a slow phone) is still stamped with
+    // when it happened, so bunched touches are not thrown away by the minimum gap.
+    const downStamp = new Map<number, number>();
+    const onDownCapture = (e: PointerEvent): void => {
+      downStamp.set(e.pointerId, e.timeStamp);
+      if (downStamp.size > 32) downStamp.clear();
+    };
+    ctx.root.addEventListener('pointerdown', onDownCapture, { capture: true });
 
     // Round time already gone when we start (slow load / late join), snapped to whole steps.
     let startOffset = clamp(Math.round((ctx.durationMs - ctx.timeLeftMs()) / STEP_MS) * STEP_MS, 0, ctx.durationMs);
@@ -372,6 +434,23 @@ export const game: GameModule = {
       joinedAt,
     );
     const timing = engine.timing;
+
+    // A reload in the middle of the round: continue the sprint this phone already played
+    // (same start, same taps, same end), or go straight to its final frame. Never a second try.
+    const saved = readSaved(ctx);
+    let resumed: SavedSprint | null = null;
+    if (saved && saved.at <= startOffset + 2000 && saved.t0 <= startOffset + 2000) {
+      engine.resume(saved.t0, saved.taps, saved.done || startOffset >= saved.t0 + timing.sprintMs);
+      resumed = saved;
+    } else if (saved) writeSaved(ctx, null);
+    let savedTaps = -1;
+    function persist(force: boolean): void {
+      const st = engine.state;
+      if (st.phase === 'waiting') return;
+      if (!force && st.taps - savedTaps < 5) return;
+      savedTaps = st.taps;
+      writeSaved(ctx, { t0: st.t0, taps: st.taps, done: st.phase === 'done', at: Math.round(elapsed) });
+    }
     const level = buildLevel(ctx.seed, ctx.durationMs, timing.tapScale, DRIP_EVERY);
     view.canvas.dataset.level = level.fingerprint;
     const rankAt = scaledThresholds(TAP.RANKS, timing.tapScale);
@@ -383,6 +462,8 @@ export const game: GameModule = {
     const ckSneak2 = chipRemark(W.sneak2);
     const ckYawn = chipRemark(W.yawn);
     const ckKnock = chipRemark(W.knock);
+    const ckSleep = chipRemark(W.sleep);
+    const ckPeek = chipRemark(W.peek);
     const stSelf = renderSticker(W.self, { flat: true, size: 26, fill: PAL.white, burst: PAL.cob, shadow: PAL.cobD });
     const stAuto = renderSticker(W.auto, { flat: true, size: 28, sub: W.autoSub, subScale: 0.8, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
     const stClick = renderSticker(W.click, { size: 34, fill: PAL.white, burst: PAL.red, shadow: PAL.redD });
@@ -396,15 +477,19 @@ export const game: GameModule = {
     const stSqueegee = renderSticker(W.squeegee, { size: 30, fill: PAL.white, shadow: PAL.cob });
     const stKing = renderSticker(W.king, { flat: true, size: 32, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
     const ckKing = renderChip(W.kingChip, 13, PAL.yel, PAL.ink);
-    const stSpin = renderSticker(W.spin, { size: 28, fill: PAL.yel, shadow: PAL.cob });
-    const stCork = renderSticker(W.cork, { flat: true, size: 28, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
+    const stSpin = renderSticker(W.spin, { size: 30, sub: W.spinSub, subScale: 0.8, fill: PAL.yel, shadow: PAL.cob });
+    const stCork = renderSticker(W.cork, { flat: true, size: 30, sub: W.corkSub, subScale: 0.75, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
     const stGold = renderSticker(W.gold, { size: 32, fill: PAL.yel, shadow: PAL.org });
-    const stDouble = renderSticker(W.double, { size: 30, fill: PAL.white, shadow: PAL.red });
+    const stDouble = renderSticker(W.double, { size: 32, sub: W.doubleSub, subScale: 0.8, fill: PAL.white, shadow: PAL.red });
     const stWow = renderSticker(W.wow, { size: 36, fill: PAL.yel, shadow: PAL.red });
     const ckNotMe = chipRemark(W.notMe);
-    const ckFillers = W.fillers.map((t) => chipRemark(t));
-    const stLast = renderSticker(W.last, { flat: true, size: 30, sub: W.lastSub, subScale: 0.8, fill: PAL.white, burst: PAL.red, shadow: PAL.redD });
+    const ckFillers = W.fillers.map(([a, b]) => renderChip(a, 20, PAL.white, PAL.ink, null, b));
+    // countdown digits 5..1 (the start window's last 5 s and the sprint's): red star stickers
+    const stDigits = [1, 2, 3, 4, 5].map((d) => renderSticker(String(d), { size: 64, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD, tilt: -0.06 }));
+    const stDigit5Last = renderSticker('5', { size: 64, sub: W.lastSub, subScale: 0.42, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD, tilt: -0.06 });
     const stRanks = W.ranks.map((t) => renderSticker(t, { flat: true, size: 30, fill: PAL.yel, burst: PAL.cob, shadow: PAL.cobD }));
+    // the final tap count: a red star sticker on the token (rendered once, at the end)
+    let stScore: Sticker | null = null;
     const ckWait = renderChip(W.wait, 17, PAL.yel, PAL.ink);
     const ckNames = W.names.map((t) => renderChip(t, 12, PAL.ink, PAL.white));
     const chipCache = createStickerCache(8);

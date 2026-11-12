@@ -136,6 +136,8 @@ export async function mountStageWith(
   let shownFill = -1;
   /** GameContext.setClock: the game's own clock, shown instead of the round clock (null = the round clock). */
   let gameClock: { leftMs: number; totalMs: number } | null = null;
+  /** GameModule.ownsFinalScreen: the game shows its own finished screen (no waiting overlay). */
+  let ownsFinal = false;
 
   // ── score reporting (throttled, the last value always goes out) ──
   function sendScore(): void {
@@ -237,7 +239,8 @@ export async function mountStageWith(
       const first = shownSecs === -1;
       shownSecs = s;
       secs.textContent = frozen ? '⏸' : String(s);
-      root.classList.toggle('is-urgent', urgent);
+      // a game clock is the game's own countdown: it draws its own urgency (no stage vignette)
+      root.classList.toggle('is-urgent', urgent && !own);
       if (urgent && !frozen && !first && !own) {
         sfx.tick(s <= 1 ? 1.5 : 1);
         haptic.tap();
@@ -328,7 +331,7 @@ export async function mountStageWith(
       if (over || finished || !gameAlive) return;
       finished = true;
       sendScore();
-      if (!elimination) {
+      if (!elimination && !ownsFinal) {
         wait.score.textContent = `⭐ ${score.toLocaleString('en-US')}`;
         wait.root.classList.add('is-on');
       }
@@ -360,6 +363,7 @@ export async function mountStageWith(
 
   try {
     const mod = await loadWithRetry(load, () => over);
+    ownsFinal = mod.ownsFinalScreen === true;
     gameAlive = true;
     instance = await mod.create(ctx);
   } catch (err) {

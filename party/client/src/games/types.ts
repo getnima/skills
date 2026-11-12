@@ -63,7 +63,7 @@ export interface GameContext {
   /**
    * Optional: the game shows its own clock (e.g. a personal sprint inside the round). The HUD
    * displays `leftMs` (bar = leftMs / totalMs, totalMs defaults to the round length) instead
-   * of the round clock, without the stage's urgent ticks (the game plays its own countdown);
+   * of the round clock, without the stage's urgent ticks and vignette (the game plays its own countdown);
    * null restores the round clock. The round still ends at the round clock. Cheap: call every step.
    */
   setClock?(leftMs: number | null, totalMs?: number): void;
@@ -95,6 +95,12 @@ export interface GameInstance {
 
 export interface GameModule {
   readonly id: GameId;
+  /**
+   * Optional: the game draws its own "finished, waiting for the others" screen, so after
+   * `ctx.finish()` the stage keeps the game visible instead of covering it with its own
+   * waiting overlay. The crash overlay is not affected.
+   */
+  readonly ownsFinalScreen?: boolean;
   create(ctx: GameContext): GameInstance | Promise<GameInstance>;
 }
 

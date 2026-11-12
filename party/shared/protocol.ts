@@ -39,7 +39,8 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     title: 'שימי טאפ',
     emoji: '👆',
     instructions: 'יש לכם 30 שניות להתחיל. מהנגיעה הראשונה: 20 שניות של ספאם על שימי. כל הקשה נקודה!',
-    durationMs: 50_000,
+    // 30 s start window + 20 s personal sprint + a 3 s hold for the last starter's final frame
+    durationMs: 53_000,
     maxRaw: 300,
     mode: 'score',
   },

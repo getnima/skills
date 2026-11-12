@@ -254,7 +254,9 @@ function ninjaDriver(ph, restMs) {
 
 // plotzel: type the next word of the shortest path on the on-screen keys (finals have their own keys)
 function plotzelDriver(ph, keyGapMs) {
-  const key = (k) => ph.page.locator(`.pz-key[data-k="${k}"]`).tap();
+  // a short timeout: when the round ends in the middle of a word the keyboard is gone, and a tap
+  // that waited the default 30 s for it would hold stopDrivers() past the whole winner ceremony
+  const key = (k) => ph.page.locator(`.pz-key[data-k="${k}"]`).tap({ timeout: 1200 });
   return drive(ph, async () => {
     const s = await ph.page.evaluate(() => {
       const p = window.__plotzel;
