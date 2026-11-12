@@ -113,9 +113,9 @@ async function tapAt(page, km, k) {
   await page.touchscreen.tap(c.x, c.y);
 }
 /** Type a word (as shown, finals included) at `perKeyMs` per key, then ENTER. */
-async function typeWord(page, km, word, perKeyMs, enter = true) {
+async function typeWord(page, km, word, perKeyMs, enter = true, clear = true) {
   // a rejected word stays in the row (like the original): clear it with ⌫ first
-  const left = await page.evaluate(() => (window.__plotzel ? Array.from(window.__plotzel.typed).length : 0)).catch(() => 0);
+  const left = clear ? await page.evaluate(() => (window.__plotzel ? Array.from(window.__plotzel.typed).length : 0)).catch(() => 0) : 0;
   for (let i = 0; i < left; i++) {
     const t0 = Date.now();
     await tapAt(page, km, 'BACK');
@@ -199,7 +199,7 @@ async function layoutIssues(page) {
 async function keyChecks(page, label, portrait) {
   const km = await keyMap(page);
   const keys = Object.entries(km).filter(([k]) => !['hint', 'skip'].includes(k));
-  check(`${label}: 30 keys`, keys.length === 30, keys.length);
+  check(`${label}: 29 keys (27 letters with finals, ⌫, אישור)`, keys.length === 29, keys.length);
   let overlap = [];
   for (let i = 0; i < keys.length; i++)
     for (let j = i + 1; j < keys.length; j++) {
@@ -591,7 +591,7 @@ async function sectionChecks(browser) {
     await waitFor(async () => !(await st(page)).frozen, 5000, 'unfrozen');
     await sleep(150);
     const rest = Array.from(p[1]).slice(2).join('');
-    await typeWord(page, km, rest, 150);
+    await typeWord(page, km, rest, 150, true, false);
     const s3 = await st(page);
     check('freeze mid-typing: resumes exactly (the word completes)', s3.words.length === s1.words.length + 1 && s3.words[s3.words.length - 1] === p[1], s3.words);
     const anims2 = await page.evaluate(() => {

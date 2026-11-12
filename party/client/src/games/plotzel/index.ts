@@ -300,6 +300,8 @@ export const game: GameModule = {
       const bh = board.clientHeight;
       rowGap = bh < 300 ? 5 : 6;
       tile = Math.floor(clamp(Math.min((bw - 3 * rowGap - 8) / 4, (bh - 4 * rowGap - 8) / 5), 30, 64));
+      // a very short board (landscape): the last word, the active row and the goal must still fit
+      if (3 * tile + 2 * rowGap + 10 > bh) tile = Math.max(18, Math.floor((bh - 2 * rowGap - 10) / 3));
       root.style.setProperty('--tile', `${tile}px`);
       root.style.setProperty('--row-gap', `${rowGap}px`);
       if (enterKey) enterKey.classList.toggle('is-tight', enterKey.clientWidth < 46);
@@ -314,17 +316,19 @@ export const game: GameModule = {
       const bh = board.clientHeight - 8;
       const rowH = tile + rowGap;
       const fixed = live ? 2 : 0;
-      let slots = Math.max(0, Math.floor((bh + rowGap) / rowH) - fixed);
+      const slots = Math.max(0, Math.floor((bh + rowGap) / rowH) - fixed);
       let hidden = 0;
+      let marker = false;
       if (wordRows.length > slots) {
-        // the marker takes about half a row
-        slots = Math.max(1, Math.floor((bh + rowGap - 26) / rowH) - fixed);
-        hidden = Math.max(0, wordRows.length - slots);
+        // the marker takes about half a row; on a very short board there is no room for it
+        const withMarker = Math.floor((bh + rowGap - 26) / rowH) - fixed;
+        marker = withMarker >= 1;
+        hidden = Math.max(0, wordRows.length - (marker ? withMarker : Math.max(live ? 0 : 1, slots)));
       }
       wordRows.forEach((r, i) => {
         r.hidden = i < hidden;
       });
-      moreEl.hidden = hidden === 0;
+      moreEl.hidden = !marker;
       moreEl.textContent = `+${hidden}`;
       positionDemo();
     }

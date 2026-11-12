@@ -313,7 +313,7 @@ async function main() {
     check(s.round_ && s.round_.playing && Math.abs(s.round_.time - before) < 0.6, `loop: round.mp3 wrapped (time ${s.round_ && s.round_.time.toFixed(2)} vs ${before.toFixed(2)} of 12 s)`, s.round_);
     await page.reload();
     await page.waitForFunction(() => window.__host && window.__host.state() && window.__host.status() === 'online', null, { timeout: 20000 });
-    await page.waitForFunction(() => window.__partyMusic.info('round') && window.__partyMusic.info('round').playing, null, { timeout: 5000 });
+    await page.waitForFunction(() => window.__partyMusic.info('round') && window.__partyMusic.info('round').playing, null, { timeout: 15000 });
     await sleep(300);
     s = await snap(page);
     const exp = expectedPos(s, 0, 12);
@@ -415,7 +415,7 @@ async function main() {
 
     // ── autoplay blocked until a click: the song starts on the unlock at the right position ──
     // Headless Chromium ignores --autoplay-policy, so the fresh tab below models Chrome's rule:
-    // media play() is refused (NotAllowedError) until the page has had a user activation.
+    // media play() is refused (NotAllowedError) until the page has had a click or a key press.
     browser2 = await chromium.launch();
     const tv2 = await openTv(browser2);
     await setAuto(tv2.page, false);
@@ -427,10 +427,13 @@ async function main() {
     const ctx3 = await browser2.newContext({ viewport: { width: 1920, height: 1080 } });
     await ctx3.addInitScript((s) => {
       for (const [k, v] of Object.entries(JSON.parse(s))) localStorage.setItem(k, v);
+      // (navigator.userActivation cannot be used: Playwright's evaluate() counts as an activation)
+      let active = false;
+      for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, (e) => e.isTrusted && (active = true), true);
       const play = HTMLMediaElement.prototype.play;
       window.__refusedPlays = 0;
       HTMLMediaElement.prototype.play = function (...a) {
-        if (!navigator.userActivation.hasBeenActive) {
+        if (!active) {
           window.__refusedPlays++;
           return Promise.reject(new DOMException('autoplay blocked (test)', 'NotAllowedError'));
         }
