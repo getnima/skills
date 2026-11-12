@@ -439,12 +439,28 @@ const jobs: (() => void)[] = [];
 let pumping = false;
 const SLICE_MS = 8;
 
+/**
+ * Finished pictures are handed out in batches (when the queue is empty, or every FLUSH_MS):
+ * every hand-out repaints the page, and one repaint for 40 new icons costs far less than 40 repaints.
+ */
+const FLUSH_MS = 120;
+let handOut: (() => void)[] = [];
+let lastFlush = 0;
+
+function flush(): void {
+  const list = handOut;
+  handOut = [];
+  lastFlush = performance.now();
+  for (const fn of list) fn();
+}
+
 function pump(): void {
   const start = performance.now();
   while (jobs.length > 0 && performance.now() - start < SLICE_MS) {
     const job = jobs.shift();
     if (job !== undefined) job();
   }
+  if (jobs.length === 0 || performance.now() - lastFlush > FLUSH_MS) flush();
   if (jobs.length > 0) yieldThen(pump);
   else pumping = false;
 }
@@ -473,6 +489,7 @@ function schedule(job: () => void): void {
   jobs.push(job);
   if (pumping) return;
   pumping = true;
+  lastFlush = performance.now();
   yieldThen(pump);
 }
 
@@ -481,11 +498,13 @@ function produceBitmap(r: Request): Promise<{ canvas: HTMLCanvasElement; complet
     () =>
       new Promise<Composed>((resolve) => {
         schedule(() => {
+          let made: Composed;
           try {
-            resolve(composeInner(r.look, { size: r.bucket, crop: r.crop }));
+            made = composeInner(r.look, { size: r.bucket, crop: r.crop });
           } catch {
-            resolve({ canvas: fallbackCanvas(r.look, r.bucket), complete: false });
+            made = { canvas: fallbackCanvas(r.look, r.bucket), complete: false };
           }
+          handOut.push(() => resolve(made));
         });
       }),
   );

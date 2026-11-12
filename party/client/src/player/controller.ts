@@ -80,6 +80,17 @@ function errorText(code: ErrorCode | 'TIMEOUT'): string {
 
 type Listener = (snap: Snapshot) => void;
 
+/** The latest `scores` broadcast this phone received (live raw scores, strict live order). */
+export interface LiveScores {
+  readonly round: number;
+  readonly scores: ReadonlyArray<readonly [string, number]>;
+  /** performance.now() when it arrived. */
+  readonly at: number;
+  /** Counts every message this phone received (since the page loaded). */
+  readonly seq: number;
+}
+type ScoresListener = (msg: LiveScores) => void;
+
 export interface PlayerController {
   snapshot(): Snapshot;
   subscribe(fn: Listener): () => void;
@@ -100,6 +111,13 @@ export interface PlayerController {
   finishEarly(roundIndex: number, score: number): void;
   /** Best score this phone reported for a round (survives a reload of the tab). */
   bestScore(roundIndex: number): number;
+  /**
+   * Latest live `scores` message (any round: check `round`), or null before the first one
+   * after a (re)load. Kept out of the snapshot on purpose: it changes 4 times a second and
+   * only the stage HUD needs it, so no screen re-renders for it.
+   */
+  liveScores(): LiveScores | null;
+  onLiveScores(fn: ScoresListener): () => void;
 }
 
 export function createController(): PlayerController {
@@ -129,6 +147,9 @@ export function createController(): PlayerController {
     finalAcked: false,
   };
   const listeners = new Set<Listener>();
+  const scoreListeners = new Set<ScoresListener>();
+  let live: LiveScores | null = null;
+  let liveSeq = 0;
   const best = new Map<number, number>();
   let pendingFinal: { round: number; score: number } | null = null;
   let ackedFinal: { round: number; score: number } | null = null;
@@ -239,6 +260,14 @@ export function createController(): PlayerController {
   });
   socket.on('state', applyState);
   socket.on('scores', (msg) => {
+    live = { round: msg.round, scores: msg.scores, at: performance.now(), seq: ++liveSeq };
+    for (const fn of [...scoreListeners]) {
+      try {
+        fn(live);
+      } catch (err) {
+        console.error('[controller] scores listener failed', err);
+      }
+    }
     if (snap.lateRound !== msg.round || snap.playerId === null) return;
     if (msg.scores.some(([id]) => id === snap.playerId)) {
       persist({ lateRound: null });
@@ -518,6 +547,13 @@ export function createController(): PlayerController {
     finishEarly(roundIndex: number, score: number): void {
       const value = Math.max(controller.bestScore(roundIndex), Math.max(0, Math.round(score)));
       queueFinal(roundIndex, value);
+    },
+    liveScores: (): LiveScores | null => live,
+    onLiveScores(fn: ScoresListener): () => void {
+      scoreListeners.add(fn);
+      return (): void => {
+        scoreListeners.delete(fn);
+      };
     },
   };
   return controller;
