@@ -10,6 +10,8 @@ import { sfx } from '../../kit/audio';
 import { hasTrackFile, playTrack, stopTrack } from '../../kit/music';
 import { WINNER_REVEAL_MS } from '../../../../shared/protocol';
 import { backdropUrl, lastPlaceArt } from './art';
+import { cardGrid } from './card-grid';
+import { PlayerCard, useBoardBox } from './cards';
 import { Avatar, CountUp, formatScore, GameArt, useFrame, useStage, useTicker } from './common';
 import { useFunnyLayer } from './funny';
 import { cueNarration, isNarratorOn, setNarrationSlot } from './narrator-bus';
@@ -521,15 +523,12 @@ function Nobody(props: { skipMs: number }): JSX.Element {
 function Standings(props: { plan: Plan; view: View; size: StageSize; clockT(): number }): JSX.Element {
   const { plan, view, size } = props;
   useTicker(500); // page rotation
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const [listH, setListH] = useState(0);
-  useEffect(() => {
-    setListH(listRef.current?.clientHeight ?? 0);
-  }, [size.w, size.h]);
+  const box = useBoardBox();
   const n = plan.newOrder.length;
-  // a small room gets tall rows (and big dolls); from 9 on (8 in portrait) the table pages
-  const visible = Math.max(5, Math.min(size.portrait ? 8 : 9, n));
-  const rowH = listH / visible;
+  // cards as big as the board allows for everybody; a big room pages (show/card-grid.ts)
+  const u = size.u;
+  const grid = cardGrid(n, box.w, box.h, { aspect: 1.36, gap: 34 * u, maxW: 330 * u, minW: (size.portrait ? 150 : 172) * u });
+  const visible = grid.perPage;
   const pages = Math.max(1, Math.ceil(n / visible));
   const restT = props.clockT() - REST_AFTER;
   const page = view.step >= 3 && pages > 1 ? Math.floor(Math.max(0, restT) / PAGE_MS) % pages : 0;
@@ -549,55 +548,66 @@ function Standings(props: { plan: Plan; view: View; size: StageSize; clockT(): n
         </span>
       </aside>
       <div class="sh-main">
-      <div class={`sh-banner ${winners.length === 0 ? 'sh-banner--none' : ''}`}>
-        {winners.length > 0 ? <PrizeRelic variant="mini" /> : <span class="sh-banner-emoji">😇</span>}
-        <span class="sh-banner-text">
-          {winners.length === 0 ? (
-            'אף אחד לא זכה בסיבוב הזה. המלאך נשאר בבית'
-          ) : (
-            <>
-              <b>
-                <bdi>{winners[0]?.name}</bdi>
-              </b>{' '}
-              זוכה בשימי אנג׳ל!
-            </>
-          )}
-        </span>
-        <span class="sh-banner-emoji">🏆</span>
-      </div>
-      <div class="sh-tlist" ref={listRef} style={{ '--rh': `${rowH.toFixed(1)}px` }}>
-        {plan.newOrder.map((r) => {
-          const slot = slotOf.get(r.playerId) ?? 0;
-          const hidden = slot < 0 || slot >= visible || rowH === 0;
-          const y = Math.max(-1, Math.min(visible, slot)) * rowH;
-          const delta = r.prevRank === null ? null : r.prevRank - r.rank;
-          const isClimber = view.step >= 2 && plan.climber !== null && plan.climber.playerId === r.playerId;
-          const isLeader = view.step >= 2 && plan.newLeader !== null && plan.newLeader.playerId === r.playerId;
-          return (
-            <div
-              class={`sh-trow ${hidden ? 'is-hidden' : ''} ${moved && r.rank === 1 ? 'is-first' : ''} ${isClimber || isLeader ? 'is-spot' : ''}`}
-              key={r.playerId}
-              style={{ transform: `translate3d(0, ${y.toFixed(1)}px, 0)`, height: `${rowH.toFixed(1)}px` }}
-            >
-              <div class="sh-trow-in">
-                <span class="sh-rank">{moved ? r.rank : (r.prevRank ?? '–')}</span>
-                <span class={`sh-move ${!moved || delta === null || delta === 0 ? 'is-flat' : delta > 0 ? 'is-up' : 'is-down'}`} dir="ltr">
-                  {!moved ? '' : delta === null ? (plan.firstRound ? '' : 'חדש') : delta === 0 ? '•' : delta > 0 ? `▲${delta}` : `▼${-delta}`}
-                </span>
-                <Avatar avatar={r.avatar} name={r.name} look={r.look} />
-                <span class="sh-name" dir="auto">
-                  <bdi>{r.name}</bdi>
-                </span>
-                {isLeader ? <span class="sh-tag sh-tag--gold">👑 מוביל חדש</span> : isClimber ? <span class="sh-tag">🚀 מטפס הסיבוב</span> : null}
-                <span class={`sh-gain ${moved ? 'is-in' : ''} ${r.points === 0 ? 'is-zero' : ''}`} dir="ltr">
-                  +{formatScore(r.points)}
-                </span>
-                <CountUp class="sh-total" value={moved ? r.total : r.total - r.points} ms={1_100} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+        <div class={`sh-banner ${winners.length === 0 ? 'sh-banner--none' : ''}`}>
+          {winners.length > 0 ? <PrizeRelic variant="mini" /> : <span class="sh-banner-emoji">😇</span>}
+          <span class="sh-banner-text">
+            {winners.length === 0 ? (
+              'אף אחד לא זכה בסיבוב הזה. המלאך נשאר בבית'
+            ) : (
+              <>
+                <b>
+                  <bdi>{winners[0]?.name}</bdi>
+                </b>{' '}
+                זוכה בשימי אנג׳ל!
+              </>
+            )}
+          </span>
+          <span class="sh-banner-emoji">🏆</span>
+        </div>
+        <div class="sh-cards" ref={box.ref}>
+          {box.w > 0
+            ? plan.newOrder.map((r) => {
+                const slot = slotOf.get(r.playerId) ?? 0;
+                const hidden = slot < 0 || slot >= visible;
+                const at = grid.slot(Math.max(0, Math.min(visible - 1, slot)));
+                const delta = r.prevRank === null ? null : r.prevRank - r.rank;
+                const isClimber = view.step >= 2 && plan.climber !== null && plan.climber.playerId === r.playerId;
+                const isLeader = view.step >= 2 && plan.newLeader !== null && plan.newLeader.playerId === r.playerId;
+                const move = !moved
+                  ? null
+                  : delta === null
+                    ? plan.firstRound
+                      ? null
+                      : { text: 'חדש', kind: 'new' as const }
+                    : delta === 0
+                      ? null
+                      : delta > 0
+                        ? { text: `▲${delta}`, kind: 'up' as const }
+                        : { text: `▼${-delta}`, kind: 'down' as const };
+                return (
+                  <PlayerCard
+                    key={r.playerId}
+                    name={r.name}
+                    avatar={r.avatar}
+                    look={r.look}
+                    rank={moved ? r.rank : r.prevRank}
+                    cw={grid.cw}
+                    u={u}
+                    x={at.x}
+                    y={hidden ? at.y + (slot < 0 ? -grid.ch * 0.3 : grid.ch * 0.3) : at.y}
+                    hidden={hidden}
+                    class={`${moved && r.rank === 1 ? 'is-first' : ''} ${isClimber || isLeader ? 'is-spot' : ''}`}
+                    move={move}
+                    ribbon={isLeader ? '👑 מוביל חדש' : isClimber ? '🚀 מטפס הסיבוב' : null}
+                    testId="standings-card"
+                  >
+                    <CountUp value={moved ? r.total : r.total - r.points} ms={1_100} />
+                    <span class={`pc-gain ${r.points === 0 ? 'is-zero' : ''}`}>+{formatScore(r.points)}</span>
+                  </PlayerCard>
+                );
+              })
+            : null}
+        </div>
       </div>
     </div>
   );

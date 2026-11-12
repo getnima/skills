@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { sfx } from '../../kit/audio';
 import { playTrack, stopTrack } from '../../kit/music';
 import { backdropUrl, crownUrl, podiumUrl } from './art';
+import { cardGrid } from './card-grid';
+import { PlayerCard, useBoardBox } from './cards';
 import { Avatar, CountUp, formatScore, useFrame, useStage } from './common';
 import { useFunnyLayer } from './funny';
 import { cueNarration, isNarratorOn, setNarrationSlot } from './narrator-bus';
@@ -101,7 +103,10 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
     narrated.current.add(moment);
     return cueNarration({ id: `${moment}:${sceneId.current}`, moment, ttlMs, valid, name, holdMs });
   };
-  const perPage = size.portrait ? 6 : 10;
+  // the final table: player cards (cards.tsx) as big as its box allows, paging in a big room
+  const tableBox = useBoardBox();
+  const grid = cardGrid(n, tableBox.w, tableBox.h, { aspect: 1.36, gap: 26 * size.u, maxW: 230 * size.u, minW: 140 * size.u });
+  const perPage = tableBox.w > 0 ? grid.perPage : size.portrait ? 6 : 10;
   const pages = Math.max(1, Math.ceil(n / perPage));
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
@@ -229,17 +234,29 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
               </span>
             ) : null}
           </div>
-          <div class="sh-ftable-rows" key={page}>
-            {pageRows.map((r, i) => (
-              <div class={`sh-frow ${r.rank <= 3 ? `is-top${r.rank}` : ''}`} key={r.player.id} style={{ animationDelay: `${i * 60}ms` }}>
-                <span class="sh-rank">{r.rank}</span>
-                <Avatar avatar={r.player.avatar} name={r.player.name} look={r.player.look} />
-                <span class="sh-name" dir="auto">
-                  <bdi>{r.player.name}</bdi>
-                </span>
-                <CountUp class="sh-total" value={r.player.total} ms={1_000} />
-              </div>
-            ))}
+          <div class="sh-ftable-cards" key={page} ref={tableBox.ref}>
+            {tableBox.w > 0
+              ? pageRows.map((r, i) => {
+                  const at = grid.slot(i);
+                  return (
+                    <PlayerCard
+                      key={r.player.id}
+                      name={r.player.name}
+                      avatar={r.player.avatar}
+                      look={r.player.look}
+                      rank={r.rank}
+                      cw={grid.cw}
+                      u={size.u}
+                      x={at.x}
+                      y={at.y}
+                      class={r.rank === 1 ? 'is-first' : ''}
+                      testId="final-card"
+                    >
+                      <CountUp value={r.player.total} ms={1_000} />
+                    </PlayerCard>
+                  );
+                })
+              : null}
           </div>
         </div>
       ) : null}

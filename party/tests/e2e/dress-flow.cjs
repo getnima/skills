@@ -447,7 +447,7 @@ async function runSize(browser, size) {
   await D.waitFor(async () => (await tvPhase(tv)) === 'results', 40000, 'results');
   await tv.waitForSelector('.sh-results--standings', { timeout: 40000 });
   await sleep(1500);
-  const stand = await tv.evaluate(() => [...document.querySelectorAll('.sh-trow .sh-avatar')].map((el) => ({ look: el.dataset.look || null, img: !!el.querySelector('img') })));
+  const stand = await tv.evaluate(() => [...document.querySelectorAll('[data-testid=standings-card] .sh-avatar')].map((el) => ({ look: el.dataset.look || null, img: !!el.querySelector('img') })));
   check(stand.length === 5 && stand.every((r) => r.img && r.look), `${tag}: the TV standings show a doll for all five (${stand.length})`);
   await tv.screenshot({ path: path.join(OUT, `tv-${tag}-standings.png`) });
   check((await D.playerInfo(E)).screen !== 'dressing', `${tag}: no dressing room during the results either (${(await D.playerInfo(E)).screen})`);
@@ -477,7 +477,7 @@ async function runSize(browser, size) {
   await L.shot(A, OUT, '12-waiting-between-rounds', check, { drag: true });
   await L.shot(C, OUT, '12-waiting-between-rounds', check);
   await tv.screenshot({ path: path.join(OUT, `tv-${tag}-lobby-between.png`) });
-  const panel = await tv.evaluate(() => [...document.querySelectorAll('.sh-prow .sh-avatar')].map((el) => !!el.querySelector('img')));
+  const panel = await tv.evaluate(() => [...document.querySelectorAll('[data-testid=panel-card] .sh-avatar')].map((el) => !!el.querySelector('img')));
   check(panel.length === 5 && panel.every(Boolean), `${tag}: the TV's table between rounds shows the dolls (${panel.length})`);
 
   bot.close();

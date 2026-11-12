@@ -159,8 +159,17 @@ const sections = {
     await shot('standings-2-spotlight');
     await at(10600 + 9000);
     await shot('standings-3-rest');
-    const st = await page.evaluate(() => ({ banner: document.querySelector('.sh-banner-text').textContent, rows: document.querySelectorAll('.sh-trow:not(.is-hidden)').length, namePx: parseFloat(getComputedStyle(document.querySelector('.sh-trow .sh-name')).fontSize) }));
-    check('standings: banner + readable table', st.banner.includes('שימי אנג׳ל') && st.rows >= 9 && st.namePx >= 40, st);
+    // the table is player cards: everybody on one page at this head count, the dolls big, the names readable
+    const st = await page.evaluate(() => {
+      const card = document.querySelector('[data-testid=standings-card]:not(.is-hidden)');
+      return {
+        banner: document.querySelector('.sh-banner-text').textContent,
+        cards: document.querySelectorAll('[data-testid=standings-card]:not(.is-hidden)').length,
+        namePx: card ? parseFloat(getComputedStyle(card.querySelector('.pc-name')).fontSize) : 0,
+        dollPx: card ? card.querySelector('.sh-avatar').getBoundingClientRect().width : 0,
+      };
+    });
+    check('standings: banner + cards with big dolls and readable names', st.banner.includes('שימי אנג׳ל') && st.cards >= 9 && st.namePx >= 24 && st.dollPx >= 150, st);
     check('results: no scroll', noScroll(await layout(page)));
 
     // late mount: jumps straight to the right stage
@@ -222,8 +231,8 @@ const sections = {
         await shot('final-40-3-table');
         await page.waitForTimeout(6000);
         await shot('final-40-4-table-page2');
-        const t = await page.evaluate(() => ({ rows: document.querySelectorAll('.sh-frow').length, sub: document.querySelector('.sh-ftable .sh-head-sub').textContent }));
-        check('final 40: table paginates', t.rows === 10 && t.sub.includes('מתוך 40') && !t.sub.includes('1–10'), t);
+        const t = await page.evaluate(() => ({ cards: document.querySelectorAll('[data-testid=final-card]').length, sub: document.querySelector('.sh-ftable .sh-head-sub').textContent }));
+        check('final 40: the table of cards pages', t.cards >= 8 && t.cards < 40 && t.sub.includes('מתוך 40') && !t.sub.includes(`1–${t.cards}`), t);
       } else {
         await page.waitForTimeout(n === 3 ? 11500 : 9000);
         await shot(`final-${n}-settled`);
@@ -242,8 +251,9 @@ const sections = {
     await page.evaluate(() => window.__show.scene('standings'));
     await page.waitForTimeout(800);
     await shot('panel');
-    const p = await page.evaluate(() => ({ rows: document.querySelectorAll('.sh-prow').length, more: document.querySelector('.sh-panel-more').textContent, hints: document.querySelectorAll('.sh-prow .sh-move').length }));
-    check('panel: top 8 + more + hints', p.rows === 8 && p.more.includes('6') && p.hints > 0, p);
+    // six big cards at a time, paging through all fourteen, with the moves in the table
+    const p = await page.evaluate(() => ({ cards: document.querySelectorAll('[data-testid=panel-card]').length, count: document.querySelector('.sh-panel-count').textContent, hints: document.querySelectorAll('[data-testid=panel-card] .pc-move').length }));
+    check('panel: a page of cards + the page label + hints', p.cards === 6 && p.count.includes('מתוך 14') && p.hints > 0, p);
     await done('panel');
     const ctl = await browser.newContext({ viewport: TV });
     const cp = await ctl.newPage();

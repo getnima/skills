@@ -44,7 +44,7 @@ function installSampler() {
     ['.hs-intro-text', 'instructions'],
     ['.sh-rrow.is-on', 'results row'],
     ['.sh-mystery', 'who wins sign'],
-    ['.sh-trow:not(.is-hidden) .sh-trow-in', 'standings row'],
+    ['.pc:not(.is-hidden) .pc-in', 'standings card'],
     ['.sh-banner', 'winner banner'],
     ['.sh-cer-name', "winner's name"],
     ['.sh-cer-won .sh-avatar', "winner's doll"],

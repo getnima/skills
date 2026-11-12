@@ -178,7 +178,8 @@ const NAMES = ['דנה', 'יוסי', 'מיכל', 'רון'];
       await tv.waitForSelector('.sh-results--standings', { timeout: 25000 });
       await sleep(3200);
       await shotTv(`${tag}-standings`);
-      const stand = await tv.evaluate(() => [...document.querySelectorAll('.sh-trow:not(.is-hidden)')].map((r) => ({ rank: r.querySelector('.sh-rank').textContent.trim(), name: r.querySelector('.sh-name').textContent.trim(), y: r.getBoundingClientRect().top })).sort((a, b) => a.y - b.y));
+      // the standings are player cards: read them as the room does, rows top to bottom, each row right to left
+      const stand = await tv.evaluate(() => [...document.querySelectorAll('[data-testid=standings-card]:not(.is-hidden)')].map((r) => ({ rank: r.querySelector('.pc-rank').textContent.trim(), name: r.querySelector('.pc-name').textContent.trim(), y: r.getBoundingClientRect().top, x: r.getBoundingClientRect().left })).sort((a, b) => Math.round(a.y) - Math.round(b.y) || b.x - a.x));
       check(stand.map((r) => r.rank).join() === '1,2,3,4', `${tag}: TV standings show ranks 1,2,3,4 (${stand.map((r) => `${r.rank}.${r.name}`).join(' ')})`, stand);
       check(stand.map((r) => r.name).join() === res.rows.map((r) => r.name).join(), `${tag}: TV standings are in the server's order`, stand);
       const banner = await tv.textContent('.sh-banner-text');
@@ -244,7 +245,7 @@ const NAMES = ['דנה', 'יוסי', 'מיכל', 'רון'];
     const state = await st();
     const serverOrder = [...state.players].sort((a, b) => a.rank - b.rank);
     check(serverOrder.map((p) => p.rank).join() === '1,2,3,4', 'lobby: PlayerPublic.rank is 1..4', state.players.map((p) => [p.name, p.total, p.rank]));
-    const panel = await tv.evaluate(() => [...document.querySelectorAll('.sh-prow')].map((r) => ({ rank: r.querySelector('.sh-rank').textContent.trim(), name: r.querySelector('.sh-name').textContent.trim() })));
+    const panel = await tv.evaluate(() => [...document.querySelectorAll('[data-testid=panel-card]')].map((r) => ({ rank: r.querySelector('.pc-rank').textContent.trim(), name: r.querySelector('.pc-name').textContent.trim(), y: r.getBoundingClientRect().top, x: r.getBoundingClientRect().left })).sort((a, b) => Math.round(a.y) - Math.round(b.y) || b.x - a.x));
     check(panel.map((r) => r.rank).join() === '1,2,3,4' && panel.map((r) => r.name).join() === serverOrder.map((p) => p.name).join(), `lobby: TV standings panel shows 1,2,3,4 in the server's order (${panel.map((r) => `${r.rank}.${r.name}`).join(' ')})`, panel);
     await waitFor(async () => (await Promise.all(phones.map(screenOf))).every((s) => s === 'lobby'), 10000, 'phones in the lobby');
     const pills = [];
@@ -288,7 +289,7 @@ const NAMES = ['דנה', 'יוסי', 'מיכל', 'רון'];
     await tv.waitForSelector('.sh-ftable', { timeout: 20000 });
     await sleep(1500);
     await shotTv('podium-table');
-    const table = await tv.evaluate(() => [...document.querySelectorAll('.sh-frow')].map((r) => r.querySelector('.sh-rank').textContent.trim() + '.' + r.querySelector('.sh-name').textContent.trim()));
+    const table = await tv.evaluate(() => [...document.querySelectorAll('[data-testid=final-card]')].map((r) => ({ t: r.querySelector('.pc-rank').textContent.trim() + '.' + r.querySelector('.pc-name').textContent.trim(), y: r.getBoundingClientRect().top, x: r.getBoundingClientRect().left })).sort((a, b) => Math.round(a.y) - Math.round(b.y) || b.x - a.x).map((r) => r.t));
     check(table.join() === finalOrder.map((p, i) => `${i + 1}.${p.name}`).join(), `final table: 1..4 in the server's order (${table.join(' ')})`, table);
 
     check(errors.length === 0, 'no page errors', errors.slice(0, 5));
