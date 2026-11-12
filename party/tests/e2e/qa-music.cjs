@@ -136,12 +136,18 @@ const startSampler = (page) =>
 const samples = (page) => page.evaluate(() => window.__musicSamples || []);
 
 async function setAuto(page, on) {
-  const st = await L.state(page);
-  if (st.autoCutscenes === on) return;
-  await page.click('[data-testid="btn-cutscenes"]');
-  await page.click('[data-testid="auto-switch"]');
-  await page.keyboard.press('Escape');
-  await page.waitForFunction((v) => window.__host.state().autoCutscenes === v, on);
+  for (let i = 0; i < 3; i++) {
+    if ((await L.state(page)).autoCutscenes === on) break;
+    await page.click('[data-testid="btn-cutscenes"]');
+    await page.waitForSelector('[data-testid="auto-switch"]');
+    await page.click('[data-testid="auto-switch"]');
+    await page.waitForFunction((v) => window.__host.state().autoCutscenes === v, on, { timeout: 5000 }).catch(async () => {
+      await page.screenshot({ path: path.join(OUT, `set-auto-${i}.png`) });
+    });
+    await page.keyboard.press('Escape');
+    await sleep(300);
+  }
+  check((await L.state(page)).autoCutscenes === on, `automatic cutscenes ${on ? 'on' : 'off'}`);
 }
 
 async function startGame(page, id) {

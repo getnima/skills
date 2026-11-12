@@ -16,7 +16,7 @@ import {
   WINNER_REVEAL_MS,
 } from '../../shared/protocol';
 import { roundTime } from '../../shared/round-clock';
-import { computeRoundScores, MAX_ROUND_POINTS, PODIUM_BONUS, rankDescending } from '../../shared/scoring';
+import { computeRoundScores, MAX_ROUND_POINTS, PODIUM_BONUS } from '../../shared/scoring';
 import { DISCONNECT_END_GRACE_MS, Room } from '../../server/room';
 import { MAX_ROOMS, RoomRegistry } from '../../server/rooms';
 
@@ -89,24 +89,79 @@ function makeRoom(opts: { cutscenes?: readonly CutsceneDef[]; timing?: RoomTimin
   };
 }
 
-/** Independent re-implementation of the documented rules (README "Scoring"), not a call into the server. */
-function expectedRound(raws: ReadonlyMap<string, number>): Map<string, { points: number; roundRank: number }> {
-  const best = Math.max(0, ...raws.values());
-  const out = new Map<string, { points: number; roundRank: number }>();
-  for (const [id, raw] of raws) {
-    let better = 0;
-    for (const other of raws.values()) if (other > raw) better++;
-    const roundRank = better + 1;
-    const points = raw > 0 && best > 0 ? Math.round((MAX_ROUND_POINTS * raw) / best) + (PODIUM_BONUS[roundRank - 1] ?? 0) : 0;
-    out.set(id, { points, roundRank });
+/** What one player did in a round, as the test knows it. */
+interface Sent {
+  readonly raw: number;
+  /** Clock time at which the player's score last changed; null when they scored nothing. */
+  readonly at: number | null;
+  readonly join: number;
+  /** Total before the round. */
+  readonly before: number;
+}
+
+/**
+ * Independent re-implementation of the documented rules (README "Scoring"), not a call into the server:
+ * strict order (raw, then who reached it first, then join order), scaled points + podium bonus by strict
+ * position, every scorer at least one point below the one above, and no new total equal to another total.
+ */
+function expectedRound(sent: ReadonlyMap<string, Sent>): Map<string, { points: number; roundRank: number }> {
+  const isAhead = (x: Sent, y: Sent): boolean => {
+    if (x.raw !== y.raw) return x.raw > y.raw;
+    if (x.raw > 0 && x.at !== y.at) return (x.at ?? Infinity) < (y.at ?? Infinity);
+    return x.join < y.join;
+  };
+  const byPos: Array<[string, Sent]> = [];
+  for (const [id, me] of sent) {
+    let ahead = 0;
+    for (const [other, o] of sent) if (other !== id && isAhead(o, me)) ahead++;
+    byPos[ahead] = [id, me];
   }
+  const nScorers = byPos.filter(([, x]) => x.raw > 0).length;
+  const best = byPos[0]?.[1].raw ?? 0;
+  const takenTotals = new Set<number>();
+  for (const [, x] of byPos) if (x.raw <= 0) takenTotals.add(x.before);
+  const out = new Map<string, { points: number; roundRank: number }>();
+  let above = Infinity;
+  byPos.forEach(([id, x], pos) => {
+    if (x.raw <= 0) {
+      out.set(id, { points: 0, roundRank: pos + 1 });
+      return;
+    }
+    const least = nScorers - pos; // room for everyone below to get a different positive number
+    const plain = Math.round((MAX_ROUND_POINTS * x.raw) / best) + (PODIUM_BONUS[pos] ?? 0);
+    let points = Math.min(above - 1, Math.max(plain, least));
+    const candidates: number[] = [];
+    for (let p = points; p >= least; p--) candidates.push(p);
+    for (let p = points + 1; p <= Math.min(above - 1, points + nScorers); p++) candidates.push(p);
+    points = candidates.find((p) => !takenTotals.has(x.before + p)) ?? points;
+    takenTotals.add(x.before + points);
+    above = points;
+    out.set(id, { points, roundRank: pos + 1 });
+  });
   return out;
 }
 
-function rankOf(totals: ReadonlyMap<string, number>, id: string): number {
-  const mine = totals.get(id) ?? 0;
+interface Stat {
+  total: number;
+  wins: number;
+  best: number;
+  lastPos: number | null;
+  readonly join: number;
+}
+
+/** Strict overall rank: total, round wins, best round, position in the last round, join order. */
+function rankOf(stats: ReadonlyMap<string, Stat>, id: string): number {
+  const me = stats.get(id);
+  if (me === undefined) throw new Error('no stat');
+  const key = (x: Stat): number[] => [-x.total, -x.wins, -x.best, x.lastPos ?? Number.MAX_SAFE_INTEGER, x.join];
   let better = 0;
-  for (const t of totals.values()) if (t > mine) better++;
+  for (const [other, o] of stats) {
+    if (other === id) continue;
+    const a = key(o);
+    const b = key(me);
+    const i = a.findIndex((v, k) => v !== b[k]);
+    if (i >= 0 && a[i]! < b[i]!) better++;
+  }
   return better + 1;
 }
 
@@ -144,7 +199,8 @@ describe('scoring truth', () => {
         ids.push(id);
         conn.set(id, `c-p${comp}_${i}`);
       }
-      const totals = new Map<string, number>(ids.map((id) => [id, 0]));
+      let joins = 0;
+      const totals = new Map<string, Stat>(ids.map((id) => [id, { total: 0, wins: 0, best: 0, lastPos: null, join: joins++ }]));
       const appeared = new Set<string>();
       const rounds = 1 + Math.floor(rnd() * 5);
       for (let r = 0; r < rounds; r++) {
@@ -164,6 +220,7 @@ describe('scoring truth', () => {
         }
 
         const expectedRaw = new Map<string, number>();
+        const reachedAt = new Map<string, number>();
         const style = rnd(); // <0.15 everyone zero, <0.4 heavy ties
         for (const id of participants) {
           const pick = rnd();
@@ -172,6 +229,9 @@ describe('scoring truth', () => {
           else if (style < 0.4) sent = [0, 10, 10, 20][Math.floor(rnd() * 4)] ?? 0;
           else sent = Math.floor(rnd() * maxRaw * 1.3); // sometimes above maxRaw
           const clamped = Math.min(maxRaw, sent);
+          // Often the same millisecond as the previous player, sometimes a little later.
+          vi.advanceTimersByTime(Math.floor(rnd() * 3));
+          reachedAt.set(id, Date.now());
           if (pick < 0.15) {
             // Disconnected through the whole round: nothing sent.
             h.room.disconnect(conn.get(id) ?? '');
@@ -210,16 +270,28 @@ describe('scoring truth', () => {
         if (h.state().phase === 'playing') vi.advanceTimersByTime(TAP_MS * 3);
         expect(h.state().phase).toBe('results');
 
-        const prevTotals = new Map(totals);
-        if (late !== null) {
-          totals.set(late, 0);
-          prevTotals.set(late, 0);
+        if (late !== null) totals.set(late, { total: 0, wins: 0, best: 0, lastPos: null, join: joins++ });
+        const prevTotals = new Map([...totals].map(([id, st]) => [id, { ...st }] as const));
+        // Everyone in the room is in the round's table; who did not play has raw 0.
+        const sentBy = new Map<string, Sent>();
+        for (const [id, st] of totals) {
+          const raw = expectedRaw.get(id) ?? 0;
+          sentBy.set(id, { raw, at: raw > 0 ? (reachedAt.get(id) ?? null) : null, join: st.join, before: st.total });
         }
-        const exp = expectedRound(expectedRaw);
+        const exp = expectedRound(sentBy);
         // The shared function agrees with the independent one.
-        const shared = computeRoundScores(expectedRaw);
+        const shared = computeRoundScores(
+          [...sentBy].map(([id, x]) => ({ id, raw: x.raw, reachedAt: x.at, joinOrder: x.join, totalBefore: x.before })),
+        );
         for (const [id, e] of exp) expect(shared.get(id)).toEqual(e);
-        for (const [id, e] of exp) totals.set(id, (totals.get(id) ?? 0) + e.points);
+        for (const [id, e] of exp) {
+          const st = totals.get(id);
+          if (st === undefined) throw new Error('no stat');
+          st.total += e.points;
+          st.best = Math.max(st.best, e.points);
+          st.lastPos = e.roundRank;
+          if (e.roundRank === 1 && e.points > 0) st.wins += 1;
+        }
 
         const res = h.results();
         expect(res.roundIndex).toBe(r);
@@ -228,17 +300,39 @@ describe('scoring truth', () => {
         for (const row of res.rows) {
           const e = exp.get(row.playerId);
           expect(row.raw).toBe(expectedRaw.get(row.playerId) ?? 0);
-          expect(row.points).toBe(e?.points ?? 0);
-          expect(row.roundRank).toBe(e?.roundRank ?? expectedRaw.size + 1);
-          expect(row.total).toBe(totals.get(row.playerId));
+          expect(row.points).toBe(e?.points);
+          expect(row.roundRank).toBe(e?.roundRank);
+          expect(row.reachedAt).toBe(sentBy.get(row.playerId)?.at);
+          expect(row.total).toBe(totals.get(row.playerId)?.total);
           expect(row.rank).toBe(rankOf(totals, row.playerId));
           expect(row.prevRank).toBe(appeared.has(row.playerId) ? rankOf(prevTotals, row.playerId) : null);
           expect(Number.isInteger(row.raw) && Number.isInteger(row.points) && Number.isInteger(row.total)).toBe(true);
         }
-        for (let i = 1; i < res.rows.length; i++) expect(res.rows[i]?.rank).toBeGreaterThanOrEqual(res.rows[i - 1]?.rank ?? 0);
-        const winners = [...expectedRaw].filter(([, raw]) => raw > 0 && raw === Math.max(...expectedRaw.values())).map(([id]) => id);
-        expect([...res.winnerIds].sort()).toEqual(winners.sort());
-        for (const p of h.state().players) expect(p.total).toBe(totals.get(p.id));
+        // Strict everywhere: ranks and round positions are 1..n, rows come in rank order.
+        const oneToN = res.rows.map((_, i) => i + 1);
+        expect(res.rows.map((row) => row.rank)).toEqual(oneToN);
+        expect(res.rows.map((row) => row.roundRank).sort((x, y) => x - y)).toEqual(oneToN);
+        expect(res.rows.filter((row) => row.prevRank !== null).map((row) => row.prevRank).sort((x, y) => (x ?? 0) - (y ?? 0)))
+          .toEqual([...new Set(res.rows.filter((row) => row.prevRank !== null).map((row) => row.prevRank))].sort((x, y) => (x ?? 0) - (y ?? 0)));
+        const scorerPoints = res.rows.filter((row) => row.raw > 0).map((row) => row.points);
+        expect(new Set(scorerPoints).size).toBe(scorerPoints.length);
+        const nonZeroTotals = res.rows.map((row) => row.total).filter((t) => t > 0);
+        expect(new Set(nonZeroTotals).size).toBe(nonZeroTotals.length);
+        // Exactly one winner whenever anybody scored.
+        const winners = [...exp].filter(([id, e]) => e.roundRank === 1 && (sentBy.get(id)?.raw ?? 0) > 0).map(([id]) => id);
+        expect(winners.length).toBe([...sentBy.values()].some((x) => x.raw > 0) ? 1 : 0);
+        expect(res.winnerIds).toEqual(winners);
+        for (const p of h.state().players) {
+          expect(p.total).toBe(totals.get(p.id)?.total);
+          expect(p.rank).toBe(rankOf(totals, p.id));
+        }
+        // The last live broadcast of the round is already in the order of the results.
+        const lastLive = h.scores.filter((m) => m.round === r).at(-1);
+        if (lastLive !== undefined) {
+          const live = lastLive.scores.map(([id]) => id).filter((id) => totals.has(id));
+          const played = new Set(live);
+          expect(live).toEqual([...res.rows].filter((row) => played.has(row.playerId)).sort((x, y) => x.roundRank - y.roundRank).map((row) => row.playerId));
+        }
         for (const id of totals.keys()) appeared.add(id);
 
         // Everyone comes back for the next round.
@@ -254,7 +348,7 @@ describe('scoring truth', () => {
     return `tok${Number(id.slice(3)) + 1}`;
   }
 
-  it('two-way and three-way ties for first give several winners who share rank and bonus', () => {
+  it('two-way and three-way ties on the raw score still give ONE winner, different points and ranks 1..n', () => {
     const h = makeRoom();
     const a = h.join('a');
     const b = h.join('b');
@@ -262,25 +356,37 @@ describe('scoring truth', () => {
     const d = h.join('d');
     h.room.start('tap');
     h.toPlaying();
+    // c gets to 50 first, then a, then b.
+    h.room.score(c, 0, 50);
+    vi.advanceTimersByTime(300);
     h.room.final(a, 0, 50);
+    vi.advanceTimersByTime(300);
     h.room.final(b, 0, 50);
-    h.room.final(c, 0, 50);
+    h.room.final(c, 0, 50); // confirms the live score: c keeps its earlier moment
     h.room.final(d, 0, 25);
     const res = h.results();
-    expect([...res.winnerIds].sort()).toEqual([a, b, c].sort());
-    for (const id of [a, b, c]) expect(res.rows.find((r) => r.playerId === id)).toMatchObject({ points: 1100, roundRank: 1, rank: 1 });
+    expect(res.winnerIds).toEqual([c]);
+    expect(res.rows.find((r) => r.playerId === c)).toMatchObject({ points: 1100, roundRank: 1, rank: 1 });
+    expect(res.rows.find((r) => r.playerId === a)).toMatchObject({ points: 1060, roundRank: 2, rank: 2 });
+    expect(res.rows.find((r) => r.playerId === b)).toMatchObject({ points: 1030, roundRank: 3, rank: 3 });
     expect(res.rows.find((r) => r.playerId === d)).toMatchObject({ points: 500, roundRank: 4, rank: 4 });
 
     h.room.start('ninja');
     h.toPlaying();
-    h.room.final(a, 1, 10);
     h.room.final(b, 1, 10);
+    vi.advanceTimersByTime(10);
+    h.room.final(a, 1, 10);
     h.room.final(c, 1, 5);
     h.room.final(d, 1, 0);
     const res2 = h.results();
-    expect([...res2.winnerIds].sort()).toEqual([a, b].sort());
-    expect(res2.rows.find((r) => r.playerId === c)).toMatchObject({ points: 500 + 30, roundRank: 3, total: 1630, rank: 3, prevRank: 1 });
-    expect(res2.rows.find((r) => r.playerId === d)).toMatchObject({ points: 0, roundRank: 4, total: 500, rank: 4, prevRank: 4 });
+    expect(res2.winnerIds).toEqual([b]);
+    // b 1030 + 1100 = 2130, a 1060 + 1060 = 2120, c 1100 + 530 = 1630, d 500.
+    expect(res2.rows.map((r) => [r.playerId, r.points, r.roundRank, r.total, r.rank, r.prevRank])).toEqual([
+      [b, 1100, 1, 2130, 1, 3],
+      [a, 1060, 2, 2120, 2, 2],
+      [c, 530, 3, 1630, 3, 1],
+      [d, 0, 4, 500, 4, 4],
+    ]);
   });
 
   it('one player alone wins with 1100; with a zero there is no winner', () => {
@@ -321,8 +427,8 @@ describe('scoring truth', () => {
     h.room.score(a, 0, 7.6);
     vi.advanceTimersByTime(500);
     expect(h.scores.at(-1)?.scores).toEqual([
-      [a, 8],
       [b, GAMES.flappy.maxRaw],
+      [a, 8],
     ]);
     expect(h.room.final(b, 0, -1e9)).toEqual({ ok: true });
     expect(h.room.final(a, 0, 7.4)).toEqual({ ok: true });
@@ -366,10 +472,11 @@ describe('scoring truth', () => {
     expect(h.results().winnerIds).toEqual([a]);
     expect(h.room.kick(a)).toEqual({ ok: true });
     let res = h.results();
-    expect(res.winnerIds).toEqual([]);
-    expect(res.rows.map((r) => [r.playerId, r.rank, r.total])).toEqual([
-      [b, 1, 727],
-      [c, 2, 363],
+    // The round's first place passes to the next scorer: there is always exactly one winner.
+    expect(res.winnerIds).toEqual([b]);
+    expect(res.rows.map((r) => [r.playerId, r.rank, r.total, r.roundRank])).toEqual([
+      [b, 1, 727, 1],
+      [c, 2, 363, 2],
     ]);
     expect(h.state().players.map((p) => p.id)).toEqual([b, c]);
     h.room.start('icy');

@@ -16,7 +16,7 @@ import {
   WINNER_REVEAL_MS,
 } from '../shared/protocol';
 import { roundTime } from '../shared/round-clock';
-import { computeRoundScores, orderOverall, rankOverall } from '../shared/scoring';
+import { computeRoundScores, orderOverall, orderRound, rankOverall } from '../shared/scoring';
 
 import { DEFAULT_TIMING } from './config';
 import { cleanName, uniqueName } from './names';
@@ -777,6 +777,21 @@ export class Room {
     this.results = { ...res, rows, winnerIds };
   }
 
+  /**
+   * The participants of a round in the strict round order of their current scores:
+   * the same order the results will have if nothing changes any more.
+   */
+  private liveOrder(r: RoundRec): RoundEntry[] {
+    const entries: RoundEntry[] = [];
+    for (const id of r.participants) {
+      const p = this.players.get(id);
+      if (p === undefined) continue;
+      const raw = this.rawOf(r, id);
+      entries.push({ id, raw, reachedAt: raw > 0 ? (r.reachedAt.get(id) ?? null) : null, joinOrder: p.joinOrder });
+    }
+    return orderRound(entries);
+  }
+
   private rawOf(r: RoundRec, playerId: string): number {
     return r.finals.get(playerId) ?? r.live.get(playerId) ?? 0;
   }
@@ -786,9 +801,7 @@ export class Room {
     if (!this.scoresDirty || r === null) return;
     this.scoresDirty = false;
     this.lastScoresAt = this.scheduler.now();
-    const scores: Array<readonly [string, number]> = [];
-    for (const id of r.participants) scores.push([id, this.rawOf(r, id)]);
-    this.sink.scores({ round: r.index, scores });
+    this.sink.scores({ round: r.index, scores: this.liveOrder(r).map((e) => [e.id, e.raw] as const) });
   }
 
   private finishRound(): void {

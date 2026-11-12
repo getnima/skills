@@ -255,7 +255,13 @@ describe('round lifecycle', () => {
       for (const [id, raw] of sent[i]!) h.room.score(id, i, raw);
       vi.advanceTimersByTime(GAMES[gameId].durationMs + FINAL_GRACE_MS);
       expect(h.state().phase).toBe('results');
-      const scored = computeRoundScores(sent[i]!);
+      // Everybody's score arrives in the same millisecond: equal raws fall back to join order.
+      const scored = computeRoundScores(
+        [a, b, c].map((id, joinOrder) => {
+          const raw = sent[i]!.get(id) ?? 0;
+          return { id, raw, reachedAt: raw > 0 ? Date.now() - GAMES[gameId].durationMs - FINAL_GRACE_MS : null, joinOrder, totalBefore: expected.get(id) ?? 0 };
+        }),
+      );
       for (const [id, s] of scored) expected.set(id, (expected.get(id) ?? 0) + s.points);
       for (const row of h.results().rows) {
         expect(row.raw).toBe(sent[i]!.get(row.playerId));
@@ -269,12 +275,18 @@ describe('round lifecycle', () => {
     const s = h.state();
     expect(s.played).toEqual(['tap', 'flappy', 'ninja']);
     for (const p of s.players) expect(p.total).toBe(expected.get(p.id));
-    // Round 3: only c scored. Totals: a = 1100 + 280, b = 560 + 1100, c = 0 + 1100 + 1100.
-    expect(Object.fromEntries(expected)).toEqual({ [a]: 1380, [b]: 1660, [c]: 2200 });
+    // Round 2: b and c both on 40 in the same millisecond, b joined first: b 1100, c 1060.
+    // Round 3: only c scored. Totals: a = 1100 + 280, b = 560 + 1100, c = 0 + 1060 + 1100.
+    expect(Object.fromEntries(expected)).toEqual({ [a]: 1380, [b]: 1660, [c]: 2160 });
     expect(h.results().rows.map((r) => [r.playerId, r.rank, r.prevRank])).toEqual([
       [c, 1, 3],
       [b, 2, 1],
       [a, 3, 2],
+    ]);
+    expect(h.state().players.map((p) => [p.id, p.rank])).toEqual([
+      [a, 3],
+      [b, 2],
+      [c, 1],
     ]);
     expect(h.results().winnerIds).toEqual([c]);
 
@@ -285,7 +297,7 @@ describe('round lifecycle', () => {
     expect(h.state().phase).toBe('lobby');
   });
 
-  it('shares ranks on ties and sorts rows by rank, then name', () => {
+  it('never shares a rank: on the same raw score the one who got there first is ahead', () => {
     const h = makeRoom();
     const b = h.join('בני');
     const a = h.join('אבי');
@@ -293,15 +305,16 @@ describe('round lifecycle', () => {
     h.room.start('tap');
     h.toPlaying();
     h.room.final(a, 0, 30);
+    vi.advanceTimersByTime(40);
     h.room.final(b, 0, 30);
     h.room.final(c, 0, 10);
     const res = h.results();
-    expect(res.rows.map((r) => [r.name, r.roundRank, r.rank])).toEqual([
-      ['אבי', 1, 1],
-      ['בני', 1, 1],
-      ['גיל', 3, 3],
+    expect(res.rows.map((r) => [r.name, r.roundRank, r.rank, r.points])).toEqual([
+      ['אבי', 1, 1, 1100],
+      ['בני', 2, 2, 1060],
+      ['גיל', 3, 3, 363],
     ]);
-    expect([...res.winnerIds].sort()).toEqual([a, b].sort());
+    expect(res.winnerIds).toEqual([a]);
   });
 
   it('has no winner when nobody scored', () => {
@@ -313,7 +326,12 @@ describe('round lifecycle', () => {
     vi.advanceTimersByTime(TAP_MS + FINAL_GRACE_MS);
     const res = h.results();
     expect(res.winnerIds).toEqual([]);
-    expect(res.rows.every((r) => r.points === 0 && r.roundRank === 1 && r.total === 0)).toBe(true);
+    expect(res.rows.every((r) => r.points === 0 && r.total === 0 && r.reachedAt === null)).toBe(true);
+    // Nobody scored: positions are the join order, still 1..n.
+    expect(res.rows.map((r) => [r.name, r.roundRank, r.rank])).toEqual([
+      ['a', 1, 1],
+      ['b', 2, 2],
+    ]);
   });
 
   it('lets a late joiner watch this round and play the next one', () => {

@@ -284,7 +284,15 @@ export interface C2S {
 /** Server → client. */
 export interface S2C {
   state: (state: RoomState) => void;
-  /** Live raw scores of the running round, as [playerId, score] pairs. */
+  /**
+   * Live raw scores of the running round, as [playerId, score] pairs, sent to
+   * every socket in the room (the TV and every phone). Guaranteed order: the
+   * strict round order applied to the live values (score descending, then the
+   * server time that value was reached ascending, then join order), i.e. the
+   * same order the results use. A player's live place is its index + 1, and
+   * the last message of a round is in the order of the results' `roundRank`.
+   * Lists every participant of the round, including those still on 0.
+   */
   scores: (msg: { round: number; scores: ReadonlyArray<readonly [string, number]> }) => void;
   /** This player was removed by the host. */
   kicked: () => void;
