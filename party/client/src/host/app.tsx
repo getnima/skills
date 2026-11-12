@@ -13,10 +13,11 @@ import { enterFullscreen } from '../kit/mobile';
 import { CutsceneMenu, CutscenePlayer } from './cutscene';
 import { CountdownScreen, GoSplash, IntroScreen, ResumeOverlay } from './intro';
 import { Lobby, nextGame } from './lobby';
+import { SoundCheck, useShowMusic } from './music';
 import { useHostRoom } from './room';
 import { FinalScene, isShowCalm, onShowCalmChange, PlayingScene, ResultsScene, setShowCalm, standingsAt } from './show/index';
 import { Btn, ConfirmDialog, Modal, Switch, Toast } from './ui';
-import { useAudioLocked, useBedMusic, useMuted } from './util';
+import { useAudioLocked, useMuted } from './util';
 
 import type { JSX } from 'preact';
 import type { GameId, PlayerPublic, RoomState, RoundPublic } from '../../../shared/protocol';
@@ -25,7 +26,7 @@ import type { ServerClock } from '../net/connection';
 import type { HostRoom } from './room';
 import type { ConfirmRequest } from './ui';
 
-type MenuKind = 'none' | 'cutscenes' | 'more';
+type MenuKind = 'none' | 'cutscenes' | 'more' | 'sound';
 
 /** Automation hook for the browser tests (read-only). */
 export interface HostHooks {
@@ -219,7 +220,7 @@ export function App(): JSX.Element {
 
   const phase = state?.phase ?? null;
   const cutscene = state?.cutscene ?? null;
-  useBedMusic(phase, cutscene !== null);
+  useShowMusic(state, room.clock, menu === 'sound');
   const phaseKey = `${state?.code ?? ''}:${phase ?? ''}:${state?.round?.index ?? -1}:${state?.results?.roundIndex ?? -1}`;
   // stamped during render, so a key pressed right after the new screen appears is already guarded
   const lastPhaseKey = useRef(phaseKey);
@@ -270,6 +271,11 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (cutscene !== null) setMenu('none');
   }, [cutscene?.id, cutscene?.startedAt]);
+
+  // the sound check belongs to the lobby: a round starting closes it (and stops its preview)
+  useEffect(() => {
+    if (menu === 'sound' && phase !== 'lobby') setMenu('none');
+  }, [menu, phase]);
 
   const allPlayed = state !== null && GAME_IDS.every((g) => state.played.includes(g));
   const startGame = (g: GameId): void => {
@@ -540,6 +546,13 @@ export function App(): JSX.Element {
           <div class="hs-more">
             <Switch on={calm} label="מצב רגוע (פחות בדיחות על המסך)" onChange={setShowCalm} />
             <Btn
+              label={phase === 'lobby' ? 'בדיקת סאונד' : 'בדיקת סאונד (רק בלובי)'}
+              icon="🎵"
+              disabled={phase !== 'lobby'}
+              testId="btn-sound-check"
+              onClick={() => setMenu('sound')}
+            />
+            <Btn
               label="איפוס תחרות"
               icon="♻️"
               disabled={state === null}
@@ -569,6 +582,8 @@ export function App(): JSX.Element {
           </div>
         </Modal>
       ) : null}
+
+      {menu === 'sound' && phase === 'lobby' ? <SoundCheck onClose={() => setMenu('none')} /> : null}
 
       {confirm !== null ? <ConfirmDialog req={confirm} onClose={() => setConfirm(null)} /> : null}
       {room.notice !== null ? <Toast id={room.notice.id} text={room.notice.text} tone={room.notice.tone} /> : null}

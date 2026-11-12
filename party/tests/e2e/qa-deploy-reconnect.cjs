@@ -105,6 +105,7 @@ async function healthz() {
     const H = track(host, 'tv');
     await host.goto(`${BASE}/host`);
     await host.evaluate(() => localStorage.clear());
+    H.ws.length = 0; // count from the fresh room's page load only
     await host.goto(`${BASE}/host`);
     await host.waitForSelector('[data-testid=room-code]', { timeout: 15000 });
     const code = (await host.textContent('[data-testid=room-code]')).trim();

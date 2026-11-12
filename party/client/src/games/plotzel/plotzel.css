@@ -1,539 +1,638 @@
-/* Plotzel (פלוצל): builtin word game + embed shell. Everything is scoped under .pz / .pze. */
-
-/* ───────────────────────── builtin ───────────────────────── */
+/*
+ * Plotzel (פלוצל) word ladder. Everything is scoped under .pz and built from the
+ * kit tokens (--c-*, base.css). Restyle here; the semantics to keep:
+ *   green tile = letter already in its place in פלוץ, cyan underline = the changed letter,
+ *   yellow ring = the cursor, dashed cyan = the hinted position, faint dashed row = the goal.
+ * Every animation is a CSS animation (never a transition) so .is-paused can freeze it.
+ */
 .pz {
+  --tile: 52px;
+  --row-gap: 6px;
+  --key-h: 50px;
+  --key-gap: 5px;
+  --key-fs: 21px;
+  --kb-row-gap: 7px;
+  --hit: var(--c-green);
+  --hit-ink: #0c3a1f;
+  --mark: var(--c-cyan);
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   direction: rtl;
   overflow: hidden;
-  padding: var(--pz-top, 56px) max(6px, var(--sar)) calc(var(--pz-bottom, 0px) + 8px) max(6px, var(--sal));
+  padding: calc(var(--pz-top, 56px) + 2px) max(2px, var(--sar)) calc(var(--pz-bottom, 0px) + 4px) max(2px, var(--sal));
   background:
-    radial-gradient(80% 45% at 50% 0%, rgba(61, 220, 132, 0.18), transparent 70%),
-    radial-gradient(70% 40% at 0% 100%, rgba(139, 92, 246, 0.35), transparent 70%);
+    var(--pz-bg, none) center / cover no-repeat,
+    radial-gradient(80% 40% at 50% 8%, rgba(61, 220, 132, 0.14), transparent 70%),
+    radial-gradient(70% 40% at 0% 100%, rgba(139, 92, 246, 0.32), transparent 70%);
   color: var(--c-ink);
   font-family: var(--font);
 }
+.pz.is-paused,
+.pz.is-paused * {
+  animation-play-state: paused !important;
+}
 
+/* ── header: start → פלוץ, steps and par ── */
+.pz-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 2px 8px 4px;
+}
+.pz-route {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pz-chip {
+  display: inline-block;
+  padding: 4px 11px 5px;
+  border-radius: 12px;
+  background: #fff;
+  color: #2b1436;
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+}
+.pz-chip.is-goal {
+  background: var(--hit);
+  color: var(--hit-ink);
+}
+.pz-arrow {
+  color: var(--c-dim);
+  font-size: 17px;
+  font-weight: 900;
+}
+.pz-stats {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-weight: 900;
+  line-height: 1.1;
+  text-align: left;
+}
+.pz-steps {
+  font-size: 17px;
+  color: #fff;
+}
+.pz-par {
+  font-size: 14px;
+  color: var(--c-yellow);
+}
+.pz.is-hurry .pz-chip.is-start {
+  animation: pz-hurry 0.9s ease-in-out infinite;
+}
+@keyframes pz-hurry {
+  0%,
+  100% {
+    box-shadow:
+      0 3px 0 rgba(0, 0, 0, 0.3),
+      0 0 0 0 rgba(255, 138, 61, 0);
+  }
+  50% {
+    box-shadow:
+      0 3px 0 rgba(0, 0, 0, 0.3),
+      0 0 0 5px rgba(255, 138, 61, 0.85);
+  }
+}
+
+/* ── board ── */
 .pz-board {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 0;
+  overflow: hidden;
+  padding: 4px 0;
 }
-
-.pz-grid {
-  --tile: 52px;
+.pz-rows {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: var(--row-gap);
 }
-
+.pz-rows.is-enter,
+.pz-head.is-enter .pz-route {
+  animation: pz-enter 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+@keyframes pz-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-60px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pz-more {
+  height: 20px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--c-dim);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 20px;
+  direction: ltr;
+}
+.pz-more[hidden],
+.pz-row[hidden] {
+  display: none;
+}
 .pz-row {
   display: flex;
-  flex-direction: row; /* rtl container: the first letter is on the right */
-  gap: 6px;
-  will-change: transform;
+  flex-direction: row; /* rtl: the first letter is on the right */
+  gap: var(--row-gap);
 }
-
 .pz-tile {
+  position: relative;
   width: var(--tile);
   height: var(--tile);
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: calc(var(--tile) * 0.2);
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.16);
-  font-size: calc(var(--tile) * 0.58);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.28),
+    0 3px 0 rgba(0, 0, 0, 0.25);
+  color: #fff;
+  font-size: calc(var(--tile) * 0.56);
   font-weight: 900;
   line-height: 1;
-  color: #fff;
-  will-change: transform;
+  padding-bottom: 3%;
 }
-.pz-tile.is-filled {
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow:
-    inset 0 0 0 2px rgba(255, 255, 255, 0.55),
-    0 3px 0 rgba(0, 0, 0, 0.25);
-}
-.pz-row.is-current .pz-tile:not(.is-filled) {
-  box-shadow: inset 0 0 0 2px rgba(255, 210, 63, 0.45);
-}
-.pz-tile.is-correct {
-  background: var(--c-green);
-  color: #0c3a1f;
+.pz-tile.is-hit {
+  background: var(--hit);
+  color: var(--hit-ink);
   box-shadow: 0 4px 0 #1f8a50;
 }
-.pz-tile.is-present {
-  background: var(--c-yellow);
-  color: #4a3500;
-  box-shadow: 0 4px 0 #b88a00;
+.pz-tile.is-changed::after {
+  content: '';
+  position: absolute;
+  left: 20%;
+  right: 20%;
+  bottom: 7%;
+  height: max(3px, calc(var(--tile) * 0.07));
+  border-radius: 3px;
+  background: var(--mark);
+  box-shadow: 0 0 6px rgba(45, 226, 230, 0.8);
 }
-.pz-tile.is-absent {
-  background: #4a3d70;
-  color: #d9d1f5;
-  box-shadow: 0 4px 0 #2c2350;
+.pz-tile.is-hit.is-changed::after {
+  background: #0b5c69;
+  box-shadow: none;
+}
+.pz-row.is-new {
+  animation: pz-drop 0.2s ease-out both;
+}
+@keyframes pz-drop {
+  from {
+    transform: translateY(-8px) scale(0.96);
+    opacity: 0.4;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
 }
 
-/* message strip with the mascot */
-.pz-msg {
-  flex: none;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin: 0 4px 6px;
+/* the row being typed */
+.pz-row.is-active .pz-tile {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.22);
 }
-.pz-mascot {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  object-fit: contain;
-  animation: pz-bob 1.6s ease-in-out infinite;
+.pz-row.is-active .pz-tile.is-filled {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.7),
+    0 3px 0 rgba(0, 0, 0, 0.25);
 }
-.pz-bubble {
-  max-width: calc(100% - 56px);
-  padding: 8px 14px;
-  border-radius: 16px 16px 16px 4px;
+.pz-row.is-active .pz-tile.is-cursor {
+  box-shadow: inset 0 0 0 3px var(--c-yellow);
+  animation: pz-cursor 1.1s ease-in-out infinite;
+}
+.pz-row.is-active .pz-tile.is-hinted {
+  box-shadow: none;
+  outline: 3px dashed var(--mark);
+  outline-offset: -3px;
+}
+.pz-row.is-active .pz-tile.is-hinted.is-cursor {
+  outline-color: var(--c-yellow);
+}
+@keyframes pz-cursor {
+  0%,
+  100% {
+    background-color: rgba(255, 210, 63, 0.04);
+  }
+  50% {
+    background-color: rgba(255, 210, 63, 0.2);
+  }
+}
+.pz-tile.is-pop {
+  animation: pz-pop 0.14s ease-out;
+}
+@keyframes pz-pop {
+  0% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.pz-row.is-shake {
+  animation: pz-shake 0.34s;
+}
+@keyframes pz-shake {
+  20% {
+    transform: translateX(-8px);
+  }
+  40% {
+    transform: translateX(8px);
+  }
+  60% {
+    transform: translateX(-5px);
+  }
+  80% {
+    transform: translateX(5px);
+  }
+}
+/* the goal, faint */
+.pz-row.is-ghost .pz-tile {
+  background: transparent;
+  box-shadow: none;
+  border: 2px dashed rgba(61, 220, 132, 0.4);
+  color: rgba(61, 220, 132, 0.45);
+}
+/* solved: the row flips (the original's win) */
+.pz-row.is-win .pz-tile {
+  animation: pz-flip 0.55s ease both;
+}
+.pz-row.is-win .pz-tile:nth-child(2) {
+  animation-delay: 0.09s;
+}
+.pz-row.is-win .pz-tile:nth-child(3) {
+  animation-delay: 0.18s;
+}
+.pz-row.is-win .pz-tile:nth-child(4) {
+  animation-delay: 0.27s;
+}
+@keyframes pz-flip {
+  0% {
+    transform: rotateX(0);
+  }
+  50% {
+    transform: rotateX(90deg) scale(1.05);
+    background: var(--c-yellow);
+  }
+  100% {
+    transform: rotateX(0);
+  }
+}
+
+/* ── toast ── */
+.pz-toast {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  z-index: 6;
+  max-width: calc(100% - 24px);
+  padding: 9px 16px 10px;
+  border-radius: 16px;
   background: #fff;
   color: #2b1436;
-  font-size: 17px;
-  font-weight: 800;
-  line-height: 1.15;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  transform: translateX(-50%);
+  visibility: hidden;
 }
-.pz-bubble.is-bad {
+.pz-toast.is-on {
+  visibility: visible;
+  animation: pz-toast 0.18s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+.pz-toast[data-kind='bad'] {
   background: var(--c-red);
   color: #fff;
 }
-.pz-bubble.is-win {
-  background: var(--c-green);
-  color: #0c3a1f;
+.pz-toast[data-kind='hint'] {
+  background: var(--c-cyan);
+  color: #08323a;
 }
-@keyframes pz-bob {
-  0%,
-  100% {
-    transform: translateY(0) rotate(-5deg);
-  }
-  50% {
-    transform: translateY(-4px) rotate(5deg);
-  }
+.pz-toast[data-kind='hurry'] {
+  background: var(--c-orange);
+  color: #fff;
 }
-.pz.is-paused .pz-mascot {
-  animation-play-state: paused;
+@keyframes pz-toast {
+  from {
+    transform: translateX(-50%) scale(0.7);
+  }
+  to {
+    transform: translateX(-50%) scale(1);
+  }
 }
 
-/* keyboard: physical Hebrew order, left to right, like the phone keyboard */
+/* ── first puzzle demo ── */
+.pz-demo {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  z-index: 3;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 16px 9px;
+  border-radius: 18px;
+  background: rgba(20, 8, 52, 0.78);
+  box-shadow: inset 0 0 0 2px rgba(45, 226, 230, 0.45);
+  transform: translateX(-50%);
+  pointer-events: none;
+  --tile: 28px;
+  --row-gap: 4px;
+}
+.pz-demo.is-on {
+  display: flex;
+  animation: pz-demo 3.4s ease both;
+}
+@keyframes pz-demo {
+  0% {
+    opacity: 0;
+  }
+  8%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.pz-demo-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pz-demo .pz-row.is-d2 {
+  animation: pz-demo-step 3.4s ease both;
+}
+@keyframes pz-demo-step {
+  0%,
+  22% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  32%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pz-demo-cap {
+  font-size: 15px;
+  font-weight: 900;
+  color: #fff;
+  white-space: nowrap;
+}
+.pz-demo-cap.is-sub {
+  font-size: 13px;
+  color: var(--c-dim);
+}
+
+/* ── skip: the shortest path ── */
+.pz-reveal {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  text-align: center;
+  background: rgba(16, 7, 42, 0.86);
+}
+.pz-reveal.is-on {
+  display: flex;
+  animation: pz-reveal 0.25s ease-out both;
+}
+@keyframes pz-reveal {
+  from {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pz-reveal-title {
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--c-yellow);
+}
+.pz-reveal-sub {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-dim);
+}
+.pz-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+.pz-chips .pz-chip {
+  font-size: 19px;
+}
+
+/* ── keyboard: the original's three rows, left to right ── */
 .pz-kb {
-  --u: 40px;
-  --gap: 5px;
   flex: none;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 7px;
-  direction: ltr;
-}
-.pz-kb[data-layout='narrow'] {
-  gap: 6px;
-}
-/* short phones (568-667 px): keys stay 48 px tall, the grid gets the rest */
-@media (max-height: 700px) {
-  .pz-kb {
-    --kh: 48px;
-  }
-  .pz-msg {
-    height: 40px;
-    margin-bottom: 4px;
-  }
-  .pz-mascot {
-    width: 36px;
-    height: 36px;
-  }
+  gap: var(--kb-row-gap);
+  padding: 4px 0 0;
 }
 .pz-kb-row {
   display: flex;
-  gap: var(--gap);
   justify-content: center;
+  gap: var(--key-gap);
 }
 .pz-key {
-  flex: none;
-  width: var(--u);
-  height: var(--kh, 52px);
-  padding: 0;
+  flex: 1 1 0;
+  min-width: 30px;
+  max-width: 46px;
+  height: var(--key-h);
+  padding: 0 0 2px;
   border: 0;
   border-radius: 10px;
   background: #5b4a92;
   box-shadow: 0 4px 0 #2e2160;
   color: #fff;
   font-family: var(--font);
-  font-size: 22px;
+  font-size: var(--key-fs);
   font-weight: 900;
   line-height: 1;
   cursor: pointer;
   outline: none;
-  transition:
-    background-color 0.25s,
-    color 0.25s,
-    box-shadow 0.25s;
+  touch-action: manipulation;
 }
 .pz-key.is-wide {
-  /* --wk keys wide: 1.5 on the three-row keyboard, 2 on the four-row one */
-  width: calc(var(--u) * var(--wk, 1.5) + var(--gap) * (var(--wk, 1.5) - 1));
-  font-size: 18px;
+  flex: 1.5 1 0;
+  max-width: 76px;
+  font-size: 17px;
 }
 .pz-key.is-enter {
   background: var(--c-pink);
   box-shadow: 0 4px 0 #a51e57;
 }
-.pz-key.is-del {
+.pz-key.is-enter.is-tight {
+  font-size: 11px;
+  letter-spacing: -0.02em;
+}
+.pz-key.is-back {
   background: #7a6bb0;
   box-shadow: 0 4px 0 #3e3175;
   font-size: 22px;
 }
-.pz-key.is-correct {
-  background: var(--c-green);
-  color: #0c3a1f;
-  box-shadow: 0 4px 0 #1f8a50;
-}
-.pz-key.is-present {
-  background: var(--c-yellow);
-  color: #4a3500;
-  box-shadow: 0 4px 0 #b88a00;
-}
-.pz-key.is-absent {
-  background: #2e2555;
-  color: #7f75a8;
-  box-shadow: 0 4px 0 #19123a;
-}
 .pz-key.is-down {
   transform: translateY(3px);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
-  filter: brightness(1.15);
+  filter: brightness(1.18);
 }
 
-/* answer reveal (6 rows failed) */
-.pz-reveal {
+/* ── tools: hint, puzzle count, skip ── */
+.pz-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 4px 0;
+}
+.pz-tool {
+  position: relative;
+  min-width: 92px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  touch-action: manipulation;
+}
+.pz-tool[disabled] {
+  opacity: 0.55;
+}
+.pz-tool.is-hint:not([disabled]) {
+  background: rgba(45, 226, 230, 0.18);
+  box-shadow: inset 0 0 0 2px rgba(45, 226, 230, 0.7);
+}
+.pz-tool-cost {
+  font-size: 12px;
+  color: var(--c-dim);
+  direction: ltr;
+}
+.pz-tool-label {
+  position: relative;
+  white-space: nowrap;
+}
+.pz-skip-fill {
   position: absolute;
   inset: 0;
-  width: fit-content;
-  height: fit-content;
-  margin: auto;
+  background: rgba(255, 255, 255, 0.16);
+  transform-origin: right center;
+  transform: scaleX(var(--p, 0));
+}
+.pz-tool.is-skip.is-ready {
+  opacity: 1;
+  background: rgba(255, 138, 61, 0.2);
+  box-shadow: inset 0 0 0 2px rgba(255, 138, 61, 0.8);
+}
+.pz-tool.is-skip.is-ready .pz-skip-fill {
   display: none;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 18px 18px;
-  border-radius: 22px;
-  background: #fff;
-  color: #2b1436;
-  box-shadow:
-    0 10px 0 rgba(0, 0, 0, 0.35),
-    0 0 0 6px rgba(61, 220, 132, 0.6);
-  z-index: 5;
 }
-.pz-reveal.is-on {
-  display: flex;
+.pz-tool.is-skip.is-armed {
+  background: var(--c-orange);
+  box-shadow: 0 0 0 3px #fff;
+  animation: pz-armed 0.6s ease-in-out infinite;
 }
-.pz-reveal-title {
-  font-size: 20px;
+@keyframes pz-armed {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+.pz-count {
+  min-width: 0;
+  font-size: 14px;
   font-weight: 900;
-}
-.pz-reveal-word {
-  display: flex;
-  gap: 5px;
-  direction: rtl;
-}
-.pz-reveal-word .pz-tile {
-  --tile: 46px;
+  color: var(--c-dim);
+  white-space: nowrap;
 }
 
 .pz-fx {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 4;
+  z-index: 8;
 }
 
-/* ───────────────────────── embed ───────────────────────── */
-.pze {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  direction: rtl;
-  padding-top: var(--pz-top, 56px);
-  font-family: var(--font);
-  color: var(--c-ink);
+/* short phones (568-667 px) and landscape: tighter chrome, the board keeps its rows */
+.pz.is-short .pz-head {
+  min-height: 36px;
+  padding-bottom: 2px;
+}
+.pz.is-short .pz-chip {
+  font-size: 18px;
+  padding: 3px 9px 4px;
+}
+.pz.is-short .pz-tools {
+  padding-top: 6px;
+}
+.pz.is-short .pz-tool {
+  height: 32px;
+}
+.pz.is-landscape .pz-tools {
+  padding-top: 4px;
+}
+.pz.is-landscape .pz-tool {
+  height: 30px;
 }
 
-.pze-frame-box {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  margin: 0 max(6px, var(--sar)) 0 max(6px, var(--sal));
-  border-radius: 18px;
-  overflow: hidden;
-  background: #fff;
-  box-shadow:
-    0 0 0 3px rgba(255, 255, 255, 0.18),
-    0 8px 24px rgba(0, 0, 0, 0.35);
-}
-.pze-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  display: block;
-  background: #fff;
-  touch-action: auto;
-}
-
-/* covers inside the frame box: loading, failed, frozen */
-.pze-cover {
-  position: absolute;
-  inset: 0;
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 20px;
-  text-align: center;
-  background: linear-gradient(160deg, #2a1263, #150a33);
-  z-index: 2;
-}
-.pze-cover.is-on {
-  display: flex;
-}
-.pze-cover-emoji {
-  font-size: 64px;
-  line-height: 1;
-}
-.pze-cover-title {
-  font-size: 26px;
-  font-weight: 900;
-  color: var(--c-yellow);
-  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
-}
-.pze-cover-sub {
-  max-width: 300px;
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1.35;
-  color: var(--c-dim);
-}
-.pze-loading .pze-cover-emoji {
-  animation: pze-puff 1.1s ease-in-out infinite;
-}
-@keyframes pze-puff {
-  0%,
-  100% {
-    transform: scale(1) rotate(-6deg);
+@media (prefers-reduced-motion: reduce) {
+  .pz *,
+  .pz *::after {
+    animation-duration: 0.01s !important;
+    animation-iteration-count: 1 !important;
   }
-  50% {
-    transform: scale(1.18) rotate(6deg);
-  }
-}
-.pze-spinner {
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  border: 6px solid rgba(255, 255, 255, 0.15);
-  border-top-color: var(--c-green);
-  animation: pze-spin 0.8s linear infinite;
-}
-@keyframes pze-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.pze-freeze {
-  background: repeating-linear-gradient(-45deg, #1b3a7a 0 18px, #16306a 18px 36px);
-  z-index: 3;
-}
-.pze-freeze .pze-cover-title {
-  color: #9fdcff;
-}
-.pze.is-paused .pze-cover * {
-  animation-play-state: paused;
-}
-
-.pze-btn {
-  min-width: 200px;
-  min-height: 56px;
-  padding: 0 26px;
-  border: 0;
-  border-radius: 28px;
-  background: var(--c-green);
-  box-shadow: 0 5px 0 #1f8a50;
-  color: #0c3a1f;
-  font-family: var(--font);
-  font-size: 21px;
-  font-weight: 900;
-  cursor: pointer;
-}
-.pze-btn.is-ghost {
-  min-height: 46px;
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: none;
-  color: #fff;
-  font-size: 17px;
-}
-.pze-btn:active {
-  transform: translateY(3px);
-  box-shadow: 0 2px 0 #1f8a50;
-}
-
-/* self-report bar */
-.pze-bar {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px max(8px, var(--sar)) calc(var(--pz-bottom, 0px) + 8px) max(8px, var(--sal));
-}
-.pze-bar.is-hidden {
-  display: none;
-}
-.pze-bar-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 30px;
-}
-/* narrow phones: the armed / reported line can wrap to two lines; reserve them so nothing jumps */
-@media (max-width: 374px) {
-  .pze-bar-top {
-    min-height: 38px;
-  }
-}
-.pze-bar-label {
-  min-width: 0;
-  font-size: 16px;
-  font-weight: 900;
-  line-height: 1.15;
-  color: var(--c-yellow);
-}
-.pze-bar-label.is-armed {
-  color: #fff;
-}
-.pze-bar-label.is-chosen {
-  color: var(--c-green);
-}
-.pze-link {
-  flex: none;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 17px;
-  background: rgba(61, 220, 132, 0.16);
-  box-shadow: inset 0 0 0 2px rgba(61, 220, 132, 0.7);
-  color: #b9f5d0;
-  font-family: var(--font);
-  font-size: 14px;
-  font-weight: 900;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.pze-link[hidden],
-.pze-btn[hidden] {
-  display: none;
-}
-/* no sign of life from the site for a while: the way out pulses */
-.pze.is-nudge .pze-link {
-  background: var(--c-green);
-  color: #0c3a1f;
-  animation: pze-nudge 1.2s ease-in-out infinite;
-}
-.pze.is-paused .pze-link {
-  animation-play-state: paused;
-}
-@keyframes pze-nudge {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.08);
-  }
-}
-.pze-bar-row {
-  display: flex;
-  gap: 5px;
-}
-.pze-n {
-  flex: 1 1 0;
-  min-width: 0;
-  height: 48px;
-  padding: 0;
-  border: 0;
-  border-radius: 14px;
-  background: #5b4a92;
-  box-shadow: 0 4px 0 #2e2160;
-  color: #fff;
-  font-family: var(--font);
-  font-size: 22px;
-  font-weight: 900;
-  cursor: pointer;
-}
-.pze-n.is-fail {
-  flex: 2 1 0;
-  background: #7a3550;
-  box-shadow: 0 4px 0 #3f1729;
-  font-size: 16px;
-}
-.pze-n.is-armed {
-  background: var(--c-yellow);
-  color: #4a3500;
-  box-shadow:
-    0 4px 0 #b88a00,
-    0 0 0 3px #fff;
-  animation: pze-armed 0.6s ease-in-out infinite;
-}
-.pze-n.is-fail.is-armed {
-  background: var(--c-red);
-  color: #fff;
-  box-shadow:
-    0 4px 0 #8f1f2b,
-    0 0 0 3px #fff;
-}
-.pze-n.is-chosen {
-  background: var(--c-green);
-  color: #0c3a1f;
-  box-shadow: 0 4px 0 #1f8a50;
-}
-.pze-n.is-fail.is-chosen {
-  background: #c7506f;
-  color: #fff;
-  box-shadow: 0 4px 0 #6a2236;
-}
-/* an on-screen keyboard is up over the site: give the game all the room */
-.pze.is-kb .pze-bar {
-  display: none;
-}
-@keyframes pze-armed {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.07);
-  }
-}
-.pze-sub {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
 }

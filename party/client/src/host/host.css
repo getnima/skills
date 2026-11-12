@@ -1254,6 +1254,107 @@
   animation: hs-blink 0.8s ease-in-out infinite;
 }
 
+/* ───────────────────────────── sound check (☰ → 🎵) ───────────────────────────── */
+.hs-sc-muted {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(16 * var(--hu));
+  margin-bottom: calc(14 * var(--hu));
+  padding: calc(8 * var(--hu)) calc(8 * var(--hu)) calc(8 * var(--hu)) calc(20 * var(--hu));
+  border-radius: calc(18 * var(--hu));
+  font-size: calc(26 * var(--hu));
+  color: var(--hs-ink);
+  background: var(--hs-gold);
+}
+.hs-sc-muted .hs-btn {
+  min-height: calc(50 * var(--hu));
+  font-size: calc(22 * var(--hu));
+}
+.hs-sc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--hu));
+}
+.hs-sc-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 0.9fr) minmax(0, 1.25fr) calc(150 * var(--hu));
+  align-items: center;
+  gap: calc(18 * var(--hu));
+  padding: calc(8 * var(--hu)) calc(18 * var(--hu));
+  border-radius: calc(20 * var(--hu));
+  background: rgba(255, 255, 255, 0.06);
+}
+.hs-sc-row.is-on {
+  background: rgba(45, 226, 230, 0.16);
+  box-shadow: inset 0 0 0 calc(2 * var(--hu)) var(--hs-cyan);
+}
+.hs-sc-main,
+.hs-sc-file {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--hu));
+}
+.hs-sc-title {
+  font-size: calc(28 * var(--hu));
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hs-sc-meta,
+.hs-sc-levels {
+  font-size: calc(19 * var(--hu));
+  font-weight: 700;
+  color: var(--c-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hs-sc-file {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: calc(14 * var(--hu));
+}
+.hs-sc-file code {
+  font-size: calc(22 * var(--hu));
+  color: #fff;
+}
+.hs-sc-state {
+  font-size: calc(22 * var(--hu));
+  font-weight: 800;
+}
+.hs-sc-state.is-found {
+  color: var(--hs-green);
+}
+.hs-sc-state.is-missing {
+  color: var(--hs-gold);
+}
+.hs-sc-levels {
+  flex-basis: 100%;
+}
+.hs-sc-play {
+  min-height: calc(52 * var(--hu));
+  padding: 0 calc(18 * var(--hu));
+  font-size: calc(23 * var(--hu));
+  justify-content: center;
+}
+.hs-sc-foot {
+  margin: calc(16 * var(--hu)) 0 0;
+  font-size: calc(19 * var(--hu));
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--c-dim);
+}
+.hs-sc-foot code {
+  color: #fff;
+}
+
 /* ───────────────────────────── portrait (a phone mirrored to the TV) ───────────────────────────── */
 @media (orientation: portrait) {
   .hs-strip {
@@ -1471,6 +1572,16 @@
   }
   .hs-cm-title {
     font-size: max(16px, calc(30 * var(--hu)));
+  }
+  .hs-sc-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .hs-sc-file {
+    grid-column: 2 / 3;
+  }
+  .hs-sc-play {
+    grid-row: 1 / 3;
+    grid-column: 3;
   }
   .hs-cm-meta,
   .hs-cm-hint,

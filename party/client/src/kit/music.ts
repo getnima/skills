@@ -312,8 +312,10 @@ function describe(t: Track): TrackInfo {
   let duration: number | null = null;
   let level = 0;
   let playing = false;
+  let muted = isMuted();
   if (el) {
     try {
+      muted = el.muted;
       time = el.currentTime;
       duration = Number.isFinite(el.duration) ? el.duration : null;
       level = el.volume;
@@ -336,7 +338,7 @@ function describe(t: Track): TrackInfo {
     volume: t.volume,
     level,
     loop: t.loop,
-    muted: isMuted(),
+    muted,
     stopping: t.stopped,
   };
 }
