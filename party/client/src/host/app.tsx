@@ -16,11 +16,13 @@ import { roundTime } from '../../../shared/round-clock';
 import { isMuted, preloadClips, setMuted, sfx, unlockAudio } from '../kit/audio';
 import { avSync, onAvSyncChange, pictureClock, pictureLeadMs, soundOffsetMs } from '../kit/av-sync';
 import { enterFullscreen } from '../kit/mobile';
+import { preloadOn } from '../kit/preload';
 import { buildControlModel, checkAction, confirmQuestion, findAction, isGameId, nextUnplayed, parseRelay, remoteView, toRelay } from './actions';
 import { CreditsPanel } from './credits';
 import { CutsceneMenu, CutscenePlayer } from './cutscene';
 import { GoSplash, markResumeGo, markStartGong, PreRoundScreen, ResumeOverlay, startGongScheduled, useCountdownCues } from './intro';
 import { applyAvAdjust, AvSyncScreen } from './av-sync-screen';
+import { retryTvPreload, TV_CLIPS, tvPreloadProgress, useTvPreload } from './boot-preload';
 import { Lobby } from './lobby';
 import { SoundCheck, useShowMusic } from './music';
 import { Narrator } from './narrator';
@@ -32,6 +34,7 @@ import { useAudioLocked, useMuted } from './util';
 import type { JSX } from 'preact';
 import type { RoomState, RoundPublic } from '../../../shared/protocol';
 import type { RoundClockSample } from '../games/types';
+import type { PreloadProgress } from '../kit/preload';
 import type { ServerClock } from '../net/connection';
 import type { ActionId, ControlAction, ControlModel } from './actions';
 import type { ActResult, HostRoom } from './room';
@@ -48,6 +51,8 @@ export interface HostHooks {
   status(): string;
   /** The current action model. */
   model(): ControlModel;
+  /** How far the background loading is (boot-preload.ts): wait for `finished`, then read `failed`. */
+  preload(): PreloadProgress;
 }
 
 declare global {
@@ -251,6 +256,37 @@ function usePeek(on: boolean): boolean {
   return peek;
 }
 
+/**
+ * How much of the TV's files is in (boot-preload.ts), on the boot card: the card is on screen
+ * anyway while the room is being opened, and it never stays for the files. Nothing is drawn with
+ * `?preload=0`: nothing is being loaded.
+ */
+function BootBar(): JSX.Element | null {
+  const { progress } = useTvPreload();
+  if (progress.files === 0) return null;
+  const pct = Math.round(progress.fraction * 100);
+  return (
+    <div class="hs-boot-bar" role="progressbar" aria-label="טוענים את המופע" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} data-testid="boot-bar">
+      <i style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+/**
+ * The files that are still coming once the room is up: a thin line on the stage's top edge. It
+ * shows only when the loading is really taking a while (a refresh from the cache never flashes
+ * it) and goes the moment the last file is in. It takes no input and no room.
+ */
+function PreloadBar(): JSX.Element | null {
+  const { progress, late } = useTvPreload();
+  if (!late) return null;
+  return (
+    <div class="hs-preload-bar" aria-hidden="true" data-testid="preload-bar">
+      <i style={{ width: `${(progress.fraction * 100).toFixed(1)}%` }} />
+    </div>
+  );
+}
+
 export function App(): JSX.Element {
   const room = useHostRoom();
   const { state } = room;
@@ -288,8 +324,21 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (phase === 'intro' || phase === 'countdown' || phase === 'playing' || state?.cutscene) setMenu((m) => (m === 'sync' ? 'none' : m));
   }, [phase, state?.cutscene !== null && state?.cutscene !== undefined]);
-  // the show's drop-in clips decode once at boot, so the first air horn and gong land on their moment
-  useEffect(() => preloadClips(['airhorn', 'gong']), []);
+  // The show's drop-in clips decode once at boot, so the first air horn and gong land on their
+  // moment. The preloader's batch does it (boot-preload.ts), so each file comes over the network
+  // once; without the preloader (`?preload=0`) it is done here, as before it.
+  useEffect(() => {
+    if (!preloadOn()) preloadClips(TV_CLIPS);
+  }, []);
+  // The connection to the server is back: a file the first try lost to the network can be had now.
+  const wasOffline = useRef(false);
+  useEffect(() => {
+    if (room.status !== 'online') wasOffline.current = true;
+    else if (wasOffline.current) {
+      wasOffline.current = false;
+      retryTvPreload();
+    }
+  }, [room.status]);
   // the 3-2-1 heard from the TV, locked to the server clock: the beeps and the start gong on the
   // audio clock for the exact instants every screen shows (none under a cutscene: it re-plans after)
   const cueRound = state?.round ?? null;
@@ -490,6 +539,7 @@ export function App(): JSX.Element {
       now: () => hookRef.current.clock.now(),
       status: () => hookRef.current.status,
       model: () => modelRef.current,
+      preload: () => tvPreloadProgress(),
     };
   }, []);
 
@@ -592,6 +642,7 @@ export function App(): JSX.Element {
           פארטי <b>ארנה</b>
         </div>
         <div class="hs-boot-text">{room.status === 'offline' ? 'אין חיבור לשרת. מנסים שוב…' : 'מתחברים לשרת…'}</div>
+        <BootBar />
       </div>
     );
   } else if (phase === 'lobby') {
@@ -656,6 +707,7 @@ export function App(): JSX.Element {
     <div class={`hs-root hs-phase-${phase ?? 'boot'} ${display ? 'is-display' : ''}`} data-phase={phase ?? 'boot'}>
       <main class="hs-stage">
         {scene}
+        {state !== null ? <PreloadBar /> : null}
         <Narrator state={state} clock={room.clock} />
       </main>
 

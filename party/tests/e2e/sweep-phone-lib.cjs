@@ -79,6 +79,9 @@ function makeLog(tag, outDir) {
 }
 
 // ───────── pages ─────────
+/** A preloader request aborted within this long of the page navigating was cut off by it (openProfile). */
+const PRELOAD_CUT_MS = 1500;
+
 /** A phone page with console / page errors / failed requests recorded, and the safe area emulated. */
 async function openProfile(browser, key, log, opts = {}) {
   const prof = PROFILES[key];
@@ -106,14 +109,35 @@ async function openProfile(browser, key, log, opts = {}) {
     page.__errors.push(`${page.__label}: ${text}`);
     log.issue(m.type() === 'error' ? 'console-error' : 'console-warning', `${name}@${page.__label}`, `${text} ${where.replace(L.CLIENT, '')}`);
   });
+  page.__leftAt = 0;
+  page.on('framenavigated', (fr) => {
+    if (fr === page.mainFrame()) page.__leftAt = Date.now();
+  });
   page.on('requestfailed', (r) => {
     const u = r.url();
     if (page.__offline) return;
     if (/\/socket\.io\//.test(u)) return; // transport upgrades and reconnects
     const f = r.failure();
     if (f && /ERR_ABORTED/.test(f.errorText) && /\.(mp3|m4a|ogg|wav|webm|mp4)/.test(u)) return; // media range aborts
-    page.__failed.push(`${page.__label}: ${u.replace(L.CLIENT, '')} ${f ? f.errorText : ''}`);
-    log.issue('request-failed', `${name}@${page.__label}`, `${u.replace(L.CLIENT, '')} ${f ? f.errorText : ''}`);
+    const report = () => {
+      page.__failed.push(`${page.__label}: ${u.replace(L.CLIENT, '')} ${f ? f.errorText : ''}`);
+      log.issue('request-failed', `${name}@${page.__label}`, `${u.replace(L.CLIENT, '')} ${f ? f.errorText : ''}`);
+    };
+    // The background preloader (client/src/kit/preload.ts: a fetch() per file under /assets/, and
+    // the picture a doll / accessory file is then handed to the avatar compositor as) is still
+    // loading art for later when a script leaves the page (a reload, a goto, a back, a close):
+    // those requests are cut off, not failed. Only when the page did leave around that moment:
+    // the preloader giving up on a stalled file is the same ERR_ABORTED, and is still reported.
+    const file = u.replace(L.CLIENT, '');
+    const preloaders = (r.resourceType() === 'fetch' && /^\/assets\//.test(file)) || (r.resourceType() === 'image' && /^\/assets\/shimi\/(doll\.|props\/)/.test(file));
+    if (f && /ERR_ABORTED/.test(f.errorText) && preloaders) {
+      const at = Date.now();
+      setTimeout(() => {
+        if (!page.isClosed() && Math.abs(page.__leftAt - at) > PRELOAD_CUT_MS) report();
+      }, PRELOAD_CUT_MS);
+      return;
+    }
+    report();
   });
   page.on('response', (r) => {
     const s = r.status();

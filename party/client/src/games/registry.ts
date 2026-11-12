@@ -15,7 +15,14 @@ export async function loadGame(id: GameId): Promise<GameModule> {
   return mod.game;
 }
 
-/** Warm the chunk during intro/countdown so the round starts instantly. */
-export function preloadGame(id: GameId): void {
-  void loaders[id]().catch(() => undefined);
+/**
+ * Warm the chunk during intro/countdown so the round starts instantly. Resolves with whether the
+ * chunk is in (never rejects): the phone asks for the game's art only after it, so the pictures
+ * do not share a slow link with the code.
+ */
+export function preloadGame(id: GameId): Promise<boolean> {
+  return loaders[id]().then(
+    () => true,
+    () => false,
+  );
 }

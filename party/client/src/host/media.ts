@@ -21,6 +21,8 @@ for (const key of videoKeys) {
   const name = key.slice(key.lastIndexOf('/') + 1);
   if (name.length > 0) present.set(name.toLowerCase(), name);
 }
+/** The files that are really in the build: `present` before a browser test adds its own names below. */
+const built = new Map(present);
 // Browser tests: ?testCutscenes=joker_1.webm,joker_2.webm declares extra files (the test serves them).
 try {
   const extra = new URLSearchParams(window.location.search).get('testCutscenes');
@@ -88,6 +90,18 @@ export function resolveSources(def: CutsceneDef): string[] {
     if (real !== null && !found.includes(real)) found.push(real);
   }
   return [...found.filter((f) => canPlay(f)), ...found.filter((f) => !canPlay(f))];
+}
+
+/**
+ * The one file to load ahead for a cutscene (boot-preload.ts): the source the player starts with,
+ * when this browser plays it and it is a real file of the build. Null: nothing to load (no file
+ * yet, a format this browser refuses, or a ?testCutscenes name, which only that test's own
+ * server has: asking for it anywhere else would be a 404).
+ */
+export function preloadSource(def: CutsceneDef): string | null {
+  const first = resolveSources(def)[0];
+  if (first === undefined || !canPlay(first) || built.get(first.toLowerCase()) !== first) return null;
+  return first;
 }
 
 export function cutsceneStatus(def: CutsceneDef): FileStatus {

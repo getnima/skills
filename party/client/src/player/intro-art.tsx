@@ -27,7 +27,11 @@ export function introArt(id: IntroArtId): string | null {
 
 let preloaded = false;
 
-/** Fetch the pictures that exist once, ahead of the first intro, so none pops in late. */
+/**
+ * Fetch the pictures that exist once, ahead of the first intro, so none pops in late. Only with
+ * the preloader off (?preload=0): otherwise they are part of the phone's background loading
+ * (boot-preload.ts), which fetches the same URLs.
+ */
 export function preloadIntroArt(): void {
   if (preloaded) return;
   preloaded = true;

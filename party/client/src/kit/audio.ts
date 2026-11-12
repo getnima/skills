@@ -414,6 +414,8 @@ const CLIP_EXTS = ['mp3', 'm4a', 'ogg', 'wav', 'webm'] as const;
 const clips = new Map<string, Promise<AudioBuffer | null>>();
 /** Clips already decoded (a scheduled cue needs the buffer now, not a promise). */
 const decoded = new Map<string, AudioBuffer | null>();
+/** Clips whose file is there but did not load (the network, the decoder): decodeClip tries them again. */
+const clipFailed = new Set<string>();
 
 /** Decode /audio/<name>.mp3 (or another extension) once; null when there is no such file or it does not decode. */
 function loadClip(name: string): Promise<AudioBuffer | null> {
@@ -427,7 +429,10 @@ function loadClip(name: string): Promise<AudioBuffer | null> {
       : fetch(url)
           .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
           .then((b) => c.decodeAudioData(b))
-          .catch(() => null);
+          .catch(() => {
+            clipFailed.add(name);
+            return null;
+          });
   clips.set(name, p);
   void p.then((b) => decoded.set(name, b));
   return p;
@@ -436,6 +441,19 @@ function loadClip(name: string): Promise<AudioBuffer | null> {
 /** Decode clips ahead, so the first one plays right on its moment (e.g. when the TV boots). */
 export function preloadClips(names: readonly string[]): void {
   for (const n of names) void loadClip(n);
+}
+
+/**
+ * Decode a clip ahead and say whether it is ready to play (false: no such file, no WebAudio, or
+ * it did not load). For the preloader (kit/preload.ts): the `after` of the clip's file, run once
+ * the file is in the HTTP cache. Unlike a play, it tries again a clip that failed to load earlier,
+ * so one bad moment on the network does not leave the synth playing in its place all night. (A
+ * play never starts that second try itself: it would hold its sound back for as long as a fetch
+ * takes.) Never rejects.
+ */
+export function decodeClip(name: string): Promise<boolean> {
+  if (clipFailed.delete(name)) clips.delete(name);
+  return loadClip(name).then((b) => b !== null);
 }
 
 /**

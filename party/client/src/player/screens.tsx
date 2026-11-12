@@ -22,6 +22,8 @@ import { sfx } from '../kit/audio';
 import { findPublicFile } from '../kit/files';
 import { haptic, vibrate } from '../kit/haptics';
 import { playTrack, stopTrack } from '../kit/music';
+import { preload, preloadGameArt, preloadOn } from '../kit/preload';
+import { usePreloadBar } from './boot-preload';
 import { GameArt } from './intro-art';
 import { Avatar, Burst, Confetti, Num, dollPx, fmt, medal, standings, useCountUp, useTick, useViewport } from './ui';
 
@@ -128,8 +130,19 @@ export function Movement(props: { readonly rank: number; readonly prev: number |
 export function IntroScreen(props: { readonly round: RoundPublic; readonly ctl: PlayerController }): JSX.Element {
   const game = GAMES[props.round.gameId];
   useEffect(() => {
-    preloadGame(props.round.gameId);
+    const id = props.round.gameId;
+    let shown = true;
+    // The game's code first: it decides whether this phone plays at all, and on a slow link the
+    // pictures must not share the network with it. Then its art, ahead of everything else the
+    // background loading still holds (the queue is paused for the round: app.tsx). When the code
+    // comes in only after this screen is gone, the game is already loading its own pictures.
+    void preloadGame(id).then((ok) => {
+      if (ok && shown) void preloadGameArt(id);
+    });
     sfx.whoosh();
+    return (): void => {
+      shown = false;
+    };
   }, [props.round.gameId]);
   useTick(250);
   const rt = roundTime(props.round, props.ctl.now());
@@ -351,6 +364,12 @@ export function SuspenseScreen(): JSX.Element {
   useEffect(() => {
     const url = prizeUrl();
     if (url === null) return;
+    if (preloadOn()) {
+      // the background loading has the picture in its list: moved to the front, not fetched twice;
+      // loaded long ago, it is asked for again now (a 304), so the winner's <img> does not wait for one
+      preload([{ url, kind: 'image' }], { front: true, refresh: true });
+      return;
+    }
     try {
       const img = new Image();
       img.decoding = 'async';
@@ -755,6 +774,17 @@ export function RotateOverlay(): JSX.Element {
       </div>
     </div>
   );
+}
+
+/**
+ * A thin line on the top edge while the background loading (boot-preload.ts) is still at it.
+ * Decoration: no text, not read out, never takes a touch, changes no layout.
+ */
+export function PreloadBar(props: { readonly on: boolean }): JSX.Element | null {
+  const fraction = usePreloadBar(props.on);
+  // gone with the screen it was on, not a frame later (the hook hears of it after the paint)
+  if (!props.on || fraction === null) return null;
+  return <div class="pp-preload" aria-hidden="true" style={`--pp-preload:${fraction.toFixed(3)}`} />;
 }
 
 export function ReconnectBanner(): JSX.Element {

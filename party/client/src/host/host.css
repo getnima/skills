@@ -499,6 +499,41 @@ body {
   background: #fff;
   box-shadow: calc(7 * var(--hu)) calc(8 * var(--hu)) 0 var(--ink);
 }
+/* how much of the TV's files is in (boot-preload.ts), under the boot card's text */
+.hs-boot-bar {
+  width: calc(560 * var(--hu));
+  max-width: 80vw;
+  height: calc(30 * var(--hu));
+  overflow: hidden;
+  border: calc(5 * var(--hu)) solid var(--ink);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: calc(7 * var(--hu)) calc(8 * var(--hu)) 0 var(--ink);
+}
+.hs-boot-bar > i,
+.hs-preload-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--red);
+  transition: width 160ms linear;
+}
+/*
+ * Files still coming after the room is up: a line on the stage's top edge. It is laid over the
+ * scene's top few pixels (no layout moves for it), takes no input, and stays under the narrator,
+ * the banners, the cutscene and the menus.
+ */
+.hs-preload-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  height: calc(8 * var(--hu));
+  pointer-events: none;
+  background: rgba(22, 18, 14, 0.3);
+  /* it comes in softly, so a load that ends a moment after the bar appears is not a blink */
+  animation: hs-fade 240ms ease both;
+}
 
 /* ───────────────────────────── lobby ───────────────────────────── */
 .hs-lobby {

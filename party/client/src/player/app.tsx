@@ -6,6 +6,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { roundTime } from '../../../shared/round-clock';
+import { preloadOn } from '../kit/preload';
+import { holdPreload, preloadDebug, syncPreload } from './boot-preload';
 import { guardBack } from './device';
 import { preloadIntroArt } from './intro-art';
 import { MeBar } from './me-bar';
@@ -20,6 +22,7 @@ import {
   IntroScreen,
   KickedScreen,
   LateScreen,
+  PreloadBar,
   ReconnectBanner,
   ResultsScreen,
   ResumeOverlay,
@@ -33,6 +36,7 @@ import { useTick } from './ui';
 import { DressingScreen, JoinScreen, LobbyScreen } from './welcome';
 
 import type { JSX } from 'preact';
+import type { PreloadDebug } from './boot-preload';
 import type { PlayerController, Snapshot } from './controller';
 import type { MeStanding } from './me-standing';
 
@@ -88,6 +92,8 @@ declare global {
       snap: Snapshot;
       now(): number;
       meBar: MeBarDebug;
+      /** The background loading (boot-preload.ts), read when asked: it moves between renders. */
+      readonly preload: PreloadDebug;
     };
   }
 }
@@ -150,10 +156,12 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
   const nearCount = toCount !== null && toCount > 0 && toCount < 1_500;
   useTick(nearCount ? 0 : 200, timed || beforeGo || nearCount || counting);
 
-  // The games' intro pictures (the ones that exist): fetched once this phone is in a room, ahead of the first intro.
+  // The games' intro pictures (the ones that exist) are part of the background loading that starts
+  // once this phone is in a room (syncPreload below). With the preloader off (?preload=0) they are
+  // warmed here, as before it.
   const inside = snap.status === 'in';
   useEffect(() => {
-    if (inside) preloadIntroArt();
+    if (inside && !preloadOn()) preloadIntroArt();
   }, [inside]);
   // in the room, the back gesture (an Android edge swipe mid-game) does not leave the page
   useEffect(() => guardBack(inside), [inside]);
@@ -277,6 +285,21 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
   const resuming = round !== null && state?.cutscene === null && roundTime(round, now).resumeInMs > 0;
   // Every screen in the room except the game itself (a cutscene over the game counts as outside).
   const inRoom = snap.status === 'in' && state !== null && screen !== 'boot';
+  // The background loading starts once the phone is in the room, and is held for the length of a
+  // round: during the intro, the countdown and the game only that game's art loads (IntroScreen
+  // asks for it). Derived from the ROOM's phase in one place, so it cannot stay held, and not from
+  // this phone's screen: a guest who joined late, or whose own game is over, waits while the
+  // others still play (their Wi-Fi is the same one). A phone that opens in the middle of a round
+  // starts nothing until the round is over. The hold is set before the paint (no file for later
+  // starts under the round's first screen), the start after.
+  const roundOn =
+    snap.status === 'in' && state !== null && (state.phase === 'intro' || state.phase === 'countdown' || state.phase === 'playing');
+  useLayoutEffect(() => holdPreload(roundOn), [roundOn]);
+  const loadNow = inRoom && !roundOn;
+  useEffect(() => syncPreload(loadNow, snap.online), [loadNow, snap.online]);
+  // The thin loading bar: only where the guest waits anyway, never over the name, the dressing
+  // room, the countdown, a game or a "watch the TV" layer.
+  const preloadBarOn = overlay === null && (screen === 'lobby' || screen === 'results' || screen === 'final');
   const standing: MeStanding | null = inRoom && state !== null ? meStanding(state, me, hideRound) : null;
   // this phone's own look is a moment ahead of the server's copy
   const mine: MeStanding | null = standing !== null && snap.look !== null ? { ...standing, look: snap.look } : standing;
@@ -296,6 +319,9 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
       total: meBarOn ? (mine?.total ?? null) : null,
       hidingRound: hideRound,
     },
+    get preload() {
+      return preloadDebug();
+    },
   };
 
   return (
@@ -304,6 +330,7 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
       {overlay}
       <MeBar standing={mine} visible={meBarOn} />
       {banner ? <ReconnectBanner /> : null}
+      <PreloadBar on={preloadBarOn} />
       <RotateOverlay />
     </div>
   );

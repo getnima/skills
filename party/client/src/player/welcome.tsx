@@ -15,10 +15,11 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { decodeLook, encodeLook } from '../../../shared/avatar';
 import { NAME_MAX_LEN, ROOM_CODE_LEN } from '../../../shared/protocol';
-import { Avatar as LookAvatar, preloadAvatarAssets } from '../avatar';
+import { Avatar as LookAvatar } from '../avatar';
 import { isMuted, setMuted, sfx, unlockAudio } from '../kit/audio';
 import { haptic } from '../kit/haptics';
 import { isStandalone, keepAwake } from '../kit/mobile';
+import { warmDressingPictures } from './boot-preload';
 import { goFullscreen } from './device';
 import { dressStepEnabled } from './dressing-state';
 import { cutName, dismissTip, isTipDismissed } from './identity';
@@ -109,12 +110,14 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
   }, [snap.joinError]);
 
   // While the guest types a name: fetch the dressing room and its pictures (about 2 MB, once),
-  // so the next step opens ready. Not when the step is switched off (dressing-state.ts).
+  // so the next step opens ready. Not when the step is switched off (dressing-state.ts). The
+  // pictures go through the preloader (boot-preload.ts), which names the same files again once
+  // the guest is in the room: one loader, each file once.
   useEffect(() => {
     if (!dressStepEnabled(window.location.search, navigator.webdriver === true)) return undefined;
     const t = setTimeout(() => {
       void loadDressingRoom().catch(() => undefined);
-      void preloadAvatarAssets();
+      warmDressingPictures();
     }, 500);
     return (): void => clearTimeout(t);
   }, []);

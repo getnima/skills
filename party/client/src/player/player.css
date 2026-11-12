@@ -1862,6 +1862,31 @@
   }
 }
 
+/* ───────────────────────── background loading ─────────────────────────
+   A thin line on the top edge of the waiting screens while the phone still fetches pictures for
+   later (boot-preload.ts). Decoration only: no text, no touch, no room taken from the layout.
+   It fills from the right, the way the page reads. */
+
+.pp-preload {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  height: 3px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.pp-preload::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--yel);
+  transform: scaleX(var(--pp-preload, 0));
+  transform-origin: 100% 50%;
+  transition: transform 0.25s linear;
+}
+
 /* ───────────────────────── reconnect banner ───────────────────────── */
 
 .pp-banner {

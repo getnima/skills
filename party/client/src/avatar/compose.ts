@@ -67,6 +67,16 @@ function loadPic(url: string): Promise<Pic | null> {
   return p;
 }
 
+/**
+ * Loads one doll or accessory picture into the compositor's own cache (the one preloadAvatarAssets
+ * fills) and says whether it is there. For the preloader (kit/preload.ts): the `after` of the
+ * picture's file, so the file comes over the network once and is decoded here, where it is drawn
+ * from. `url` is the catalog's own string (DOLL.file, an item's `file`). Never rejects.
+ */
+export function loadAvatarPicture(url: string): Promise<boolean> {
+  return loadPic(url).then((pic) => pic !== null);
+}
+
 function lookFiles(look: AvatarLook): string[] {
   return [DOLL.file, ...layoutLook(look).map((p) => p.item.file)];
 }

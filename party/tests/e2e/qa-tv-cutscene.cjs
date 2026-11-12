@@ -117,10 +117,11 @@ async function play(page, id) {
     await waitCut(page, false, 10000);
 
     // ── a missing file (opened without the test list): the card, and not one request ──
+    // (the TV's preloader does ask for the videos that are in the build; only the missing one must cost nothing)
     const page2 = await ctx.newPage();
     const asked = [];
     page2.on('request', (r) => {
-      if (/\/cutscenes\//.test(r.url())) asked.push(r.url());
+      if (/\/cutscenes\/joker_2\./i.test(r.url())) asked.push(r.url());
     });
     const errs2 = [];
     page2.on('console', (m) => m.type() === 'error' && errs2.push(m.text()));
