@@ -158,8 +158,15 @@ export function initMobileViewport(): void {
   const apply = (): void => {
     const h = vv ? vv.height : window.innerHeight;
     if (h > 0) root.style.setProperty('--app-h', `${Math.round(h * 100) / 100}px`);
+    const editing = isEditable(document.activeElement);
     // iOS scrolls the fixed page when the keyboard opens: put it back.
-    if (!isEditable(document.activeElement) && (window.scrollX !== 0 || window.scrollY !== 0)) window.scrollTo(0, 0);
+    if (!editing && (window.scrollX !== 0 || window.scrollY !== 0)) window.scrollTo(0, 0);
+    // While a field has focus iPhone Safari does not resize the page for the keyboard: it slides the
+    // visible part down the page to show the field. The app is already as tall as the visible part
+    // (--app-h), so without this it would sit above it, out of sight: --app-top moves it to where
+    // the visible part is. Zero whenever nothing is being typed (iOS 26 leaves a stale offset behind).
+    const top = editing && vv ? Math.max(0, Math.round(vv.offsetTop * 100) / 100) : 0;
+    root.style.setProperty('--app-top', `${top}px`);
   };
   apply();
   if (vv) {
@@ -169,7 +176,18 @@ export function initMobileViewport(): void {
   window.addEventListener('resize', apply);
   window.addEventListener('orientationchange', () => setTimeout(apply, 250));
   window.addEventListener('scroll', apply, { passive: true });
-  document.addEventListener('focusout', () => setTimeout(apply, 60));
+  // While a field has focus, look again a few times a second: iPhone Safari does not always report
+  // the keyboard's slide (visualViewport's events are unreliable there).
+  let typingPoll: ReturnType<typeof setInterval> | null = null;
+  document.addEventListener('focusin', () => {
+    setTimeout(apply, 60);
+    if (typingPoll === null && isEditable(document.activeElement)) typingPoll = setInterval(apply, 200);
+  });
+  document.addEventListener('focusout', () => {
+    if (typingPoll !== null) clearInterval(typingPoll);
+    typingPoll = null;
+    setTimeout(apply, 60);
+  });
 }
 
 /**
