@@ -434,7 +434,7 @@ function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skip
         {first ? (
           <div class="sh-cer-score">
             עם <b dir="ltr">{formatScore(first.raw)}</b> נקודות במשחק
-            {props.earlier ? <span class="sh-cer-earlier"> · ⏱ הגיע לניקוד ראשון</span> : null}
+            {props.earlier ? <span class="sh-cer-earlier"> · ⏱ לפני כולם</span> : null}
           </div>
         ) : null}
       </div>
