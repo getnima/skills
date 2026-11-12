@@ -449,17 +449,17 @@ function Suspense(props: { plan: Plan; view: View; game: GameMeta; elimination: 
 
 /** The owner's exclamations, on the star stickers of the ceremony (two per round, a different pair every round). */
 const CHEERS: readonly (readonly [string, string])[] = [
-  ['וואו!', 'צדיק!'],
+  ['וואו!', 'אש!'],
   ['מחורחר!', 'בן פורת יוסף!'],
   ['נודר!', 'וואו!'],
-  ['צדיק!', 'מחורחר!'],
+  ['כפרה!', 'מחורחר!'],
   ['בן פורת יוסף!', 'אחשילי!'],
 ];
 
 function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skipMs: number; title: string; portrait: boolean; elimination: boolean; round: number }): JSX.Element {
   // One winner, always: equal raw scores are decided by who reached the score first.
   const first = props.winner;
-  const cheers = CHEERS[((props.round % CHEERS.length) + CHEERS.length) % CHEERS.length] ?? ['וואו!', 'צדיק!'];
+  const cheers = CHEERS[((props.round % CHEERS.length) + CHEERS.length) % CHEERS.length] ?? ['וואו!', 'אש!'];
   return (
     <div class="sh-cer" style={`--skip:${props.skipMs}ms`}>
       <div class="sh-cer-sun" />

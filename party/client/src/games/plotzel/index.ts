@@ -71,7 +71,7 @@ const CODE_MAP: Readonly<Record<string, string>> = {
 /** Canvas fx colours: the design system's (plotzel.css --pz-*). */
 const FX = { yel: '#ffd21f', red: '#f2361b', white: '#fff8e6', pink: '#ff7eb6', org: '#ff9f0a' } as const;
 /** The owner's words for a solve in exactly par (README "Voice"). */
-const PERFECT_WORDS: readonly string[] = ['צדיק!', 'בן פורת יוסף!', 'וואו!', 'מחורחר!'];
+const PERFECT_WORDS: readonly string[] = ['שיא!', 'בן פורת יוסף!', 'וואו!', 'מחורחר!'];
 
 type Phase = 'play' | 'celebrate' | 'reveal' | 'done';
 

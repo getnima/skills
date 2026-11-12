@@ -155,7 +155,7 @@ const LEDGE_FINISH: StickerFinish = { outline: 1.6, shadowX: 4, shadowY: 6, shad
 const HERO_FINISH: StickerFinish = { outline: 1.5, shadowX: 0, shadowY: 0, shadowAlpha: 0 };
 const SPRITE_MARGIN = 3;
 /** Words that fly out of the hero on a big jump inside a combo (the owner's slang). */
-const COMBO_WORDS = ['וואו!', 'צדיק!', 'נודר!'] as const;
+const COMBO_WORDS = ['וואו!', 'אש!', 'נודר!'] as const;
 
 // ───────────────────────────── Camera (pure, shared with the predictor) ─────────────────────────────
 
@@ -701,7 +701,7 @@ export const game: GameModule = {
       if (comboJumps >= 2) {
         const mega = comboFloors >= 20;
         // the bigger the combo, the bigger the word (the owner's slang; looks only)
-        const word = comboFloors >= 25 ? 'מחורחר!' : comboFloors >= 15 ? 'בן פורת יוסף!' : comboFloors >= 8 ? 'צדיק!' : 'וואו!';
+        const word = comboFloors >= 25 ? 'מחורחר!' : comboFloors >= 15 ? 'בן פורת יוסף!' : comboFloors >= 8 ? 'אש!' : 'וואו!';
         // the points are an LTR isolate, so the plus stays in front of the number in the Hebrew line
         showBanner(word, `${comboFloors} קומות · \u2066+${comboBonus}\u2069`, mega ? PAL.yel : PAL.pink, 1.6, mega ? 2 : 1);
         if (mega) {

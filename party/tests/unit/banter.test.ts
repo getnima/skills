@@ -75,7 +75,7 @@ describe('the lines', () => {
 
   it("speaks in the owner's voice and keeps his rules", () => {
     const all = beats.map((b) => b.text).join(' ');
-    for (const word of ['נודר', 'צדיק!', 'בן פורת יוסף!', 'מחורחר']) expect(all).toContain(word);
+    for (const word of ['נודר', 'בן פורת יוסף!', 'מחורחר']) expect(all).toContain(word);
     for (const word of ['נזלת', 'חוטט', 'פלוץ ', 'גרבץ']) expect(all).not.toContain(word);
   });
 

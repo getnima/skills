@@ -143,7 +143,7 @@ export function createSpectator(parent: HTMLElement, hudHeight: number, safeBott
       }
       root.classList.toggle('is-win', s.kind === 'win');
       setText(verdict, s.kind === 'win' ? 'ניצחת!' : 'נפלת!');
-      setText(place, s.kind === 'win' ? 'צדיק! מקום 1' : placeText(s.place, s.total));
+      setText(place, s.kind === 'win' ? 'אש! מקום 1' : placeText(s.place, s.total));
       setText(passed, s.passed === 1 ? 'עברת מכשול אחד' : `עברת ${s.passed} מכשולים`);
 
       const decided = s.winner !== null;

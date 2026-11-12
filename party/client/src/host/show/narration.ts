@@ -68,7 +68,7 @@ export const NARRATION: Readonly<Record<NarrationMoment, MomentScript>> = {
   },
   arrive: {
     priority: 5,
-    takes: [[a('shocked', 'וואו, אורחים אמיתיים! לא ניצבים.')], [b('cheer', 'יש לנו מתמודדים! צדיק!')]],
+    takes: [[a('shocked', 'וואו, אורחים אמיתיים! לא ניצבים.')], [b('cheer', 'יש לנו מתמודדים! אש!')]],
   },
   intro_tap: {
     priority: 8,
@@ -124,7 +124,7 @@ export const NARRATION: Readonly<Record<NarrationMoment, MomentScript>> = {
     takes: [
       [b('cheer', 'וואו! כמו אוסקר, רק עם כנפיים.')],
       [a('cheer', 'בן פורת יוסף! המלאך עובר דירה.')],
-      [b('laugh', 'צדיק! המלאך כבר מחפש חניה ליד הבית.')],
+      [b('laugh', 'כפרה! המלאך כבר מחפש חניה ליד הבית.')],
     ],
   },
   standings: {

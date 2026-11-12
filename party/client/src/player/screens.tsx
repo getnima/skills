@@ -520,7 +520,7 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
                   </span>
                 ) : null}
                 <Avatar look={props.look ?? row.look} size={dollPx(v, 0.3, 0.16, 76, 128)} crop="bust" />
-                {row.raw > 0 && row.roundRank <= 3 ? <Burst text={won ? 'צדיק!' : 'וואו!'} class="ps-hero-burst" /> : null}
+                {row.raw > 0 && row.roundRank <= 3 ? <Burst text={won ? 'אש!' : 'וואו!'} class="ps-hero-burst" /> : null}
               </div>
               <div class="ps-res-say">
                 <div class="pp-res-rank">
@@ -658,7 +658,7 @@ export function FinalScreen(props: { readonly state: RoomState; readonly me: str
           ) : null}
           <Avatar look={props.look ?? mine?.player.look} size={dollPx(v, podium ? 0.4 : 0.34, 0.19, 80, 152)} crop="bust" />
           {podium ? <span class="pp-final-medal">{medal(rank)}</span> : null}
-          <Burst text={podium ? (rank === 1 ? 'בן פורת יוסף!' : 'צדיק!') : 'נודר'} class="ps-hero-burst" tone={podium ? 'red' : 'pink'} />
+          <Burst text={podium ? (rank === 1 ? 'בן פורת יוסף!' : 'כפרה!') : 'נודר'} class="ps-hero-burst" tone={podium ? 'red' : 'pink'} />
         </div>
         <div class="pp-final-place ps-logo">
           {podium ? (

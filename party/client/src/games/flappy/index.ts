@@ -178,7 +178,7 @@ type HeadModule = typeof import('./head');
 /** The owner's words, at these obstacle counts. */
 const STREAK_WORDS: ReadonlyArray<readonly [number, string]> = [
   [5, 'וואו!'],
-  [10, 'צדיק!'],
+  [10, 'שיא!'],
   [15, 'נודר!'],
   [20, 'בן פורת יוסף!'],
   [30, 'מחורחר!'],

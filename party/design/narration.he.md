@@ -11,7 +11,8 @@ speech bubble, like two TV-show hosts. Pictures and text only: no audio of any k
 - **Voice:** `punchlines.he.md` and `humor-research.md`, the הפשוטע register: two stars delighted with
   themselves and with the show, a grand frame on a small local thing, one image per line, a local proper
   noun as the punch, never bitter, never at a guest's expense, nothing gross. The owner's exclamations:
-  נודר, צדיק!, בן פורת יוסף!, וואו!, מחורחר!, אחשילי.
+  נודר, צדיק!, בן פורת יוסף!, וואו!, מחורחר!, אחשילי. **Less צדיק** (the owner, 2026-11-12): it stays only
+  on the champion and in the doll's one-word reactions; elsewhere אש!, כפרה!, שיא!, מטורף!.
 - **No guest name inside a line** of this script. Where it reads well the TV shows the name as a blue tag on
   the bubble (the first guests: whoever came in last; the champion). The exception is the round's banter
   (below): there the names are the point, and they show highlighted in blue inside the line.
@@ -48,7 +49,7 @@ speech bubble, like two TV-show hosts. Pictures and text only: no audio of any k
 
 | A · shocked | וואו, אורחים אמיתיים! לא ניצבים. |
 | --- | --- |
-| *or* B · cheering | יש לנו מתמודדים! צדיק! |
+| *or* B · cheering | יש לנו מתמודדים! אש! |
 
 ### Each game's intro (8) · a banter pair per game
 
@@ -104,7 +105,7 @@ two hosts themselves (`bomb_hosts.png`), so the hosts make the joke about themse
 | B · cheering | וואו! כמו אוסקר, רק עם כנפיים. |
 | --- | --- |
 | *or* A · cheering | בן פורת יוסף! המלאך עובר דירה. |
-| *or* B · laughing | צדיק! המלאך כבר מחפש חניה ליד הבית. |
+| *or* B · laughing | כפרה! המלאך כבר מחפש חניה ליד הבית. |
 
 ### The standings (5)
 
@@ -172,7 +173,7 @@ The number after each kind is its priority. {a} is the guest the take is about, 
 | A · presenting: הכתר עובר ל{a}. / B · laughing: כתר מבורגר קינג. אבל עדיין כתר. |
 | B · presenting: מבזק: {a} במקום הראשון. / A · shocked: ובחדשות אחרות: {b} בהלם. |
 | A · laughing: {a}, הגעת לפסגה. / B · suspense: תצלמו מהר. מכאן רק יורדים. |
-| B · cheering: {a} למעלה! צדיק! / A · laughing: {b}, זה לא אישי. זה קצת אישי. |
+| B · cheering: {a} למעלה! אש! / A · laughing: {b}, זה לא אישי. זה קצת אישי. |
 
 ### overtake (4) · {a} passed {b}
 
