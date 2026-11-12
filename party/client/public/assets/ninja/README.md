@@ -20,7 +20,7 @@ Which throw wears which picture is looks only (`client/src/games/ninja/skins.ts`
 
 Framing of a target (food, joke item, gold)
 - Any shape, anywhere on a transparent square. When a picture loads the game finds the smallest circle around its opaque pixels and scales the picture (aspect kept) so that this circle is exactly the hit circle. So a long pickle, a wide plate and a round doughnut all sit inside the same hit circle, each as large as it can be, and none is cut by it. Soft shadows (alpha under about 10%) do not count.
-- Drawn about 65-115 px across on a phone, from a 256x256 px sprite. 384x384 files are plenty.
+- Drawn about 65-115 px across on a phone, from a sprite pre-rendered about 215 px across and trimmed to the object (so a blit costs what the food covers, not a square box). 384x384 files are plenty.
 - A sliced target splits along one straight line through the middle of that circle (the halves are prepared once when the game starts), then the halves fly apart along the swipe. The game paints the cut face on each half where the line crosses the picture, as wide as the food is there.
 - How a cut looks is one row per picture: `CUT_LOOKS` in `client/src/games/ninja/art.ts` (ring / band / inside / detail colours, the pattern of the inside, how deep the face is, an optional turn so a long diagonal thing is cut across, and the splash: colours and kind `'juice' | 'sauce' | 'crumbs'`). It drives the halves, the droplets and the splat decals. The colours follow the "Slice colours" table of `food/README.md`. A new picture with a new inside needs its row changed (and a new pattern in `cutFace` when none fits).
 

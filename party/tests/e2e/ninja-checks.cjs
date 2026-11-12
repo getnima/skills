@@ -41,7 +41,10 @@ async function main() {
   // ── 1. same seed = same level, other seed = other level; same scripted input ≈ same score ──
   const runs = [];
   for (const seed of [7, 7, 8]) {
-    const { context, page } = await open(browser, { ...iphone }, `seed=${seed}&duration=14000`);
+    // freezeAt=0: the harness clock stands still while the game loads, like the real phone
+    // (mounted during the 3-2-1, frozen until GO), so every run starts at round time 0 however
+    // long its pictures took to load; the scripted swipes are locked to game steps
+    const { context, page } = await open(browser, { ...iphone }, `seed=${seed}&duration=14000&freezeAt=0&freezeMs=1500`);
     const vp = page.viewportSize();
     const sched = await page.evaluate(() => JSON.stringify(window.__ninja.schedule(40)));
     await scripted(page, vp, 9000);
@@ -55,7 +58,9 @@ async function main() {
   check('other seed: other schedule', runs[0].sched !== runs[2].sched && runs[0].sig !== runs[2].sig);
   check('same seed + same scripted input: same score (±1 slice)', Math.abs(runs[0].score - runs[1].score) <= 10, [runs[0].score, runs[1].score]);
 
-  // ── 2. positions depend only on game time: an auto-freeze snapshot matches across runs ──
+  // ── 2. positions depend only on round time: an auto-freeze snapshot matches across runs ──
+  // (compared by round time, elapsedMs: the harness clock runs while the game loads, so the
+  // number of steps since the game started depends on how long this run's load took)
   const snaps = [];
   for (let k = 0; k < 2; k++) {
     const { context, page } = await open(browser, { ...devices['Pixel 7'] }, `seed=11&duration=20000&freezeAt=4000&freezeMs=6000`);
@@ -66,8 +71,8 @@ async function main() {
     if (k === 0) await page.screenshot({ path: path.join(OUT, 'auto-freeze.png') });
     await context.close();
   }
-  console.log(snaps.map((s) => [s.steps, s.snapshot]));
-  check('auto-freeze: same throws in the air at the same game time (±3 steps)', Math.abs(snaps[0].steps - snaps[1].steps) <= 3 && snaps[0].active === snaps[1].active, snaps.map((s) => s.steps));
+  console.log(snaps.map((s) => [s.steps, Math.round(s.elapsedMs), s.snapshot]));
+  check('auto-freeze: same throws in the air at the same round time (±3 steps)', Math.abs(snaps[0].elapsedMs - snaps[1].elapsedMs) <= 50 && snaps[0].active === snaps[1].active, snaps.map((s) => [s.steps, Math.round(s.elapsedMs)]));
 
   // ── 3. 360x640 fits ──
   {

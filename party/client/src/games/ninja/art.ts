@@ -438,8 +438,6 @@ export function drawSprite(g: CanvasRenderingContext2D, s: Sprite, x: number, y:
   }
 }
 
-// ───────────────────────────── Fitting a picture into the body circle ─────────────────────────────
-
 /** Side of the small copy a picture is measured on (px). */
 const MEASURE = 96;
 /** A pixel is solid above this alpha (0..255): the hit circle goes around these; soft edges and shadows do not count. */

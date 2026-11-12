@@ -38,11 +38,41 @@ const LIVE_MS = 1000;
 
 // ───────────────────────────── pages ─────────────────────────────
 
+/** Every websocket of every page (diagnostics for a link that does not come up). */
+const wsTrace = [];
+function traceSockets(page) {
+  page.on('websocket', (ws) => {
+    const rec = { page: page.__name, url: ws.url().replace(/^ws:\/\/[^/]+/, '').slice(0, 44), at: Date.now(), first: null, closed: null, error: null, frames: [] };
+    wsTrace.push(rec);
+    const note = (dir, f) => {
+      // never the payload of a join (it carries a name): only the packet type and the event name
+      const text = typeof f.payload === 'string' ? f.payload : '<binary>';
+      rec.frames.push(`${dir}+${Date.now() - rec.at}:${text.replace(/^(\d+)(\[\"[a-z:]+\")?.*$/s, '$1$2').slice(0, 24)}`);
+      if (rec.frames.length > 14) rec.frames.shift();
+    };
+    ws.on('framesent', (f) => note('>', f));
+    ws.on('framereceived', (f) => {
+      if (rec.first === null) rec.first = Date.now();
+      note('<', f);
+    });
+    ws.on('close', () => (rec.closed = Date.now()));
+    ws.on('socketerror', (e) => (rec.error = String(e).slice(0, 60)));
+  });
+}
+function dumpSockets(sinceMs) {
+  const now = Date.now();
+  return wsTrace
+    .filter((r) => now - r.at < sinceMs || r.closed === null)
+    .map((r) => `${r.page} ${r.url} +${r.at - now}ms ${r.first === null ? 'NO FRAME' : `first frame after ${r.first - r.at}ms`} ${r.closed === null ? 'open' : `closed after ${r.closed - r.at}ms`} ${r.error || ''}${now - r.at < 25000 && r.url.includes('socket.io') ? `\n      ${r.frames.join(' ')}` : ''}`)
+    .join('\n   ');
+}
+
 async function openTv(browser, name = 'tv') {
   const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const page = await ctx.newPage();
   page.__name = name;
   page.__ctx = ctx;
+  traceSockets(page);
   page.on('pageerror', (e) => check(false, `${name} pageerror: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() === 'error' && !/cutscenes\/|favicon|net::ERR/.test(m.text() + (m.location().url || ''))) console.log(`  [${name} console]`, m.text().slice(0, 200));
@@ -80,6 +110,7 @@ async function openPhone(browser, name, size, extra = {}) {
     extra,
     check,
   );
+  traceSockets(page);
   return page;
 }
 
@@ -257,7 +288,12 @@ async function runSize(browser, size) {
 
   // a reload in the middle: still in the dressing room, same player, same look
   await A.reload();
-  await D.waitDressing(A);
+  try {
+    await D.waitDressing(A);
+  } catch (e) {
+    console.log(`  [${tag}] stuck after the first reload: ${JSON.stringify(await D.playerInfo(A).catch(() => null))}\n  sockets:\n   ${dumpSockets(40000)}`);
+    throw e;
+  }
   const a2 = await D.playerInfo(A);
   check(a2.id === a0.id && a2.look === look && a2.dressed === false, `${tag}: a reload in the dressing room comes back to it with the look (${a2.look}, same player ${a2.id === a0.id})`);
   check((await D.roomLook(A)) === look, `${tag}: the room shows that look after the reload`);
@@ -327,8 +363,25 @@ async function runSize(browser, size) {
   await D.finishDressing(A);
   await sleep(600);
   check((await A.evaluate(() => document.querySelector('.pw-me-doll')?.dataset.look)) === look2, `${tag}: back in the waiting room with the new look`);
+  const trace = [];
+  const stamp = () => String(Date.now() % 100000).padStart(5, '0');
+  A.on('websocket', (ws) => {
+    trace.push(`${stamp()} ws open ${ws.url().slice(0, 70)}`);
+    ws.on('close', () => trace.push(`${stamp()} ws close ${ws.url().slice(0, 40)}`));
+    ws.on('socketerror', (e) => trace.push(`${stamp()} ws error ${e}`));
+  });
+  A.on('requestfailed', (r) => trace.push(`${stamp()} request failed ${r.url().slice(0, 90)} ${r.failure() ? r.failure().errorText : ''}`));
+  A.on('console', (m) => trace.push(`${stamp()} console ${m.type()} ${m.text().slice(0, 160)}`));
+  trace.push(`${stamp()} reload`);
   await A.reload();
-  await L.waitScreen(A, ['lobby', 'dressing'], 20000);
+  trace.push(`${stamp()} loaded`);
+  try {
+    await L.waitScreen(A, ['lobby', 'dressing'], 20000);
+  } catch (e) {
+    const snap = await A.evaluate(() => (window.__player ? { screen: window.__player.screen, status: window.__player.snap.status, online: window.__player.snap.online, state: !!window.__player.snap.state } : null)).catch((err) => String(err));
+    console.log(`  [${tag}] stuck after the reload: ${JSON.stringify(snap)}\n   ${trace.join('\n   ')}\n  sockets:\n   ${dumpSockets(40000)}`);
+    throw e;
+  }
   await sleep(600);
   const a5 = await D.playerInfo(A);
   check(a5.screen === 'lobby' && a5.look === look2 && a5.dressed === true && a5.id === a0.id, `${tag}: a reload after dressing lands in the waiting room with the look (${JSON.stringify(a5)})`);

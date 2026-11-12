@@ -17,7 +17,7 @@ const ninja = (page) =>
   page.evaluate(() => {
     const n = window.__ninja;
     if (!n) return null;
-    return { signature: n.signature, steps: n.steps, launched: n.launched, sliced: n.sliced, golds: n.golds, bombsHit: n.bombsHit, comboBonus: n.comboBonus, score: n.score, stunned: n.stunned, active: n.active, snapshot: n.snapshot() };
+    return { signature: n.signature, steps: n.steps, elapsedMs: n.elapsedMs, launched: n.launched, sliced: n.sliced, golds: n.golds, bombsHit: n.bombsHit, comboBonus: n.comboBonus, score: n.score, stunned: n.stunned, active: n.active, snapshot: n.snapshot() };
   });
 const targets = (page) => page.evaluate(() => (window.__ninja ? window.__ninja.targets() : []));
 const layout = (page) =>
