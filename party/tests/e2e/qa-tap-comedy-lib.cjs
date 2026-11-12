@@ -6,7 +6,7 @@ const { openGame, sleep, tapAt } = lib;
 
 async function openTap(browser, opts = {}) {
   const viewport = opts.viewport || { width: 390, height: 844 };
-  const q = `seed=${opts.seed ?? 1}&duration=${opts.duration ?? 50000}${opts.query ? '&' + opts.query : ''}`;
+  const q = `seed=${opts.seed ?? 1}&duration=${opts.duration ?? 53000}${opts.query ? '&' + opts.query : ''}`;
   const o = await openGame(browser, 'tap', { viewport, fps: opts.fps, cpu: opts.cpu, init: opts.init, query: q, safe: opts.safe });
   await o.page.waitForFunction(() => window.__tap && window.__tap());
   return o;

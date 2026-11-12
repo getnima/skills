@@ -150,6 +150,8 @@ export interface TapDebugState {
   readonly auto: boolean;
   /** Touches received (every finger of every touchstart below the HUD, while not frozen). */
   readonly touches: number;
+  /** Round time of every touch given to the engine, in order (at most 600; for replays). */
+  readonly touchTimes: readonly number[];
   /** Counted taps = the score. */
   readonly taps: number;
   readonly score: number;
@@ -423,6 +425,8 @@ export const game: GameModule = {
     let finishedAtMs = -1;
     let elapsed = startOffset;
     let touches = 0;
+    /** Round time of every touch given to the engine (tests replay them through pick.ts). */
+    const touchTimes: number[] = [];
     const touchPts: Array<{ x: number; y: number }> = [];
 
     const engine = createTapEngine(
@@ -2340,7 +2344,9 @@ export const game: GameModule = {
       const stamp = downStamp.get(p.id);
       downStamp.delete(p.id);
       const age = stamp === undefined ? 0 : clamp(performance.now() - stamp, 0, MAX_TOUCH_AGE_MS);
-      engine.tap(ctx.durationMs - ctx.timeLeftMs() - age, 1);
+      const t = ctx.durationMs - ctx.timeLeftMs() - age;
+      if (touchTimes.length < 600) touchTimes.push(t);
+      engine.tap(t, 1);
     });
 
     // ── waiting timeline (round time) ──
@@ -3288,6 +3294,7 @@ export const game: GameModule = {
         endAt: s.endAt,
         auto: s.auto,
         touches,
+        touchTimes: touchTimes.slice(),
         taps: s.taps,
         score: s.taps,
         bounces: s.bounces,

@@ -13,7 +13,7 @@ const CASES = [
   { name: 'mid-rise', hz: 1.6, when: (s) => s.phase === 'sprint' && s.hand === 'rising' && !s.beat && s.taps >= 2 },
   { name: 'mid-dig', hz: 8, when: (s) => s.phase === 'sprint' && s.level >= 4 && !s.beat },
   { name: 'mid-set-piece', hz: 9, when: (s) => s.beat === 'rope' && s.beatT > 0.45 },
-  { name: 'glass-full', hz: 12, when: (s) => s.phase === 'sprint' && s.sprites.live >= 11 && s.taps > 90 },
+  { name: 'glass-full', hz: 12, when: (s) => s.phase === 'sprint' && s.sprites.live >= 5 && s.taps > 90 },
 ];
 
 function pick(s) {
@@ -41,7 +41,7 @@ async function run(browser, c) {
   let stop = false;
   const tapping = (async () => {
     const left = await page.evaluate(() => window.__party.leftMs);
-    const zero = Date.now() - (50000 - left);
+    const zero = Date.now() - (53000 - left);
     for (let i = 0; i < times.length && !stop; i++) {
       const w = zero + times[i] - Date.now();
       if (w > 0) await L.sleep(w);

@@ -7,8 +7,9 @@
 //   QA_BASE=http://localhost:5321 node tests/e2e/qa-tap-comedy-boundary.cjs [durationMs]
 const L = require('./qa-tap-comedy-lib.cjs');
 
-const DURATION = Number(process.argv[2] || 50000);
-const AT = Math.round(DURATION * 0.6);
+const DURATION = Number(process.argv[2] || 53000);
+// the end of the start window (pick.ts: 30/53 of the round)
+const AT = Math.round((DURATION * 30) / 53);
 
 function pick(s) {
   return { phase: s.phase, elapsedMs: Math.round(s.elapsedMs), t0: s.t0, endAt: s.endAt, taps: s.taps, touches: s.touches, beat: s.beat, beatT: +s.beatT.toFixed(4), autostarts: s.beats.filter((b) => b.id === 'autostart').length };
@@ -73,7 +74,7 @@ async function phone(browser, name, tapFrom) {
     L.check(`${r.name}: no console errors`, r.errors.length === 0, r.errors.slice(0, 2));
   }
   L.check('idle: auto-started exactly once, at the window end', idle.last && idle.last.autostarts === 1 && idle.last.t0 === AT, idle.last);
-  L.check('sprinter: same sprint end before and after the freeze, sprint = 40% of the round', sprinter.before.endAt === sprinter.last.endAt && sprinter.last.endAt - sprinter.last.t0 === DURATION - Math.round(DURATION * 0.6), [sprinter.before.endAt, sprinter.last.endAt, sprinter.last.t0]);
+  L.check('sprinter: same sprint end before and after the freeze, sprint = 20/53 of the round', sprinter.before.endAt === sprinter.last.endAt && sprinter.last.endAt - sprinter.last.t0 === Math.round((DURATION * 20) / 53), [sprinter.before.endAt, sprinter.last.endAt, sprinter.last.t0]);
   L.check('sprinter: was mid-sprint at the freeze', sprinter.before.phase === 'sprint');
   console.log(L.fails.length ? `\n${L.fails.length} FAILED: ${L.fails.join(', ')}` : '\nALL OK');
 })();

@@ -5,7 +5,7 @@ const L = require('./qa-tap-comedy-lib.cjs');
 
 (async () => {
   const browser = await L.chromium.launch();
-  const { page, context, errors } = await L.openTap(browser, { duration: 50000 });
+  const { page, context, errors } = await L.openTap(browser, { duration: 53000 });
   const res = await page.evaluate(async () => {
     const url = performance.getEntriesByType('resource').map((e) => e.name).filter((n) => n.includes('/src/games/tap/index.ts')).pop();
     const mod = await import(url);
