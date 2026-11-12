@@ -261,7 +261,7 @@ export const game: GameModule = {
       geo.noseX = hx + FRAME.nostrilX * S;
       geo.noseY = hy + FRAME.nostrilY * S;
       geo.restX = hx + 0.6 * S;
-      geo.restY = trayTop - 0.07 * S;
+      geo.restY = trayTop - 0.14 * S;
     }
 
     // ── the pile (boogers merged at the bottom of the glass), painted incrementally ──
@@ -308,7 +308,7 @@ export const game: GameModule = {
     function mergeIntoPile(gd: Goo): void {
       const col = clamp(Math.floor((gd.x / Math.max(1, geo.w)) * PILE_COLS), 0, PILE_COLS - 1);
       const h0 = pileH[col] ?? 0;
-      const k = gd.size / geo.S;
+      const k = (gd.size / geo.S) * (gd.kind === BOOGER.Boss ? 0.55 : 1);
       const s: Stamp = { u: gd.x / Math.max(1, geo.w), lift: Math.min(h0, 0.15), kind: gd.kind, k, rot: gd.rot };
       for (let c = col - 1; c <= col + 1; c++) {
         if (c < 0 || c >= PILE_COLS) continue;
@@ -798,14 +798,14 @@ export const game: GameModule = {
         const H = pileMax() * 1.8;
         g.drawImage(pileCanvas, 0, geo.trayTop + 8 - H, geo.w, H);
       }
-      // slime trails of the sliding ones (one path)
-      g.strokeStyle = 'rgba(134, 217, 58, 0.35)';
+      // short slime trails behind the sliding ones (one path)
+      g.strokeStyle = 'rgba(111, 191, 42, 0.55)';
       g.lineCap = 'round';
-      g.lineWidth = Math.max(4, geo.S * 0.03);
+      g.lineWidth = Math.max(3, geo.S * 0.018);
       g.beginPath();
       for (const gd of goos) {
         if (!gd.live || gd.stage !== 1 || gd.y - gd.ty < 3) continue;
-        g.moveTo(gd.x, gd.ty);
+        g.moveTo(gd.x, Math.max(gd.ty, gd.y - gd.size * 1.3));
         g.lineTo(gd.x, gd.y);
       }
       g.stroke();
@@ -865,18 +865,18 @@ export const game: GameModule = {
         const k = f.t / f.life;
         const pop = k < 0.2 ? ease.outBack(k / 0.2) : 1;
         g.globalAlpha = k > 0.7 ? (1 - k) / 0.3 : 1;
-        blit(g, f.s, f.x, Math.max(geo.top + 14, f.y - k * 46), 0.6 * pop);
+        blit(g, f.s, f.x, Math.max(geo.top + 14, f.y - k * 46), 0.85 * pop);
       }
       g.globalAlpha = 1;
     }
 
     function drawRipples(g: CanvasRenderingContext2D): void {
-      g.lineWidth = 4;
+      g.lineWidth = 3;
       for (const r of ripples) {
         if (!r.live) continue;
         const k = r.t / 0.4;
         g.globalAlpha = 1 - k;
-        g.strokeStyle = r.hit ? PAL.ink : PAL.red;
+        g.strokeStyle = r.hit ? PAL.white : PAL.red;
         g.beginPath();
         g.arc(r.x, r.y, 8 + k * (r.hit ? 36 : 22), 0, Math.PI * 2);
         g.stroke();
@@ -900,20 +900,21 @@ export const game: GameModule = {
     function drawTutorial(g: CanvasRenderingContext2D, t: number): void {
       const { S } = geo;
       // a ghost finger tapping fast on the cheek
-      const cycle = (t % 0.22) / 0.22;
+      const cycle = (t % 0.2) / 0.2;
       const press = cycle < 0.4 ? ease.inQuad(cycle / 0.4) : 1 - ease.outQuad((cycle - 0.4) / 0.6);
       const px = geo.hx + S * 0.33;
       const py = geo.hy + S * 0.72;
       g.save();
       g.globalAlpha = tutorialAlpha * 0.75;
-      const hw = S * 0.2;
-      const hh = (hw * HAND.h) / HAND.w;
-      // pointing down: rotate the hand half a turn, fingertip at the press point
-      art.hand.draw(g, px - (0.5 - HAND.tipX) * hw, py - (1 - press) * S * 0.06 - hh / 2, hw, hh, Math.PI);
+      const gw = Math.max(64, S * 0.24);
+      const gh = (gw * art.ghost.height) / art.ghost.width;
+      // fingertip (0.5w, 0.04h of the ghost) on the press point, coming down from below-right
+      const lift = (1 - press) * S * 0.07;
+      art.ghost.draw(g, px + lift * 0.4, py + lift + gh * 0.46, gw, gh, -0.35);
       if (cycle < 0.5) {
         g.globalAlpha = tutorialAlpha * (1 - cycle * 2);
-        g.strokeStyle = PAL.ink;
-        g.lineWidth = 4;
+        g.strokeStyle = PAL.white;
+        g.lineWidth = 5;
         g.beginPath();
         g.arc(px, py, 10 + cycle * 60, 0, Math.PI * 2);
         g.stroke();

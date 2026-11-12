@@ -4,7 +4,7 @@
  * stage backdrop (yellow sunburst + halftone) and the bottom tray are painted once per
  * screen size, so the hot path only calls drawImage.
  */
-import { facePainter, loadAssets } from '../../kit/assets';
+import { facePainter, loadAssets, paintDrawable } from '../../kit/assets';
 import { roundRectPath } from '../../kit/canvas';
 import { BOOGER } from './schedule';
 import { halftone, makeLayer, PAL } from './look';
@@ -73,6 +73,8 @@ export interface TapArt {
   readonly boogers: readonly Drawable[];
   /** Optional stage backdrop file (placeholder = painted sunburst at screen size). */
   readonly background: Drawable;
+  /** The teaching hint's ghost finger (drawn, not a slot): white, ink outline, pointing up. */
+  readonly ghost: Drawable;
 }
 
 export async function loadTapArt(): Promise<TapArt> {
@@ -105,8 +107,41 @@ export async function loadTapArt(): Promise<TapArt> {
     hand: s.hand,
     boogers: [s.booger_round, s.booger_stretchy, s.booger_googly, s.booger_hairy, s.booger_golden, s.booger_boss],
     background: s.background,
+    ghost: paintDrawable('tap_ghost', ghostPainter, 96, 120),
   };
 }
+
+/** Ghost hand pointing up with the index finger; the fingertip is at (0.5w, 0.04h). */
+const ghostPainter: Painter = (ctx, w, h) => {
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = PAL.ink;
+  ctx.fillStyle = PAL.white;
+  const fw = w * 0.22;
+  roundRectPath(ctx, w * 0.24, h * 0.46, w * 0.62, h * 0.48, w * 0.2);
+  ctx.fill();
+  ctx.stroke();
+  roundRectPath(ctx, w * 0.5 - fw / 2, h * 0.04, fw, h * 0.6, fw / 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(w * 0.28, h * 0.66);
+  ctx.rotate(-0.6);
+  roundRectPath(ctx, -fw * 0.45, -h * 0.16, fw * 0.9, h * 0.28, fw * 0.45);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillRect(w * 0.5 - fw / 2 + 2, h * 0.48, fw - 4, h * 0.14);
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (let i = 0; i < 3; i++) {
+    const y = h * (0.6 + i * 0.1);
+    ctx.moveTo(w * 0.62, y);
+    ctx.lineTo(w * 0.8, y);
+  }
+  ctx.stroke();
+};
 
 // ───────────────────────────── Placeholders ─────────────────────────────
 
