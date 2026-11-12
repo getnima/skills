@@ -155,6 +155,8 @@ export interface StickerStyle {
   readonly subScale?: number;
   /** Star-burst behind the text: its fill colour. */
   readonly burst?: string;
+  /** A wide, flat burst hugging the text (long lines stay readable in a short band). */
+  readonly flat?: boolean;
   /** Skew (default 0.12 ≈ 7°) and tilt (default -0.035 rad). */
   readonly skew?: number;
   readonly tilt?: number;
@@ -186,7 +188,10 @@ export function renderSticker(text: string, st: StickerStyle, reuse?: HTMLCanvas
   const pad = outline + size * 0.18 + Math.abs(skew) * textH * 0.5;
   let w = textW + pad * 2;
   let h = textH + pad * 2 + Math.abs(tilt) * textW;
-  if (st.burst) {
+  if (st.burst && st.flat) {
+    w = w * 1.24;
+    h = h * 1.75;
+  } else if (st.burst) {
     const b = Math.max(w, h) * 1.12;
     w = Math.max(w * 1.3, b);
     h = Math.max(h * 1.45, b * 0.8);

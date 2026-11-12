@@ -54,8 +54,8 @@ export interface Dressing {
   joinLook(): string | undefined;
   /** The server answered a join or a resume in room `code`; `serverLook` is this player's look there. */
   joined(code: string, serverLook: string | null, fresh: boolean): void;
-  /** A room snapshot arrived: the phase before it (null: none yet) and its phase. */
-  phase(prev: Phase | null, next: Phase): void;
+  /** A room snapshot arrived, in this phase. */
+  phase(next: Phase): void;
   /** The dressing room reported a change. */
   setLook(look: string): void;
   /** The server stored the look as `stored` in answer to `sent`. */
@@ -65,8 +65,6 @@ export interface Dressing {
   open(): void;
   /** "Done" (or a round took over): dressed, closed, and the latest look goes out now. */
   close(): void;
-  /** This phone left the room (kicked, the room closed, "join again"). */
-  left(): void;
 }
 
 /** The dressing-room step is on: see THE TEST SWITCH at the top of this file. */
@@ -105,6 +103,8 @@ export function createDressing(deps: DressingDeps): Dressing {
   let dressed = false;
   let dressing = false;
   let pending = false;
+  /** Phase of the last snapshot since this seat was taken / this page loaded (null: none yet). */
+  let lastPhase: Phase | null = null;
 
   let last: DressingSnap = { look, dressed, dressing };
   function publish(): void {
@@ -130,6 +130,7 @@ export function createDressing(deps: DressingDeps): Dressing {
       const server = canonicalLook(serverLook);
       if (fresh) {
         deps.sender.reset();
+        lastPhase = null;
         look = server ?? look;
         pending = false;
         dressed = !deps.stepEnabled;
@@ -157,7 +158,9 @@ export function createDressing(deps: DressingDeps): Dressing {
       deps.sender.flush();
     },
 
-    phase(prev: Phase | null, next: Phase): void {
+    phase(next: Phase): void {
+      const prev = lastPhase;
+      lastPhase = next;
       if (next === 'lobby') return;
       // a round (or the podium) takes over; a guest who was in the dressing room is done with it
       const wasDressing = dressing || (prev === 'lobby' && !dressed);
@@ -207,16 +210,6 @@ export function createDressing(deps: DressingDeps): Dressing {
       if (changed) persist();
       publish();
       deps.sender.flush();
-    },
-
-    left(): void {
-      deps.sender.reset();
-      code = '';
-      look = null;
-      dressed = false;
-      dressing = false;
-      pending = false;
-      publish();
     },
   };
   return api;

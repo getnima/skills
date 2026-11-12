@@ -721,11 +721,14 @@ describe('cutscenes', () => {
     h.room.start('tap');
     expect(h.round().endAt - h.round().startAt).toBe(12_000);
     h.toPlaying();
-    vi.advanceTimersByTime(5_999);
+    // 30 s of the game's nominal length, scaled into the 12 s round (whatever the game's length is)
+    const at = Math.ceil((30_000 * 12_000) / TAP_MS);
+    expect(at).toBeLessThan(12_000);
+    vi.advanceTimersByTime(at - 1);
     expect(h.state().cutscene).toBeNull();
     vi.advanceTimersByTime(1);
     expect(h.state().cutscene?.id).toBe('mid');
-    expect(elapsed(h)).toBe(6_000);
+    expect(elapsed(h)).toBe(at);
   });
 
   it('handles a second freeze in the same round, even during the 3-2-1', () => {
@@ -755,7 +758,7 @@ describe('cutscenes', () => {
     expect(elapsed(h)).toBe(30_000);
     vi.advanceTimersByTime(12_000);
     h.room.endCutscene();
-    vi.advanceTimersByTime(RESUME_COUNTDOWN_MS + 30_000 + FINAL_GRACE_MS - 1);
+    vi.advanceTimersByTime(RESUME_COUNTDOWN_MS + (TAP_MS - 30_000) + FINAL_GRACE_MS - 1);
     expect(h.state().phase).toBe('playing');
     vi.advanceTimersByTime(1);
     expect(h.state().phase).toBe('results');

@@ -12,6 +12,8 @@ export interface MeStanding {
   readonly id: string;
   readonly name: string;
   readonly avatar: number;
+  /** The player's dressed doll (PlayerPublic.look). */
+  readonly look: string;
   /** Overall place, or null before the first scored round ("מוכנים?"). */
   readonly rank: number | null;
   /** "מתוך N". */
@@ -26,7 +28,7 @@ export interface MeStanding {
 export function meStanding(state: RoomState, me: string, hideRound: boolean): MeStanding | null {
   const player: PlayerPublic | undefined = state.players.find((p) => p.id === me);
   if (player === undefined) return null;
-  const base = { id: player.id, name: player.name, avatar: player.avatar };
+  const base = { id: player.id, name: player.name, avatar: player.avatar, look: player.look };
   const res = state.results;
   // Nothing scored yet (or the host reset the competition): no place to show.
   if (res === null) return { ...base, rank: null, count: state.players.length, total: null };

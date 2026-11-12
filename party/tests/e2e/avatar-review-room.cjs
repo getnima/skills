@@ -143,7 +143,7 @@ async function tapTile(page, tab, id) {
     ok(JSON.stringify(await onDoll(page)) === JSON.stringify(worn(p).sort((a, b) => a - b)), 'random: doll differs from the look');
     await shot('7-random');
     // plate, then done
-    await tapEl(page, '.dr-tab[data-tab="BG"]'); await page.waitForTimeout(250);
+    for (let i = 0; i < 4 && (await page.locator('.dr-shelf .dr-tile[data-bg="8"]').count()) === 0; i++) { await tapEl(page, '.dr-tab[data-tab="BG"]'); await page.waitForTimeout(500); }
     await page.locator('.dr-shelf .dr-tile[data-bg="8"]').scrollIntoViewIfNeeded(); await page.waitForTimeout(300);
     await tapEl(page, '.dr-shelf .dr-tile[data-bg="8"]'); await page.waitForTimeout(500);
     await tapEl(page, '.dr-done'); await page.waitForTimeout(1500);

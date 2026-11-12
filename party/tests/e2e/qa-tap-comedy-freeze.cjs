@@ -49,7 +49,11 @@ async function run(browser, c) {
       void L.tapAt(cdp, [{ x: s0.x + (i % 2 ? 40 : -40), y: s0.y + 50 }]);
     }
   })();
-  await page.waitForFunction(c.when, null, { timeout: 40000, polling: 16 }).catch(() => null);
+  const hit = await page
+    .waitForFunction(`(() => { const s = window.__tap(); return !!s && (${c.when.toString()})(s); })()`, null, { timeout: 40000, polling: 16 })
+    .then(() => true)
+    .catch(() => false);
+  L.check(`${c.name}: reached the state to freeze in`, hit);
   stop = true;
   await page.evaluate(() => window.__party.freeze(2500));
   await L.sleep(150);

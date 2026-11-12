@@ -163,6 +163,8 @@ export interface TapDebugState {
   readonly r: number;
   readonly layout: { readonly top: number; readonly bandTop: number; readonly bandBottom: number; readonly tokenTop: number; readonly tokenBottom: number; readonly pileTop: number; readonly counterTop: number; readonly bottom: number; readonly w: number; readonly h: number };
   readonly queued: number;
+  /** ctx.hudHeight (old bots read it). */
+  readonly hudTop: number;
   readonly placeholders: readonly string[];
 }
 
@@ -375,34 +377,34 @@ export const game: GameModule = {
     const rankAt = scaledThresholds(TAP.RANKS, timing.tapScale);
 
     // ── pre-rendered words (display font, once) ──
-    const stStart = renderSticker(W.start, { size: 30, fill: PAL.white, burst: PAL.red, shadow: PAL.redD });
+    const stStart = renderSticker(W.start, { flat: true, size: 30, fill: PAL.white, burst: PAL.red, shadow: PAL.redD });
     const chipRemark = (t: string): Sticker => renderChip(t, 20, PAL.white, PAL.ink);
     const ckSneak1 = chipRemark(W.sneak1);
     const ckSneak2 = chipRemark(W.sneak2);
     const ckYawn = chipRemark(W.yawn);
     const ckKnock = chipRemark(W.knock);
-    const stSelf = renderSticker(W.self, { size: 26, fill: PAL.white, burst: PAL.cob, shadow: PAL.cobD });
-    const stAuto = renderSticker(W.auto, { size: 28, sub: W.autoSub, subScale: 0.8, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
+    const stSelf = renderSticker(W.self, { flat: true, size: 26, fill: PAL.white, burst: PAL.cob, shadow: PAL.cobD });
+    const stAuto = renderSticker(W.auto, { flat: true, size: 28, sub: W.autoSub, subScale: 0.8, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
     const stClick = renderSticker(W.click, { size: 34, fill: PAL.white, burst: PAL.red, shadow: PAL.redD });
     const stShrug = renderSticker(W.shrug, { size: 32, fill: PAL.yel, shadow: PAL.cob });
     const stYossi = renderSticker(W.yossi, { size: 28, fill: PAL.white, shadow: PAL.cob });
     const stRope = renderSticker(W.rope, { size: 34, fill: PAL.yel, burst: PAL.cob, shadow: PAL.cobD });
-    const stEar = renderSticker(W.ear, { size: 28, sub: W.earSub, subScale: 0.8, fill: PAL.white, burst: PAL.red, shadow: PAL.redD });
+    const stEar = renderSticker(W.ear, { flat: true, size: 28, sub: W.earSub, subScale: 0.8, fill: PAL.white, burst: PAL.red, shadow: PAL.redD });
     const stMini = renderSticker(W.mini, { size: 28, sub: W.miniSub, subScale: 0.8, fill: PAL.yel, shadow: PAL.red });
     const stSneeze = renderSticker(W.sneeze, { size: 44, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
     const ckBless = chipRemark(W.bless);
     const stSqueegee = renderSticker(W.squeegee, { size: 30, fill: PAL.white, shadow: PAL.cob });
-    const stKing = renderSticker(W.king, { size: 32, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
+    const stKing = renderSticker(W.king, { flat: true, size: 32, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
     const ckKing = renderChip(W.kingChip, 13, PAL.yel, PAL.ink);
     const stSpin = renderSticker(W.spin, { size: 28, fill: PAL.yel, shadow: PAL.cob });
-    const stCork = renderSticker(W.cork, { size: 28, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
+    const stCork = renderSticker(W.cork, { flat: true, size: 28, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
     const stGold = renderSticker(W.gold, { size: 32, fill: PAL.yel, shadow: PAL.org });
     const stDouble = renderSticker(W.double, { size: 30, fill: PAL.white, shadow: PAL.red });
     const stWow = renderSticker(W.wow, { size: 36, fill: PAL.yel, shadow: PAL.red });
     const ckNotMe = chipRemark(W.notMe);
     const ckFillers = W.fillers.map((t) => chipRemark(t));
-    const stLast = renderSticker(W.last, { size: 30, sub: W.lastSub, subScale: 0.8, fill: PAL.white, burst: PAL.red, shadow: PAL.redD });
-    const stRanks = W.ranks.map((t) => renderSticker(t, { size: 30, fill: PAL.yel, burst: PAL.cob, shadow: PAL.cobD }));
+    const stLast = renderSticker(W.last, { flat: true, size: 30, sub: W.lastSub, subScale: 0.8, fill: PAL.white, burst: PAL.red, shadow: PAL.redD });
+    const stRanks = W.ranks.map((t) => renderSticker(t, { flat: true, size: 30, fill: PAL.yel, burst: PAL.cob, shadow: PAL.cobD }));
     const ckWait = renderChip(W.wait, 17, PAL.yel, PAL.ink);
     const ckNames = W.names.map((t) => renderChip(t, 12, PAL.ink, PAL.white));
     const chipCache = createStickerCache(8);
@@ -2995,6 +2997,7 @@ export const game: GameModule = {
         r: geo.R,
         layout: { top: geo.top, bandTop: geo.bandTop, bandBottom: geo.bandBottom, tokenTop: geo.cy - geo.R, tokenBottom: geo.cy + geo.R, pileTop: geo.pileTop, counterTop: geo.counterTop, bottom: geo.bottom, w: geo.w, h: geo.h },
         queued: engine.queued,
+        hudTop: ctx.hudHeight,
         placeholders,
       };
     };

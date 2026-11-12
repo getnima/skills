@@ -1,52 +1,23 @@
 /** Small shared pieces of the phone UI: avatars, ticking hooks, confetti, rank helpers. */
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { facePainter, paintDrawable } from '../kit/assets';
+import { Avatar as LookAvatar } from '../avatar/Avatar';
 import { createGameCanvas } from '../kit/canvas';
 import { createFx } from '../kit/fx';
 import { createLoop } from '../kit/loop';
-import { PARTY_COLORS } from '../kit/theme';
 
 import type { JSX } from 'preact';
 import type { PlayerPublic } from '../../../shared/protocol';
-import type { FaceExpression } from '../kit/assets';
 
 // ───────────────────────────── Avatars ─────────────────────────────
 
-const AVATAR_FACES: readonly FaceExpression[] = ['happy', 'wink', 'tongue', 'laughing', 'surprised', 'normal', 'shocked'];
-const avatarCache = new Map<number, string>();
-
-/** Placeholder cartoon face for an avatar index (color and expression cycle independently). */
-export function avatarUrl(index: number): string {
-  const i = Math.max(0, Math.floor(index));
-  const hit = avatarCache.get(i);
-  if (hit !== undefined) return hit;
-  const color = PARTY_COLORS[i % PARTY_COLORS.length] ?? '#ffd23f';
-  const face = AVATAR_FACES[Math.floor(i / PARTY_COLORS.length + i) % AVATAR_FACES.length] ?? 'happy';
-  let url = '';
-  try {
-    url = paintDrawable(`avatar-${i}`, facePainter(face, color), 96).url;
-  } catch {
-    url = '';
-  }
-  avatarCache.set(i, url);
-  return url;
-}
-
-export function avatarColor(index: number): string {
-  return PARTY_COLORS[Math.max(0, Math.floor(index)) % PARTY_COLORS.length] ?? '#ffd23f';
-}
-
-export function Avatar(props: { readonly index: number; readonly size: number; readonly class?: string }): JSX.Element {
-  const url = avatarUrl(props.index);
-  return (
-    <span
-      class={`pp-avatar ${props.class ?? ''}`}
-      style={{ width: `${props.size}px`, height: `${props.size}px`, '--ring': avatarColor(props.index) }}
-    >
-      {url !== '' ? <img src={url} alt="" draggable={false} /> : null}
-    </span>
-  );
+/**
+ * A player's icon on the phone: their dressed Shimi (PlayerPublic.look / ResultRow.look),
+ * in the design system's chip look (ink ring, hard shadow). Pictures are composed and cached
+ * by the avatar module; a look that is still loading shows its plate colour, never a jump.
+ */
+export function Avatar(props: { readonly look: string | null | undefined; readonly size: number; readonly class?: string }): JSX.Element {
+  return <LookAvatar look={props.look} size={props.size} ring class={props.class !== undefined ? `pp-doll ${props.class}` : 'pp-doll'} />;
 }
 
 // ───────────────────────────── Ticking ─────────────────────────────

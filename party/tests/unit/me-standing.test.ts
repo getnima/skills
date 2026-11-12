@@ -5,11 +5,11 @@ import { meStanding } from '../../client/src/player/me-standing';
 import type { PlayerPublic, ResultRow, RoomState, RoundResults } from '../../shared/protocol';
 
 function player(id: string, rank: number, total: number): PlayerPublic {
-  return { id, name: `p-${id}`, avatar: rank, connected: true, total, rank };
+  return { id, name: `p-${id}`, avatar: rank, look: `1.${rank}.8.0.0.0.0`, connected: true, total, rank };
 }
 
 function row(id: string, points: number, total: number, rank: number, prevRank: number | null): ResultRow {
-  return { playerId: id, name: `p-${id}`, avatar: 0, raw: points, points, roundRank: rank, reachedAt: 1, total, rank, prevRank };
+  return { playerId: id, name: `p-${id}`, avatar: 0, look: '1.0.8.0.0.0.0', raw: points, points, roundRank: rank, reachedAt: 1, total, rank, prevRank };
 }
 
 function room(players: PlayerPublic[], results: RoundResults | null, phase: RoomState['phase'] = 'results'): RoomState {
@@ -34,7 +34,7 @@ function results(rows: ResultRow[]): RoundResults {
 describe('meStanding', () => {
   it('before any scored round: name, no place ("מוכנים?")', () => {
     const s = meStanding(room([player('a', 1, 0), player('b', 2, 0)], null, 'lobby'), 'a', false);
-    expect(s).toEqual({ id: 'a', name: 'p-a', avatar: 1, rank: null, count: 2, total: null });
+    expect(s).toEqual({ id: 'a', name: 'p-a', avatar: 1, look: '1.1.8.0.0.0.0', rank: null, count: 2, total: null });
   });
 
   it('after the reveal: the server rank and total', () => {

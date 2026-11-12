@@ -2,18 +2,26 @@
  * The phone's single source of truth: socket, server clock, identity and the
  * latest RoomState. Screens render from `snapshot()` + `now()` only.
  */
+import { LOOK_SEND_INTERVAL_MS } from '../../../shared/protocol';
+import { applyLooks } from '../../../shared/room-looks';
 import { connect, createServerClock } from '../net/connection';
+import { createDressing, dressStepEnabled } from './dressing-state';
 import {
   clearIdentity,
   isValidCode,
   loadIdentity,
+  loadLastLook,
   loadLastName,
   loadLastRoom,
+  loadLookMemory,
   loadRoundScore,
   normalizeCode,
   saveIdentity,
+  saveLastLook,
+  saveLookMemory,
   saveRoundScore,
 } from './identity';
+import { createLookSender } from './look-sender';
 
 import type { ErrorCode, RoomState } from '../../../shared/protocol';
 import type { PartySocket, ServerClock } from '../net/connection';
@@ -53,10 +61,17 @@ export interface Snapshot {
   readonly endedScore: number;
   /** Final score of `endedRound` acknowledged by the server. */
   readonly finalAcked: boolean;
+  /** This phone's doll (an encoded look, shared/avatar.ts): what the guest sees, ahead of the server. Null before the first join answer. */
+  readonly look: string | null;
+  /** The guest has been through the dressing room in this room (rules: dressing-state.ts). */
+  readonly dressed: boolean;
+  /** The guest asked for the dressing room from the waiting screen. */
+  readonly dressing: boolean;
 }
 
 const JOIN_TIMEOUT_MS = 7_000;
 const FINAL_TIMEOUT_MS = 4_000;
+const LOOK_TIMEOUT_MS = 4_000;
 /** Back from a locked screen / another app after at least this long: check the link at once. */
 const RETURN_MIN_AWAY_MS = 1_000;
 const RETURN_CHECK_MS = 2_000;
@@ -107,6 +122,12 @@ export interface PlayerController {
   /** Forget this room's identity and show the join form (after kicked / closed). */
   restart(): void;
   isParticipant(roundIndex: number): boolean;
+  /** The dressing room reported a look (an encoded look): remembered at once, sent at most every LOOK_SEND_INTERVAL_MS. */
+  setLook(look: string): void;
+  /** Open the dressing room from the waiting screen. */
+  openDressing(): void;
+  /** "Done" in the dressing room: the latest look goes out now. */
+  closeDressing(): void;
   /** Live score while playing (throttled by the stage). Never lowers within a round. */
   sendScore(roundIndex: number, score: number): number;
   /** The game is over on this phone: send the final (retries until acked or the round is gone). */
@@ -149,6 +170,9 @@ export function createController(): PlayerController {
     endedAt: 0,
     endedScore: 0,
     finalAcked: false,
+    look: null,
+    dressed: false,
+    dressing: false,
   };
   const listeners = new Set<Listener>();
   const scoreListeners = new Set<ScoresListener>();
@@ -176,6 +200,33 @@ export function createController(): PlayerController {
     saveIdentity(snap.code, identity);
   }
 
+  // ── the doll: the look, "dressed", the dressing room (rules in dressing-state.ts) ──
+  const lookSender = createLookSender({
+    send: (look, done) => {
+      socket.timeout(LOOK_TIMEOUT_MS).emit('player:look', { look }, (err, res) => {
+        if (!err && res.ok) dressing.confirmed(look, res.look);
+        // BAD_REQUEST: the server will never take this text. Anything else (no answer, not in the room yet) is tried again.
+        done(!err && (res.ok || res.error === 'BAD_REQUEST'));
+      });
+    },
+    ready: () => socket.connected && snap.status === 'in' && snap.online,
+    intervalMs: LOOK_SEND_INTERVAL_MS,
+    retryMs: 1_000,
+    now: () => Date.now(),
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    onPending: (pending) => dressing.pending(pending),
+  });
+  const dressing = createDressing({
+    sender: lookSender,
+    stepEnabled: dressStepEnabled(window.location.search, navigator.webdriver === true),
+    load: loadLookMemory,
+    save: saveLookMemory,
+    loadLast: loadLastLook,
+    saveLast: saveLastLook,
+    onChange: (d) => set({ look: d.look, dressed: d.dressed, dressing: d.dressing }),
+  });
+
   // ── state ──
   function applyState(state: RoomState): void {
     if (snap.status !== 'in' || state.code !== snap.code) return;
@@ -190,6 +241,8 @@ export function createController(): PlayerController {
       pendingFinal = null; // the server scored the round without it (live score counts)
     }
     set(patch);
+    // a round taking over closes the dressing room (and sends the latest look)
+    dressing.phase(state.phase);
   }
 
   // ── join / resume ──
@@ -213,6 +266,7 @@ export function createController(): PlayerController {
     }
     suspect = false;
     snap = { ...snap, status: 'in', online: true, code, codeLocked: true, playerId, name, joinError: null, lateRound };
+    dressing.joined(code, state.players.find((p) => p.id === playerId)?.look ?? null, fresh);
     applyState(state);
     void clock.sync();
     flushFinal();
@@ -263,6 +317,12 @@ export function createController(): PlayerController {
     set({ online: false });
   });
   socket.on('state', applyState);
+  // somebody's doll changed: a small patch, not a whole state
+  socket.on('looks', (msg) => {
+    if (snap.status !== 'in' || snap.state === null) return;
+    const next = applyLooks(snap.state, msg?.looks);
+    if (next !== snap.state) set({ state: next });
+  });
   socket.on('scores', (msg) => {
     live = {
       round: msg.round,
@@ -471,7 +531,7 @@ export function createController(): PlayerController {
         .timeout(JOIN_TIMEOUT_MS)
         .emit(
           'player:join',
-          { code: c, name: clean, playerId: existing?.playerId, secret: existing?.secret },
+          { code: c, name: clean, playerId: existing?.playerId, secret: existing?.secret, look: dressing.joinLook() },
           (err, res) => {
             if (snap.status !== 'joining') return;
             if (err) {
@@ -559,6 +619,9 @@ export function createController(): PlayerController {
       const value = Math.max(controller.bestScore(roundIndex), Math.max(0, Math.round(score)));
       queueFinal(roundIndex, value);
     },
+    setLook: (look: string): void => dressing.setLook(look),
+    openDressing: (): void => dressing.open(),
+    closeDressing: (): void => dressing.close(),
     liveScores: (): LiveScores | null => live,
     onLiveScores(fn: ScoresListener): () => void {
       scoreListeners.add(fn);

@@ -189,12 +189,12 @@ describe('a round takes over', () => {
   it('the owner starts a round while the guest is dressing: closed at once, the latest look goes out now, dressed', () => {
     const p = phone();
     p.d.joined('ABCD', RANDOM, true);
-    p.d.phase(null, 'lobby');
+    p.d.phase('lobby');
     p.d.setLook(PIRATE);
     vi.advanceTimersByTime(40);
     p.d.setLook(FANCY);
     expect(p.sent).toEqual([PIRATE]);
-    p.d.phase('lobby', 'intro');
+    p.d.phase('intro');
     expect(showsDressingRoom(p, 'intro')).toBe(false);
     expect(p.sent).toEqual([PIRATE, FANCY]);
     expect(p.d.snap()).toEqual({ look: FANCY, dressed: true, dressing: false });
@@ -205,7 +205,7 @@ describe('a round takes over', () => {
     vi.advanceTimersByTime(50);
     expect(p.server).toBe(SOMBRERO);
     // back in the lobby after the round: the waiting room, not the dressing room
-    p.d.phase('results', 'lobby');
+    p.d.phase('lobby');
     expect(showsDressingRoom(p, 'lobby')).toBe(false);
   });
 
@@ -213,31 +213,31 @@ describe('a round takes over', () => {
     const p = phone();
     p.d.joined('ABCD', RANDOM, true);
     p.d.close();
-    p.d.phase('lobby', 'intro');
-    p.d.phase('intro', 'results');
-    p.d.phase('results', 'lobby');
+    p.d.phase('intro');
+    p.d.phase('results');
+    p.d.phase('lobby');
     p.d.open();
     p.d.setLook(PIRATE);
-    p.d.phase('lobby', 'intro');
+    p.d.phase('intro');
     expect(p.d.snap().dressing).toBe(false);
     expect(p.sent).toEqual([PIRATE]);
-    p.d.phase('playing', 'lobby');
+    p.d.phase('lobby');
     expect(showsDressingRoom(p, 'lobby')).toBe(false);
   });
 
   it('a late joiner (the round is running): no dressing room now, it opens at the next lobby', () => {
     const p = phone();
     p.d.joined('ABCD', RANDOM, true);
-    p.d.phase(null, 'playing');
+    p.d.phase('playing');
     expect(showsDressingRoom(p, 'playing')).toBe(false);
     expect(p.d.snap().dressed).toBe(false);
-    p.d.phase('playing', 'results');
+    p.d.phase('results');
     expect(showsDressingRoom(p, 'results')).toBe(false);
     expect(p.d.snap().dressed).toBe(false);
-    p.d.phase('results', 'lobby');
+    p.d.phase('lobby');
     expect(showsDressingRoom(p, 'lobby')).toBe(true);
     // results straight into the next round: still waiting for a lobby
-    p.d.phase('lobby', 'lobby');
+    p.d.phase('lobby');
     expect(showsDressingRoom(p, 'lobby')).toBe(true);
   });
 
@@ -245,10 +245,10 @@ describe('a round takes over', () => {
     for (const first of ['intro', 'countdown', 'results', 'final'] as const) {
       const p = phone();
       p.d.joined('ABCD', RANDOM, true);
-      p.d.phase(null, first);
+      p.d.phase(first);
       expect(showsDressingRoom(p, first)).toBe(false);
       expect(p.d.snap().dressed).toBe(false);
-      p.d.phase(first, 'lobby');
+      p.d.phase('lobby');
       expect(showsDressingRoom(p, 'lobby')).toBe(true);
     }
   });
@@ -345,15 +345,44 @@ describe('reload and reconnect', () => {
     expect(p.d.snap()).toEqual({ look: PIRATE, dressed: true, dressing: false });
   });
 
-  it('kicked / room closed: everything is forgotten except the last look, which starts the next room', () => {
+  it('a new seat (kicked and back, or a new room): starts over, from the doll the guest dressed last', () => {
     const p = phone();
     p.d.joined('ABCD', RANDOM, true);
     p.d.setLook(FANCY);
     p.d.close();
+    p.d.open();
     vi.advanceTimersByTime(100);
-    p.d.left();
-    expect(p.d.snap()).toEqual({ look: null, dressed: false, dressing: false });
     expect(p.d.joinLook()).toBe(FANCY);
+    p.server = FANCY;
+    p.d.joined('ABCD', FANCY, true);
+    expect(p.d.snap()).toEqual({ look: FANCY, dressed: false, dressing: false });
+    // the phase before the new seat does not count: joining into a running round is a late join
+    p.d.phase('playing');
+    expect(p.d.snap().dressed).toBe(false);
+  });
+
+  it('a reload while a round starts: the guest never finished, the dressing room comes back at the next lobby', () => {
+    const p = phone();
+    p.d.joined('ABCD', RANDOM, true);
+    p.d.phase('lobby');
+    p.reload();
+    p.d.joined('ABCD', p.server, false);
+    p.d.phase('intro');
+    expect(p.d.snap().dressed).toBe(false);
+    p.d.phase('results');
+    p.d.phase('lobby');
+    expect(showsDressingRoom(p, 'lobby')).toBe(true);
+  });
+
+  it('a reconnect inside the page while a round started: the round took over', () => {
+    const p = phone();
+    p.d.joined('ABCD', RANDOM, true);
+    p.d.phase('lobby');
+    p.d.setLook(PIRATE);
+    // the phone was locked; the first snapshot after the resume is already the intro
+    p.d.joined('ABCD', p.server, false);
+    p.d.phase('intro');
+    expect(p.d.snap().dressed).toBe(true);
   });
 });
 
@@ -363,8 +392,8 @@ describe('what the screens hear', () => {
     p.d.joined('ABCD', RANDOM, true);
     const n = p.snaps.length;
     p.d.setLook(RANDOM);
-    p.d.phase(null, 'lobby');
-    p.d.phase('lobby', 'lobby');
+    p.d.phase('lobby');
+    p.d.phase('lobby');
     expect(p.snaps.length).toBe(n);
     p.d.setLook(PIRATE);
     p.d.setLook(PIRATE);

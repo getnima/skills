@@ -14,14 +14,11 @@ import type { MeStanding } from './me-standing';
 /** Height of the tray in CSS px without the home-indicator inset (player.css --pp-mebar-h). */
 export const ME_BAR_PX = 52;
 
-/**
- * The avatar slot. Kept as its own tiny component on purpose: a later job mounts the player's
- * dressed Shimi here (`<Avatar look=… />` from client/src/avatar) without touching the bar.
- */
+/** The avatar slot: the player's dressed Shimi. */
 export function MeBarAvatar(props: { readonly standing: MeStanding }): JSX.Element {
   return (
-    <span class="pp-mb-avatar" data-slot="me-avatar">
-      <Avatar index={props.standing.avatar} size={34} />
+    <span class="pp-mb-avatar" data-slot="me-avatar" data-look={props.standing.look}>
+      <Avatar look={props.standing.look} size={38} />
     </span>
   );
 }
