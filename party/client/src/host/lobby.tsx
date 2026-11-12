@@ -175,9 +175,9 @@ function chipTier(n: number): number {
   if (n <= 12) return 1.12;
   if (n <= 18) return 0.96;
   if (n <= CARD_MAX) return 0.86;
-  if (n <= 32) return 0.9;
-  if (n <= 45) return 0.76;
-  return 0.64;
+  if (n <= 32) return 1;
+  if (n <= 45) return 0.88;
+  return 0.72;
 }
 
 /** "Your hosts": the two host dolls wait on the stage until the first guest is in. */
@@ -222,7 +222,7 @@ function ChipDoll(props: { readonly look: string; readonly px: number }): JSX.El
 /** A longer name is set smaller on its card, so that each of its words stays in one piece. */
 function nameClass(name: string): string {
   const len = Array.from(name).length;
-  return len > 10 ? 'is-xlong' : len > 6 ? 'is-long' : '';
+  return len >= 8 ? 'is-xlong' : len >= 6 ? 'is-long' : '';
 }
 
 function PlayerChips(props: { readonly players: readonly PlayerPublic[]; onKick(p: PlayerPublic): void }): JSX.Element {

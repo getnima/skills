@@ -380,7 +380,7 @@ async function rooms(browser, sizeName, vp, shot) {
       const rows = [...document.querySelectorAll('.sh-row')];
       const av = rows[0].querySelector('.sh-avatar').getBoundingClientRect();
       const nums = rows.sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot)).map((r) => Number(r.querySelector('.sh-score').textContent.replace(/[^0-9]/g, '')));
-      return { rows: rows.length, doll: (av.height * 1080) / innerHeight, name: (parseFloat(getComputedStyle(rows[0].querySelector('.sh-name')).fontSize) * 1080) / innerHeight, score: (parseFloat(getComputedStyle(rows[0].querySelector('.sh-score')).fontSize) * 1080) / innerHeight, ordered: nums.every((v, k) => k === 0 || v <= nums[k - 1] * 1.02 + 1) };
+      return { rows: rows.length, doll: (av.height * 1080) / innerHeight, name: (parseFloat(getComputedStyle(document.querySelector('.sh-row .sh-name:not(.is-long)')).fontSize) * 1080) / innerHeight, score: (parseFloat(getComputedStyle(rows[0].querySelector('.sh-score')).fontSize) * 1080) / innerHeight, ordered: nums.every((v, k) => k === 0 || v <= nums[k - 1] * 1.02 + 1) };
     });
     check(live12.rows === 12 && live12.doll >= 56 && live12.name >= 44 && live12.score >= 44 && live12.ordered, `live scoreboard with 12: dolls ${Math.round(live12.doll)} px, names ${Math.round(live12.name)} px, scores ${Math.round(live12.score)} px, in order`, live12);
     if (REMOTE_PW !== '') {
@@ -553,7 +553,8 @@ async function demo(browser, sizeName, vp, shot) {
 }
 
 (async () => {
-  const browser = await chromium.launch(MAP_HOST !== '' ? { args: [`--host-resolver-rules=MAP ${MAP_HOST} 127.0.0.1`] } : {});
+  // the mapped name is this machine (127.0.0.1): it is reached directly, like localhost
+  const browser = await chromium.launch(MAP_HOST !== '' ? { args: [`--host-resolver-rules=MAP ${MAP_HOST} 127.0.0.1`, '--proxy-server=direct://', '--proxy-bypass-list=*'] } : {});
   for (const [sizeName, vp] of SIZES) {
     const dir = path.join(__dirname, 'out', 'qa-tv-look', ...(TAG !== '' ? [TAG] : []), sizeName);
     fs.mkdirSync(dir, { recursive: true });

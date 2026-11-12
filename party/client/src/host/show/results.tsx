@@ -384,7 +384,7 @@ function Suspense(props: { plan: Plan; view: View; game: GameMeta; elimination: 
         </span>
         <span class="sh-mystery-text">מי זוכה בשימי אנג׳ל?</span>
       </div>
-      <div class="sh-rlist">
+      <div class={`sh-rlist ${display.length <= 4 ? 'is-few' : ''}`}>
         {display.map((r) => {
           const on = revealed.has(r.playerId);
           const isTail = r.playerId === tailId;
@@ -500,9 +500,10 @@ function Standings(props: { plan: Plan; view: View; size: StageSize; clockT(): n
   useEffect(() => {
     setListH(listRef.current?.clientHeight ?? 0);
   }, [size.w, size.h]);
-  const visible = size.portrait ? 8 : 9;
-  const rowH = listH / visible;
   const n = plan.newOrder.length;
+  // a small room gets tall rows (and big dolls); from 9 on (8 in portrait) the table pages
+  const visible = Math.max(5, Math.min(size.portrait ? 8 : 9, n));
+  const rowH = listH / visible;
   const pages = Math.max(1, Math.ceil(n / visible));
   const restT = props.clockT() - REST_AFTER;
   const page = view.step >= 3 && pages > 1 ? Math.floor(Math.max(0, restT) / PAGE_MS) % pages : 0;

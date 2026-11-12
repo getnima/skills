@@ -120,7 +120,7 @@ body {
   background: var(--yel);
 }
 .hs-btn--primary:hover:not(:disabled) {
-  background: #fff;
+  background: var(--yel-2);
 }
 .hs-btn--danger {
   color: #fff;
@@ -186,9 +186,9 @@ body {
   flex: none;
   display: flex;
   align-items: center;
-  gap: calc(18 * var(--hu));
+  gap: calc(14 * var(--hu));
   min-height: calc(88 * var(--hu));
-  padding: calc(8 * var(--hu)) calc(22 * var(--hu)) calc(12 * var(--hu));
+  padding: calc(8 * var(--hu)) calc(18 * var(--hu)) calc(12 * var(--hu));
   padding-bottom: calc(12 * var(--hu) + var(--sab));
   background: var(--cob-d);
   border-top: calc(4 * var(--hu)) solid var(--ink);
@@ -221,7 +221,7 @@ body {
 .hs-strip-side {
   display: flex;
   align-items: center;
-  gap: calc(14 * var(--hu));
+  gap: calc(10 * var(--hu));
   flex: none;
 }
 .hs-strip-main {
@@ -229,14 +229,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: calc(14 * var(--hu));
+  gap: calc(12 * var(--hu));
   min-width: 0;
 }
 /* the wordmark: Motaleh, white and red, like the cover of the phones */
 .hs-brand {
   display: inline-block;
-  padding: 0 calc(6 * var(--hu)) calc(4 * var(--hu));
-  font: 700 calc(34 * var(--hu)) / 1 var(--disp);
+  padding: 0 calc(4 * var(--hu)) calc(4 * var(--hu));
+  font: 700 calc(30 * var(--hu)) / 1 var(--disp);
   color: #fff;
   -webkit-text-stroke: calc(1.6 * var(--hu)) var(--ink);
   paint-order: stroke fill;
@@ -308,6 +308,17 @@ body {
 .hs-strip-main > .hs-btn {
   flex: 0 1 auto;
   min-width: 0;
+}
+.hs-strip .hs-btn {
+  padding: 0 calc(18 * var(--hu));
+  font-size: calc(24 * var(--hu));
+}
+.hs-strip .hs-icon-btn {
+  padding: 0 calc(13 * var(--hu));
+}
+.hs-strip .hs-primary {
+  padding: 0 calc(26 * var(--hu));
+  font-size: calc(27 * var(--hu));
 }
 /* the main action is the last to give up room */
 .hs-strip-main > .hs-primary {
@@ -547,8 +558,12 @@ body {
   transform: skewX(6deg) rotate(-2deg);
 }
 .hs-join-late {
-  font-size: calc(40 * var(--hu));
-  -webkit-text-stroke-width: calc(2 * var(--hu));
+  max-width: 100%;
+  font-size: calc(44 * var(--hu));
+  line-height: 0.95;
+  -webkit-text-stroke-width: calc(2.5 * var(--hu));
+  white-space: normal;
+  text-wrap: balance;
 }
 .hs-qr-card {
   flex: 0 1 auto;
@@ -648,7 +663,8 @@ body {
   font-size: calc(28 * var(--hu));
 }
 .hs-join.is-compact .hs-code-row {
-  gap: calc(10 * var(--hu));
+  flex-direction: column;
+  gap: calc(6 * var(--hu));
 }
 .hs-url {
   max-width: 100%;
@@ -1119,7 +1135,7 @@ body {
 }
 /* a longer name is set smaller, so that each of its words stays whole */
 .hs-chips.is-cards .hs-chip-name.is-long {
-  font-size: calc(28 * var(--hu) * var(--cs));
+  font-size: calc(29 * var(--hu) * var(--cs));
 }
 .hs-chips.is-cards .hs-chip-name.is-xlong {
   font-size: calc(22 * var(--hu) * var(--cs));

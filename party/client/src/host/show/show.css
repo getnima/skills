@@ -1311,6 +1311,28 @@
   --av: 70;
   box-shadow: none;
 }
+/* a small room: a few big rows */
+.sh-rlist.is-few .sh-rrow {
+  max-height: calc(150 * var(--u));
+}
+.sh-rlist.is-few .sh-rrow .sh-avatar {
+  --av: 118;
+}
+.sh-rlist.is-few .sh-rrow .sh-name {
+  font-size: calc(66 * var(--u));
+}
+.sh-rlist.is-few .sh-rank {
+  width: calc(84 * var(--u));
+  height: calc(76 * var(--u));
+  font-size: calc(48 * var(--u));
+}
+.sh-rlist.is-few .sh-points {
+  width: calc(250 * var(--u));
+  font-size: calc(72 * var(--u));
+}
+.sh-rlist.is-few .sh-raw {
+  font-size: calc(50 * var(--u));
+}
 .sh-rrow .sh-name {
   flex: 1;
 }
@@ -1892,7 +1914,17 @@
 }
 .sh-trow .sh-name {
   flex: 1;
-  font-size: calc(48 * var(--u));
+  font-size: clamp(calc(48 * var(--u)), calc(var(--rh) * 0.4), calc(76 * var(--u)));
+}
+.sh-trow .sh-total {
+  width: auto;
+  min-width: calc(200 * var(--u));
+  font-size: clamp(calc(52 * var(--u)), calc(var(--rh) * 0.42), calc(78 * var(--u)));
+}
+.sh-trow .sh-gain {
+  width: auto;
+  min-width: calc(150 * var(--u));
+  font-size: clamp(calc(42 * var(--u)), calc(var(--rh) * 0.3), calc(56 * var(--u)));
 }
 .sh-tag {
   flex: none;
@@ -2027,8 +2059,15 @@
   width: min(calc(var(--rh) - 18 * var(--u)), calc(76 * var(--u)));
 }
 [data-orient='portrait'] .sh-rrow .sh-name,
+[data-orient='portrait'] .sh-rlist.is-few .sh-rrow .sh-name,
 [data-orient='portrait'] .sh-trow .sh-name {
   font-size: calc(34 * var(--u));
+}
+[data-orient='portrait'] .sh-rlist.is-few .sh-rrow {
+  max-height: calc(98 * var(--u));
+}
+[data-orient='portrait'] .sh-rlist.is-few .sh-rrow .sh-avatar {
+  --av: 54;
 }
 [data-orient='portrait'] .sh-rrow .sh-out-mark {
   font-size: calc(26 * var(--u));
@@ -2064,7 +2103,20 @@
 }
 [data-orient='portrait'] .sh-trow .sh-total {
   width: calc(116 * var(--u));
+  min-width: 0;
   font-size: calc(36 * var(--u));
+}
+[data-orient='portrait'] .sh-rlist.is-few .sh-points {
+  width: calc(116 * var(--u));
+  font-size: calc(36 * var(--u));
+}
+[data-orient='portrait'] .sh-rlist.is-few .sh-raw {
+  font-size: calc(28 * var(--u));
+}
+[data-orient='portrait'] .sh-rlist.is-few .sh-rank {
+  width: calc(46 * var(--u));
+  height: calc(42 * var(--u));
+  font-size: calc(26 * var(--u));
 }
 [data-orient='portrait'] .sh-tag {
   font-size: calc(20 * var(--u));
