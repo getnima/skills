@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import express from 'express';
 import { Server } from 'socket.io';
@@ -119,12 +119,26 @@ function mountClient(app: Express, dir: string): void {
     if (existsSync(join(dir, file))) app.get(route, html(file));
   }
   serveCompressedBundles(app, dir);
-  // Hashed build output never changes under the same name.
+  // Vite puts its hashed bundles straight in assets/ and copies the public art into
+  // sub-folders of the same assets/ (assets/tap/face.webp). A bundle never changes under
+  // its name, so it keeps a year of immutable. The art is not hashed and a picture is
+  // replaced in place, so it gets five minutes: a reload within them costs no round
+  // trips (a phone preloads ~160 pictures), after them the browser revalidates with
+  // the ETag / Last-Modified and gets a 304, or the new picture.
+  const bundles = resolve(dir, 'assets');
   app.use(
     '/assets',
-    express.static(join(dir, 'assets'), { immutable: true, maxAge: '365d', index: false, fallthrough: false }),
+    express.static(bundles, {
+      immutable: true,
+      maxAge: '365d',
+      index: false,
+      fallthrough: false,
+      setHeaders: (res: ServerResponse, path: string): void => {
+        if (dirname(path) !== bundles) res.setHeader('Cache-Control', 'public, max-age=300');
+      },
+    }),
   );
-  // Everything else (html, sprite slots, cutscene videos) is replaced in place under
+  // Everything else (html, audio, fonts, cutscene videos) is replaced in place under
   // the same file name, so it is revalidated on every load. express.static answers
   // Range requests, which video seeking on iOS / Apple TV needs.
   app.use(

@@ -5,3 +5,4 @@ dist
 tests/e2e/out
 .firebase
 .env*
+!.env.example

@@ -108,6 +108,7 @@ describe('compressed bundles', () => {
   let url = '';
   let dir = '';
   const js = `console.log(${JSON.stringify('x'.repeat(4000))});\n`;
+  const art = Buffer.from('RIFF....WEBPVP8 fake picture');
   const prevDir = process.env.PARTY_CLIENT_DIR;
 
   beforeAll(async () => {
@@ -118,6 +119,8 @@ describe('compressed bundles', () => {
     writeFileSync(join(dir, 'assets', 'main-abc.js.br'), brotliCompressSync(js));
     writeFileSync(join(dir, 'assets', 'main-abc.js.gz'), gzipSync(js));
     writeFileSync(join(dir, 'assets', 'plain-abc.css'), 'body{color:red}');
+    mkdirSync(join(dir, 'assets', 'tap'));
+    writeFileSync(join(dir, 'assets', 'tap', 'x.webp'), art);
     process.env.PARTY_CLIENT_DIR = dir;
     app = createPartyApp({ port: 0, origins: null, timing: DEFAULT_TIMING });
     const port = await new Promise<number>((resolve, reject) => {
@@ -162,5 +165,33 @@ describe('compressed bundles', () => {
     expect(css.headers.get('content-encoding')).toBeNull();
     expect(await css.text()).toBe('body{color:red}');
     expect((await fetch(`${url}/assets/nope.js`, { headers: { 'accept-encoding': 'br' } })).status).toBe(404);
+  });
+
+  it('sends drop-in art for five minutes, then revalidates it; hashed bundles stay immutable', async () => {
+    const res = await fetch(`${url}/assets/tap/x.webp`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('public, max-age=300');
+    expect(res.headers.get('content-type')).toBe('image/webp');
+    expect(res.headers.get('last-modified')).not.toBeNull();
+    const etag = res.headers.get('etag');
+    expect(etag).not.toBeNull();
+    expect(Buffer.from(await res.arrayBuffer()).equals(art)).toBe(true);
+    // fetch() adds Cache-Control: no-cache to a conditional request unless one is given;
+    // a browser revalidating a stale picture sends max-age=0.
+    const again = await fetch(`${url}/assets/tap/x.webp`, { headers: { 'if-none-match': etag ?? '', 'cache-control': 'max-age=0' } });
+    expect(again.status).toBe(304);
+    expect(again.headers.get('cache-control')).toBe('public, max-age=300');
+    const head = await fetch(`${url}/assets/tap/x.webp`, { method: 'HEAD' });
+    expect(head.status).toBe(200);
+    expect(head.headers.get('cache-control')).toBe('public, max-age=300');
+    expect(head.headers.get('content-length')).toBe(String(art.length));
+    const range = await fetch(`${url}/assets/tap/x.webp`, { headers: { range: 'bytes=0-3' } });
+    expect(range.status).toBe(206);
+    expect(await range.text()).toBe('RIFF');
+    expect((await fetch(`${url}/assets/tap/nope.webp`)).status).toBe(404);
+    for (const name of ['main-abc.js', 'plain-abc.css']) {
+      const bundle = await fetch(`${url}/assets/${name}`, { headers: { 'accept-encoding': 'identity' } });
+      expect(bundle.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    }
   });
 });
