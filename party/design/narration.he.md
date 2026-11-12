@@ -28,7 +28,8 @@ speech bubble, like two TV-show hosts. Pictures and text only: no audio of any k
 - Nothing while a cutscene plays, nothing on a portrait screen. **Calm mode** keeps only priority 7 and up.
 - **Never over what the room is watching.** During a round the hosts stand only in the empty margin under the
   timer (measured; with no margin, nothing is said), or for the flappy finale in the side column's title
-  block, which steps aside. Between rounds each screen has its own corner: the empty lobby's left, the
+  block, which steps aside. The live commentator moved into that same margin too (small head, bubble beside
+  it): before, its bubble covered the bottom rows of the race. Between rounds each screen has its own corner: the empty lobby's left, the
   intro's top-left, the results' left column, the ceremony's bottom band, the podium's left margin, the
   final table's right.
 

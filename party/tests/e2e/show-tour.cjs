@@ -85,9 +85,14 @@ const sections = {
       const bubble = await page.evaluate(() => {
         const c = document.querySelector('.sh-comm');
         const b = document.querySelector('.sh-comm-bubble');
-        return { on: c.classList.contains('is-on'), text: b.textContent, px: parseFloat(getComputedStyle(b).fontSize), stickers: document.querySelectorAll('.sh-sticker').length };
+        // during a round the commentator stays in the side column's margin: never over the race or the timer
+        const box = (e) => e.getBoundingClientRect();
+        const hit = (x, y) => Math.min(x.right, y.right) - Math.max(x.left, y.left) > 2 && Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top) > 2;
+        const mine = [box(b), box(document.querySelector('.sh-comm-pic'))];
+        const covers = [...document.querySelectorAll('.sh-row .sh-row-in, .sh-ring')].filter((e) => mine.some((m) => hit(m, box(e)))).length;
+        return { on: c.classList.contains('is-on'), text: b.textContent, px: parseFloat(getComputedStyle(b).fontSize), covers, stickers: document.querySelectorAll('.sh-sticker').length };
       });
-      check(`moment ${t}: commentator speaks`, bubble.on && bubble.text.length > 5 && bubble.px >= 48, bubble);
+      check(`moment ${t}: commentator speaks, beside the race`, bubble.on && bubble.text.length > 5 && bubble.px >= 28 && bubble.covers === 0, bubble);
       await page.waitForTimeout(6200); // bubble hold + gap
     }
     // calm: no stickers, no flash

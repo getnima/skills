@@ -1093,6 +1093,41 @@
   font-size: calc(19 * var(--u));
   border-width: calc(2.5 * var(--u));
 }
+/*
+ * A round: the commentator never covers the race or the timer (the owner: "the announcements are
+ * hiding the game play"). It stays in the side column's empty margin under the timer, the head
+ * small, the bubble beside it, the place the hosts' narrator uses in a round too (one mic, so
+ * the two are never there together). The side column is 440 units wide, 40 in from the left.
+ */
+.sh-playing[data-orient='landscape'] .sh-comm {
+  left: calc(52 * var(--u));
+  bottom: calc(40 * var(--u));
+  width: calc(416 * var(--u));
+}
+.sh-playing[data-orient='landscape'] .sh-comm-pic {
+  width: calc(124 * var(--u));
+  height: calc(124 * var(--u));
+  margin-bottom: 0;
+}
+.sh-playing[data-orient='landscape'] .sh-comm-bubble {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  margin: 0 0 calc(8 * var(--u)) calc(6 * var(--u));
+  padding: calc(14 * var(--u)) calc(16 * var(--u)) calc(11 * var(--u));
+  border-width: calc(4 * var(--u));
+  border-radius: calc(22 * var(--u));
+  border-bottom-left-radius: calc(5 * var(--u));
+  font-size: calc(30 * var(--u));
+  line-height: 1.14;
+  box-shadow: calc(5 * var(--u)) calc(6 * var(--u)) 0 var(--ink);
+}
+.sh-playing[data-orient='landscape'] .sh-comm-bubble::before {
+  top: calc(-17 * var(--u));
+  right: calc(18 * var(--u));
+  font-size: calc(20 * var(--u));
+  border-width: calc(2.5 * var(--u));
+}
 
 /* ───────── ResultsScene: suspense ───────── */
 .sh-susp,
