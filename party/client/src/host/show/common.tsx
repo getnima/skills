@@ -268,13 +268,3 @@ export function CountUp(props: CountUpProps): JSX.Element {
     </span>
   );
 }
-
-/** Competition ranks (ties share a rank) for a list already sorted best-first. */
-export function sharedRanks(sortedValues: readonly number[]): number[] {
-  const out: number[] = [];
-  for (let i = 0; i < sortedValues.length; i++) {
-    const prev = out[i - 1];
-    out.push(i > 0 && prev !== undefined && sortedValues[i] === sortedValues[i - 1] ? prev : i + 1);
-  }
-  return out;
-}

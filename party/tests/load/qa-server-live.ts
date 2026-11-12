@@ -180,7 +180,15 @@ async function main(): Promise<void> {
   const scoredAt = Date.now();
   check('scored at endAt + FINAL_GRACE_MS', Math.abs(scoredAt - endAt - FINAL_GRACE_MS) < 500, scoredAt - endAt);
   const res = b.c.state?.results;
-  const expected = computeRoundScores(new Map([[a.id, 70], [b.id, 55], [g.id, GAMES.tap.maxRaw]]));
+  const expected = computeRoundScores(
+    [[a.id, 70], [b.id, 55], [g.id, GAMES.tap.maxRaw]].map(([id, raw], joinOrder) => ({
+      id: id as string,
+      raw: raw as number,
+      reachedAt: res?.rows.find((x) => x.playerId === id)?.reachedAt ?? null,
+      joinOrder,
+      totalBefore: 0,
+    })),
+  );
   for (const p of [a, b, g]) {
     const row = res?.rows.find((x) => x.playerId === p.id);
     const e = expected.get(p.id);

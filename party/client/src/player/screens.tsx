@@ -12,7 +12,7 @@ import { isStandalone, keepAwake } from '../kit/mobile';
 import { playTrack, stopTrack } from '../kit/music';
 import { goFullscreen } from './device';
 import { dismissTip, isTipDismissed } from './identity';
-import { Avatar, Confetti, fmt, joinNames, medal, standings, useCountUp, useTick } from './ui';
+import { Avatar, Confetti, fmt, medal, standings, useCountUp, useTick } from './ui';
 
 import type { JSX } from 'preact';
 import type { RoomState, RoundPublic, RoundResults } from '../../../shared/protocol';
@@ -531,29 +531,29 @@ export function WinScreen(props: { readonly onDone: () => void }): JSX.Element {
 }
 
 export function RevealScreen(props: { readonly results: RoundResults; readonly onDone: () => void }): JSX.Element {
-  const winners = props.results.winnerIds
-    .map((id) => props.results.rows.find((r) => r.playerId === id))
-    .filter((r): r is NonNullable<typeof r> => r !== undefined);
+  // Exactly one winner whenever anybody scored (the server never names two).
+  const winner = props.results.rows.find((r) => r.playerId === props.results.winnerIds[0]);
+  const second = props.results.rows.find((r) => r.roundRank === 2);
+  const byTime = winner !== undefined && second !== undefined && second.raw === winner.raw;
   useEffect(() => {
-    if (winners.length > 0) sfx.cheer();
+    if (winner !== undefined) sfx.cheer();
     else sfx.fail();
     haptic.bump();
   }, []);
   return (
     <div class="pp-screen pp-center pp-reveal" onClick={props.onDone}>
-      {winners.length > 0 ? (
+      {winner !== undefined ? (
         <>
           <div class="pp-label-big">הזוכה בסיבוב:</div>
           <div class="pp-reveal-faces">
-            {winners.slice(0, 3).map((w) => (
-              <div class="pp-reveal-face" key={w.playerId}>
-                <span class="pp-crown">👑</span>
-                <Avatar index={w.avatar} size={winners.length > 1 ? 88 : 128} />
-              </div>
-            ))}
+            <div class="pp-reveal-face">
+              <span class="pp-crown">👑</span>
+              <Avatar index={winner.avatar} size={128} />
+            </div>
           </div>
-          <div class="pp-reveal-name">{joinNames(winners.map((w) => w.name))}</div>
+          <div class="pp-reveal-name">{winner.name}</div>
           <div class="pp-text">לוקח/ת הביתה שימי אנג׳ל 👼 מחיאות כפיים!</div>
+          {byTime ? <div class="pp-earlier">⏱ אותו ניקוד, מי שהגיע אליו קודם מנצח</div> : null}
           <Confetti bursts={1} intensity={0.5} />
         </>
       ) : (
@@ -573,8 +573,15 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
   const row = results.rows.find((r) => r.playerId === props.me);
   const points = useCountUp(row?.points ?? 0, 1400, 300);
   const total = useCountUp(row?.total ?? 0, 1400, 300, row !== undefined ? row.total - row.points : 0);
-  const top3 = [...results.rows].sort((a, b) => a.roundRank - b.roundRank || b.raw - a.raw).slice(0, 3);
-  const won = row !== undefined && results.winnerIds.includes(row.playerId);
+  // roundRank is the server's strict position (1..n): equal raw scores are already ordered by who got there first.
+  const byRound = [...results.rows].sort((a, b) => a.roundRank - b.roundRank);
+  const top3 = byRound.slice(0, 3);
+  const won = row !== undefined && results.winnerIds[0] === row.playerId;
+  const sameRaw = (a: (typeof byRound)[number] | undefined, b: (typeof byRound)[number] | undefined): boolean =>
+    a !== undefined && b !== undefined && a.raw > 0 && a.raw === b.raw;
+  const mineAt = row === undefined ? -1 : byRound.indexOf(row);
+  const above = mineAt > 0 ? byRound[mineAt - 1] : undefined;
+  const below = mineAt >= 0 ? byRound[mineAt + 1] : undefined;
   useEffect(() => {
     if (row !== undefined && row.points > 0) sfx.coin(1.2);
   }, []);
@@ -591,6 +598,15 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
             {row.raw <= 0 ? 'לא קלעת הפעם 🙈' : `${won ? '🏆 ' : medal(row.roundRank)}מקום ${row.roundRank} בסיבוב`}
           </div>
           <div class="pp-res-raw">⭐ {fmt(row.raw)} במשחק</div>
+          {sameRaw(above, row) ? (
+            <div class="pp-earlier">
+              ⏱ אותו ניקוד כמו <bdi>{above?.name}</bdi>, שהגיע/ה אליו קודם
+            </div>
+          ) : sameRaw(row, below) ? (
+            <div class="pp-earlier">
+              ⏱ הגעת לניקוד לפני <bdi>{below?.name}</bdi>
+            </div>
+          ) : null}
           <div class="pp-res-points" dir="ltr">
             +{fmt(points)}
           </div>
@@ -617,11 +633,12 @@ export function ResultsScreen(props: { readonly results: RoundResults; readonly 
       <div class="pp-panel">
         <div class="pp-panel-title">הטופ של הסיבוב</div>
         <ol class="pp-top3">
-          {top3.map((r) => (
+          {top3.map((r, i) => (
             <li key={r.playerId} class={r.playerId === props.me ? 'is-me' : ''}>
               <span class="pp-st-rank">{r.raw > 0 ? medal(r.roundRank) || r.roundRank : '–'}</span>
               <Avatar index={r.avatar} size={30} />
               <span class="pp-st-name">{r.name}</span>
+              {sameRaw(r, byRound[i + 1]) ? <span class="pp-earlier-chip">⏱ קודם</span> : null}
               <span class="pp-st-total">⭐ {fmt(r.raw)}</span>
             </li>
           ))}

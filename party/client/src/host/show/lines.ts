@@ -6,7 +6,7 @@ import { isolate } from './common';
 
 import type { MomentType } from './moments';
 
-export type LinePool = MomentType | 'roast' | 'winner' | 'tieWin' | 'nobody' | 'climber' | 'newLeader' | 'champion' | 'finalIntro' | 'suspense';
+export type LinePool = MomentType | 'roast' | 'winner' | 'nobody' | 'climber' | 'newLeader' | 'champion' | 'finalIntro' | 'suspense';
 
 export const LINES: Readonly<Record<LinePool, readonly string[]>> = {
   lead: [
@@ -109,7 +109,6 @@ export const LINES: Readonly<Record<LinePool, readonly string[]>> = {
     'תנו כבוד! {a} והשימי אנג׳ל, סיפור אהבה',
     'וואו וואו וואו! {a}! מלאך אחד, בבקשה!',
   ],
-  tieWin: ['תיקו! כולכם זוכים! המלאך משתכפל!', 'אין פה מפסידים! מלאך לכל מנצח!', 'שיתוף פעולה מרגש. מלאך לכל אחד!'],
   nobody: ['אף אחד לא קלע? המלאך נעלב וחוזר הביתה', 'אפס נקודות לכולם. המלאך נשאר על המדף', 'המלאך הסתכל, נאנח, ועף חזרה'],
   climber: ['{a} טיפס {n} מקומות! מעלית פרטית', 'הקפיצה של הסיבוב: {a}, {n} מקומות למעלה!', '{a} עלה {n} מקומות. מישהו אכל ארוחת בוקר'],
   newLeader: ['יש מוביל חדש בטבלה הכללית: {a}!', '{a} תופס את המקום הראשון בטבלה! להחזיק חזק', 'הטבלה התהפכה! {a} למעלה'],

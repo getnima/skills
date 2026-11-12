@@ -554,8 +554,19 @@ async function plotzelEmbedSelfReport(ph) {
       })();
 
       // scores: every phone scored, the server row is the phone's own final score, points = shared/scoring.ts
-      const raws = new Map(res.rows.map((r) => [r.playerId, r.raw]));
-      const expect = computeRoundScores(raws);
+      // No ties anywhere: equal raw scores are ordered by the server's reachedAt stamp (in the rows), then join order.
+      const joinOrder = new Map((await hs()).players.map((pl, k) => [pl.id, k]));
+      const expect = computeRoundScores(
+        res.rows.map((r) => ({ playerId: r.playerId, id: r.playerId, raw: r.raw, reachedAt: r.reachedAt, joinOrder: joinOrder.get(r.playerId), totalBefore: totals.get(r.playerId) || 0 })),
+      );
+      const byRound = [...res.rows].sort((x, y) => x.roundRank - y.roundRank);
+      const scorers = byRound.filter((r) => r.raw > 0);
+      check(
+        res.rows.every((r, k) => r.rank === k + 1) && byRound.every((r, k) => r.roundRank === k + 1) && byRound.every((r, k) => k === 0 || r.raw <= byRound[k - 1].raw),
+        `${gameId}: strict ranks 1..n overall and in the round, round order follows the raw score`,
+        res.rows.map((r) => [r.name, r.raw, r.roundRank, r.rank]),
+      );
+      check(scorers.every((r, k) => k === 0 || r.points < scorers[k - 1].points) && new Set(res.rows.map((r) => r.total).filter((t) => t > 0)).size === res.rows.filter((r) => r.total > 0).length, `${gameId}: no two scorers on the same points, no two players on the same total`, res.rows.map((r) => [r.name, r.points, r.total]));
       let prevTotalsOk = true;
       for (const p of phones) {
         const row = res.rows.find((r) => r.playerId === p.id);
@@ -573,7 +584,7 @@ async function plotzelEmbedSelfReport(ph) {
         }
       }
       check(prevTotalsOk, `${gameId}: points, ranks and totals equal shared/scoring.ts`, res.rows.map((r) => [r.name, r.raw, r.points, r.total]));
-      check(res.winnerIds.length >= 1 && res.winnerIds.every((id) => expect.get(id).roundRank === 1), `${gameId}: a round winner (${res.winnerIds.map((id) => byId.get(id).name).join(', ')})`);
+      check(res.winnerIds.length === 1 && expect.get(res.winnerIds[0]).roundRank === 1 && res.winnerIds[0] === scorers[0].playerId, `${gameId}: exactly one round winner (${res.winnerIds.map((id) => byId.get(id).name).join(', ')})`);
       const winner = byId.get(res.winnerIds[0]);
       const loser = phones.find((p) => !res.winnerIds.includes(p.id) && (winner === A ? p === C : p === A)) || phones.find((p) => !res.winnerIds.includes(p.id));
       const songsBefore = (await music(host)).started;
@@ -671,7 +682,8 @@ async function plotzelEmbedSelfReport(ph) {
     const hostTotals = Object.fromEntries(end.players.map((p) => [p.name, p.total]));
     const mine = Object.fromEntries(phones.map((p) => [p.name, totals.get(p.id)]));
     check(JSON.stringify(Object.entries(hostTotals).sort()) === JSON.stringify(Object.entries(mine).sort()), 'host totals = sum over rounds of shared/scoring.ts points', { hostTotals, mine });
-    const champ = [...end.players].sort((a, b) => b.total - a.total)[0];
+    check([...end.players].map((p) => p.rank).sort((a, b) => a - b).every((r, k) => r === k + 1), 'final: the server ranks are 1..n, nobody shares a place', end.players.map((p) => [p.name, p.total, p.rank]));
+    const champ = end.players.find((p) => p.rank === 1);
     const finalText = await host.textContent('[data-testid=final]');
     check(finalText.includes(champ.name), `podium shows the champion ${champ.name}`);
     const place = await byId.get(champ.id).page.textContent('.pp-final-place').catch(() => '');

@@ -54,6 +54,7 @@ cp "$PARTY_ROOT/deploy/gce-install.sh" "$TMP/party-install.sh"
 if is_dry; then ok "packed release $RELEASE"; else ok "packed release $RELEASE ($(du -h "$TMP/party-release.tgz" | cut -f1))"; fi
 
 step "Waiting for SSH on $INSTANCE (the first time creates your SSH key)"
+is_dry && gc compute ssh "$INSTANCE" --zone="$ZONE" --quiet --command=true
 for i in $(seq 1 30); do
   if gc compute ssh "$INSTANCE" --zone="$ZONE" --quiet --command=true >/dev/null 2>&1; then
     ok "SSH is up"

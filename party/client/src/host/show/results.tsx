@@ -49,7 +49,10 @@ interface View {
 
 interface Plan {
   readonly byRound: readonly ResultRow[];
+  /** The round winner: exactly one row when anybody scored, empty when nobody did (never two). */
   readonly winners: readonly ResultRow[];
+  /** Players who are ahead of the next one on the SAME raw score because they reached it first. */
+  readonly earlier: ReadonlySet<string>;
   /** Rows of the suspense list in reveal order (last place first, second place last). */
   readonly reveal: readonly ResultRow[];
   readonly last: ResultRow | null;
@@ -65,10 +68,16 @@ interface Plan {
 }
 
 function buildPlan(rows: readonly ResultRow[], winnerIds: readonly string[], topCount: number): Plan {
-  const byRound = [...rows].sort((a, b) => a.roundRank - b.roundRank || b.raw - a.raw || a.name.localeCompare(b.name, 'he'));
-  const winnerSet = new Set(winnerIds);
-  const winners = byRound.filter((r) => winnerSet.has(r.playerId));
-  const hiddenCount = Math.max(1, winners.length);
+  // roundRank is the server's strict position (1..n): no tie-break is recomputed here.
+  const byRound = [...rows].sort((a, b) => a.roundRank - b.roundRank);
+  // The server names exactly one winner; one is all the stage ever takes.
+  const winners = byRound.filter((r) => winnerIds.includes(r.playerId)).slice(0, 1);
+  const winnerSet = new Set(winners.map((r) => r.playerId));
+  const hiddenCount = 1;
+  const earlier = new Set<string>();
+  byRound.forEach((r, i) => {
+    if (r.raw > 0 && byRound[i + 1]?.raw === r.raw) earlier.add(r.playerId);
+  });
   const rest = byRound.filter((r) => !winnerSet.has(r.playerId)).slice(winners.length === 0 ? 1 : 0);
   const top = rest.slice(0, Math.max(0, topCount - 1));
   const tail = rest.length > top.length ? (rest[rest.length - 1] ?? null) : null;
@@ -78,10 +87,8 @@ function buildPlan(rows: readonly ResultRow[], winnerIds: readonly string[], top
   const aboveLast = byRound[byRound.length - 2];
   const last = byRound.length >= 3 && lastRow !== undefined && aboveLast !== undefined && lastRow.raw < aboveLast.raw && !winnerSet.has(lastRow.playerId) ? lastRow : null;
 
-  const newOrder = [...rows].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'he'));
-  const prevOrder = [...rows].sort(
-    (a, b) => (a.prevRank ?? 1e6) - (b.prevRank ?? 1e6) || a.total - a.points - (b.total - b.points) || a.name.localeCompare(b.name, 'he'),
-  );
+  const newOrder = [...rows].sort((a, b) => a.rank - b.rank);
+  const prevOrder = [...rows].sort((a, b) => (a.prevRank ?? 1e6) - (b.prevRank ?? 1e6) || a.rank - b.rank);
   let climber: ResultRow | null = null;
   let climbed = 0;
   for (const r of rows) {
@@ -97,6 +104,7 @@ function buildPlan(rows: readonly ResultRow[], winnerIds: readonly string[], top
   return {
     byRound,
     winners,
+    earlier,
     reveal,
     last,
     hiddenCount,
@@ -133,7 +141,18 @@ function sameView(a: View, b: View): boolean {
   return a.phase === b.phase && a.shown === b.shown && a.tense === b.tense && a.step === b.step;
 }
 
-const HEB_COUNT: Readonly<Record<number, string>> = { 2: 'שני', 3: 'שלושה', 4: 'ארבעה', 5: 'חמישה' };
+/** Tiny tie-break hint next to a raw score: this player reached the same score before the next one. */
+function Earlier(props: { size: number }): JSX.Element {
+  return (
+    <span
+      class="sh-earlier"
+      title="בשוויון, מי שהגיע לניקוד קודם מנצח"
+      style={{ fontSize: `calc(${props.size} * var(--u))`, fontWeight: 700, opacity: 0.8, whiteSpace: 'nowrap', marginInlineEnd: 'calc(10 * var(--u))' }}
+    >
+      ⏱ קודם
+    </span>
+  );
+}
 
 function medal(rank: number): string {
   return rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : String(rank);
@@ -287,9 +306,7 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
       const cue = cueAt.current;
       if (!cue.raved && e >= 1_500 && e < 5_000) {
         cue.raved = true;
-        const names = p.winners.map((w) => w.name);
-        if (names.length === 1) layer?.sayLine('winner', { a: names[0] }, 'shocked', { force: true, crazy: true, holdMs: 6_000 });
-        else layer?.sayLine('tieWin', {}, 'shocked', { force: true, crazy: true, holdMs: 6_000 });
+        layer?.sayLine('winner', { a: p.winners[0]?.name ?? '' }, 'shocked', { force: true, crazy: true, holdMs: 6_000 });
       }
       if (!cue.landed && e >= 3_300 && e < 5_000) {
         cue.landed = true;
@@ -325,7 +342,7 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
       {view.phase === 'blackout' ? <div class="sh-blackout" /> : null}
       {view.phase === 'ceremony' ? (
         plan.winners.length > 0 ? (
-          <Ceremony winners={plan.winners} skipMs={skipMs} title={props.game.title} portrait={size.portrait} />
+          <Ceremony winner={plan.winners[0]} earlier={plan.winners[0] !== undefined && plan.earlier.has(plan.winners[0].playerId)} skipMs={skipMs} title={props.game.title} portrait={size.portrait} />
         ) : (
           <Nobody skipMs={skipMs} />
         )
@@ -341,7 +358,7 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string 
   const { plan, view } = props;
   const revealed = new Set(plan.reveal.slice(0, view.shown).map((r) => r.playerId));
   // display order: best first; the tail (last place) is separated by a gap
-  const display = [...plan.reveal].sort((a, b) => a.roundRank - b.roundRank || b.raw - a.raw || a.name.localeCompare(b.name, 'he'));
+  const display = [...plan.reveal].sort((a, b) => a.roundRank - b.roundRank);
   const tailId = plan.reveal.length > 0 && plan.byRound.length - plan.hiddenCount > plan.reveal.length ? (plan.reveal[0]?.playerId ?? null) : null;
   const snail = lastPlaceArt();
   return (
@@ -359,7 +376,7 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string 
           <i>?</i>
           <i>?</i>
         </span>
-        <span class="sh-mystery-text">{plan.hiddenCount > 1 ? 'מי זוכים בשימי אנג׳ל?' : 'מי זוכה בשימי אנג׳ל?'}</span>
+        <span class="sh-mystery-text">מי זוכה בשימי אנג׳ל?</span>
       </div>
       <div class="sh-rlist">
         {display.map((r) => {
@@ -376,6 +393,7 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string 
                     <bdi>{r.name}</bdi>
                   </span>
                   {isLast ? snail.kind === 'img' ? <img class="sh-snail" src={snail.url} alt="" /> : <span class="sh-snail">{snail.char}</span> : null}
+                  {plan.earlier.has(r.playerId) ? <Earlier size={22} /> : null}
                   <span class="sh-raw" dir="ltr">
                     {formatScore(r.raw)}
                   </span>
@@ -393,34 +411,18 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string 
 
 // ───────────────────────────── the winner ceremony ─────────────────────────────
 
-function Ceremony(props: { winners: readonly ResultRow[]; skipMs: number; title: string; portrait: boolean }): JSX.Element {
-  const { winners } = props;
-  const many = winners.length > 1;
-  const shownWinners = winners.slice(0, 4);
-  const more = winners.length - shownWinners.length;
-  const countWord = HEB_COUNT[winners.length] ?? String(winners.length);
-  const first = winners[0];
+function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skipMs: number; title: string; portrait: boolean }): JSX.Element {
+  // One winner, always: equal raw scores are decided by who reached the score first.
+  const first = props.winner;
   return (
-    <div class={`sh-cer ${many ? 'sh-cer--tie' : ''}`} style={`--skip:${props.skipMs}ms`}>
+    <div class="sh-cer" style={`--skip:${props.skipMs}ms`}>
       <div class="sh-cer-dark" />
       <div class="sh-cer-prize">
         <PrizeRelic />
       </div>
       <div class="sh-cer-text">
-        <div class="sh-cer-kicker">{many ? `תיקו! ${countWord} זוכים` : `המקום הראשון · ${props.title}`}</div>
-        {many ? (
-          <div class="sh-cer-names">
-            {shownWinners.map((w) => (
-              <div class="sh-cer-tie" key={w.playerId}>
-                <Avatar avatar={w.avatar} name={w.name} class="sh-avatar--lg" />
-                <span class="sh-cer-name" dir="auto" style={{ fontSize: nameSize(w.name, props.portrait ? 64 : 120, props.portrait ? 440 : 900) }}>
-                  <bdi>{w.name}</bdi>
-                </span>
-              </div>
-            ))}
-            {more > 0 ? <div class="sh-cer-more">ועוד {more}</div> : null}
-          </div>
-        ) : first ? (
+        <div class="sh-cer-kicker">{`המקום הראשון · ${props.title}`}</div>
+        {first ? (
           <div class="sh-cer-solo">
             <Avatar avatar={first.avatar} name={first.name} class="sh-avatar--xl" />
             <div class="sh-cer-name" dir="auto" style={{ fontSize: nameSize(first.name, props.portrait ? 120 : 230, props.portrait ? 590 : 1180) }}>
@@ -428,10 +430,11 @@ function Ceremony(props: { winners: readonly ResultRow[]; skipMs: number; title:
             </div>
           </div>
         ) : null}
-        <div class="sh-cer-line">{many ? 'זוכים בשימי אנג׳ל!' : 'זוכה בשימי אנג׳ל!'}</div>
+        <div class="sh-cer-line">זוכה בשימי אנג׳ל!</div>
         {first ? (
           <div class="sh-cer-score">
             עם <b dir="ltr">{formatScore(first.raw)}</b> נקודות במשחק
+            {props.earlier ? <span class="sh-cer-earlier"> · ⏱ הגיע לניקוד ראשון</span> : null}
           </div>
         ) : null}
       </div>
@@ -493,14 +496,7 @@ function Standings(props: { plan: Plan; view: View; size: StageSize; clockT(): n
             'אף אחד לא זכה בסיבוב הזה. המלאך נשאר בבית'
           ) : (
             <>
-              <b>
-                {winners
-                  .slice(0, 3)
-                  .map((w) => w.name)
-                  .join(' · ')}
-                {winners.length > 3 ? ` +${winners.length - 3}` : ''}
-              </b>{' '}
-              {winners.length > 1 ? 'זוכים בשימי אנג׳ל!' : 'זוכה בשימי אנג׳ל!'}
+              <b>{winners[0]?.name}</b> זוכה בשימי אנג׳ל!
             </>
           )}
         </span>

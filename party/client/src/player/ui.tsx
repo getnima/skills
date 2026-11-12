@@ -147,22 +147,13 @@ export function Confetti(props: { readonly bursts?: number; readonly intensity?:
 
 export interface Standing {
   readonly player: PlayerPublic;
-  /** 1-based, ties share a rank. */
+  /** 1-based strict rank from the server: 1..n, never shared. */
   readonly rank: number;
 }
 
-/** Players sorted by total (then name), with shared ranks on ties. */
+/** Players in the server's strict overall order. No rank is derived from totals on the phone. */
 export function standings(players: readonly PlayerPublic[]): Standing[] {
-  const sorted = [...players].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'he'));
-  const out: Standing[] = [];
-  let rank = 0;
-  let prevTotal = Number.NaN;
-  sorted.forEach((p, i) => {
-    if (p.total !== prevTotal) rank = i + 1;
-    prevTotal = p.total;
-    out.push({ player: p, rank });
-  });
-  return out;
+  return [...players].sort((a, b) => a.rank - b.rank).map((player) => ({ player, rank: player.rank }));
 }
 
 export function medal(rank: number): string {

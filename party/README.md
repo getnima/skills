@@ -18,7 +18,101 @@ file slot with a placeholder, so the real files drop in with no code change.
 
 ---
 
-## Quick start (local, same Wi-Fi)
+## Tomorrow morning: the 10-minute checklist
+
+Do these in order, on the laptop, in this folder. `deploy/<script> --help` explains
+any script; `--dry-run` prints its commands without running anything.
+
+**0. Once per laptop** (skip what is done): Node 22 from https://nodejs.org, the
+Google Cloud CLI (https://cloud.google.com/sdk/docs/install), then
+`gcloud auth login`, `gcloud config set project YOUR_PROJECT_ID` (billing must be
+on), `npm ci`, `deploy/doctor.sh` (checks everything, changes nothing, prints the
+exact fix for anything missing).
+
+**1. Drop in the pictures, songs and videos.** Exact names; lower-case is safest.
+Everything is baked in when the app is built, so **a file added or changed after
+a deploy needs the deploy again** (step 3).
+
+| What | Folder | File name |
+| --- | --- | --- |
+| The prize (figurine) in every winner ceremony | `client/public/assets/host/` | `prize.png` (transparent cut-out, best) or `prize.jpg` |
+| Round winner's song | `client/public/audio/` | `victory.mp3` |
+| Champion's song (final podium) | `client/public/audio/` | `final.mp3` |
+| Lobby song, quiet loop | `client/public/audio/` | `lobby.mp3` |
+| One song per game | `client/public/audio/` | `tap.mp3`, `icy.mp3`, `flappy.mp3`, `plotzel.mp3`, `ninja.mp3` (`round.mp3` plays for a game without its own) |
+| Videos (H.264 + AAC MP4, 5-20 s) | `client/public/cutscenes/` | `opening.mp4`, `tap_freeze.mp4`, `before_ninja.mp4`, `before_podium.mp4`, `joker_1.mp4`, `joker_2.mp4` |
+| Faces and game art | `client/public/assets/<game>/` | see the table under "Adding the real graphics" below |
+
+Songs may also be `.m4a`, `.ogg` or `.wav` (same base name). When the real
+`opening.mp4` / `tap_freeze.mp4` arrive, **delete `opening.webm` and
+`tap_freeze.webm`** (test clips). A video with a new name also needs one line in
+`shared/cutscenes.ts`.
+
+**2. Test locally (3 minutes).**
+```bash
+npm run build && npm start
+```
+Open `http://localhost:8787/host` in Chrome. The QR shows the laptop's Wi-Fi
+address (`http://192.168.x.x:8787/...`); scan it with your phone on the same
+Wi-Fi and play one round of שימי טאפ. Check the prize and `victory.mp3` in the
+ceremony. macOS asks *"Do you want the application node to accept incoming
+network connections?"*: **Allow**. Ctrl+C when done.
+
+**3. Deploy (one command, about 5-8 minutes the first time).**
+```bash
+deploy/gce-up.sh
+```
+It ends with the addresses, for example `https://34-77-1-2.sslip.io` (phones)
+and `https://34-77-1-2.sslip.io/host` (TV). Then `deploy/smoke.sh <that https
+address>` must say *All good*. After changing files later: `deploy/gce-deploy.sh`
+(only the app, about 1 minute). Do not deploy during the party: it empties the room.
+
+**4. The TV.** On the laptop, Chrome → `https://<address>/host` → click once
+anywhere (allows sound) → `F` (fullscreen). Control Center → Screen Mirroring →
+the Apple TV, and set the Mac's sound output to the Apple TV. Plug in the
+charger and run `caffeinate -dis` in a terminal so the Mac never sleeps.
+
+**5. Run of show.** Guests scan the QR (or type the address and the 4-letter room
+code). `Space` starts the next game → instructions → 3-2-1 → about a minute of
+play (TV shows the race) → 8 s of suspense → the round winner, the prize and the
+victory song: hand over the figurine → `Space` for the next game. After the last
+game the final podium. `C` = videos menu (jokers), `S` skips a video, `M` mutes.
+Guests can join any time; they play from the next round.
+
+**6. When something goes wrong.**
+- **One phone is stuck or black:** refresh the page on that phone. Same name, same
+  points; mid-round it plays again from the next round.
+- **The TV is stuck:** refresh the TV page. Safe: the room lives on the server
+  and the TV picks it up again.
+- **Wi-Fi blip / everyone shows "connecting":** wait 2-3 s, phones reconnect by
+  themselves (tested by cutting every connection mid-round: same player, score kept).
+- **The server restarted** (crash, or someone deployed): it is back by itself in
+  2 s, but **the room and the points are gone**: everyone scans the new QR. Take a
+  photo of the standings after every round so you can carry the totals by hand.
+- **The `https://...sslip.io` address does not open** (certificate not ready, or a
+  Wi-Fi filter): the same server also answers on `https://<ip-with-dashes>.nip.io`
+  and on plain `http://<ip>`. Open `/host` on the one that works; the QR follows it.
+- **The cloud is down / no time to debug:** plan Z below, on the laptop.
+- Diagnose: `deploy/smoke.sh <address>`, `deploy/gce-logs.sh status`, `deploy/gce-logs.sh`.
+
+### Plan Z: no cloud at all (laptop on the home Wi-Fi)
+
+```bash
+npm ci && npm run build && npm start
+```
+Open `http://localhost:8787/host` on the laptop. The QR points at the laptop's
+Wi-Fi address (`http://192.168.x.x:8787`), from `GET /api/info`. Guests must be
+on the **same** Wi-Fi (a "guest network" usually isolates phones from the laptop:
+use the main one). macOS firewall: answer **Allow** to the "accept incoming
+network connections" prompt; if it was denied, System Settings → Network →
+Firewall → Options → `node` → Allow incoming connections. If the QR shows a
+wrong address (a VPN), open the TV as `http://localhost:8787/host?join=http://192.168.x.x:8787`.
+Plain `http` works for the whole game (tested); what phones lose is the screen
+wake lock (screens may dim between rounds) and nothing else the game needs.
+
+---
+
+## Quick start (local development, same Wi-Fi)
 
 ```bash
 npm install
@@ -31,7 +125,8 @@ npm run dev            # game server :8787 + vite :5173 (listens on the LAN)
 2. Scan the QR with a phone on the same Wi-Fi, type a name, play.
 
 Other commands: `npm test` (unit tests), `npm run typecheck`, `npm run build`,
-`npm start` (serves the built app on :8787, or `PORT`).
+`npm start` (serves the built app on :8787, or `PORT`; open `http://localhost:8787/host`,
+its QR uses the laptop's LAN address).
 Fast rounds for testing: `PARTY_TEST_FAST=1 npm run dev` (12 s games).
 
 End-to-end regression (Playwright + Chromium installed globally): a real TV page
@@ -41,9 +136,9 @@ ceremony and the podium. How to start the stack is at the top of each script.
 `tests/e2e/full-room.cjs` (the TV with 30 bots). Screenshots land in
 `tests/e2e/out/`.
 
-Local Wi-Fi is fine for a rehearsal. For the party use a public HTTPS address
-(below): phones need a secure page for screen wake lock, fullscreen and `wss`,
-and then any guest on mobile data can join too.
+Local Wi-Fi is fine for a rehearsal (and as plan Z). For the party prefer the
+public HTTPS address (below): any guest on mobile data can join too, and phones
+keep their screen awake (the wake lock needs https; everything else works on http).
 
 ## Project layout
 
@@ -128,7 +223,7 @@ framing rules.
 | `client/public/assets/ninja/` ([README](client/public/assets/ninja/README.md)) | `target_1` .. `target_5`, `target_gold`, `bomb` (.png), `background.jpg` |
 | `client/public/assets/plotzel/` ([README](client/public/assets/plotzel/README.md)) | `cloud`, `mascot`, `mascot-happy`, `mascot-oops` (.png) |
 | `client/public/assets/host/` ([README](client/public/assets/host/README.md)) | **`prize.jpg` / `prize.png` = the figurine in the round-winner ceremony** (a transparent `prize.png` wins and looks best), `mascot_normal`, `mascot_happy`, `mascot_shocked`, `mascot_laugh`, `mascot_angry`, `sticker_1` .. `sticker_8`, `crown`, `last_place`, `podium_1` .. `podium_3` (.png), `bg_show.jpg` |
-| `client/public/audio/` ([README](client/public/audio/README.md)) | **`victory.mp3` = the round winner's song** (a synth tune plays until it exists), `final.mp3` (champion), `lobby.mp3`, `round.mp3` (quiet loops). `.m4a` / `.ogg` also work |
+| `client/public/audio/` ([README](client/public/audio/README.md)) | **`victory.mp3` = the round winner's song** (a synth tune plays until it exists), `final.mp3` (champion), `lobby.mp3`, one song per game `tap.mp3` `icy.mp3` `flappy.mp3` `plotzel.mp3` `ninja.mp3`, `round.mp3` (fallback for a game without its own; levels and start offsets in `client/src/host/music-config.ts`). `.m4a` / `.ogg` / `.wav` also work |
 | `client/public/cutscenes/` ([README](client/public/cutscenes/README.md)) | `opening.mp4`, `tap_freeze.mp4`, `before_ninja.mp4`, `before_podium.mp4`, `joker_1.mp4`, `joker_2.mp4` |
 
 Videos: MP4 (H.264 + AAC), 5-20 s. Convert anything with
@@ -145,12 +240,10 @@ Preview without a party:
   plays one game on a phone-sized page (`&freezeAt=5000&freezeMs=4000` tests a
   freeze); `/dev.html?kit=1` shows every placeholder and plays every sound.
 
-**Plotzel switch** ([client/src/games/plotzel/README.md](client/src/games/plotzel/README.md)):
-by default Plotzel embeds the live site `https://plotzel.netlify.app` in an
-iframe. If it misbehaves on phones, switch every phone to our built-in Hebrew
-word game at build time: `VITE_PLOTZEL_MODE=builtin` (put it in `.env`, then
-redeploy; all three deploy paths pass it on). One phone can switch on the spot
-with `?plotzel=builtin`, and the embed offers a "play here instead" fallback.
+**Plotzel:** how Plotzel is played (and how to switch it) is in
+[client/src/games/plotzel/README.md](client/src/games/plotzel/README.md). Any
+`VITE_*` build switch put in `.env` reaches every deploy path (the VM build, the
+Cloud Run image through `deploy/.build-env`, the Firebase build).
 
 ## Tuning knobs
 
@@ -161,31 +254,39 @@ with `?plotzel=builtin`, and the embed offers a "play here instead" fallback.
   line (`phoneText`), `repeat`, `enabled`.
 - `shared/scoring.ts` → `MAX_ROUND_POINTS`, `PODIUM_BONUS`.
 - `.env` (copy `.env.example`): deploy settings and build switches
-  (`VITE_PLOTZEL_MODE`, `VITE_PUBLIC_URL` to force the address in the QR).
+  (`VITE_*`, e.g. `VITE_PUBLIC_URL` to force the address in the QR).
 
 ---
 
 ## Deploy to Google Cloud
 
-Three paths, all in Europe (`europe-west1` by default). Every script is safe to
-re-run, prints the phone URL, the TV URL (`<url>/host`) and a QR in the
-terminal. Rooms live in the memory of **one** server process: there is never
-more than one instance.
+Everything is in Europe: `europe-west1` (Belgium) by default, Tier 1 price, every
+product, about 60 ms from Israel. `europe-west3` (Frankfurt) is about 10 ms closer
+but dearer; the game does not need it (the server keeps the time, phones sync
+their clock by ping). Change with `REGION=` in `.env`.
 
-| | Address | Recommended |
+Rooms live in the memory of **one** server process, so there is never more than
+one instance, and a restart empties the room.
+
+| | Address | Use |
 | --- | --- | --- |
-| **A. VM** (`deploy/gce-up.sh`) | `https://34-77-1-2.sslip.io` (your static IP with dashes; or your own domain) | **Yes, for party night** |
-| **B. Cloud Run** (`deploy/cloudrun-deploy.sh`) | `https://party-arena-xxxxx.europe-west1.run.app` | Backup / all-Google address |
-| **C. Firebase Hosting** (`deploy/firebase-deploy.sh`) | `https://<project>.web.app` for the pages, on top of A or B | Optional, nicer address |
+| **A. VM** (`deploy/gce-up.sh`) | `https://34-77-1-2.sslip.io` (your static IP with dashes) | **Party night.** One ordinary Node process under systemd behind Caddy |
+| **B. Cloud Run** (`deploy/cloudrun-deploy.sh`) | `https://party-arena-xxxxx-ew.a.run.app` | Backup, quick to create |
+| **C. Firebase Hosting** (`deploy/firebase-deploy.sh`) | `https://<project>.web.app` for the pages, on top of A or B | Not recommended (below) |
 
-**Why the VM for party night.** It is one ordinary Node process under systemd
-(restarted if it ever crashes) behind Caddy. Nothing replaces it during the
-evening and websockets have no time limit. On Cloud Run the platform may
-replace the instance at any time (maintenance, host moves), which **drops every
-room**, and every websocket is cut at the 60-minute request limit (phones
-reconnect within about 2 s and keep their place, but a cut that lands in a
-round is a visible hiccup). Cloud Run is fine as a backup that is quick to
-create.
+Every script: safe to re-run, `--help`, `--dry-run` (prints the gcloud commands
+as a run on a brand-new project would send them, runs nothing), stops with the
+exact fix when gcloud is not logged in, the login expired, no project is chosen
+or billing is off, and refuses to restart a server that has players unless
+`FORCE=1`. Written for the bash 3.2 that macOS ships.
+
+**Why the VM for party night.** Nothing replaces it during the evening (Google
+live-migrates e2 VMs during host maintenance, no reboot), websockets have no
+time limit, and it restarts itself 2 s after a crash and after a reboot. On
+Cloud Run the platform may replace the instance at any time, which drops the
+room, and every websocket is cut at the 60-minute request limit (phones
+reconnect in under a second and keep their place: tested by cutting every
+connection mid-round).
 
 ### One-time setup (5 minutes)
 
@@ -194,15 +295,15 @@ create.
    ```bash
    gcloud auth login
    gcloud config set project YOUR_PROJECT_ID
+   # a brand-new project instead:
+   #   gcloud projects create party-arena-12345 --set-as-default
+   #   gcloud billing accounts list
+   #   gcloud billing projects link party-arena-12345 --billing-account=XXXXXX-XXXXXX-XXXXXX
    ```
-3. From this folder:
-   ```bash
-   npm install
-   deploy/doctor.sh
-   ```
-   `doctor.sh` changes nothing. It checks the login, project, billing, APIs,
-   quota and local tools, and prints the exact command for anything missing.
-   Optional: `cp .env.example .env` to change region, names or `DOMAIN`.
+3. From this folder: `npm ci`, then `deploy/doctor.sh`. It changes nothing; it
+   checks the login, project, billing, APIs, quota and local tools, and prints
+   the exact command for anything missing. Optional: `cp .env.example .env` to
+   change region, names, `DOMAIN` or `ACME_EMAIL`.
 
 ### A. Compute Engine VM (recommended)
 
@@ -214,25 +315,39 @@ That one command enables the Compute API, creates the `default` network if
 missing, reserves the static IP `party-arena-ip`, opens 80/443 (and 22 for
 deploys) to VMs tagged `party-arena-web`, creates an `e2-small` Debian 12 VM
 `party-arena` whose startup script (`deploy/gce-startup.sh`, runs on every boot)
-installs Node 22 and Caddy, a `party` system user and the `party-arena` systemd
-service (`Restart=always`, `NODE_ENV=production`), and writes a Caddyfile that
-gets an HTTPS certificate for `<ip-with-dashes>.sslip.io` and proxies to Node.
-It then runs `deploy/gce-deploy.sh`: builds locally (`npm ci`, `npm run build`),
-copies `dist` + package files with `gcloud compute scp`, runs
-`npm ci --omit=dev` on the VM, restarts the service and waits until
-`https://<host>/healthz` answers (the first certificate takes 1-5 minutes).
-The first `gcloud compute ssh` creates an SSH key for you (no passphrase).
+installs Node 22 (NodeSource; if that fails, the official nodejs.org tarball,
+checksum verified) and Caddy (its apt repo; if that fails, Debian's package), a
+`party` system user and the `party-arena` systemd service (`Restart=always`, never
+gives up), and writes a Caddyfile. It then runs `deploy/gce-deploy.sh`: builds
+locally (`npm ci`, `npm run build`), copies the release with `gcloud compute scp`,
+runs `npm ci --omit=dev` on the VM, restarts the service and waits until
+`https://<host>/healthz` answers (the first certificate takes 1-5 minutes). The
+first `gcloud compute ssh` creates an SSH key for you (no passphrase). Re-running
+`gce-up.sh` on a running VM restarts nothing whose settings did not change.
 
-After a code or art change: `deploy/gce-deploy.sh` (asks before restarting a
-server with players in it; `FORCE=1` skips the question).
+**Addresses.** Caddy serves the same server on all of these at once, each name
+with its own Let's Encrypt certificate, so a problem with one does not block the
+others:
 
-Your own domain instead of sslip.io: create an A record pointing at the static
-IP (`deploy/doctor.sh` prints it once `gce-up.sh` reserved it), then `DOMAIN=party.example.com deploy/gce-up.sh`
-(or put `DOMAIN=` in `.env`).
+1. `https://<ip-with-dashes>.sslip.io`: the one the scripts print.
+2. `https://<ip-with-dashes>.nip.io`: a second free name for the same IP. sslip.io
+   and nip.io are shared domains, so Let's Encrypt's per-domain weekly limit is
+   shared with everybody using them; a second name halves the risk.
+3. `https://your.domain`: create an A record pointing at the static IP
+   (`deploy/doctor.sh` prints it), then `DOMAIN=party.example.com deploy/gce-up.sh`
+   (or `DOMAIN=` in `.env`).
+4. `http://<ip>`: plain http, no certificate needed. The whole game works over it
+   (tested); phones only lose the screen wake lock.
+
+Set `ACME_EMAIL=you@example.com` in `.env` before `gce-up.sh`: with an e-mail
+Caddy also falls back to a second certificate authority (ZeroSSL) when Let's
+Encrypt refuses (seen in a local test: without an e-mail it only tries Let's Encrypt).
 
 Logs and access:
 ```bash
-deploy/gce-logs.sh            # game server + Caddy, live
+deploy/gce-logs.sh status     # are the server and Caddy running, /healthz on the VM
+deploy/gce-logs.sh            # game server + Caddy, live (Ctrl+C)
+deploy/gce-logs.sh caddy      # certificates, proxy errors
 deploy/gce-logs.sh startup    # the boot script (Node / Caddy install)
 deploy/gce-ssh.sh             # a shell on the VM
 ```
@@ -243,31 +358,41 @@ deploy/gce-ssh.sh             # a shell on the VM
 deploy/cloudrun-deploy.sh
 ```
 
-Enables Run, Cloud Build and Artifact Registry, lets the build service account
-build (`roles/run.builder`), then `gcloud run deploy --source .` builds the
-`Dockerfile` (Node 22, non-root, client + server in one image) in Cloud Build
-and deploys service `party-arena` with: min 1 / max 1 instance, CPU always
-allocated (`--no-cpu-throttling`), 1 vCPU / 1 GiB, request timeout 3600 s,
-session affinity, concurrency 1000, public access. The first build takes 3-5
-minutes. Logs: `gcloud run services logs read party-arena --region=europe-west1`.
+Enables Run, Cloud Build, Artifact Registry and Compute (for the default service
+account), lets that account build (`roles/run.builder`, retried while a new
+account appears), then `gcloud run deploy --source .` builds the `Dockerfile`
+(Node 22, non-root, client + server in one image, about 88 MB compressed, ready
+0.3 s after start) in Cloud Build and deploys service `party-arena` with: min 1 /
+max 1 instance, CPU always allocated (`--no-cpu-throttling`: the round clock runs
+on server timers), 1 vCPU / 1 GiB, request timeout 3600 s, session affinity,
+concurrency 1000, a startup probe on `/healthz`, public access. If an
+organization policy refuses public access (the URL answers 403) it turns off the
+invoker IAM check instead. The first build takes 3-5 minutes. Build switches
+(`VITE_*` in `.env`) travel in `deploy/.build-env`. Logs:
+`gcloud run services logs read party-arena --region=europe-west1`.
 
-### C. Firebase Hosting (optional)
+### C. Firebase Hosting (optional; not recommended)
+
+It buys a nicer address (`<project>.web.app`) and a CDN for the pages. It costs a
+second deploy and a second origin, and Firebase Hosting cannot proxy websockets,
+so the game server stays at its own address from A or B anyway. The single
+address of A (or B) already serves the pages, the videos with Range requests and
+the websocket. Use it only if you want the web.app name.
 
 ```bash
 npx --yes firebase-tools login     # once
 deploy/firebase-deploy.sh
 ```
 
-Firebase Hosting only serves static files and **cannot proxy websockets**, so
-the game server keeps its own HTTPS address from A or B. The script finds that
-server (`FIREBASE_BACKEND=auto`: the VM first, then Cloud Run; or `gce`,
-`cloudrun`, an `https://` URL), builds the client with
-`VITE_SERVER_URL=<server>`, adds Firebase to the project if needed, allows the
-`web.app` origin on the server (`CLIENT_ORIGIN`, which restarts it only if the
-value changed), and deploys `dist/client` (`firebase.json`: `/host` and `/show`
-rewrites, immutable cache for hashed `/assets/*.js|css`, no-cache for pages and
-drop-in files). Open the TV at `https://<project>.web.app/host`; its QR then
-points at `web.app`.
+The script finds the server (`FIREBASE_BACKEND=auto`: the VM first, then Cloud
+Run; or `gce`, `cloudrun`, an `https://` URL), builds the client with
+`VITE_SERVER_URL=<server>`, adds Firebase to the project if needed, and deploys
+`dist/client` (`firebase.json`: `/host`, `/show`, `/dev` rewrites, immutable cache
+for hashed `/assets/*.js|css`, no-cache for pages and drop-in files). The server
+accepts any origin by default, so nothing on it changes or restarts (only a
+server you locked with `CLIENT_ORIGIN` gets web.app added). Open the TV at
+`https://<project>.web.app/host`; its QR then points at web.app. At the end the
+script rebuilds `dist/client` for the single-origin server again.
 
 ### Check from outside
 
@@ -276,8 +401,8 @@ deploy/smoke.sh https://34-77-1-2.sslip.io
 deploy/smoke.sh https://<project>.web.app https://34-77-1-2.sslip.io   # path C: pages, server
 ```
 Checks `/healthz`, the phone page and its script, `/host`, `/show`, and opens a
-real socket.io websocket (`wss`) with a clock ping and a harmless join. Run it
-from a phone's hotspot too: that is what guests on mobile data see.
+real socket.io websocket with a clock ping and a harmless join. Run it from a
+phone's hotspot too: that is what guests on mobile data see.
 
 Rehearsal with fake players (they join a real room, so not during the party):
 `npx tsx tests/load/bots.ts --url https://<host> --code ABCD --players 20 --play`.
@@ -296,47 +421,62 @@ deploy/cloudrun-down.sh   # the Cloud Run service (asks first)
 npx --yes firebase-tools hosting:disable --project YOUR_PROJECT_ID   # path C
 ```
 
+### How the deploy was tested (without a Google Cloud account)
+
+- The Docker image was built and run as Cloud Run runs it (`PORT=8080`): the full
+  end-to-end regression (`tests/e2e/full-flow.cjs`, 294 checks), `deploy/smoke.sh`,
+  `tests/e2e/deploy-prod.cjs` (websocket transport, no polling) and
+  `tests/e2e/qa-deploy-reconnect.cjs` (every connection cut in the lobby, mid-round
+  and in the results; phones and TV come back over websocket in under 0.5 s, same
+  player, score kept) all pass.
+- `gce-startup.sh` and `gce-install.sh` ran in a Debian 12 container booting
+  systemd: first boot, reboot, re-run (restarts nothing), `kill -9` of the server
+  (back in 2 s), `systemd-analyze verify`, `caddy validate`, websockets through Caddy.
+- Every script ran end to end against a recording stub `gcloud` (new project and
+  re-run), and every recorded command was replayed through the real gcloud's
+  argument parser: all flags exist and parse. `shellcheck` is clean.
+- Not testable here: the real Google APIs, a real Let's Encrypt certificate,
+  NodeSource and the Caddy apt repo (blocked in the test sandbox; the fallbacks ran).
+
 ---
 
 ## Party-night checklist
 
-- [ ] **The day before:** drop in the real files, `deploy/gce-up.sh` (or
-      `deploy/gce-deploy.sh`), then `deploy/smoke.sh <url>`: all green.
+- [ ] Steps 1-3 of the morning checklist done; `deploy/smoke.sh <url>`: all green.
 - [ ] Play one full round with **one iPhone and one Android**, one of them on
       mobile data. Check the round-winner ceremony shows the prize and plays
       `victory.mp3`.
-- [ ] Laptop: on power, sleep off (macOS: `caffeinate -dis` in a terminal;
-      Windows: Power settings → Never), notifications off.
+- [ ] Laptop: on power, `caffeinate -dis` running, notifications off.
 - [ ] TV page `https://<host>/host` in Chrome, **fullscreen** (`F`), click once
-      on the page so sound is allowed, sound through the TV (HDMI / AirPlay
+      on the page so sound is allowed, sound through the TV (AirPlay / HDMI
       output set to the TV), volume up.
 - [ ] iPhone guests: Share → **Add to Home Screen** opens the game without the
       Safari bars. Android goes fullscreen by itself when the guest joins.
 - [ ] Ask guests to keep the screen on between rounds (iPhone: Low Power Mode
       off).
 - [ ] Do not deploy during the party: a deploy restarts the server and empties
-      the rooms.
+      the room.
 
 ## Troubleshooting
 
 - **The QR shows `localhost`.** The QR uses the address the TV page was opened
-  from. Locally open `http://<LAN-IP>:5173/host.html` (or add
-  `?join=http://192.168.x.x:5173` to the TV URL); in production open
-  `https://<host>/host`. `VITE_PUBLIC_URL` at build time forces it.
-- **"Certificate not ready" / HTTPS fails right after `gce-up.sh`.** Caddy gets
-  the certificate on first boot; it needs ports 80 and 443 open (the script's
-  firewall rule) and can take a few minutes. Watch `deploy/gce-logs.sh caddy`.
-  If Let's Encrypt is rate-limited for `sslip.io`, Caddy retries and falls back
-  to ZeroSSL by itself; a custom `DOMAIN` avoids shared limits. Still stuck:
-  `deploy/gce-logs.sh startup` shows whether Node and Caddy were installed.
+  from (on `localhost` the server's LAN address instead). Force it with
+  `?join=http://192.168.x.x:8787` on the TV URL, or `VITE_PUBLIC_URL` at build time.
+- **HTTPS fails right after `gce-up.sh`.** Caddy gets the certificates on first
+  boot; it needs ports 80 and 443 open (the script's firewall rule) and can take
+  a few minutes. Watch `deploy/gce-logs.sh caddy`. Meanwhile use
+  `https://<ip-with-dashes>.nip.io` or `http://<ip>` (both served by the same
+  Caddy). Still stuck: `deploy/gce-logs.sh startup` shows whether Node and Caddy
+  were installed.
 - **`wss` blocked** (smoke.sh fails only on the websocket line, or phones sit on
   "connecting"). Some guest / corporate Wi-Fi blocks websockets or `sslip.io`:
-  the phone joins fine on mobile data. A custom `DOMAIN` helps with filters that
-  block sslip.io.
+  the phone joins fine on mobile data, or try the nip.io name.
 - **A phone slept or the browser was closed.** Open the same page again: it
   rejoins as the same player (same name, same points) and plays from the next
   round. Keep phones awake (above).
 - **`gcloud ... PERMISSION_DENIED` on the Cloud Run build.** A project Owner
   runs the `add-iam-policy-binding` command `cloudrun-deploy.sh` prints.
+- **The VM cannot be created ("ZONE_RESOURCE_POOL_EXHAUSTED").** Another zone:
+  `echo ZONE=europe-west1-c >> .env && deploy/gce-up.sh`.
 - **Anything else:** `deploy/doctor.sh`, then the logs (`deploy/gce-logs.sh`,
   or `gcloud run services logs read party-arena --region=europe-west1`).

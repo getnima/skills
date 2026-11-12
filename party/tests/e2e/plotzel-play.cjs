@@ -1,6 +1,7 @@
 // Plotzel (word ladder to פלוץ) in the dev harness: real rounds, bots, freeze, reload, layout.
 //
-//   PARTY_SERVER_PORT=8841 PARTY_CLIENT_PORT=5241 npx vite        (the game server is not needed)
+//   PARTY_CLIENT_PORT=5241 npx vite --config tests/e2e/qa-icy-vite.config.mjs   (HMR off: edits elsewhere in the
+//   shared tree must not reload a page in the middle of a 120 s round; the game server is not needed)
 //   BASE_URL=http://localhost:5241 node tests/e2e/plotzel-play.cjs [section...]
 //
 // Sections (default: all):
@@ -74,14 +75,17 @@ async function openGame(browser, w, h, q, opts = {}) {
     if (m.type() === 'error') errors.push('console: ' + m.text());
   });
   if (opts.init) await page.addInitScript(opts.init);
+  // the dev harness buttons (freeze / mute / back) sit over the skip button: hide them in screenshots
+  if (opts.hideTools) await page.addInitScript(() => document.addEventListener('DOMContentLoaded', () => { const s = document.createElement('style'); s.textContent = '.dv-tools{display:none!important}'; document.head.append(s); }));
+  let loads = 0;
+  page.on('load', () => loads++);
   if (opts.throttle) {
     const cdp = await context.newCDPSession(page);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: opts.throttle });
   }
   await page.goto(`${BASE}/dev.html?game=plotzel&${q}`);
   await page.waitForFunction(() => window.__plotzel && window.__party && window.__party.gameId === 'plotzel', null, { timeout: 30000 });
-  if (opts.hideTools) await page.addStyleTag({ content: '.dv-tools{display:none!important}' });
-  return { context, page, errors, label: `${w}x${h}` };
+  return { context, page, errors, label: `${w}x${h}`, loads: () => loads };
 }
 
 const st = (page) =>
@@ -110,6 +114,13 @@ async function tapAt(page, km, k) {
 }
 /** Type a word (as shown, finals included) at `perKeyMs` per key, then ENTER. */
 async function typeWord(page, km, word, perKeyMs, enter = true) {
+  // a rejected word stays in the row (like the original): clear it with ⌫ first
+  const left = await page.evaluate(() => (window.__plotzel ? Array.from(window.__plotzel.typed).length : 0)).catch(() => 0);
+  for (let i = 0; i < left; i++) {
+    const t0 = Date.now();
+    await tapAt(page, km, 'BACK');
+    await sleep(Math.max(0, perKeyMs - (Date.now() - t0)));
+  }
   for (const ch of Array.from(word)) {
     const t0 = Date.now();
     await tapAt(page, km, ch);
@@ -390,6 +401,7 @@ async function botRun(browser, w, h, kind, seed) {
   }
   check(`${label}: no page scroll / overflow during the round`, layoutBad.length === 0, layoutBad.slice(0, 2));
   check(`${label}: no console / page errors`, g.errors.length === 0, g.errors.slice(0, 4));
+  check(`${label}: the page was never reloaded under the bot (vite runs without HMR)`, g.loads() === 1, g.loads());
   await g.context.close();
   return { label, kind, final, solved: solvedLedger.length, seq };
 }
@@ -460,7 +472,7 @@ async function sectionShots(browser) {
     // finish puzzle 2
     for (;;) {
       s = await st(page);
-      if (s.phase !== 'play' || s.idx !== 1) break;
+      if (!s || s.phase !== 'play' || s.idx !== 1) break;
       const p = await page.evaluate(() => window.__plotzel.path());
       await typeWord(page, km, p[1], 120);
     }
@@ -574,7 +586,7 @@ async function sectionChecks(browser) {
       const a = document.querySelector('.pz-row.is-active .pz-tile.is-cursor');
       return a ? a.getAnimations().map((x) => x.playState) : [];
     });
-    check('freeze mid-typing: typed letters, words, hints, score and the skip timer stand still', s2.typed === s1.typed && s2.words.join() === s1.words.join() && s2.hints === s1.hints && s2.score === s1.score && fill1 === fill2 && s2.leftMs === s1.leftMs - 0 || (s2.typed === s1.typed && s2.words.join() === s1.words.join() && s2.hints === s1.hints && fill1 === fill2), { s1: [s1.typed, s1.words, s1.hints], s2: [s2.typed, s2.words, s2.hints], fill1, fill2 });
+    check('freeze mid-typing: typed letters, words, hints, score and the skip timer stand still', s2.frozen && s2.typed === s1.typed && s2.words.join() === s1.words.join() && s2.hints === s1.hints && s2.score === s1.score && fill1 === fill2, { s1: [s1.typed, s1.words, s1.hints, s1.score], s2: [s2.typed, s2.words, s2.hints, s2.score], fill1, fill2 });
     check('freeze: CSS animations are paused', anims.length > 0 && anims.every((x) => x === 'paused'), anims);
     await waitFor(async () => !(await st(page)).frozen, 5000, 'unfrozen');
     await sleep(150);
@@ -660,8 +672,9 @@ async function sectionChecks(browser) {
       return { before, during, after: window.__listeners(), hook, hookAfter: 'window.__plotzel' in window && window.__plotzel !== undefined, dom: root.childElementCount, readOnly, scored };
     });
     const extra = r.after.filter((k) => !r.before.includes(k));
-    check('destroy() twice is safe: listeners back to the baseline', extra.length === 0 && r.during.length > r.before.length, { extra, added: r.during.filter((k) => !r.before.includes(k)) });
-    check('destroy(): hook removed and DOM gone; the hook is read-only', r.hook && !r.hookAfter && r.dom === 0 && r.readOnly, r);
+    const added = r.during.filter((k) => !r.before.includes(k));
+    check(`destroy() twice is safe: the ${added.length} window/document listeners it added are all gone`, extra.length === 0 && added.length > 0, { extra, added });
+    check('destroy(): hook removed and DOM gone; the hook is read-only', r.hook && !r.hookAfter && r.dom === 0 && r.readOnly, { hook: r.hook, hookAfter: r.hookAfter, dom: r.dom, readOnly: r.readOnly });
     check('destroy: no page errors', errors.length === 0, errors);
     await context.close();
   }

@@ -31,7 +31,12 @@ enable_apis run.googleapis.com cloudbuild.googleapis.com artifactregistry.google
 step "Build permissions"
 BUILD_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 granted=0
+if is_dry; then
+  gc projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$BUILD_SA" --role=roles/run.builder --condition=None
+  granted=1
+fi
 for attempt in 1 2 3 4; do
+  [[ "$granted" == 1 ]] && break
   if gc projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$BUILD_SA" \
     --role=roles/run.builder --condition=None >/dev/null 2>&1; then
     granted=1
@@ -54,8 +59,9 @@ if [[ -n "${CLIENT_ORIGIN:-}" ]]; then ENV_VARS="$ENV_VARS@CLIENT_ORIGIN=$CLIENT
 BUILD_ENV="$PARTY_ROOT/deploy/.build-env"
 rm -f "$BUILD_ENV"
 trap 'rm -f "$BUILD_ENV"' EXIT
-for var in VITE_PLOTZEL_MODE VITE_PLOTZEL_URL VITE_PUBLIC_URL; do
-  if [[ -n "${!var:-}" ]]; then
+# Every VITE_* switch from .env or the shell, except VITE_SERVER_URL (this server serves the client).
+for var in $(env | sed -n 's/^\(VITE_[A-Za-z0-9_]*\)=.*/\1/p' | sort -u); do
+  if [[ "$var" != VITE_SERVER_URL && -n "${!var:-}" ]]; then
     printf "%s='%s'\n" "$var" "${!var}" >>"$BUILD_ENV"
     info "build setting $var=${!var}"
   fi

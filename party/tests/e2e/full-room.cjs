@@ -76,7 +76,11 @@ const check = (ok, msg, extra) => {
       await waitPhase('results', 120000);
       const res = (await st()).results;
       // the bots include a few deliberate zero-scorers
-      check(res.rows.length === PLAYERS && res.rows.filter((x) => x.raw > 0).length >= PLAYERS * 0.8 && res.winnerIds.length >= 1, `${game}: ${PLAYERS} rows, a winner`);
+      check(res.rows.length === PLAYERS && res.rows.filter((x) => x.raw > 0).length >= PLAYERS * 0.8 && res.winnerIds.length === 1, `${game}: ${PLAYERS} rows, exactly one winner`);
+      {
+        const scorers = res.rows.filter((x) => x.raw > 0).sort((x, y) => x.roundRank - y.roundRank);
+        check(res.rows.every((x, k) => x.rank === k + 1) && scorers.every((x, k) => k === 0 || (x.points < scorers[k - 1].points && x.raw <= scorers[k - 1].raw)), `${game}: ranks 1..${PLAYERS}, points strictly decreasing among scorers`);
+      }
       await sleep(Math.max(0, res.revealAt - 3000 - (await page.evaluate(() => window.__host.now()))));
       await shot(`results-${game}-suspense`);
       await page.waitForSelector('.sh-cer-name', { timeout: 15000 });

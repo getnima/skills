@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { sfx } from '../../kit/audio';
 import { playTrack, stopTrack } from '../../kit/music';
 import { backdropUrl, crownUrl, podiumUrl, raysUrl } from './art';
-import { Avatar, CountUp, formatScore, sharedRanks, useFrame, useStage } from './common';
+import { Avatar, CountUp, formatScore, useFrame, useStage } from './common';
 import { useFunnyLayer } from './funny';
 
 import type { JSX } from 'preact';
@@ -41,13 +41,12 @@ function stepAt(t: number, tl: Timeline): number {
   return 0;
 }
 
-function Column(props: { place: 1 | 2 | 3; entry: Ranked | undefined; up: boolean; also?: readonly Ranked[] }): JSX.Element | null {
+function Column(props: { place: 1 | 2 | 3; entry: Ranked | undefined; up: boolean }): JSX.Element | null {
   const { entry, place } = props;
   if (!entry) return null;
   const deco = podiumUrl(place);
-  const also = props.also ?? [];
   return (
-    <div class={`sh-pod sh-pod--${place} ${props.up ? 'is-up' : ''} ${entry.rank === 1 && place !== 1 ? 'is-cochamp' : ''}`}>
+    <div class={`sh-pod sh-pod--${place} ${props.up ? 'is-up' : ''}`}>
       <div class="sh-pod-rise">
         <div class="sh-pod-who">
           {entry.rank === 1 ? <img class="sh-pod-crown" src={crownUrl()} alt="" /> : null}
@@ -58,17 +57,6 @@ function Column(props: { place: 1 | 2 | 3; entry: Ranked | undefined; up: boolea
           <div class="sh-pod-total" dir="ltr">
             {props.up ? <CountUp value={entry.player.total} from={0} ms={1_200} /> : '0'}
           </div>
-          {also.length > 0 ? (
-            <div class="sh-pod-also" dir="rtl">
-              תיקו עם <bdi>{also[0]?.player.name}</bdi>
-              {also.length > 1 ? (
-                <>
-                  {' '}
-                  <bdi dir="ltr">+{also.length - 1}</bdi>
-                </>
-              ) : null}
-            </div>
-          ) : null}
         </div>
         <div class="sh-pod-block">
           {deco !== null ? <img class="sh-pod-deco" src={deco} alt="" /> : null}
@@ -83,28 +71,17 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
   const { ref, size } = useStage();
   const funny = useFunnyLayer(4242);
   const ranked = useMemo((): Ranked[] => {
-    const sorted = [...props.players].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'he'));
-    const ranks = sharedRanks(sorted.map((p) => p.total));
-    return sorted.map((player, i) => ({ player, rank: ranks[i] ?? i + 1 }));
+    // The server's strict rank: exactly one player per podium step and one champion.
+    return [...props.players].sort((a, b) => a.rank - b.rank).map((player, i) => ({ player, rank: i + 1 }));
   }, [props.players]);
   const n = ranked.length;
   const tl = timelineFor(n);
   const tlRef = useRef(tl);
   tlRef.current = tl;
   const champion = ranked[0];
-  // everyone who shares first place (a tie for first crowns them all)
-  // (nobody scored all night: everyone shares it). The header names at most three, then "+N".
-  const champs = useMemo(() => ranked.filter((r) => r.rank === 1), [ranked]);
-  const champsShown = champs.slice(0, 3);
-  const champsMore = champs.length - champsShown.length;
-  const champName = champsShown.map((c) => c.player.name).join(' · ') + (champsMore > 0 ? ` +${champsMore}` : '');
+  const champName = champion?.player.name ?? '';
   const championRef = useRef(champName);
   championRef.current = champName;
-  // tied with the third podium spot but off the podium: named under that column
-  const thirdAlso = useMemo(() => {
-    const third = ranked[2];
-    return third === undefined ? [] : ranked.slice(3).filter((r) => r.rank === third.rank);
-  }, [ranked]);
 
   const clock = useRef(0);
   const [step, setStep] = useState(0);
@@ -194,20 +171,9 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
       <header class="sh-final-head">
         {step >= 3 && champion ? (
           <div class="sh-champ" key="champ">
-            <div class="sh-champ-kicker">{champs.length > 1 ? '🏆 תיקו במקום הראשון! 🏆' : '🏆 המקום הראשון של הערב 🏆'}</div>
+            <div class="sh-champ-kicker">🏆 המקום הראשון של הערב 🏆</div>
             <div class="sh-champ-name" style={{ fontSize: `calc(${Math.min(size.portrait ? 110 : 190, Math.round((size.portrait ? 590 : 1500) / (Math.max(4, Array.from(champName).length) * 0.6)))} * var(--u))` }}>
-              {champsShown.map((c, i) => (
-                <span key={c.player.id}>
-                  {i > 0 ? <span class="sh-champ-and"> · </span> : null}
-                  <bdi>{c.player.name}</bdi>
-                </span>
-              ))}
-              {champsMore > 0 ? (
-                <span class="sh-champ-and">
-                  {' '}
-                  <bdi dir="ltr">+{champsMore}</bdi>
-                </span>
-              ) : null}
+              <bdi>{champion.player.name}</bdi>
             </div>
           </div>
         ) : (
@@ -224,7 +190,7 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
       <div class="sh-podium" dir="ltr">
         <Column place={2} entry={ranked[1]} up={step >= 2} />
         <Column place={1} entry={ranked[0]} up={step >= 3} />
-        <Column place={3} entry={ranked[2]} up={step >= 1} also={thirdAlso} />
+        <Column place={3} entry={ranked[2]} up={step >= 1} />
       </div>
       {showTable ? (
         <div class="sh-ftable">

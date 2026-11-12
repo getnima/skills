@@ -4,7 +4,7 @@
  * moment, the winner ceremony on demand.
  *
  * URL: ?scene=playing|results|final|standings &players=12 &seed=1 &dur=60000
- *      &bare=1 (scene only, full window) &calm=1 &sim=0 &winner=one|tie|none &lead=8000
+ *      &bare=1 (scene only, full window) &calm=1 &sim=0 &winner=one|tie|none &lead=8000   (tie = two players on the same raw score: the earlier one wins)
  * Automation: window.__show (see ShowHooks below).
  */
 import { render } from 'preact';
@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import '../../kit/base.css';
 import './demo.css';
 import { GAMES, GAME_IDS, WINNER_REVEAL_MS } from '../../../../shared/protocol';
-import { computeRoundScores, rankDescending } from '../../../../shared/scoring';
+import { computeRoundScores, rankOverall } from '../../../../shared/scoring';
 import { isMuted, setMuted, unlockAudio } from '../../kit/audio';
 import { initMobileViewport } from '../../kit/mobile';
 import { stopTrack } from '../../kit/music';
@@ -94,13 +94,26 @@ interface Racer {
 
 function makePlayers(count: number): PlayerPublic[] {
   const rng = createRng(SEED).fork('players');
-  return NAMES.slice(0, count).map((name, i) => ({
-    id: `p${i + 1}`,
-    name,
-    avatar: i,
-    connected: i % 13 !== 12,
-    total: Math.round(rng.float(300, 2_400) / 10) * 10,
-  }));
+  return withRanks(
+    NAMES.slice(0, count).map((name, i) => ({
+      id: `p${i + 1}`,
+      name,
+      avatar: i,
+      connected: i % 13 !== 12,
+      total: Math.round(rng.float(300, 2_400) / 10) * 10,
+      rank: i + 1,
+    })),
+  );
+}
+
+/** Strict ranks like the server's: total, then (here) the order in the list. */
+function strictRanks(totals: ReadonlyArray<readonly [string, number]>): Map<string, number> {
+  return rankOverall(totals.map(([id, total], joinOrder) => ({ id, total, wins: 0, best: 0, lastPos: null, joinOrder })));
+}
+
+function withRanks(players: readonly PlayerPublic[]): PlayerPublic[] {
+  const ranks = strictRanks(players.map((p) => [p.id, p.total] as const));
+  return players.map((p) => ({ ...p, rank: ranks.get(p.id) ?? players.length }));
 }
 
 function makeRacers(players: readonly PlayerPublic[], duration: number): Racer[] {
@@ -129,10 +142,16 @@ function buildResults(players: readonly PlayerPublic[], raws: ReadonlyMap<string
     if (kind === 'tie' && best && second) raw.set(second[0], Math.max(100, best[1]));
     if (kind === 'one' && best && second && second[1] === best[1]) raw.set(best[0], best[1] + 7);
   }
-  const scored = computeRoundScores(raw);
-  const prevRanks = rankDescending(players.map((p) => [p.id, p.total] as const));
+  // Everyone "reached" their score at a different moment. In the 'tie' demo the runner-up has the
+  // SAME raw score as the leader and got there later: one winner, and the "⏱" hint on the stage.
+  const order = [...raw].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  const reachedAt = new Map<string, number | null>(players.map((p) => [p.id, (raw.get(p.id) ?? 0) > 0 ? revealAt - 60_000 + order.indexOf(p.id) * 700 : null]));
+  const scored = computeRoundScores(
+    players.map((p, joinOrder) => ({ id: p.id, raw: raw.get(p.id) ?? 0, reachedAt: reachedAt.get(p.id) ?? null, joinOrder, totalBefore: p.total })),
+  );
+  const prevRanks = strictRanks(players.map((p) => [p.id, p.total] as const));
   const totals = players.map((p) => [p.id, p.total + (scored.get(p.id)?.points ?? 0)] as const);
-  const ranks = rankDescending(totals);
+  const ranks = strictRanks(totals);
   const rows: ResultRow[] = players.map((p) => {
     const s = scored.get(p.id);
     return {
@@ -142,12 +161,13 @@ function buildResults(players: readonly PlayerPublic[], raws: ReadonlyMap<string
       raw: raw.get(p.id) ?? 0,
       points: s?.points ?? 0,
       roundRank: s?.roundRank ?? players.length,
+      reachedAt: reachedAt.get(p.id) ?? null,
       total: p.total + (s?.points ?? 0),
       rank: ranks.get(p.id) ?? players.length,
       prevRank: prevRanks.get(p.id) ?? null,
     };
   });
-  rows.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'he'));
+  rows.sort((a, b) => a.rank - b.rank);
   const winnerIds = rows.filter((r) => r.roundRank === 1 && r.raw > 0).map((r) => r.playerId);
   return { roundIndex: 2, gameId, rows, winnerIds, revealAt };
 }
@@ -242,7 +262,7 @@ function Demo(): JSX.Element {
   const afterPlayers = useMemo((): PlayerPublic[] => {
     if (!results) return players;
     const totals = new Map(results.rows.map((r) => [r.playerId, r.total]));
-    return players.map((p) => ({ ...p, total: totals.get(p.id) ?? p.total }));
+    return withRanks(players.map((p) => ({ ...p, total: totals.get(p.id) ?? p.total })));
   }, [players, results]);
 
   const force = (type: MomentType): void => {
@@ -464,7 +484,7 @@ function Demo(): JSX.Element {
             <h2>טקס הזוכה</h2>
             <div class="dm-grid">
               <button onClick={() => showResults('one', 1_500)}>🏆 זוכה אחד</button>
-              <button onClick={() => showResults('tie', 1_500)}>🤝 תיקו</button>
+              <button onClick={() => showResults('tie', 1_500)}>⏱ אותו ניקוד, הקודם זוכה</button>
               <button onClick={() => showResults('none', 1_500)}>😇 אף אחד</button>
               <button onClick={() => showResults('one')}>🥁 תוצאות מלאות (8 שנ׳)</button>
               <button class={active ? '' : 'is-on'} onClick={() => setActive(!active)}>

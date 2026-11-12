@@ -1,7 +1,7 @@
 /** StandingsPanel: the compact cumulative leaderboard in the lobby between rounds. */
 import { useMemo } from 'preact/hooks';
 
-import { Avatar, CountUp, sharedRanks, useStage } from './common';
+import { Avatar, CountUp, useStage } from './common';
 
 import type { JSX } from 'preact';
 import type { StandingsPanelProps } from './types';
@@ -11,13 +11,13 @@ const TOP = 8;
 export function StandingsPanel(props: StandingsPanelProps): JSX.Element {
   const { ref } = useStage([640, 760], [640, 760]);
   const rows = useMemo(() => {
-    const sorted = [...props.players].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'he'));
-    const ranks = sharedRanks(sorted.map((p) => p.total));
+    // The server's strict rank (1..n, never shared): no rank is derived from totals here.
+    const sorted = [...props.players].sort((a, b) => a.rank - b.rank);
     const hints = new Map((props.results?.rows ?? []).map((r) => [r.playerId, r]));
-    return sorted.map((player, i) => {
+    return sorted.map((player) => {
       const res = hints.get(player.id);
       const delta = res && res.prevRank !== null ? res.prevRank - res.rank : null;
-      return { player, rank: ranks[i] ?? i + 1, delta, isNew: res !== undefined && res.prevRank === null, points: res?.points ?? null };
+      return { player, rank: player.rank, delta, isNew: res !== undefined && res.prevRank === null, points: res?.points ?? null };
     });
   }, [props.players, props.results]);
   const top = rows.slice(0, TOP);

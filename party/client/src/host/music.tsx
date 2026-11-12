@@ -361,7 +361,7 @@ export function SoundCheck(props: { onClose(): void }): JSX.Element {
         })}
       </ul>
       <p class="hs-sc-foot">
-        הקבצים בתיקייה <code dir="ltr">client/public/audio/</code>, ונקלטים רק בבנייה: אחרי הוספת קובץ בונים ומעלים מחדש (או מפעילים מחדש את <code dir="ltr">npm run dev</code>). עוצמות ונקודת התחלה: <code dir="ltr">client/src/host/music-config.ts</code>.
+        קבצים: <code dir="ltr">client/public/audio/</code> · נקלטים רק בבנייה (או בהפעלה מחדש של <code dir="ltr">npm run dev</code>) · כיוונון: <code dir="ltr">client/src/host/music-config.ts</code>
       </p>
     </Modal>
   );

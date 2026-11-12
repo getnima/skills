@@ -48,6 +48,8 @@ const ICY_BOT = () => {
   window.__vtInput = (frame) => {
     const d = window.__icy;
     if (!d || window.__party.ended) return;
+    const cv = document.querySelector('.pa-stage-game canvas');
+    if (cv) window.__lastIcy = cv.dataset.icy + '@' + frame;
     const s = d.state;
     if (s.mode !== 'run') return;
     // follow the motion; let go for 20 frames every 400 (so runs end and restart too)
@@ -65,12 +67,13 @@ const ICY_BOT = () => {
 async function proofOne(browser, size, seed, dur) {
   const context = await phoneContext(browser, size);
   await context.addInitScript(VIRTUAL('__icy'));
+  // the bot is installed before the page loads, so it acts from the very first game frame
+  await context.addInitScript(ICY_BOT);
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`${BASE}/dev.html?game=icy&seed=${seed}&duration=${dur}`);
   await page.waitForFunction(() => !!window.__icy, null, { timeout: 20000 });
-  await page.evaluate(ICY_BOT);
   let hook = null;
   let level = null;
   for (;;) {
@@ -81,8 +84,9 @@ async function proofOne(browser, size, seed, dur) {
     if (r.hook) hook = r.hook;
     if (r.level) level = r.level;
     if (r.ended) {
+      const last = await page.evaluate(() => window.__lastIcy);
       await context.close();
-      return { size, seed, level, hook, score: r.score, frames: r.frame, errors };
+      return { size, seed, level, hook: last, score: r.score, frames: r.frame, errors };
     }
     await sleep(200);
   }

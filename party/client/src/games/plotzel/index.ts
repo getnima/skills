@@ -42,6 +42,7 @@ const DEMO_MS = 3400;
 const HURRY_MS = 10_000;
 const PUFF_S = 1.3;
 const MASCOT_S = 1.25;
+const MASCOT_R = 40;
 
 /** The standard Israeli layout, exactly as the original lays it out (left to right). */
 const KB_ROWS: ReadonlyArray<readonly [string, 'BACK' | 'ENTER' | null]> = [
@@ -196,9 +197,13 @@ export const game: GameModule = {
     hintBtn.dataset.act = 'hint';
     hintBtn.append(el('span', 'pz-tool-label', '💡 רמז'), el('span', 'pz-tool-cost', `‎−${SCORE.hint}`));
     const countEl = el('div', 'pz-count');
+    const countNum = el('span', 'pz-count-num');
+    const doneEl = el('span', 'pz-done');
+    doneEl.dir = 'ltr';
+    countEl.append(countNum, doneEl);
     const skipBtn = el('button', 'pz-tool is-skip');
     skipBtn.dataset.act = 'skip';
-    const skipLabel = el('span', 'pz-tool-label', 'דלג ⏭');
+    const skipLabel = el('span', 'pz-tool-label', 'דלג');
     skipBtn.append(el('span', 'pz-skip-fill'), skipLabel);
     for (const b of [hintBtn, skipBtn]) {
       b.setAttribute('type', 'button');
@@ -321,7 +326,9 @@ export const game: GameModule = {
       startChip.textContent = disp(start);
       stepsEl.textContent = `צעדים ${steps()}`;
       parEl.textContent = `מינימום ${par}`;
-      countEl.textContent = `חידה ${idx + 1}${solveCount > 0 ? ` · ✓${solveCount}` : ''}`;
+      countNum.textContent = `חידה ${idx + 1}`;
+      doneEl.textContent = `✓ ${solveCount}`;
+      doneEl.hidden = solveCount === 0;
       hintBtn.toggleAttribute('disabled', phase !== 'play');
     }
 
@@ -472,11 +479,14 @@ export const game: GameModule = {
       // 💨 flies off, a fart, the face pops up, the points float
       puffs.push({ x: c.x, y: c.y, t: 0, size: clamp(W * 0.36, 110, 170) });
       mascot = { x: 0, y: 0, t: 0, text: perfect ? 'מושלם!' : s === par + 1 ? 'כמעט מושלם!' : 'פלוץ! 💨', color: perfect ? COLORS.yellow : '#ffffff' };
-      const mascotAt = board.getBoundingClientRect();
+      // the face + its bubble, centered in the room the active and goal rows just left
+      const b = board.getBoundingClientRect();
       const origin = fxRoot.getBoundingClientRect();
-      mascot.x = mascotAt.left - origin.left + Math.min(70, mascotAt.width * 0.2);
-      mascot.y = mascotAt.top - origin.top + Math.min(70, mascotAt.height * 0.25);
-      fx.text(c.x, c.y - tile * 0.2, `+${points}`, { color: perfect ? COLORS.yellow : '#ffffff', size: 46, rise: 90, life: 1.2 });
+      const rowBottom = row.getBoundingClientRect().bottom - origin.top;
+      const groupW = MASCOT_R * 2 + 6 + bubbleWidth(view.ctx, mascot.text);
+      mascot.x = b.left - origin.left + b.width / 2 - groupW / 2 + MASCOT_R;
+      mascot.y = clamp(rowBottom + MASCOT_R + 10, b.top - origin.top + MASCOT_R, b.bottom - origin.top - MASCOT_R);
+      fx.text(c.x, c.y - tile * 0.6, `+${points}`, { color: perfect ? COLORS.yellow : '#ffffff', size: 46, rise: 90, life: 1.2 });
       fx.burst(c.x, c.y, { count: 22, shape: 'star', colors: [COLORS.yellow, COLORS.green, '#ffffff'], speed: 380, life: 0.7 });
       if (perfect) fx.confetti({ count: 140, width: W });
       sfx.fart(solveCount % 4, 0.75 + ((solveCount * 37) % 9) * 0.09);
@@ -532,7 +542,7 @@ export const game: GameModule = {
       cancelDisarm?.();
       cancelDisarm = null;
       skipBtn.classList.remove('is-armed');
-      skipLabel.textContent = 'דלג ⏭';
+      skipLabel.textContent = 'דלג';
     }
 
     function skip(): void {
@@ -572,17 +582,20 @@ export const game: GameModule = {
         cancelDemo = null;
         demoEl.classList.remove('is-on');
       });
-      positionDemo();
+      positionDemo(true);
     }
-    /** The demo sits in the free space under the rows; when there is none it becomes a toast. */
-    function positionDemo(): void {
+    /**
+     * The demo sits in the free space under the rows. With no room at first it becomes a
+     * toast; once the player has made a step (or rows grew into it) it simply goes away.
+     */
+    function positionDemo(first = false): void {
       if (!demoEl.classList.contains('is-on')) return;
       const free = board.clientHeight - rowsEl.offsetHeight - 8;
-      if (free < demoEl.offsetHeight + 6) {
+      if (words.length > 1 || phase !== 'play' || free < demoEl.offsetHeight + 6) {
         demoEl.classList.remove('is-on');
         cancelDemo?.();
         cancelDemo = null;
-        toast('משנים אות אחת בכל צעד, עד פלוץ', 'info', 3000);
+        if (first) toast('משנים אות אחת בכל צעד, עד פלוץ', 'info', 3000);
       }
     }
 
@@ -701,21 +714,24 @@ export const game: GameModule = {
       },
     });
 
+    function bubbleWidth(g: CanvasRenderingContext2D, text: string): number {
+      g.font = F_BUBBLE;
+      return g.measureText(text).width + 26;
+    }
+
     function drawMascot(g: CanvasRenderingContext2D, m: { x: number; y: number; t: number; text: string; color: string }): void {
       const inK = clamp(m.t / 0.3, 0, 1);
       const outK = clamp((m.t - (MASCOT_S - 0.22)) / 0.22, 0, 1);
       const s = ease.outBack(inK) * (1 - outK);
       if (s <= 0.01) return;
-      const r = 44;
+      const r = MASCOT_R;
       g.save();
       g.translate(m.x, m.y);
       g.scale(s, s);
       g.rotate(Math.sin(m.t * 9) * 0.08);
       art.mascot.draw(g, 0, 0, r * 2, r * 2);
       // speech bubble to the right of the face (RTL text)
-      g.font = F_BUBBLE;
-      const tw = g.measureText(m.text).width;
-      const bw = tw + 26;
+      const bw = bubbleWidth(g, m.text);
       const bx = r + 6;
       g.fillStyle = 'rgba(20, 6, 40, 0.35)';
       roundRectPath(g, bx + 2, -22 + 4, bw, 44, 22);

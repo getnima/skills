@@ -594,10 +594,22 @@
 }
 .pz-count {
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 14px;
   font-weight: 900;
   color: var(--c-dim);
   white-space: nowrap;
+}
+.pz-done {
+  padding: 1px 7px 2px;
+  border-radius: 9px;
+  background: rgba(61, 220, 132, 0.2);
+  color: var(--c-green);
+}
+.pz-done[hidden] {
+  display: none;
 }
 
 .pz-fx {

@@ -9,7 +9,10 @@
  *                 The host bot ends every cutscene the server starts (the automatic
  *                 ones too) after --cutscene-ms, like the TV would. At the end it
  *                 ASSERTS that every round's rows and the final totals equal
- *                 computeRoundScores() applied to what the bots sent, and that every
+ *                 computeRoundScores() applied to what the bots sent (with the server's
+ *                 reachedAt stamps as the tie-break between equal raw scores), that
+ *                 nothing is ever tied (one round winner, distinct round points,
+ *                 distinct totals, ranks 1..n), and that every
  *                 mid-game freeze kept the round's time left. Exit code 1 on a mismatch.
  *   --code ABCD   JOIN an existing room (someone else is the host: a browser, a test).
  *                 Add --hold or --play (default: --play).
@@ -490,7 +493,29 @@ async function selfHosted(opts: Options): Promise<number> {
     const results = (state as RoomState | null)?.results;
     if (results === null || results === undefined) throw new Error('results vanished');
     const sent = new Map<string, number>(bots.map((b) => [b.playerId, b.plans.get(i)?.expected ?? 0]));
-    const scored = computeRoundScores(sent);
+    // The tie-break between equal raw scores is the server's clock (reachedAt, sent with the
+    // rows); everything else is recomputed from what the bots sent. Join order = order in `players`.
+    const joinOrder = new Map<string, number>(((state as RoomState | null)?.players ?? []).map((p, k) => [p.id, k]));
+    const scored = computeRoundScores(
+      results.rows.map((row) => ({
+        id: row.playerId,
+        raw: sent.get(row.playerId) ?? 0,
+        reachedAt: row.reachedAt,
+        joinOrder: joinOrder.get(row.playerId) ?? 1e9,
+        totalBefore: expectedTotals.get(row.playerId) ?? 0,
+      })),
+    );
+    const oneToN = results.rows.map((_, k) => k + 1).join(',');
+    if (results.rows.map((row) => row.rank).join(',') !== oneToN) failures.push(`round ${i}: overall ranks are not 1..n in row order`);
+    if ([...results.rows].map((row) => row.roundRank).sort((x, y) => x - y).join(',') !== oneToN) failures.push(`round ${i}: round positions are not 1..n`);
+    const scorerRows = results.rows.filter((row) => row.raw > 0).sort((x, y) => x.roundRank - y.roundRank);
+    if (scorerRows.some((row, k) => k > 0 && (row.points >= scorerRows[k - 1]!.points || row.raw > scorerRows[k - 1]!.raw))) {
+      failures.push(`round ${i}: points are not strictly decreasing down the round order`);
+    }
+    if (results.rows.some((row) => (row.reachedAt === null) !== (row.raw <= 0))) failures.push(`round ${i}: a reachedAt stamp is missing or left on a zero`);
+    if (results.winnerIds.length !== (scorerRows.length > 0 ? 1 : 0)) failures.push(`round ${i}: ${results.winnerIds.length} winners`);
+    const nonZeroTotals = results.rows.map((row) => row.total).filter((t) => t > 0);
+    if (new Set(nonZeroTotals).size !== nonZeroTotals.length) failures.push(`round ${i}: two players on the same total`);
     let roundBad = 0;
     for (const row of results.rows) {
       const want = scored.get(row.playerId);
@@ -535,7 +560,11 @@ async function selfHosted(opts: Options): Promise<number> {
   const disconnected = finalState.players.filter((p) => !p.connected).length;
   if (opts.churn === 0 && disconnected > 0) failures.push(`${disconnected} bots shown as disconnected`);
 
-  const top = [...finalState.players].sort((a, b) => b.total - a.total).slice(0, 3);
+  const finalRanks = finalState.players.map((p) => p.rank).sort((a, b) => a - b);
+  if (finalRanks.some((r, k) => r !== k + 1)) failures.push('final ranks are not a permutation of 1..n');
+  const byRank = [...finalState.players].sort((a, b) => a.rank - b.rank);
+  if (byRank.some((p, k) => k > 0 && p.total > byRank[k - 1]!.total)) failures.push('final ranks do not follow the totals');
+  const top = byRank.slice(0, 3);
   console.log('');
   console.log(`podium: ${top.map((p, i) => `${i + 1}. ${p.name} ${p.total}`).join('   ')}`);
   console.log(`totals: ${totalsBad === 0 ? 'all match computeRoundScores of what the bots sent' : `${totalsBad} MISMATCH`}`);
