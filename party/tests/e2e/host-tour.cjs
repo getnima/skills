@@ -174,9 +174,12 @@ function check(name, ok, extra) {
     await shot('24-results-replay');
 
     // ── back to the lobby, round 2 with a manual cutscene (real video) in the middle ──
+    // (during the replayed ceremony "continue" would ask for a second press: wait for it to end)
+    await page.waitForFunction(() => !/מדלג/.test(document.querySelector('[data-testid=btn-primary]').textContent), null, { timeout: 30000 });
     await page.click('[data-testid=btn-primary]');
     await waitPhase('lobby');
-    await sleep(1000);
+    // the TV ignores keys for 1.5 s after a screen change (Space-Space must not skip two screens)
+    await sleep(1700);
     await shot('30-lobby-after-1');
     await page.keyboard.press('KeyN');
     await waitPhase('playing', 10000);
