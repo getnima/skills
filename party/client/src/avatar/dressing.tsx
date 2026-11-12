@@ -4,8 +4,8 @@
  *   <DressingRoom look={look} name={name} onChange={(l) => send(l)} onDone={(l) => …} compact? />
  *
  * Controlled with a local copy: the room shows its own look at once and reports it with
- * `onChange` about 400 ms after the last change (and at once on "מוכן!", on unmount and when the
- * tab is hidden). A `look` prop that differs from what the room has (and is not one of its own
+ * `onChange` about 400 ms after the last change, and at least every 1.2 s while the guest keeps
+ * dressing (so the TV stays live), and at once on "מוכן!", on unmount and when the tab is hidden. A `look` prop that differs from what the room has (and is not one of its own
  * recent reports coming back) replaces the room's look.
  * It fills its container (give it a fixed height; see MIN_HEIGHT below) and never scrolls the page.
  */
@@ -51,6 +51,8 @@ export const DRESSING_TABS: readonly { id: DressingTab; label: string }[] = [
 ];
 
 const CHANGE_DEBOUNCE_MS = 400;
+/** A guest who keeps tapping faster than the debounce is still reported this often (the TV lobby stays live). */
+const CHANGE_MAX_WAIT_MS = 1200;
 const SAY_GAP_MS = 1100;
 const SHUFFLE_STEPS = 6;
 const SHUFFLE_STEP_MS = 80;
@@ -322,6 +324,8 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
   const queued = useRef(new Set<number>());
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const emitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** When the oldest change not yet reported was made (performance.now()). */
+  const firstPendingAt = useRef(0);
   const recent = useRef<string[]>([encodeLook(look)]);
   const reducedRef = useRef(reduced);
   reducedRef.current = reduced;
@@ -368,8 +372,11 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
   };
   const pendingEmit = (): boolean => emitTimer.current !== null;
   const scheduleEmit = (): void => {
+    const now = performance.now();
     if (emitTimer.current !== null) clearTimeout(emitTimer.current);
-    emitTimer.current = setTimeout(emit, CHANGE_DEBOUNCE_MS);
+    else firstPendingAt.current = now;
+    const left = firstPendingAt.current + CHANGE_MAX_WAIT_MS - now;
+    emitTimer.current = setTimeout(emit, Math.max(0, Math.min(CHANGE_DEBOUNCE_MS, left)));
   };
 
   const commit = (next: AvatarLook): void => {
