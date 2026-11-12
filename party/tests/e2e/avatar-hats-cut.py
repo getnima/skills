@@ -49,15 +49,24 @@ def main():
     ap.add_argument('--max', type=int, default=640)
     ap.add_argument('--pad-bottom', type=float, default=0.0, help='transparent space added below, fraction of height')
     ap.add_argument('--pad-top', type=float, default=0.0)
+    ap.add_argument('--grey', default='', help='"chroma,minvalue": grey pixels (a soft shadow) count as background too')
+    ap.add_argument('--keep-alpha', action='store_true', help='input is already cut (remove_background): use its alpha')
     ap.add_argument('--check', default='', help='where to write the dark / yellow check tile')
     a = ap.parse_args()
 
-    im = Image.open(a.src).convert('RGB')
+    src = Image.open(a.src)
+    src_alpha = np.asarray(src.convert('RGBA'))[:, :, 3] if a.keep_alpha else None
+    im = src.convert('RGB')
     rgb = np.asarray(im).astype(np.int16)
     h, w, _ = rgb.shape
     border = np.concatenate([rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]])
     bg = np.median(border, axis=0)
     near = (np.abs(rgb - bg) <= a.tol).all(axis=2)
+    if a.grey:
+        c, v = (int(x) for x in a.grey.split(','))
+        near |= ((rgb.max(axis=2) - rgb.min(axis=2)) <= c) & (rgb.min(axis=2) >= v)
+    if src_alpha is not None:
+        near = src_alpha < 128
 
     seed = np.zeros_like(near)
     seed[0, :] = seed[-1, :] = seed[:, 0] = seed[:, -1] = True

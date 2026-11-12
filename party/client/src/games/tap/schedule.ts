@@ -61,7 +61,7 @@ const DIG_WEIGHT_SUM = DIG_WEIGHTS.reduce((s, [, w]) => s + w, 0);
 
 /** First BIG booger after this many digs, then every BIG_GAP digs (both seeded within the range). */
 export const BIG_FIRST: readonly [number, number] = [12, 16];
-export const BIG_GAP: readonly [number, number] = [18, 26];
+export const BIG_GAP: readonly [number, number] = [24, 34];
 
 export function buildLevel(seed: number, durationMs: number): TapLevel {
   const dur = Math.max(1000, durationMs);

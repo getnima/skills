@@ -132,8 +132,8 @@ const LOOK_FLOOR = ((): number => {
   }
 })();
 /** Frame time (ms, moving average) above which snow and wind streaks are dropped, and below which they come back. */
-const SLOW_FRAME_MS = 30;
-const FAST_FRAME_MS = 21;
+const SLOW_FRAME_MS = 24;
+const FAST_FRAME_MS = 19;
 const HEAD_BOX = 2.6;
 const STAR_COLORS = [PAL.yel, PAL.pink, PAL.white, PAL.cobL] as const;
 
@@ -244,23 +244,16 @@ export const game: GameModule = {
       invalidateLook();
     }
 
-    // ── the tower's DOM layers, behind the transparent canvas: the sky outside the tower
-    // (landscape / desktop only) and two pre-rendered back-wall canvases (this zone, the next
-    // one fading in) that the compositor moves; no full-screen fill on the canvas per frame ──
+    // ── the sky outside the tower (landscape / desktop only): static CSS layers behind the
+    // transparent canvas, hidden while the tower fills the screen (a phone in portrait) ──
     const skyA = document.createElement('div');
     const skyB = document.createElement('div');
-    for (const el of [skyA, skyB]) el.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:-2';
-    const backEls = [document.createElement('canvas'), document.createElement('canvas')] as const;
-    for (const el of backEls) el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;will-change:transform;opacity:1;z-index:-1';
-    backEls[1].style.opacity = '0';
+    for (const el of [skyA, skyB]) el.style.cssText = 'position:absolute;inset:0;pointer-events:none;display:none';
     ctx.root.prepend(skyA, skyB);
-    // after the game canvas in the DOM (it stays the root's first canvas for the test hooks), behind it by z-index
-    view.canvas.after(backEls[0], backEls[1]);
     let skyZone = -1;
     let skyMix = -1;
-    const backZone = [-1, -1];
-    let backY = Number.NaN;
-    let backMix = -1;
+    let skyOn = false;
+    let shownZone = 0;
     // held-side markers: flat bars above the canvas, below the stage HUD, never catch touches
     const glowEls = [document.createElement('div'), document.createElement('div')] as const;
     glowEls[0].style.cssText = `position:absolute;left:0;top:0;bottom:0;width:9px;pointer-events:none;opacity:0;background:${PAL.yel};border-right:3px solid ${PAL.ink}`;
@@ -276,6 +269,8 @@ export const game: GameModule = {
     const stars = STAR_COLORS.map((c) => renderStar(26, c));
     const stickers = createStickerCache(24);
     const signs = new Map<number, { canvas: HTMLCanvasElement; w: number; h: number }>();
+    /** Pre-rendered floors (ledge + outline + hard shadow), by floor index; the ones on screen. */
+    const floorSprites = new Map<number, { canvas: HTMLCanvasElement; w: number; h: number }>();
     /** Altitude where each zone starts. */
     const zoneAlt = ZONE_LOOKS.map((_, z) => level.alt[z * ZONE_FLOORS] ?? 0);
     function zoneOfAlt(a: number): number {
@@ -294,9 +289,8 @@ export const game: GameModule = {
         if (t) t.width = 0;
         wallTiles[i] = null;
       }
-      backZone[0] = -1;
-      backZone[1] = -1;
-      backY = Number.NaN;
+      for (const sp of floorSprites.values()) sp.canvas.width = 0;
+      floorSprites.clear();
     }
     function backTile(z: number): HTMLCanvasElement {
       const hit = backTiles[z];
@@ -318,28 +312,6 @@ export const game: GameModule = {
       }
       backTiles[z] = canvas;
       return canvas;
-    }
-    function paintBackLayer(i: 0 | 1, z: number): void {
-      const el = backEls[i];
-      const th = BACK_TILE_W * scale;
-      const h = view.height + th + 2;
-      const d = view.dpr;
-      const pw = Math.round(playW * d);
-      const ph = Math.round(h * d);
-      if (el.width !== pw || el.height !== ph) {
-        el.width = pw;
-        el.height = ph;
-      }
-      el.style.width = `${playW}px`;
-      el.style.height = `${h}px`;
-      el.style.left = `${offX}px`;
-      const g = el.getContext('2d');
-      if (!g) return;
-      const tile = backTile(z);
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      const tpx = tile.height;
-      for (let y = 0; y < ph; y += tpx) g.drawImage(tile, 0, y);
-      backZone[i] = z;
     }
     function wallTile(z: number, left: boolean): HTMLCanvasElement {
       const k = z * 2 + (left ? 0 : 1);
@@ -869,42 +841,57 @@ export const game: GameModule = {
       return LOOK_FLOOR > 0 ? c + (level.alt[LOOK_FLOOR] ?? 0) : c;
     }
 
-    /** The DOM layers: sky outside the tower and the parallax back wall (zone crossfade). */
+    /**
+     * The inner back wall: the zone's pre-rendered tile blitted 1:1 in device pixels down the
+     * shaft (parallax at half the floor speed); the next zone fades in near its first floor.
+     * The tiles are opaque, so they also replace the per-frame clear of the play area.
+     */
     function drawBackground(c: number): void {
       const g = view.ctx;
       const la = lookAlt(c);
       const mid = la + visH * 0.5;
       const z = zoneOfAlt(mid);
-      // the next zone fades in over the last 260 world units below its first floor
       const nextAt = zoneAlt[z + 1];
-      const mix = nextAt === undefined ? 0 : Math.round(clamp((mid - (nextAt - 260)) / 260, 0, 1) * 40) / 40;
-      if (z !== skyZone) {
-        skyZone = z;
-        skyA.style.background = zoneLook(z).sky;
-        skyB.style.background = zoneLook(z + 1).sky;
+      const mix = nextAt === undefined ? 0 : Math.round(clamp((mid - (nextAt - 260)) / 260, 0, 1) * 20) / 20;
+      // outside the tower (landscape / desktop): CSS sky behind the cleared side strips
+      const outside = offX > 0.5;
+      if (outside !== skyOn) {
+        skyOn = outside;
+        skyA.style.display = outside ? 'block' : 'none';
+        skyB.style.display = outside ? 'block' : 'none';
       }
-      if (mix !== skyMix) {
-        skyMix = mix;
-        skyB.style.opacity = String(mix);
+      if (outside) {
+        if (z !== skyZone) {
+          skyZone = z;
+          skyA.style.background = zoneLook(z).sky;
+          skyB.style.background = zoneLook(z + 1).sky;
+        }
+        if (mix !== skyMix) {
+          skyMix = mix;
+          skyB.style.opacity = String(mix);
+        }
+        g.clearRect(0, 0, offX + 1, view.height);
+        g.clearRect(offX + playW - 1, 0, offX + 2, view.height);
       }
-      if (backZone[0] !== z) paintBackLayer(0, z);
-      if (mix > 0 && backZone[1] !== z + 1) paintBackLayer(1, Math.min(ZONE_LOOKS.length - 1, z + 1));
-      if (mix !== backMix) {
-        backMix = mix;
-        backEls[1].style.opacity = String(mix);
-      }
-      // parallax: half the floor speed
-      const th = BACK_TILE_W * scale;
-      let off = (la * scale * 0.5) % th;
+      shownZone = z;
+      const d = view.dpr;
+      const tile = backTile(z);
+      const th = tile.height;
+      let off = (la * scale * 0.5 * d) % th;
       if (off < 0) off += th;
-      const y = Math.round((off - th) * view.dpr) / view.dpr;
-      if (y !== backY) {
-        backY = y;
-        const t = `translate3d(0,${y}px,0)`;
-        backEls[0].style.transform = t;
-        backEls[1].style.transform = t;
+      const ox = Math.round(offX * d);
+      const hd = view.height * d;
+      g.save();
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      if (!art.bg.isPlaceholder) g.clearRect(ox, 0, tile.width, hd);
+      for (let y = Math.round(off) - th; y < hd; y += th) g.drawImage(tile, ox, y);
+      if (mix > 0) {
+        const next = backTile(Math.min(ZONE_LOOKS.length - 1, z + 1));
+        g.globalAlpha = mix;
+        for (let y = Math.round(off) - th; y < hd; y += th) g.drawImage(next, ox, y);
+        g.globalAlpha = 1;
       }
-      g.clearRect(0, 0, view.width, view.height);
+      g.restore();
     }
 
     function drawWalls(c: number): void {
@@ -971,11 +958,42 @@ export const game: GameModule = {
       }
     }
 
+    /** One floor, from its pre-rendered sprite (rendered the first time it shows up). */
     function drawFloor(j: number, sy: number): void {
       const g = view.ctx;
-      const milestone = isMilestone(j);
       const half = level.half[j] ?? 0;
       const left = wx((level.x[j] ?? 0) - half);
+      let sp = floorSprites.get(j);
+      if (!sp) {
+        if (floorSprites.size >= 32) {
+          const oldest = floorSprites.keys().next().value;
+          if (oldest !== undefined) {
+            const o = floorSprites.get(oldest);
+            if (o) o.canvas.width = 0;
+            floorSprites.delete(oldest);
+          }
+        }
+        const w = half * 2 * scale;
+        const h = FLOOR_H * scale * 1.35;
+        const l = makeLayer(w + 10, h + 12, view.dpr);
+        if (l.ctx) {
+          l.ctx.translate(2, 2);
+          paintFloor(l.ctx, j, 0, 0);
+        }
+        sp = { canvas: l.canvas, w: w + 10, h: h + 12 };
+        floorSprites.set(j, sp);
+      }
+      g.drawImage(sp.canvas, left - 2, sy - 2, sp.w, sp.h);
+      if (isMilestone(j)) {
+        const s = floorSign(j);
+        g.drawImage(s.canvas, offX + WALL_W * scale + 10, sy - s.h - 10 * scale, s.w, s.h);
+      }
+    }
+
+    /** Paint floor `j` with its top-left at (left, sy) into `g` (once per floor, into its sprite). */
+    function paintFloor(g: CanvasRenderingContext2D, j: number, left: number, sy: number): void {
+      const milestone = isMilestone(j);
+      const half = level.half[j] ?? 0;
       const w = half * 2 * scale;
       // drawn a bit thicker than FLOOR_H (looks only: the walkable line is the top edge)
       const h = FLOOR_H * scale * 1.35;
@@ -1016,12 +1034,6 @@ export const game: GameModule = {
       g.stroke();
       g.fillStyle = PAL.ink;
       g.fillRect(left + 2, sy + h * 0.44, w - 4, 1.5);
-      if (milestone) {
-        const s = floorSign(j);
-        const sx = offX + WALL_W * scale + 10;
-        const syy = sy - s.h - 10 * scale;
-        g.drawImage(s.canvas, sx, syy, s.w, s.h);
-      }
     }
 
     function drawBestLine(c: number): void {
@@ -1601,10 +1613,10 @@ export const game: GameModule = {
         return { landings, deadAt, x: simBody.x, py: simBody.py, vx: simBody.vx, margin };
       },
       get look() {
-        let n = stars.length + stickers.size + signs.size + 2 + (hazard ? 1 : 0);
+        let n = stars.length + stickers.size + signs.size + (hazard ? 1 : 0);
         for (const t of backTiles) if (t) n++;
         for (const t of wallTiles) if (t) n++;
-        return { zone: skyZone, lowQuality, canvases: n };
+        return { zone: shownZone, lowQuality, canvases: n + floorSprites.size };
       },
     };
     window.__icy = debug;
@@ -1630,11 +1642,6 @@ export const game: GameModule = {
         glowEls[1].remove();
         // release every offscreen canvas this round made
         invalidateLook();
-        for (const el of backEls) {
-          el.width = 0;
-          el.height = 0;
-          el.remove();
-        }
         for (const s of stars) s.width = 0;
         stickers.dispose();
         for (const s of signs.values()) s.canvas.width = 0;

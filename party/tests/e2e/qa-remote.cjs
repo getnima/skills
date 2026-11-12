@@ -389,6 +389,15 @@ async function joinPlayer(browser, code, name) {
         return s.phase === 'lobby' && s.played.length === 0;
       }, 6000);
       check('reset from the phone (with confirm) -> TV lobby, nothing played', true);
+      // after a reset the round index starts at 0 again, and tests/load/bots.ts keys its plans by
+      // round index: bots that played those indexes stay silent. Fresh bots for the rest of the run.
+      bots.push(
+        spawn('npx', ['tsx', 'tests/load/bots.ts', '--url', SERVER, '--code', code, '--players', '4', '--play', '--quiet', '--prefix', 'חדש'], {
+          cwd: ROOT,
+          stdio: 'ignore',
+          detached: true,
+        }),
+      );
     });
 
     // ───────── survives: a reload, 20 s offline, the TV reloading ─────────

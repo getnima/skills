@@ -59,7 +59,7 @@ const RESYNC_MS = 400;
 
 const MAX_FLYERS = 32;
 const MAX_HALVES = 48;
-const MAX_SPLATS = 18;
+const MAX_SPLATS = 12;
 const MAX_SLASHES = 10;
 const MAX_BLADES = 5;
 const TRAIL = 16;
@@ -72,8 +72,8 @@ const MAX_POPS = 8;
 /** Splat decals stay this long (s) and fade over the last part. */
 const SPLAT_LIFE = 1.8;
 /** Frame time (ms, moving average) above which decals and droplets thin out, and below which they come back. */
-const SLOW_FRAME_MS = 30;
-const FAST_FRAME_MS = 21;
+const SLOW_FRAME_MS = 24;
+const FAST_FRAME_MS = 19;
 /** A trail point fades out after this many steps. */
 const TRAIL_LIFE = 9;
 
@@ -654,7 +654,7 @@ export const game: GameModule = {
       addSlash(x, y, angle, f.kind === 'gold');
       // droplets fly along the cut, both ways: thin fast juice, fat slow sauce, or dry crumbs
       const kind = st.splashKind;
-      const drops = Math.round(((lowQuality ? 5 : 9) + (big >= COMBO_MIN ? big * 2 : 0)) * (kind === 'sauce' ? 0.6 : kind === 'crumbs' ? 1.3 : 1));
+      const drops = Math.round(((lowQuality ? 3 : 6) + (big >= COMBO_MIN ? big * 2 : 0)) * (kind === 'sauce' ? 0.6 : kind === 'crumbs' ? 1.3 : 1));
       for (const dir of [0, Math.PI]) {
         fx.burst(x, y, {
           count: drops,

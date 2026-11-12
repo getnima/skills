@@ -40,6 +40,8 @@ export const PICK = {
   DIG_POINTS: 5,
   GOLDEN_BONUS: 5,
   BIG_BONUS: 25,
+  /** A tap during the BIG booger moment pulls the strand: +1, not a dig. */
+  PULL_POINTS: 1,
   MISS_COST: 1,
   /** The BIG booger moment (stretch + pop), game time. The finger stays in during it. */
   BIG_MS: 900,
@@ -57,6 +59,8 @@ export interface PickListener {
   dig?(index: number, kind: BoogerKind, points: number): void;
   /** A tap off the face (points lost, maybe 0). */
   miss?(cost: number, comboLost: number): void;
+  /** A counted tap during the BIG booger moment (pulls the strand). */
+  pull?(index: number, points: number): void;
   /** A tap on the face over the rate cap (no points). */
   bounce?(): void;
   /** The meter filled: the finger goes in. */
@@ -164,6 +168,12 @@ export function createPickEngine(level: TapLevel, maxRaw: number, on: PickListen
     st.mult = mult;
     st.rate += (st.frenzy ? PICK.FRENZY_FILL : 1) / PICK.TAU_S;
 
+    if (st.picking && st.bigLeftMs > 0) {
+      addScore(PICK.PULL_POINTS);
+      on.pull?.(st.bigBoogers - 1, PICK.PULL_POINTS);
+      refreshMeter();
+      return;
+    }
     if (st.picking) {
       const index = st.digs;
       st.digs++;
@@ -172,7 +182,7 @@ export function createPickEngine(level: TapLevel, maxRaw: number, on: PickListen
       addScore(pts);
       on.dig?.(index, kind, pts);
       const next = level.bigAt[bigIdx];
-      if (next !== undefined && st.digs >= next && st.bigLeftMs <= 0) {
+      if (next !== undefined && st.digs >= next) {
         bigIdx++;
         st.bigBoogers++;
         st.bigLeftMs = PICK.BIG_MS;
