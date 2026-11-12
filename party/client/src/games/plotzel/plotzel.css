@@ -636,3 +636,9 @@
     animation-iteration-count: 1 !important;
   }
 }
+@media (prefers-reduced-motion: reduce) {
+  .pz-demo.is-on,
+  .pz-demo .pz-row.is-d2 {
+    animation: none !important;
+  }
+}

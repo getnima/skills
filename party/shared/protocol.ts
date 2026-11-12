@@ -55,9 +55,9 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     id: 'plotzel',
     title: 'פלוצל',
     emoji: '💨',
-    instructions: 'נחשו את המילה בת 5 האותיות ב־6 ניסיונות. ירוק = במקום, צהוב = קיים במילה. מהר יותר = יותר נקודות.',
+    instructions: 'מגיעים מהמילה שעל המסך ל״פלוץ״. בכל צעד משנים אות אחת, וכל צעד חייב להיות מילה אמיתית. כמה שיותר מילים, בכמה שפחות צעדים!',
     durationMs: 120_000,
-    maxRaw: 2_000,
+    maxRaw: 12_000,
   },
   ninja: {
     id: 'ninja',
