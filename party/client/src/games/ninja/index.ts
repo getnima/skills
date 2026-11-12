@@ -1442,6 +1442,8 @@ export const game: GameModule = {
         art.sunburst.width = 0;
         art.kaboom.width = 0;
         art.spark.width = 0;
+        // the art of this round (kit drawables made by loadNinjaArt for this round only)
+        for (const d of [...art.targets, ...art.golds, art.bomb, art.background, art.hand, art.coin]) d.source.width = 0;
         // window.__ninja keeps the final counters for test scripts
       },
     };

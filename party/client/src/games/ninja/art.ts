@@ -10,7 +10,7 @@
  * Style: the party look (shimi/README.md): flat colours, thick ink outlines, hard highlights,
  * no soft glows.
  */
-import { drawFace, loadAssets, paintDrawable, shade } from '../../kit/assets';
+import { assetFileUrl, drawFace, loadAssets, paintDrawable, shade } from '../../kit/assets';
 import { roundRectPath } from '../../kit/canvas';
 import { KABOOM, PAL, STAR10, halftone, makeLayer, polyPath, stickerShape } from './look';
 
@@ -645,10 +645,13 @@ export async function loadNinjaArt(): Promise<NinjaArt> {
       { key: 'bomb', file: 'bomb.png', size: SPRITE_BOX, placeholder: bombPainter },
       { key: 'background', file: 'background.jpg', size: 430, height: 932, fit: 'cover', placeholder: backgroundPainter },
     ]),
-    loadAssets(
-      'shimi',
-      GOLD_PROPS.map((g) => ({ key: g.key, file: g.file, size: 96, placeholder: (): void => undefined })),
-    ),
+    // the props are fetched only when no target_gold file is dropped in
+    assetFileUrl('ninja', 'target_gold.png')
+      ? Promise.resolve({} as Record<string, Drawable>)
+      : loadAssets(
+          'shimi',
+          GOLD_PROPS.map((g) => ({ key: g.key, file: g.file, size: 96, placeholder: (): void => undefined })),
+        ),
   ]);
   const real: Record<string, boolean> = {};
   for (const [k, d] of Object.entries(a)) real[k] = !d.isPlaceholder;
@@ -656,6 +659,7 @@ export async function loadNinjaArt(): Promise<NinjaArt> {
   if (a.target_gold.isPlaceholder) {
     const skins = GOLD_PROPS.map((g) => p[g.key]).filter((d): d is Drawable => !!d && !d.isPlaceholder);
     if (skins.length > 0) golds = skins.map((d) => goldSkin(d.key, d));
+    for (const d of skins) d.source.width = 0;
   }
   // the warning burst behind a bomb: red kaboom with an ink outline
   const kb = makeLayer(128, 128);

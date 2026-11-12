@@ -5,7 +5,7 @@
  * face when that file is missing. The tower itself (walls, back wall, floors, zones) is drawn
  * by the game from tower.ts when no picture is dropped in.
  */
-import { drawFace, loadAssets, paintDrawable } from '../../kit/assets';
+import { assetFileUrl, drawFace, loadAssets, paintDrawable } from '../../kit/assets';
 import { roundRectPath } from '../../kit/canvas';
 import { PAL } from './look';
 
@@ -138,12 +138,12 @@ export async function loadIcyArt(): Promise<IcyArt> {
       { key: 'bg', file: 'bg.png', size: 360, height: 640, fit: 'cover', placeholder: emptyPainter },
       { key: 'shirt', file: 'shirt.png', size: 64, placeholder: shirtPainter },
     ]),
-    // the default head: the owner's doll (the icy face slots win when they hold a file)
-    loadAssets('shimi', [{ key: 'head', file: 'head.png', size: FACE_BOX, placeholder: emptyPainter }]),
+    // the fallback head: the owner's doll (fetched only when no icy face.png is dropped in)
+    assetFileUrl('icy', 'face.png') ? Promise.resolve(null) : loadAssets('shimi', [{ key: 'head', file: 'head.png', size: FACE_BOX, placeholder: emptyPainter }]),
   ]);
   const real: Record<string, boolean> = {};
   for (const [k, d] of Object.entries(a)) real[k] = !d.isPlaceholder;
-  const doll = s.head.isPlaceholder ? null : s.head;
+  const doll = s && !s.head.isPlaceholder ? s.head : null;
   // head priority: icy/face*.png → icy/face.png → shimi/head.png → cartoon
   const face = !a.face.isPlaceholder ? a.face : (doll ?? a.face);
   const pick = (d: Drawable): Drawable => (!d.isPlaceholder ? d : !a.face.isPlaceholder ? a.face : (doll ?? d));

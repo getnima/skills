@@ -1642,6 +1642,8 @@ export const game: GameModule = {
         if (hazard) hazard.width = 0;
         hazard = null;
         hazardPattern = null;
+        // the art of this round (kit drawables made by loadIcyArt for this round only)
+        for (const d of [art.face, art.faceJump, art.faceFall, art.platform, art.milestone, art.wall, art.bg, art.shirt, art.finger]) d.source.width = 0;
         if (window.__icy === debug) delete window.__icy;
       },
     };

@@ -668,7 +668,16 @@ async function perf() {
   try {
     const { code } = await host.call('host:create', {});
     await host.call('host:setAutoCutscenes', { enabled: false });
-    const p = await L.openPhone(browser, 'perf390', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }, {}, check);
+    const initScript = process.env.PERF_NOANIM
+      ? () => {
+          const orig = Element.prototype.animate;
+          Element.prototype.animate = function (...a) {
+            if (this.closest && this.closest('.pa-place')) return { cancel() {}, finish() {} };
+            return orig.apply(this, a);
+          };
+        }
+      : undefined;
+    const p = await L.openPhone(browser, 'perf390', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }, initScript ? { initScript } : {}, check);
     await L.join(p, code, 'מודד');
     bots = spawnBots(code, 29, 'בוט');
     await waitPlayers(host, 30);
@@ -676,7 +685,7 @@ async function perf() {
     await c.send('Performance.enable');
     await c.send('Emulation.setCPUThrottlingRate', { rate: 4 });
     const runs = [];
-    for (let round = 0; round < 2; round++) {
+    for (let round = 0; round < Number(process.env.PERF_ROUNDS || 2); round++) {
       await host.call('host:start', { gameId: 'ninja' });
       await L.waitScreen(p, 'playing', 30000);
       await L.sleep(2500);
@@ -685,20 +694,35 @@ async function perf() {
         (ms) =>
           new Promise((resolve) => {
             const out = [];
+            const hudFrames = [];
+            const otherFrames = [];
             let last = performance.now();
             const t0 = last;
             let updates = 0;
             const hook = window.__playerPlay;
             let seen = hook && hook.scoresMsgs !== undefined ? hook.scoresMsgs : null;
+            let painted = hook && hook.placeAt !== undefined ? hook.placeAt : null;
+            let afterPaint = 0;
             function f(t) {
-              out.push(t - last);
+              const dt = t - last;
+              out.push(dt);
               last = t;
-              if (seen !== null && window.__playerPlay && window.__playerPlay.scoresMsgs !== seen) {
+              // frames right after a HUD repaint (this one and the next) vs all the others
+              if (afterPaint > 0) {
+                hudFrames.push(dt);
+                afterPaint--;
+              } else otherFrames.push(dt);
+              const h = window.__playerPlay;
+              if (seen !== null && h && h.scoresMsgs !== seen) {
                 updates++;
-                seen = window.__playerPlay.scoresMsgs;
+                seen = h.scoresMsgs;
+              }
+              if (painted !== null && h && h.placeAt !== painted) {
+                painted = h.placeAt;
+                afterPaint = 2;
               }
               if (t - t0 < ms) requestAnimationFrame(f);
-              else resolve({ out, updates });
+              else resolve({ out, updates, hudFrames, otherFrames });
             }
             requestAnimationFrame(f);
           }),
@@ -723,6 +747,11 @@ async function perf() {
         styleMs: +(d('RecalcStyleDuration') * 1000).toFixed(1),
         scriptMs: +(d('ScriptDuration') * 1000).toFixed(1),
         hudUpdatesSeen: frames.updates,
+        afterHudPaintMeanMs: frames.hudFrames.length ? +(frames.hudFrames.reduce((a, b) => a + b, 0) / frames.hudFrames.length).toFixed(2) : null,
+        afterHudPaintOver33: frames.hudFrames.filter((x) => x > 33.4).length,
+        afterHudPaintFrames: frames.hudFrames.length,
+        otherMeanMs: +(frames.otherFrames.reduce((a, b) => a + b, 0) / Math.max(1, frames.otherFrames.length)).toFixed(2),
+        otherOver33Pct: +((100 * frames.otherFrames.filter((x) => x > 33.4).length) / Math.max(1, frames.otherFrames.length)).toFixed(1),
       };
       console.log(`[perf] round ${round + 1}:`, JSON.stringify(r));
       runs.push(r);
