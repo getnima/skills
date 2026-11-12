@@ -41,7 +41,7 @@ const AR = {
   hoops: 228 / 640,
   hibiscus: 135 / 640,
   phone: 453 / 640,
-  muffs: 182 / 640,
+  muffs: 622 / 640,
   chain: 640 / 480,
   boa: 637 / 593,
   scarf: 640 / 369,
@@ -98,9 +98,9 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    // the muffs alone: the generated band was too small for this head and a stretched one stood off it like a frame
+    // the maker's muffs with a band drawn over the head in review (tests/e2e/avatar-review-fix.py)
     id: 305, slot: 'EARS', name: 'מחממי אוזניים', file: '/assets/shimi/props/305_earmuffs.png',
-    place: [5, 24.5, 92, hOf(92, AR.muffs)], ar: AR.muffs, contact: [51, 30],
+    place: [5, -0.96, 92, hOf(92, AR.muffs)], ar: AR.muffs, contact: [51, 30],
     fly: 'lob', snd: 'fwump', weight: 0.4, power: 1,
     colors: ['#FF4FA3', '#FF8CC4', '#D61F7C'], burst: '#FF7EB6',
     lines: [

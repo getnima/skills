@@ -101,7 +101,7 @@ export const items: AvatarItem[] = [
   },
   {
     id: 105, slot: 'HEAD', name: 'כובע סיום', file: '/assets/shimi/props/105_graduation_cap.png',
-    place: [-19, -18, 140, hOf(140, AR.grad)], ar: AR.grad, contact: [51, 12],
+    place: [-10, -14.7, 122, hOf(122, AR.grad)], ar: AR.grad, contact: [51, 12],
     tw: { crown: 0.12, bottom: 0.8, sink: 0.1, seat: 0.55 },
     fly: 'frisbee', snd: 'snap', weight: 0.35, power: 1,
     colors: ['#16120E', '#3A3A3A', '#E8A92A'], burst: '#FFD21F',

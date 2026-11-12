@@ -86,7 +86,12 @@ export function layoutLook(input: AvatarLook): PlacedItem[] {
 export const FRAME_MARGIN = 0.05;
 /** The icon ends here (% of the doll height) with a bare neck, and here when something is worn on the neck. */
 const ICON_BOTTOM = 48.6;
-const ICON_BOTTOM_NECK = 53;
+const ICON_BOTTOM_NECK = 55;
+/**
+ * In the icon the face is the main thing: the head is never narrower than this share of the picture.
+ * One hat always fits whole; a tall tower grows out of the top edge instead of shrinking the face to a dot.
+ */
+export const ICON_MIN_HEAD = 0.36;
 
 /**
  * The square (in doll pixels) that a crop shows.
@@ -95,6 +100,8 @@ const ICON_BOTTOM_NECK = 53;
  * centre line, so the face stays in the middle however far a hat sticks out to one side, and it is the
  * smallest such square, so the face is as large as the look allows.
  * In 'icon' and 'bust' a neck accessory does not stretch the frame: it is cut at the bottom edge.
+ * In 'icon' the square also stops growing at headWidth / ICON_MIN_HEAD: the chin stays where it is and
+ * the top of a tall hat tower is cut by the top edge ('bust' and 'full' always show the whole tower).
  */
 export function frameLook(look: AvatarLook, crop: AvatarCrop, placed: readonly PlacedItem[] = layoutLook(look)): Box {
   const box = crop === 'icon' ? DOLL.headBox : crop === 'bust' ? DOLL.bustBox : DOLL.fullBox;
@@ -113,5 +120,9 @@ export function frameLook(look: AvatarLook, crop: AvatarCrop, placed: readonly P
   const cx = (DOLL.centerX / 100) * W;
   const half = Math.max(cx - left, right - cx);
   const side = Math.max(half * 2, bottom - top) / (1 - 2 * FRAME_MARGIN);
+  if (crop === 'icon') {
+    const most = (((DOLL.headBox[2] - DOLL.headBox[0]) / 100) * W) / ICON_MIN_HEAD;
+    if (side > most) return { x: cx - most / 2, y: bottom + most * FRAME_MARGIN - most, w: most, h: most };
+  }
   return { x: cx - side / 2, y: (top + bottom) / 2 - side / 2, w: side, h: side };
 }

@@ -475,7 +475,7 @@ export const game: GameModule = {
 
     /** One fixed step of round time while in the air. */
     function flyStep(): void {
-      const wantFlap = flapQueued || (pilot && simStep < pilotUntil && pilotFlap(flight, simStep, bird, L.ceil));
+      const wantFlap = flapQueued || (pilot && simStep < pilotUntil && pilotFlap(flight, simStep, bird, 0));
       flapQueued = false;
       simStep++;
       dist = flight.distAt(simStep);
@@ -901,6 +901,15 @@ export const game: GameModule = {
     input.onDown(() => {
       if (mode === 'fly') flapQueued = true;
     });
+
+    // dev harness: ?pilot=1 lets the pilot fly from the first step (&pilotUntil=<step>), ?trace=<n> records n steps
+    if (!inRoom) {
+      if (numParam('pilot') === 1) {
+        pilot = true;
+        pilotUntil = numParam('pilotUntil') ?? Number.POSITIVE_INFINITY;
+      }
+      traceLeft = Math.max(0, numParam('trace') ?? 0);
+    }
 
     // ── boot: already out (a reload after the crash), or mid-round (a reload while flying) ──
     const outRaw = inRoom ? (ctx.field?.()?.outRaw ?? null) : null;

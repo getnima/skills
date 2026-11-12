@@ -82,7 +82,7 @@ export const items: AvatarItem[] = [
   },
   {
     id: 204, slot: 'EYES', name: 'מונוקל', file: '/assets/shimi/props/204_monocle.png',
-    place: [26.8, 23.6, 28, hOf(28, AR.monocle)], ar: AR.monocle, contact: [38, 28],
+    place: [26, 23.7, 33, hOf(33, AR.monocle)], ar: AR.monocle, contact: [38, 28],
     fly: 'feather', snd: 'ping', weight: 0.2, power: 0.8,
     colors: ['#C9962E', '#F2D27A', '#FFFFFF'], burst: '#FFD21F',
     lines: [
