@@ -1,9 +1,23 @@
 /**
- * Answer list of the builtin Plotzel: common, family-friendly Hebrew words of
- * exactly five letters in everyday unvocalised spelling (nouns, common verbs
- * and adjectives). Final letters are written as usual (ענבים, שולחן); the game
- * normalises them for comparison. Validate after editing:
- *   npx tsx client/src/games/plotzel/check-words.ts
+ * Answer list of the builtin Plotzel. Every entry is a real, common, modern
+ * Hebrew word of exactly five letters that a casual adult knows: nouns,
+ * plurals, adjectives, everyday verbs (infinitive / present). No names, no
+ * slang, nothing offensive (the one bodily word, נפיחה, is the game's own fart joke).
+ *
+ * Spelling rule (decided 2026-11-12, checked by check-words.ts):
+ *   - ktiv male, the standard unvocalised spelling of the Academy rules as seen
+ *     in newspapers and on signs (שולחן, תקווה, צוואר, גינות, ציפור). A word whose
+ *     standard spelling is not five letters is not in the list (עיפרון is six,
+ *     so the ktiv-haser "עפרון" was removed).
+ *   - final letters: written as usual, a final form only in the last position
+ *     (ענבים, שולחן). The game compares base letters (ם = מ), the keyboard has no
+ *     final keys, and the grid shows the last letter in its final form.
+ *
+ * Guesses: ANY five Hebrew letters are accepted (no dictionary check). At a
+ * party "not a word" is pure frustration on a phone keyboard; a nonsense guess
+ * just burns a try. This is deliberate.
+ *
+ * Validate after editing:  npx tsx client/src/games/plotzel/check-words.ts
  */
 export const WORDS: readonly string[] = [
   'שולחן', 'מחשבה', 'מכונה', 'משפחה', 'ספרים', 'ילדים', 'חברים', 'שמלות', 'גלידה', 'ארנבת',
@@ -18,7 +32,7 @@ export const WORDS: readonly string[] = [
   'פלאפל', 'טחינה', 'ספגטי', 'בורקס', 'לימון', 'בננות', 'אבטיח', 'ענבים', 'תותים', 'אגסים',
   'אפרסק', 'תמרים', 'זיתים', 'גזרים', 'בצלים', 'אפונה', 'ארטיק', 'מסטיק', 'קרטיב', 'שניצל',
   'קציצה', 'נקניק', 'כפיות', 'צלחות', 'כוסות', 'בקבוק', 'מקפיא', 'מעטפה', 'בולים', 'עיתון',
-  'מחברת', 'עפרון', 'צבעים', 'מכחול', 'תלמיד', 'מורים', 'מורות', 'כיתות', 'שיעור', 'הפסקה',
+  'מחברת', 'צבעים', 'מכחול', 'תלמיד', 'מורים', 'מורות', 'כיתות', 'שיעור', 'הפסקה',
   'חופשה', 'דרכון', 'כרטיס', 'כבאים', 'רופאה', 'אחיות', 'טבחים', 'זמרים', 'מלכים', 'נסיכה',
   'דרקון', 'מכשפה', 'רובוט', 'חללית', 'גמדים', 'ענקים', 'חתונה', 'תינוק', 'דודים', 'דודות',
   'הורים', 'שכנים', 'אנשים', 'גברים', 'ילדות', 'חברות', 'דמעות', 'תקווה', 'נשיקה', 'חיבוק',

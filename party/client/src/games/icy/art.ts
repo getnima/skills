@@ -128,46 +128,60 @@ const wallPainter: Painter = (ctx, w, h) => {
   ctx.stroke();
 };
 
-/** Transparent parallax layer: stars, sparkles and ice crystals; tiles vertically. */
-const bgPainter: Painter = (ctx, w, h) => {
-  // fixed pattern (art, not gameplay); nothing crosses the top / bottom edge
-  const stars: ReadonlyArray<readonly [number, number, number]> = [
-    [0.08, 0.06, 1.6], [0.3, 0.12, 1.1], [0.62, 0.05, 1.8], [0.9, 0.15, 1.2], [0.2, 0.26, 1.4],
-    [0.75, 0.3, 1.0], [0.45, 0.36, 1.7], [0.05, 0.45, 1.1], [0.92, 0.48, 1.6], [0.35, 0.55, 1.0],
-    [0.6, 0.62, 1.5], [0.15, 0.7, 1.8], [0.82, 0.72, 1.1], [0.48, 0.8, 1.3], [0.27, 0.9, 1.0],
-    [0.7, 0.92, 1.7], [0.95, 0.86, 1.0], [0.55, 0.2, 1.0], [0.4, 0.68, 1.1], [0.1, 0.94, 1.4],
-  ];
+/** Stars of the placeholder parallax layer: [x, y, r] in shares of the tile. */
+const BG_STARS: ReadonlyArray<readonly [number, number, number]> = [
+  [0.08, 0.06, 1.6], [0.3, 0.12, 1.1], [0.62, 0.05, 1.8], [0.9, 0.15, 1.2], [0.2, 0.26, 1.4],
+  [0.75, 0.3, 1.0], [0.45, 0.36, 1.7], [0.05, 0.45, 1.1], [0.92, 0.48, 1.6], [0.35, 0.55, 1.0],
+  [0.6, 0.62, 1.5], [0.15, 0.7, 1.8], [0.82, 0.72, 1.1], [0.48, 0.8, 1.3], [0.27, 0.9, 1.0],
+  [0.7, 0.92, 1.7], [0.95, 0.86, 1.0], [0.55, 0.2, 1.0], [0.4, 0.68, 1.1], [0.1, 0.94, 1.4],
+];
+/** Ice crystals of the placeholder parallax layer: [x, y, size]. */
+const BG_CRYSTALS: ReadonlyArray<readonly [number, number, number]> = [
+  [0.18, 0.17, 18], [0.82, 0.4, 26], [0.3, 0.62, 14], [0.74, 0.82, 20], [0.5, 0.9, 10],
+];
+
+/**
+ * The placeholder parallax pattern (stars + ice crystals) drawn as vectors into the
+ * box (0,0)-(w,h): two batched paths. The game draws it live instead of blitting a
+ * full-screen transparent picture, which cost ~16 ms a frame on a slow phone.
+ */
+export function drawBgPattern(ctx: CanvasRenderingContext2D, w: number, h: number): void {
   ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-  for (const [x, y, r] of stars) {
-    ctx.beginPath();
+  ctx.beginPath();
+  for (const [x, y, r] of BG_STARS) {
+    ctx.moveTo(x * w + r, y * h);
     ctx.arc(x * w, y * h, r, 0, Math.PI * 2);
-    ctx.fill();
   }
-  const crystal = (x: number, y: number, s: number, a: number): void => {
-    ctx.save();
-    ctx.translate(x * w, y * h);
-    ctx.strokeStyle = `rgba(200, 235, 255, ${a})`;
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(200, 235, 255, 0.2)';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (const [x, y, size] of BG_CRYSTALS) {
+    const cx = x * w;
+    const cy = y * h;
     for (let i = 0; i < 6; i++) {
-      ctx.rotate(Math.PI / 3);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(0, -s);
-      ctx.moveTo(0, -s * 0.55);
-      ctx.lineTo(-s * 0.22, -s * 0.75);
-      ctx.moveTo(0, -s * 0.55);
-      ctx.lineTo(s * 0.22, -s * 0.75);
-      ctx.stroke();
+      const a = ((i + 1) * Math.PI) / 3;
+      const dx = Math.sin(a);
+      const dy = -Math.cos(a);
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + dx * size, cy + dy * size);
+      // two little barbs at 55% of the arm
+      const bx = cx + dx * size * 0.55;
+      const by = cy + dy * size * 0.55;
+      const px = -dy * size * 0.22;
+      const py = dx * size * 0.22;
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx + dx * size * 0.2 - px, by + dy * size * 0.2 - py);
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx + dx * size * 0.2 + px, by + dy * size * 0.2 + py);
     }
-    ctx.restore();
-  };
-  crystal(0.18, 0.17, 18, 0.22);
-  crystal(0.82, 0.4, 26, 0.16);
-  crystal(0.3, 0.62, 14, 0.25);
-  crystal(0.74, 0.82, 20, 0.2);
-  crystal(0.5, 0.95 - 0.05, 10, 0.2);
-};
+  }
+  ctx.stroke();
+}
+
+/** Transparent parallax layer: stars and ice crystals; tiles vertically (nothing crosses the top / bottom edge). */
+const bgPainter: Painter = (ctx, w, h) => drawBgPattern(ctx, w, h);
 
 export interface IcyArt {
   readonly face: Drawable;

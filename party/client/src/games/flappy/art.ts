@@ -31,7 +31,7 @@ const wingPainter: Painter = (ctx, w, h) => {
   ctx.lineWidth = Math.max(2, h * 0.07);
   ctx.beginPath();
   ctx.moveTo(rootX, rootY - h * 0.2);
-  ctx.quadraticCurveTo(w * 0.45, h * 0.0, w * 0.96, h * 0.1);
+  ctx.quadraticCurveTo(w * 0.45, 0, w * 0.96, h * 0.1);
   ctx.quadraticCurveTo(w * 1.0, h * 0.35, w * 0.86, h * 0.45);
   ctx.quadraticCurveTo(w * 0.92, h * 0.68, w * 0.7, h * 0.72);
   ctx.quadraticCurveTo(w * 0.7, h * 0.94, w * 0.46, h * 0.92);

@@ -293,9 +293,11 @@ async function embedNoBridge(browser, device, name, failPath) {
     check(`${name} first tap only arms`, (await party(page)).score === 0 && !(await finishedOverlay(page)));
     await page.locator('.pze-n.is-fail').click({ force: true });
     await sleep(1600);
-    check(`${name} "לא הצלחתי" confirmed -> 0 and finish`, (await party(page)).score === 0 && (await finishedOverlay(page)));
-    await shot('4-fail-finished');
+    // a confirmed fail is worth FAIL_MIN (100); the bar stays for a correction until time is up
+    check(`${name} "לא הצלחתי" confirmed -> FAIL_MIN, no finish`, (await party(page)).score === 100 && !(await finishedOverlay(page)), await party(page));
+    await shot('4-fail-reported');
   } else {
+    const t0 = (await party(page)).leftMs;
     await page.locator('.pze-n[data-act="tries-2"]').click();
     await page.locator('.pze-n[data-act="tries-3"]').click(); // re-arm on another number
     await shot('3-armed');
@@ -304,12 +306,13 @@ async function embedNoBridge(browser, device, name, failPath) {
     await page.locator('.pze-n[data-act="tries-3"]').click({ force: true }); // armed = pulsing, never "stable"
     const after = (await party(page)).leftMs;
     const s = (await party(page)).score;
-    const lo = await logic(page, 'solvedScore', 3, after, DUR);
-    const hi = await logic(page, 'solvedScore', 3, before, DUR);
-    check(`${name} self-report 3 tries -> formula`, s >= lo && s <= hi, { s, lo, hi });
+    // timed at the first tap on "3" (+ SELF_REPORT_GRACE_MS), see selfReportScore
+    const lo = await logic(page, 'selfReportScore', 3, after, DUR);
+    const hi = await logic(page, 'selfReportScore', 3, t0, DUR);
+    check(`${name} self-report 3 tries -> formula`, s >= lo && s <= hi && before >= after, { s, lo, hi });
     await sleep(1600);
-    check(`${name} finish() after self-report`, await finishedOverlay(page));
-    await shot('4-selfreport-finished');
+    check(`${name} self-report keeps the bar for a correction (no finish)`, !(await finishedOverlay(page)) && (await page.locator('.pze-n.is-chosen').count()) === 1);
+    await shot('4-selfreport-reported');
   }
   check(`${name} no console errors`, errors.length === 0, errors);
   await context.close();
@@ -330,13 +333,16 @@ async function embedUnreachable(browser, device, name, target, waitMs, how) {
     // the site "loads" an error page (here: the egress proxy refuses it): the player uses the link
     await sleep(1500);
     check(`${name} error page counts as loaded (no auto notice)`, (await page.evaluate(() => document.querySelector('.pze').dataset.state)) === 'ready');
+    // one tap on the persistent link goes straight to the builtin game
     await page.locator('.pze-link').click();
+  } else {
+    // refused = "failed", hang = "slow" (no load event in 6 s); both offer the builtin game
+    await page.waitForFunction(() => ['failed', 'slow'].includes(document.querySelector('.pze')?.dataset.state), null, { timeout: waitMs });
+    await sleep(200);
+    await shot('2-notice');
+    check(`${name} notice shown`, await page.evaluate(() => document.querySelector('.pze-failed').classList.contains('is-on')));
+    await page.locator('.pze-btn[data-act="builtin"]').click();
   }
-  await page.waitForFunction(() => document.querySelector('.pze')?.dataset.state === 'failed', null, { timeout: waitMs });
-  await sleep(200);
-  await shot('2-notice');
-  check(`${name} notice shown`, await page.evaluate(() => document.querySelector('.pze-failed').classList.contains('is-on')));
-  await page.locator('.pze-btn[data-act="builtin"]').click();
   await page.waitForSelector('.pz-key');
   check(`${name} switched to builtin`, await page.evaluate(() => !document.querySelector('.pze') && !!document.querySelector('.pz')));
   const answer = await logic(page, 'pickAnswer', 7);
@@ -372,7 +378,7 @@ async function embedUnreachable(browser, device, name, target, waitMs, how) {
       await embedNoBridge(browser, devices['Pixel 7'], 'pixel-nobridge', true);
     }
     if (on('unreachable')) await embedUnreachable(browser, devices['Pixel 7'], 'pixel-unreachable', 'http://127.0.0.1:5999/', 8000, 'refused');
-    if (on('hang')) await embedUnreachable(browser, devices['iPhone 14'], 'iphone-hang', 'http://127.0.0.1:5214/plotzel-hang/', 9000, 'hang');
+    if (on('hang')) await embedUnreachable(browser, devices['iPhone 14'], 'iphone-hang', `${BASE.replace('localhost', '127.0.0.1')}/plotzel-hang/`, 9000, 'hang');
     if (on('blocked')) await embedUnreachable(browser, devices['iPhone 14'], 'iphone-blocked', 'http://10.255.255.1/', 3000, 'help');
   } finally {
     await browser.close();

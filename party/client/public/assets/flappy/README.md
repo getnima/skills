@@ -3,7 +3,7 @@
 Drop a file here with the name below and it replaces the placeholder with no code change
 (`.png`, `.webp`, `.jpg`, `.jpeg` or `.svg` with the same base name also works; a production
 build must be re-run after adding files). Sizes are the recommended pixel sizes (2x the
-logical size the game draws at). Faces are drawn as a circle about 2.2x the hit radius, so keep the face centered and filling the square.
+logical size the game draws at). The face is drawn as a ball about 60-75 px wide on a phone; keep it centered and filling the square, features big and bold.
 
 | File | Pixels | Transparent | What it shows |
 | --- | --- | --- | --- |
@@ -18,4 +18,4 @@ logical size the game draws at). Faces are drawn as a circle about 2.2x the hit 
 | `skyline.png` | 1024x320 | yes | Background silhouettes (city / party hall), transparent sky, tiles HORIZONTALLY. Slow parallax just above the ground. |
 | `background.jpg` | 860x1864 | no | Optional full-screen backdrop (night sky). Cropped to cover any screen, so keep the important part in the middle. Static. |
 
-Hit boxes do not depend on the images: a real face may stick out of the circle a little.
+Hit boxes do not depend on the images: the bird's hit circle is about 60% of the face's radius (forgiving on purpose), and the stands hit only along the pole and the head's middle, so a real face or microphone may overlap a little without a crash.

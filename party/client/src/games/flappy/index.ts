@@ -15,12 +15,12 @@ import { createLoop } from '../../kit/loop';
 import { COLORS, font } from '../../kit/theme';
 import { GAMES } from '../../../../shared/protocol';
 import { loadFlappyArt, SLOT_SIZES } from './art';
-import { createCourse, FIELD, PHYS, speedAt } from './course';
+import { createCourse, FIELD, hitsObstacle, PHYS, speedAt } from './course';
 
 import type { GameContext, GameInstance, GameModule } from '../types';
 import type { Obstacle } from './course';
 
-type Mode = 'hover' | 'fly' | 'dead' | 'glide' | 'over';
+type Mode = 'hover' | 'fly' | 'dead' | 'over';
 
 interface FlappyDebug {
   readonly mode: Mode;
@@ -43,6 +43,10 @@ interface FlappyDebug {
   /** Start (n > 0) or stop (0) recording [step, mode, birdY, vy, dist, run] per fixed step. */
   trace(n: number): void;
   readonly traced: ReadonlyArray<readonly (number | string)[]>;
+  /** Which art slots use a real dropped-in file (true) instead of the placeholder. */
+  readonly art: Record<string, boolean>;
+  /** Opacity of the "tap to fly" hint (0 = hidden). */
+  readonly hint: number;
 }
 
 declare global {
@@ -66,7 +70,6 @@ interface Feather {
 }
 
 const DEAD_MS = 720;
-const GLIDE_MS = 1100;
 const RESPAWN_MIN_LEFT_MS = 1300;
 const HOVER_Y = FIELD * 0.42;
 const MAX_FEATHERS = 48;
@@ -93,15 +96,6 @@ function streakWord(n: number): string {
   let word = 'יפה!';
   for (const [at, w] of STREAK_WORDS) if (n >= at) word = w;
   return word;
-}
-
-/** Distance from a point to a rectangle (0 inside). */
-function circleHitsRect(cx: number, cy: number, r: number, x: number, y: number, w: number, h: number): boolean {
-  const nx = clamp(cx, x, x + w);
-  const ny = clamp(cy, y, y + h);
-  const dx = cx - nx;
-  const dy = cy - ny;
-  return dx * dx + dy * dy < r * r;
 }
 
 export const game: GameModule = {
@@ -173,7 +167,6 @@ export const game: GameModule = {
     let best = 0;
     let bestAtRunStart = 0;
     let newBestShown = false;
-    let runIndex = 0;
     const runs: number[] = [];
     let landed = false;
     // tweened cosmetics
@@ -190,6 +183,7 @@ export const game: GameModule = {
     let bannerT = 0;
     let bannerMax = 1;
     let destroyed = false;
+    let lastTenShown = false;
     let traceLeft = 0;
     const traced: Array<Array<number | string>> = [];
 
@@ -256,6 +250,13 @@ export const game: GameModule = {
       g.globalAlpha = 1;
     }
 
+    /** One hint fade at a time: a tap right after a respawn must win over the fade-in. */
+    let cancelHintFade: (() => void) | null = null;
+    function fadeHint(to: number, ms: number): void {
+      cancelHintFade?.();
+      cancelHintFade = fx.tween({ ms, from: hintAlpha, to, update: (v) => (hintAlpha = v) });
+    }
+
     function banner(text: string, color: string, ms = 1100): void {
       bannerText = text;
       bannerColor = color;
@@ -282,7 +283,6 @@ export const game: GameModule = {
 
     // ── lifecycle of runs ──
     function startRun(): void {
-      runIndex++;
       run = 0;
       dist = 0;
       prevDist = 0;
@@ -298,10 +298,13 @@ export const game: GameModule = {
       landed = false;
       bestAtRunStart = best;
       newBestShown = false;
-      mode = 'glide';
+      // a new run waits, hovering, for the first tap (like the very first one): no
+      // forced fall a second after a crash, and a stray tap from the crash only starts it
+      mode = 'hover';
       modeT = 0;
       bobT = 0;
       passGlowIdx = -1;
+      fadeHint(0.9, 350);
       // cosmetic entrance
       birdScale = 0.2;
       fx.tween({ ms: 380, from: 0.2, to: 1, ease: ease.outBack, update: (v) => (birdScale = v) });
@@ -340,9 +343,7 @@ export const game: GameModule = {
     }
 
     function flap(): void {
-      if (mode === 'hover') {
-        fx.tween({ ms: 300, from: hintAlpha, to: 0, update: (v) => (hintAlpha = v) });
-      }
+      if (mode === 'hover') fadeHint(0, 300);
       mode = 'fly';
       vy = PHYS.flapVy;
       flapBoost = 1;
@@ -390,26 +391,7 @@ export const game: GameModule = {
     }
 
     function collides(): boolean {
-      const r = PHYS.hitRadius;
-      const bx = knockX;
-      const hw = PHYS.headW * 0.42;
-      const hh = PHYS.headH * 0.78;
-      const pw = PHYS.poleW / 2;
-      const from = Math.max(0, nextIdx - 1);
-      for (let i = from; i <= nextIdx + 1; i++) {
-        const o = course.get(i);
-        const ox = o.x - dist;
-        if (ox - PHYS.headW > bx + r || ox + PHYS.headW < bx - r) continue;
-        const gapTop = o.gapY - o.gap / 2;
-        const gapBot = o.gapY + o.gap / 2;
-        // heads (the dome's rounded top is covered by the circle test's corners)
-        if (circleHitsRect(bx, birdY, r, ox - hw, gapTop - hh, hw * 2, hh)) return true;
-        if (circleHitsRect(bx, birdY, r, ox - hw, gapBot, hw * 2, hh)) return true;
-        // poles
-        if (circleHitsRect(bx, birdY, r, ox - pw, -400, pw * 2, gapTop - hh + 400)) return true;
-        if (circleHitsRect(bx, birdY, r, ox - pw, gapBot + hh, pw * 2, 400)) return true;
-      }
-      return false;
+      return hitsObstacle(course, nextIdx, dist, knockX, birdY);
     }
 
     // ── fixed step ──
@@ -432,20 +414,6 @@ export const game: GameModule = {
           groundScroll += speedAt(0) * dt;
           tilt += (0 - tilt) * 0.2;
           if (wantFlap) flap();
-          break;
-        }
-        case 'glide': {
-          birdY = HOVER_Y + Math.sin(bobT * 4.2) * 1.4;
-          const sp = speedAt(dist);
-          dist += sp * dt;
-          groundScroll += sp * dt;
-          tilt += (0 - tilt) * 0.2;
-          if (wantFlap) flap();
-          else if (modeT * 1000 >= GLIDE_MS) {
-            mode = 'fly';
-            modeT = 0;
-            vy = 0;
-          }
           break;
         }
         case 'fly': {
@@ -516,6 +484,16 @@ export const game: GameModule = {
         default: {
           const _exhaustive: never = mode;
           throw new Error(`Unhandled mode: ${String(_exhaustive)}`);
+        }
+      }
+
+      // the last 10 seconds of the round (round time comes from the stage, so it is freeze-safe)
+      if (!lastTenShown && loop.steps > 60 && mode !== 'over') {
+        const left = ctx.timeLeftMs();
+        if (left > 0 && left <= 10_000) {
+          lastTenShown = true;
+          banner('10 שניות אחרונות!', COLORS.orange, 1600);
+          sfx.beep();
         }
       }
 
@@ -687,9 +665,10 @@ export const game: GameModule = {
       g.save();
       g.globalAlpha = fade;
       g.translate(L.W / 2, L.top + L.playH * 0.16);
-      g.scale(pop, pop);
-      g.rotate(-0.06);
       g.font = fonts.banner;
+      const fit = Math.min(1, (L.W - 36) / Math.max(1, g.measureText(bannerText).width));
+      g.scale(pop * fit, pop * fit);
+      g.rotate(-0.06);
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.lineJoin = 'round';
@@ -834,7 +813,7 @@ export const game: GameModule = {
     });
 
     input.onDown(() => {
-      if (mode === 'hover' || mode === 'glide' || mode === 'fly') flapQueued = true;
+      if (mode === 'hover' || mode === 'fly') flapQueued = true;
     });
 
     window.__flappy = {
@@ -867,6 +846,14 @@ export const game: GameModule = {
         return { x: o.x - dist, gapY: o.gapY, gap: o.gap };
       },
       phys: PHYS,
+      get hint(): number {
+        return hintAlpha;
+      },
+      get art(): Record<string, boolean> {
+        const out: Record<string, boolean> = {};
+        for (const [k, d] of Object.entries(art)) out[k] = !d.isPlaceholder;
+        return out;
+      },
       get speed(): number {
         return speedAt(dist);
       },

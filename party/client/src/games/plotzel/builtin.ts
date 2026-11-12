@@ -25,18 +25,34 @@ import {
   pickAnswer,
   solvedScore,
   WORD_LEN,
+  FAIL_MIN,
 } from './logic';
+import { memoryAge, recallRound, rememberRound } from './memory';
 
 import type { Drawable } from '../../kit/assets';
 import type { GameContext, GameInstance } from '../types';
 import type { LetterState } from './logic';
 
-/** Keyboard rows in the physical Hebrew order (left to right), base letters only. */
-const KB_ROWS: readonly (readonly string[])[] = [
+/**
+ * Keyboard rows in the physical Hebrew order (left to right), base letters only.
+ * Wide phones (>= ~410 CSS px) get the phone keyboard's three rows; narrower ones
+ * the same order wrapped at seven keys (four rows), because three rows of eight
+ * cannot give every key 40 px on a 320-375 px screen.
+ */
+const KB_WIDE: readonly (readonly string[])[] = [
   ['ENTER', 'ק', 'ר', 'א', 'ט', 'ו', 'פ', 'DEL'],
   ['ש', 'ד', 'ג', 'כ', 'ע', 'י', 'ח', 'ל'],
   ['ז', 'ס', 'ב', 'ה', 'נ', 'מ', 'צ', 'ת'],
 ];
+const KB_NARROW: readonly (readonly string[])[] = [
+  ['ק', 'ר', 'א', 'ט', 'ו', 'פ'],
+  ['ש', 'ד', 'ג', 'כ', 'ע', 'י', 'ח'],
+  ['ל', 'ז', 'ס', 'ב', 'ה', 'נ', 'מ'],
+  ['ENTER', 'צ', 'ת', 'DEL'],
+];
+/** Smallest key width (CSS px) a layout may use; below it the narrow layout is taken. */
+const KEY_MIN_W = 40;
+const KEY_MAX_W = 48;
 
 const FLIP_MS = 300;
 const FLIP_STAGGER_MS = 230;
@@ -90,6 +106,7 @@ export async function createBuiltin(ctx: GameContext, opts: BuiltinOptions = {})
   const parent = opts.root ?? ctx.root;
   const art = await loadPlotzelArt();
   const answer = pickAnswer(ctx.seed);
+  const memAge = memoryAge(ctx.durationMs);
   const answerLetters = [...answer].map(normalizeLetter);
 
   // ── DOM ──
@@ -130,28 +147,43 @@ export async function createBuiltin(ctx: GameContext, opts: BuiltinOptions = {})
 
   const kb = el('div', 'pz-kb');
   const keyEls = new Map<string, HTMLButtonElement>();
-  for (const rowKeys of KB_ROWS) {
-    const row = el('div', 'pz-kb-row');
-    for (const k of rowKeys) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.tabIndex = -1;
-      b.className = 'pz-key';
-      b.dataset.k = k;
-      if (k === 'ENTER') {
-        b.classList.add('is-wide', 'is-enter');
-        b.textContent = 'שלח';
-      } else if (k === 'DEL') {
-        b.classList.add('is-wide', 'is-del');
-        b.textContent = '⌫';
-        b.setAttribute('aria-label', 'מחיקה');
-      } else {
-        b.textContent = k;
-        keyEls.set(k, b);
-      }
-      row.append(b);
+  const allKeys = new Map<string, HTMLButtonElement>();
+  for (const k of KB_WIDE.flat()) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.tabIndex = -1;
+    b.className = 'pz-key';
+    b.dataset.k = k;
+    if (k === 'ENTER') {
+      b.classList.add('is-wide', 'is-enter');
+      b.textContent = 'שלח';
+    } else if (k === 'DEL') {
+      b.classList.add('is-wide', 'is-del');
+      b.textContent = '⌫';
+      b.setAttribute('aria-label', 'מחיקה');
+    } else {
+      b.textContent = k;
+      keyEls.set(k, b);
     }
-    kb.append(row);
+    allKeys.set(k, b);
+  }
+  let kbLayout: 'wide' | 'narrow' | null = null;
+  /** Put the (persistent) key buttons into the rows of `which`. */
+  function arrangeKeys(which: 'wide' | 'narrow'): void {
+    if (which === kbLayout) return;
+    kbLayout = which;
+    kb.dataset.layout = which;
+    const rowsDef = which === 'wide' ? KB_WIDE : KB_NARROW;
+    kb.replaceChildren(
+      ...rowsDef.map((keys) => {
+        const row = el('div', 'pz-kb-row');
+        for (const k of keys) {
+          const b = allKeys.get(k);
+          if (b) row.append(b);
+        }
+        return row;
+      }),
+    );
   }
 
   const fxRoot = el('div', 'pz-fx');
@@ -164,8 +196,15 @@ export async function createBuiltin(ctx: GameContext, opts: BuiltinOptions = {})
   // ── sizing (layout only, not gameplay) ──
   function layout(): void {
     const kbWidth = wrap.clientWidth - 12;
-    const u = clamp(Math.floor((kbWidth - 7 * 5) / 9), 30, 46);
+    // wide: the 9-unit top row (8 keys, 7 gaps of 5 px); narrow: 7 keys, 6 gaps of 4 px
+    const wideU = Math.floor((kbWidth - 7 * 5) / 9);
+    const narrow = wideU < KEY_MIN_W;
+    arrangeKeys(narrow ? 'narrow' : 'wide');
+    const gap = narrow ? 4 : 5;
+    const u = narrow ? clamp(Math.floor((kbWidth - 6 * gap) / 7), 30, KEY_MAX_W) : clamp(wideU, KEY_MIN_W, KEY_MAX_W);
     kb.style.setProperty('--u', `${u}px`);
+    kb.style.setProperty('--gap', `${gap}px`);
+    kb.style.setProperty('--wk', narrow ? '2' : '1.5');
     const bw = board.clientWidth;
     const bh = board.clientHeight - 12;
     const tile = Math.floor(clamp(Math.min((bh - 5 * 6) / MAX_TRIES, (bw - 4 * 6 - 8) / WORD_LEN), 30, 64));
@@ -313,13 +352,17 @@ export async function createBuiltin(ctx: GameContext, opts: BuiltinOptions = {})
     const tries = rowIdx + 1;
     const solved = states.every((s) => s === 'correct');
     // the score is decided at the moment of submitting; the flip is cosmetic
+    let raw: number;
     if (solved) {
-      ctx.setScore(solvedScore(tries, ctx.timeLeftMs(), ctx.durationMs));
+      raw = solvedScore(tries, ctx.timeLeftMs(), ctx.durationMs);
     } else {
       const { greens, yellows } = countStates(states);
       best = Math.max(best, partialScore(greens, yellows));
-      ctx.setScore(best);
+      raw = best;
     }
+    ctx.setScore(raw);
+    // a reload / remount mid-round resumes from here (memory.ts)
+    rememberRound(ctx.seed, memAge, { rows: rows.slice(0, rowIdx + 1).map((r) => r.join('')), score: raw });
     locked = true;
     const r = rowIdx;
     const tiles = tileEls[r] ?? [];
@@ -414,6 +457,8 @@ export async function createBuiltin(ctx: GameContext, opts: BuiltinOptions = {})
 
   function lose(): void {
     done = true;
+    // a finished fail is worth something small, always less than any solve
+    ctx.setScore(Math.max(FAIL_MIN, best));
     wrap.dataset.state = 'failed';
     markCurrentRow();
     say('נגמרו הניסיונות 💨', 'bad');
@@ -503,6 +548,56 @@ export async function createBuiltin(ctx: GameContext, opts: BuiltinOptions = {})
     },
   });
   loop.start();
+
+  /** Replay the rows this phone already submitted in this round (no animation, no sound). */
+  function restore(): void {
+    const saved = (recallRound(ctx.seed, memAge).rows ?? []).filter((w) => [...w].length === WORD_LEN).slice(0, MAX_TRIES);
+    if (saved.length === 0) return;
+    const savedScore = recallRound(ctx.seed, memAge).score;
+    let solvedAt = -1;
+    saved.forEach((word, r) => {
+      if (solvedAt >= 0) return;
+      const letters = [...word].map(normalizeLetter);
+      rows[r] = letters;
+      paintRow(r);
+      const states = evaluateGuess(word, answer);
+      (tileEls[r] ?? []).forEach((t, c) => setStateClass(t, states[c]));
+      letters.forEach((ch, i) => {
+        const st = states[i];
+        if (st === undefined) return;
+        const next = betterState(keyState.get(ch), st);
+        keyState.set(ch, next);
+        const key = keyEls.get(ch);
+        if (key) setStateClass(key, next);
+      });
+      if (states.every((x) => x === 'correct')) solvedAt = r;
+      else {
+        const { greens, yellows } = countStates(states);
+        best = Math.max(best, partialScore(greens, yellows));
+      }
+    });
+    if (solvedAt >= 0) {
+      rowIdx = solvedAt;
+      done = true;
+      wrap.dataset.state = 'solved';
+      markCurrentRow();
+      setMascot(art.mascotHappy);
+      say(WIN_LINES[solvedAt] ?? 'הצלחת!', 'win');
+      ctx.setScore(savedScore ?? solvedScore(solvedAt + 1, 0, ctx.durationMs));
+      loop.after(600, () => ctx.finish());
+      return;
+    }
+    ctx.setScore(best);
+    if (saved.length >= MAX_TRIES) {
+      rowIdx = MAX_TRIES - 1;
+      lose();
+      return;
+    }
+    rowIdx = saved.length;
+    markCurrentRow();
+    say(`ניסיון ${rowIdx + 1} מתוך ${MAX_TRIES}`);
+  }
+  restore();
 
   return {
     setPaused(paused: boolean): void {

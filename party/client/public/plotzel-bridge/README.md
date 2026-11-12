@@ -39,11 +39,18 @@ window.plotzelBridge && plotzelBridge('failed', { greens: 3, yellows: 1 });
 
 Rules the party checks (anything else is ignored): `source: 'plotzel'`, `type` is
 `progress` / `solved` / `failed`, `tries` an integer 1-6, `greens` and `yellows`
-integers 0-5 with greens + yellows <= 5, optional `score` 0-1500 (if you send `score`
-with `solved`, it is used instead of the party's formula).
+integers 0-5 with greens + yellows <= 5, optional `score` 0-1500. A message with a
+field out of range is dropped whole. Send `solved` and `failed` once, when the player
+finishes in this page load (not on reload from a remembered result).
 
-Party scoring: solved on try N = 1000 - (N-1) x 100 + up to 500 for time left;
-not solved = best row's greens x 60 + yellows x 20 (max 300).
+Party scoring (the same for your site, the party's built-in game and players who
+type their tries by hand, so nobody is better off in one mode):
+- solved on try N = 1000 - (N-1) x 100 + up to 500 for time left (timed when the
+  `solved` message arrives). Send `tries`: it always wins over `score`. `score` is
+  used only for a `solved` without `tries`.
+- failed = best row's greens x 60 + yellows x 20, but at least 100 (max 300): every
+  fail is worth less than any solve.
+- progress = the best row so far, same formula without the minimum.
 
 ## 3. Same word for everyone: read the seed
 
@@ -61,7 +68,15 @@ var word = Number.isFinite(seed) ? WORDS[Math.abs(Math.floor(seed)) % WORDS.leng
 
 The site must not send `X-Frame-Options: DENY` / `SAMEORIGIN` or a CSP
 `frame-ancestors` that excludes the party. Netlify does not by default; if a
-`_headers` file adds them, remove them for `/`.
+`_headers` file adds them, remove them for `/`. A blocked page cannot be detected
+from the party (the phone shows an empty frame): guests then have to tap
+"לא נטען? לשחק כאן" themselves. The first bridge message is the only sign of life
+the party can see; once it arrives that link disappears.
+
+Inside the party the frame is sandboxed with `allow-scripts allow-same-origin
+allow-forms`: your scripts, localStorage and forms work; `alert()` / `confirm()` /
+`prompt()` do nothing (they would freeze the phone's round), popups and
+`target=_blank` links do not open, and the site cannot navigate the party page.
 
 ## Testing without the real site
 
@@ -69,3 +84,8 @@ The site must not send `X-Frame-Options: DENY` / `SAMEORIGIN` or a CSP
 open the party harness with
 `/dev.html?game=plotzel&plotzelUrl=http://127.0.0.1:5173/plotzel-bridge/mock.html`
 (add `?bridge=0` to the mock URL for a site without the snippet).
+
+`tests/e2e/fixtures/plotzel-standin.cjs` serves the same mock on its own origin with
+every failure the real site could have (`/xfo`, `/csp`, `/hang`, `/slow`, `/tall`,
+`/input`, `/evil`); `tests/e2e/qa-plotzel-play.cjs` plays all of them, and checks that
+the snippet in `mock.html` is byte-identical to the one above.

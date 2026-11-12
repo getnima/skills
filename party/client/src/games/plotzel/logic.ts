@@ -14,6 +14,21 @@ export const GREEN_POINTS = 60;
 export const YELLOW_POINTS = 20;
 /** Highest possible raw score (solved on the first try at the first instant). */
 export const SOLVED_MAX = 1500;
+/** Lowest possible raw score of a solve (sixth try, no time left): every solve beats every fail. */
+export const SOLVED_MIN = 500;
+/**
+ * A finished fail (all six rows used, or the player reported "לא הצלחתי") is
+ * worth at least this much, so trying beats not playing; colours on top of it
+ * can reach PARTIAL_MAX, which stays below SOLVED_MIN.
+ */
+export const FAIL_MIN = 100;
+/**
+ * A self-reported solve is timed at the player's first tap on the bar plus
+ * this much: about the time it takes to look down from the game and find the
+ * number, so a self-report is worth the same as the builtin / bridge solve at
+ * the same moment.
+ */
+export const SELF_REPORT_GRACE_MS = 2_000;
 
 export type LetterState = 'correct' | 'present' | 'absent';
 
@@ -92,11 +107,26 @@ export function partialScore(greens: number, yellows: number): number {
   return Math.min(PARTIAL_MAX, g * GREEN_POINTS + y * YELLOW_POINTS);
 }
 
+/** A finished fail: the best row's colours, but never below FAIL_MIN. */
+export function failedScore(greens: number, yellows: number): number {
+  return Math.max(FAIL_MIN, partialScore(greens, yellows));
+}
+
 /** Solved on try `tries` (1..6): 1000 - (tries-1) x 100 + round(500 x timeLeft / duration). */
 export function solvedScore(tries: number, timeLeftMs: number, durationMs: number): number {
   const n = Math.min(MAX_TRIES, Math.max(1, Math.floor(tries)));
   const frac = durationMs > 0 ? Math.min(1, Math.max(0, timeLeftMs / durationMs)) : 0;
   return 1000 - (n - 1) * 100 + Math.round(500 * frac);
+}
+
+/**
+ * The self-report bar's raw score. `which` = tries (1..6) or 'fail';
+ * `leftMsAtFirstTap` = round time left when the player first touched the bar
+ * for this report (SELF_REPORT_GRACE_MS is credited back for looking down).
+ */
+export function selfReportScore(which: number | 'fail', leftMsAtFirstTap: number, durationMs: number): number {
+  if (which === 'fail') return FAIL_MIN;
+  return solvedScore(which, Math.min(durationMs, Math.max(0, leftMsAtFirstTap) + SELF_REPORT_GRACE_MS), durationMs);
 }
 
 /** The answer of a round: the same word on every phone for the same seed. */

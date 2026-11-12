@@ -19,7 +19,7 @@ import { haptic } from '../../kit/haptics';
 import { createInput } from '../../kit/input';
 import { STEP_HZ, createLoop } from '../../kit/loop';
 import { COLORS, PARTY_COLORS, font } from '../../kit/theme';
-import { HEAD_SHARE, loadIcyArt } from './art';
+import { HEAD_SHARE, drawBgPattern, loadIcyArt } from './art';
 import { FLOOR_H, INNER_L, INNER_R, WALL_W, WORLD_W, buildLevel, floorAtOrBelow, isMilestone } from './level';
 import { MAX_VX, R, copyBody, createBody, createEvents, stepBody } from './physics';
 
@@ -47,6 +47,8 @@ export interface IcyDebug {
     steps: number;
     paused: boolean;
   };
+  /** Which art slots use a real dropped-in file (true) instead of the placeholder. */
+  readonly art: Record<string, boolean>;
   floors(from: number, n: number): Array<{ i: number; alt: number; x: number; half: number }>;
   /** Start (n > 0) or stop (0) recording [step, dir, x, py, vx, vy, grounded, cam] per fixed step. */
   trace(n: number): void;
@@ -56,7 +58,7 @@ export interface IcyDebug {
    * the last one repeats; dir 2 = push the way the face moves), at most `maxSteps` steps. Returns every landing and
    * whether the face would fall off the bottom (camera modelled as in the game).
    */
-  predict(plan: ReadonlyArray<readonly [number, number]>, maxSteps: number): { landings: Array<{ step: number; floor: number; x: number }>; deadAt: number; x: number; py: number; vx: number };
+  predict(plan: ReadonlyArray<readonly [number, number]>, maxSteps: number): { landings: Array<{ step: number; floor: number; x: number }>; deadAt: number; x: number; py: number; vx: number; margin: number };
 }
 
 declare global {
@@ -344,6 +346,8 @@ export const game: GameModule = {
     // cached UI strings (rebuilt only when the number changes)
     let floorLabel = 'קומה 0';
     let floorLabelN = 0;
+    let bestLabel = '';
+    let bestLabelN = 0;
     let comboLabel = '×1';
     let comboLabelN = 1;
 
@@ -639,12 +643,20 @@ export const game: GameModule = {
         g.fillRect(0, 0, view.width, view.height);
         g.globalAlpha = 1;
       }
-      // parallax layer, tiled vertically
+      // parallax layer, tiled vertically. The placeholder is drawn as vectors (cheap);
+      // a real bg.png is blitted (one more full-screen layer: fine on a phone GPU)
       const bw = view.width;
       const bh = (bw * art.bg.height) / art.bg.width;
       let y0 = (c * scale * 0.25) % bh;
       if (y0 < 0) y0 += bh;
-      for (let y = y0 - bh; y < view.height; y += bh) art.bg.draw(g, bw / 2, y + bh / 2, bw, bh);
+      for (let y = y0 - bh; y < view.height; y += bh) {
+        if (art.bg.isPlaceholder) {
+          g.save();
+          g.translate(0, y);
+          drawBgPattern(g, bw, bh);
+          g.restore();
+        } else art.bg.draw(g, bw / 2, y + bh / 2, bw, bh);
+      }
     }
 
     function drawWalls(c: number): void {
@@ -936,6 +948,20 @@ export const game: GameModule = {
       g.fill();
       g.fillStyle = '#ffffff';
       drawText(g, floorLabel, pxl + pw / 2, top + 23.5);
+      // best floor of the round so far (after the first fall)
+      if (bestFloor > 0) {
+        if (bestFloor !== bestLabelN) {
+          bestLabelN = bestFloor;
+          bestLabel = `שיא ${bestFloor}`;
+        }
+        const bw = g.measureText(bestLabel).width + 22;
+        const bx = offX > pw + 16 ? offX - bw - 10 : offX + WALL_W * scale + 8;
+        g.fillStyle = 'rgba(20, 10, 50, 0.6)';
+        roundRectPath(g, bx, top + 44, bw, 26, 13);
+        g.fill();
+        g.fillStyle = COLORS.green;
+        drawText(g, bestLabel, bx + bw / 2, top + 57.5);
+      }
 
       // combo meter (top center)
       if (comboJumps > 0) {
@@ -1064,6 +1090,11 @@ export const game: GameModule = {
           paused: ctx.isPaused(),
         };
       },
+      get art() {
+        const out: Record<string, boolean> = {};
+        for (const [k, d] of Object.entries(art)) out[k] = !d.isPlaceholder;
+        return out;
+      },
       floors(from: number, n: number) {
         const out: Array<{ i: number; alt: number; x: number; half: number }> = [];
         for (let i = Math.max(0, from); i < Math.min(level.count, from + n); i++) {
@@ -1087,6 +1118,7 @@ export const game: GameModule = {
         let rs = runSteps;
         const landings: Array<{ step: number; floor: number; x: number }> = [];
         let deadAt = -1;
+        let margin = Infinity; // closest the head came to the bottom edge (world units)
         let k = 0;
         let left = plan[0]?.[1] ?? maxSteps;
         for (let s = 1; s <= maxSteps && mode === 'run'; s++) {
@@ -1105,12 +1137,13 @@ export const game: GameModule = {
             if (simEv.landed > floor) floor = simEv.landed;
           }
           advanceCam(simCam, floor, rs, simBody.py + 2 * R, follow, 1 / STEP_HZ);
+          margin = Math.min(margin, simBody.py + 2 * R - (simCam.cam - 8));
           if (fellOff(simBody, simCam.cam)) {
             deadAt = s;
             break;
           }
         }
-        return { landings, deadAt, x: simBody.x, py: simBody.py, vx: simBody.vx };
+        return { landings, deadAt, x: simBody.x, py: simBody.py, vx: simBody.vx, margin };
       },
     };
     window.__icy = debug;

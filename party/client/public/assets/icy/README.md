@@ -10,8 +10,10 @@ Drop a file here with the name below (same base name with .png / .webp / .jpg / 
 | `platform.png` | 128 x 32 | no (opaque is best) | One tile of an ice floor. Repeated horizontally along every floor and clipped to rounded ends, so its left and right edges must tile seamlessly. Snowy top edge looks best. |
 | `milestone.png` | 128 x 32 | no | Same as `platform.png` for every 10th floor (full width, shows "קומה 10/20/…"). Make it stand out (gold, party colors). |
 | `wall.png` | 32 x 256 | no | One tile of the side walls (ice pillar). Repeated vertically on both sides, so its top and bottom edges must tile seamlessly. |
-| `bg.png` | 720 x 1280 | yes (or opaque) | Parallax backdrop layer, scrolls slowly behind the tower and repeats vertically (top and bottom edges must tile). Transparent lets the color sky (blue day → sunset → night → aurora as you climb) show through; an opaque picture replaces it. |
+| `bg.png` | 720 x 1280 | yes (or opaque) | Parallax backdrop layer, scrolls slowly behind the tower and repeats vertically (top and bottom edges must tile). Transparent lets the color sky (blue day → sunset → night → aurora as you climb) show through; an opaque picture covers it. |
 
 Notes
-- The faces are drawn at about 55 px on a phone, so keep features big and bold.
+- The faces are drawn about 45-52 px wide on a phone (the head is a ball of that size), so keep features big and bold.
 - With the real `platform.png` / `milestone.png` the placeholder icicles under the floors are no longer drawn.
+- Without `bg.png` the stars and ice crystals are drawn as cheap shapes. A real `bg.png` is drawn as one more full-screen picture every frame: fine on a phone, but keep it a plain PNG (no huge file, 720 x 1280 is plenty).
+- Not slots: the ghost finger of the "hold a side" hint and the glow behind big jumps are game UI and always drawn by the game.

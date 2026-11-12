@@ -34,9 +34,11 @@ async function createTouch(context, page) {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: points() });
     },
     async up(id) {
-      if (!active.has(id)) return;
+      const p = active.get(id);
+      if (!p) return;
       active.delete(id);
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: points() });
+      // Chromium releases the points LISTED in a touchEnd (not the missing ones)
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ x: p.x, y: p.y, id }] });
     },
     async cancel() {
       active.clear();
@@ -44,7 +46,7 @@ async function createTouch(context, page) {
     },
     async tap(x, y) {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [...points(), { x, y, id: 99 }] });
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: points() });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ x, y, id: 99 }] });
     },
     isDown: (id) => active.has(id),
   };
@@ -117,7 +119,7 @@ const ICY_PLAN = ({ horizon, firsts, combos, cur, thens }) => {
  * steps keep the current finger (reaction time), then each candidate pushes
  * dir `a` for `n` steps and follows the motion after that.
  */
-const ICY_EXPERT = ({ lat, cur, firsts, horizon }) => {
+const ICY_EXPERT = ({ lat, cur, firsts, horizon, expertSafe }) => {
   const d = window.__icy;
   if (!d || d.state.mode !== 'run') return null;
   const s = d.state;
@@ -135,6 +137,8 @@ const ICY_EXPERT = ({ lat, cur, firsts, horizon }) => {
       }
       let score = (first ? first.floor * 10 : from * 10 - 5) + top * 4 + Math.abs(r.vx) / 100;
       if (first && first.floor - from >= 2) score += 8;
+      // an expert also keeps away from the bottom edge (the floors speed up)
+      if (r.margin !== undefined) score += Math.min(r.margin, 240) / (expertSafe || 1e9);
       if (a === 0) score -= 3; // letting go only when it clearly lands better
       if (r.deadAt >= 0) score = -10000 + r.deadAt;
       if (!best || score > best.score) best = { a, n, score, first: first && first.floor, top, dead: r.deadAt };
@@ -259,7 +263,7 @@ async function playIcy(page, touch, vp, kind, seed, opts = {}) {
           expertVy = s.vy;
           if (tookOff || (s.grounded >= 0 && (!expertPlan || now >= expertPlan.until))) {
             const lat = Math.round((cfg.lat[0] + rand() * (cfg.lat[1] - cfg.lat[0])) / 16.7);
-            const look = kind === 'expert' ? { firsts: [4, 10, 20, 40], horizon: 120 } : { firsts: [10, 25], horizon: 50 };
+            const look = kind === 'expert' ? { firsts: [4, 10, 20, 40], horizon: 120, expertSafe: 12 } : { firsts: [10, 25], horizon: 50 };
             const p = await page.evaluate(ICY_EXPERT, { lat, cur: held, ...look }).catch(() => null);
             if (p) expertPlan = { a: p.a, from: now + lat * 16.7, until: now + (lat + p.n) * 16.7 };
             // a normal player misjudges about one flight in eight
@@ -324,3 +328,39 @@ async function playIcy(page, touch, vp, kind, seed, opts = {}) {
 }
 
 module.exports = { sleep, SIZES, phoneContext, createTouch, makeRand, playIcy, ICY_STATE };
+
+/** Frame-time recorder (runs in the page): every rAF interval in ms. */
+async function startFrameRecorder(page) {
+  await page.evaluate(() => {
+    window.__frames = [];
+    let last = performance.now();
+    const f = (t) => {
+      window.__frames.push(t - last);
+      last = t;
+      if (!window.__party || !window.__party.ended) requestAnimationFrame(f);
+    };
+    requestAnimationFrame(f);
+  });
+}
+
+async function frameStats(page) {
+  const d = await page.evaluate(() => window.__frames.slice(5));
+  const s = [...d].sort((a, b) => a - b);
+  const q = (p) => s[Math.min(s.length - 1, Math.floor(s.length * p))];
+  return {
+    frames: d.length,
+    p50: +q(0.5).toFixed(1),
+    p95: +q(0.95).toFixed(1),
+    p99: +q(0.99).toFixed(1),
+    max: +s[s.length - 1].toFixed(1),
+    over50: d.filter((v) => v > 50).length,
+    // by quarter of the round: does it get slower?
+    quarters: [0, 1, 2, 3].map((k) => {
+      const part = d.slice(Math.floor((d.length * k) / 4), Math.floor((d.length * (k + 1)) / 4)).sort((a, b) => a - b);
+      return +part[Math.floor(part.length * 0.95)].toFixed(1);
+    }),
+  };
+}
+
+module.exports.startFrameRecorder = startFrameRecorder;
+module.exports.frameStats = frameStats;
