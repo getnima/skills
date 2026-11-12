@@ -564,15 +564,9 @@ export const game: GameModule = {
 
     // ── first puzzle: a ghost demo of one step (the original's help: חלום → חלוץ) ──
     function showDemo(): void {
-      demoEl.replaceChildren(
-        el('div', 'pz-demo-cap', 'משנים אות אחת בכל צעד'),
-        (() => {
-          const rows = el('div', 'pz-demo-rows');
-          rows.append(wordRow('חלומ', undefined, 'is-d1'), wordRow('חלוצ', 'חלומ', 'is-d2'));
-          return rows;
-        })(),
-        el('div', 'pz-demo-cap is-sub', `כל מילה אמיתית, עד ${TARGET_D}`),
-      );
+      const rows = el('div', 'pz-demo-rows');
+      rows.append(wordRow('חלומ', undefined, 'is-d1'), el('span', 'pz-arrow is-d2', '←'), wordRow('חלוצ', 'חלומ', 'is-d2'));
+      demoEl.replaceChildren(el('div', 'pz-demo-cap', 'משנים אות אחת בכל צעד'), rows, el('div', 'pz-demo-cap is-sub', `כל צעד מילה אמיתית, עד ${TARGET_D}`));
       replay(demoEl, 'is-on');
       cancelDemo = loop.after(DEMO_MS, () => {
         cancelDemo = null;
@@ -584,7 +578,7 @@ export const game: GameModule = {
     function positionDemo(): void {
       if (!demoEl.classList.contains('is-on')) return;
       const free = board.clientHeight - rowsEl.offsetHeight - 8;
-      if (free < 96) {
+      if (free < demoEl.offsetHeight + 6) {
         demoEl.classList.remove('is-on');
         cancelDemo?.();
         cancelDemo = null;

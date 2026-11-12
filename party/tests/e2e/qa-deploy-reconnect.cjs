@@ -10,6 +10,9 @@
 //   docker run -d --name qa-deploy-run -p 8825:8080 -e PORT=8080 -e PARTY_TEST_FAST=1 \
 //     -e PARTY_TEST_DURATION_MS=30000 party-arena:qa
 //   TARGET=127.0.0.1:8825 PROXY_PORT=8824 node tests/e2e/qa-deploy-reconnect.cjs
+// PROXY_HOST=<a non-loopback address of this machine> runs the same over plain http that is NOT
+// a secure context (what phones get on http://<laptop-ip>:8787 or http://<vm-ip>): no wake lock,
+// and the game must still work.
 // Screenshots: tests/e2e/out/qa-deploy/reconnect/
 const { chromium, devices } = require('playwright');
 const net = require('net');
@@ -18,7 +21,8 @@ const path = require('path');
 
 const [THOST, TPORT] = (process.env.TARGET || '127.0.0.1:8825').split(':');
 const PROXY_PORT = Number(process.env.PROXY_PORT || 8824);
-const BASE = `http://localhost:${PROXY_PORT}`;
+const PROXY_HOST = process.env.PROXY_HOST || '127.0.0.1';
+const BASE = `http://${PROXY_HOST === '127.0.0.1' ? 'localhost' : PROXY_HOST}:${PROXY_PORT}`;
 const OUT = path.join(__dirname, 'out', 'qa-deploy', 'reconnect');
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
@@ -84,7 +88,7 @@ async function healthz() {
 }
 
 (async () => {
-  await new Promise((r) => proxy.listen(PROXY_PORT, '127.0.0.1', r));
+  await new Promise((r) => proxy.listen(PROXY_PORT, PROXY_HOST, r));
   const browser = await chromium.launch();
   const pages = [];
   try {
@@ -112,6 +116,8 @@ async function healthz() {
     check(/^[A-Z0-9]{4}$/.test(code), `room ${code}`);
     await host.mouse.click(960, 60);
     const hs = () => host.evaluate(() => (window.__host ? window.__host.state() : null));
+    const secure = await host.evaluate(() => window.isSecureContext);
+    console.log(`[info] ${BASE}: isSecureContext=${secure}, wakeLock API ${await host.evaluate(() => 'wakeLock' in navigator)}`);
 
     // ── two phones ──
     const phones = [];

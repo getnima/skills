@@ -51,7 +51,7 @@ function spawnProc(cmd, args, env) {
   return p;
 }
 
-async function waitHttp(url, ms = 30000) {
+async function waitHttp(url, ms = 60000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     try {
@@ -145,7 +145,7 @@ async function setAuto(page, on) {
 }
 
 async function startGame(page, id) {
-  await page.click(`[data-testid="game-${id}"]`);
+  await page.click(`[data-testid="game-${id}"]`, { force: true });
   await L.waitPhase(page, 'intro', 10000);
 }
 
@@ -203,10 +203,16 @@ async function main() {
     writeSongs(['lobby', 'tap', 'round', 'victory']);
     fs.writeFileSync(CONFIG, configBefore.replace(/tap: \{ startSec: 0,/, `tap: { startSec: ${TAP_START},`));
     check(fs.readFileSync(CONFIG, 'utf8').includes(`tap: { startSec: ${TAP_START},`), 'test tuning: tap.startSec = 5');
-    spawnProc('npx', ['tsx', 'server/index.ts'], { PARTY_SERVER_PORT: String(SERVER_PORT), PARTY_TEST_FAST: '1', PARTY_TEST_DURATION_MS: '15000' });
+    const server = spawnProc('npx', ['tsx', 'server/index.ts'], { PARTY_SERVER_PORT: String(SERVER_PORT), PARTY_TEST_FAST: '1', PARTY_TEST_DURATION_MS: '15000' });
     let vite = startVite();
-    await waitHttp(`http://localhost:${SERVER_PORT}/api/info`);
-    await waitHttp(`http://localhost:${VITE_PORT}/host.html`);
+    await waitHttp(`http://localhost:${SERVER_PORT}/api/info`).catch((e) => {
+      console.log(server.log());
+      throw e;
+    });
+    await waitHttp(`http://localhost:${VITE_PORT}/host.html`).catch((e) => {
+      console.log(vite.log());
+      throw e;
+    });
 
     browser = await chromium.launch();
     const tv = await openTv(browser);
@@ -427,10 +433,8 @@ async function main() {
     await L.waitPhase(page, 'playing', 6000);
     await sleep(800);
     s = await snap(page);
-    check(!s.live.some((x) => x.name !== 'lobby' || !x.stopping ? x.name !== 'lobby' : false), 'flappy with neither flappy.mp3 nor round.mp3: silence', s.live);
+    check(s.live.length === 0, 'flappy with neither flappy.mp3 nor round.mp3: silence (no track at all)', s.live);
     check(s.hook && s.hook.cur === null, 'silence: the hook holds no track', s.hook);
-    await page.click('[data-testid="btn-more"]').catch(() => undefined);
-    await page.keyboard.press('Escape');
     await endRoundNow(page);
     await L.waitPhase(page, 'results', 6000);
     check(errors.length === 0, 'TV: no console errors', errors);

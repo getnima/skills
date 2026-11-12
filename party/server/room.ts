@@ -16,7 +16,7 @@ import {
   WINNER_REVEAL_MS,
 } from '../shared/protocol';
 import { roundTime } from '../shared/round-clock';
-import { computeRoundScores, rankDescending } from '../shared/scoring';
+import { computeRoundScores, orderOverall, rankOverall } from '../shared/scoring';
 
 import { DEFAULT_TIMING } from './config';
 import { cleanName, uniqueName } from './names';
@@ -34,6 +34,7 @@ import type {
   RoundPublic,
   RoundResults,
 } from '../shared/protocol';
+import type { RoundEntry, StandingEntry } from '../shared/scoring';
 import type { RoomTiming } from './config';
 
 export type TimerHandle = unknown;
@@ -90,7 +91,15 @@ interface PlayerRec {
   readonly secret: string;
   name: string;
   readonly avatar: number;
+  /** Position in the order of joining: the last tie-break, never random. */
+  readonly joinOrder: number;
   total: number;
+  /** Rounds won in this competition. */
+  wins: number;
+  /** Best points in a single round of this competition. */
+  best: number;
+  /** Strict position in the most recent round; null before the first one. */
+  lastPos: number | null;
   /** Was in a results table before (prevRank is null on a first appearance). */
   appeared: boolean;
   readonly conns: Set<string>;
@@ -107,6 +116,12 @@ interface RoundRec {
   readonly participants: Set<string>;
   readonly live: Map<string, number>;
   readonly finals: Map<string, number>;
+  /**
+   * Server ms at which each player's score last CHANGED (live or final). At the end
+   * of the round this is when they reached their final raw score: on equal raw
+   * scores the earlier one is ahead.
+   */
+  readonly reachedAt: Map<string, number>;
   /** 'during' cutscenes already handled in this round. */
   readonly duringDone: Set<string>;
   /** host:endRound arrived while a cutscene was playing. */
@@ -153,6 +168,9 @@ export class Room {
   /** Automatic cutscenes already fired in this competition. */
   private readonly firedCutscenes = new Set<string>();
   private nextAvatar = 0;
+  private nextJoinOrder = 0;
+  /** Player ids in strict overall order as it was BEFORE the last finished round. */
+  private prevOrder: string[] = [];
 
   private phaseTimers: TimerHandle[] = [];
   private cutsceneTimer: TimerHandle | null = null;
@@ -181,12 +199,14 @@ export class Room {
     const now = this.scheduler.now();
     const r = this.round;
     if (r !== null && r.resumeAt !== null && r.frozenAt === null && now >= r.resumeAt) r.resumeAt = null;
+    const ranks = rankOverall(this.standings());
     const players: PlayerPublic[] = [...this.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
       avatar: p.avatar,
       connected: p.conns.size > 0,
       total: p.total,
+      rank: ranks.get(p.id) ?? this.players.size,
     }));
     return {
       code: this.code,
@@ -271,7 +291,11 @@ export class Room {
       secret: this.token(),
       name: uniqueName(name, this.namesExcept(null)),
       avatar: this.nextAvatar++,
+      joinOrder: this.nextJoinOrder++,
       total: 0,
+      wins: 0,
+      best: 0,
+      lastPos: null,
       appeared: false,
       conns: new Set([connId]),
     };
@@ -319,6 +343,7 @@ export class Room {
       participants: new Set(this.players.keys()),
       live: new Map(),
       finals: new Map(),
+      reachedAt: new Map(),
       duringDone: new Set(),
       pendingEnd: false,
     };
@@ -382,9 +407,13 @@ export class Room {
     this.nextRoundIndex = 0;
     this.played = [];
     this.results = null;
+    this.prevOrder = [];
     this.firedCutscenes.clear();
     for (const p of this.players.values()) {
       p.total = 0;
+      p.wins = 0;
+      p.best = 0;
+      p.lastPos = null;
       p.appeared = false;
     }
     this.broadcast();
@@ -403,6 +432,7 @@ export class Room {
     if (r !== null && r.participants.delete(playerId)) {
       r.live.delete(playerId);
       r.finals.delete(playerId);
+      r.reachedAt.delete(playerId);
       if (this.phase === 'playing') this.markScoresDirty();
     }
     this.dropFromResults(playerId);
@@ -483,6 +513,7 @@ export class Room {
     if (!r.participants.has(playerId) || r.finals.has(playerId)) return;
     const value = this.clamp(r.gameId, score);
     if (r.live.get(playerId) === value) return;
+    if ((r.live.get(playerId) ?? 0) !== value) r.reachedAt.set(playerId, this.scheduler.now());
     r.live.set(playerId, value);
     this.markScoresDirty();
   }
@@ -497,7 +528,10 @@ export class Room {
     }
     if (!r.participants.has(playerId)) return fail('BAD_REQUEST', 'not a participant of this round');
     if (r.finals.has(playerId)) return OK; // the first final wins
-    r.finals.set(playerId, this.clamp(r.gameId, score));
+    const value = this.clamp(r.gameId, score);
+    // A final that only confirms the live score keeps the moment that score was reached.
+    if ((r.live.get(playerId) ?? 0) !== value) r.reachedAt.set(playerId, this.scheduler.now());
+    r.finals.set(playerId, value);
     this.markScoresDirty();
     this.maybeEndEarly();
     return OK;
@@ -697,20 +731,50 @@ export class Room {
     });
   }
 
-  /** A kicked player leaves the last results table too; overall ranks close up. */
+  private standings(): StandingEntry[] {
+    return [...this.players.values()].map((p) => ({
+      id: p.id,
+      total: p.total,
+      wins: p.wins,
+      best: p.best,
+      lastPos: p.lastPos,
+      joinOrder: p.joinOrder,
+    }));
+  }
+
+  /**
+   * A kicked player leaves the last results table too: overall ranks and round
+   * positions close up (still 1..n), and when it was the round winner the next
+   * scorer of that round becomes the one winner.
+   */
   private dropFromResults(playerId: string): void {
     const res = this.results;
+    this.prevOrder = this.prevOrder.filter((id) => id !== playerId);
     if (res === null || !res.rows.some((row) => row.playerId === playerId)) return;
     const kept = res.rows.filter((row) => row.playerId !== playerId);
-    const ranks = rankDescending(kept.map((row) => [row.playerId, row.total] as const));
-    const prevRanks = rankDescending(kept.map((row) => [row.playerId, row.total - row.points] as const));
-    const rows = kept.map((row) => ({
-      ...row,
-      rank: ranks.get(row.playerId) ?? row.rank,
-      prevRank: row.prevRank === null ? null : (prevRanks.get(row.playerId) ?? row.prevRank),
-    }));
-    rows.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'he'));
-    this.results = { ...res, rows, winnerIds: res.winnerIds.filter((id) => id !== playerId) };
+    const roundPos = new Map<string, number>();
+    [...kept].sort((x, y) => x.roundRank - y.roundRank).forEach((row, i) => roundPos.set(row.playerId, i + 1));
+    const wasWinner = res.winnerIds.includes(playerId);
+    const heir = wasWinner ? kept.find((row) => roundPos.get(row.playerId) === 1 && row.raw > 0) : undefined;
+    const heirRec = heir === undefined ? undefined : this.players.get(heir.playerId);
+    if (heirRec !== undefined) heirRec.wins += 1;
+    for (const row of kept) {
+      const p = this.players.get(row.playerId);
+      if (p !== undefined && p.lastPos !== null) p.lastPos = roundPos.get(row.playerId) ?? p.lastPos;
+    }
+    const ranks = rankOverall(this.standings());
+    const rows = kept.map((row) => {
+      const prev = this.prevOrder.indexOf(row.playerId);
+      return {
+        ...row,
+        roundRank: roundPos.get(row.playerId) ?? row.roundRank,
+        rank: ranks.get(row.playerId) ?? row.rank,
+        prevRank: row.prevRank === null || prev < 0 ? null : prev + 1,
+      };
+    });
+    rows.sort((x, y) => x.rank - y.rank);
+    const winnerIds = wasWinner ? (heir === undefined ? [] : [heir.playerId]) : res.winnerIds;
+    this.results = { ...res, rows, winnerIds };
   }
 
   private rawOf(r: RoundRec, playerId: string): number {
@@ -736,37 +800,59 @@ export class Room {
     this.flushScores();
     const now = this.scheduler.now();
 
-    const raws = new Map<string, number>();
-    for (const id of r.participants) if (this.players.has(id)) raws.set(id, this.rawOf(r, id));
-    const scored = computeRoundScores(raws);
-
+    // Everyone in the room gets a row; someone who joined mid-round did not play (raw 0).
     const all = [...this.players.values()];
-    const prevRanks = rankDescending(all.map((p) => [p.id, p.total] as const));
-    for (const p of all) p.total += scored.get(p.id)?.points ?? 0;
-    const ranks = rankDescending(all.map((p) => [p.id, p.total] as const));
+    const entries: RoundEntry[] = all.map((p) => {
+      const raw = r.participants.has(p.id) ? this.rawOf(r, p.id) : 0;
+      return {
+        id: p.id,
+        raw,
+        reachedAt: raw > 0 ? (r.reachedAt.get(p.id) ?? null) : null,
+        joinOrder: p.joinOrder,
+        totalBefore: p.total,
+      };
+    });
+    const scored = computeRoundScores(entries);
 
-    const rows: ResultRow[] = all.map((p) => {
+    this.prevOrder = orderOverall(this.standings());
+    const prevRanks = new Map<string, number>();
+    this.prevOrder.forEach((id, i) => prevRanks.set(id, i + 1));
+    for (const p of all) {
       const s = scored.get(p.id);
+      const points = s?.points ?? 0;
+      p.total += points;
+      p.best = Math.max(p.best, points);
+      p.lastPos = s?.roundRank ?? null;
+      if (s !== undefined && s.roundRank === 1 && points > 0) p.wins += 1;
+    }
+    const ranks = rankOverall(this.standings());
+
+    const rows: ResultRow[] = entries.map((e) => {
+      const p = this.players.get(e.id)!;
+      const s = scored.get(e.id);
       return {
         playerId: p.id,
         name: p.name,
         avatar: p.avatar,
-        raw: raws.get(p.id) ?? 0,
+        raw: e.raw,
         points: s?.points ?? 0,
-        roundRank: s?.roundRank ?? raws.size + 1,
+        roundRank: s?.roundRank ?? all.length,
+        reachedAt: e.reachedAt,
         total: p.total,
         rank: ranks.get(p.id) ?? all.length,
         prevRank: p.appeared ? (prevRanks.get(p.id) ?? null) : null,
       };
     });
-    rows.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name, 'he'));
+    rows.sort((x, y) => x.rank - y.rank);
     for (const p of all) p.appeared = true;
 
+    // Exactly one winner whenever anybody scored: the first of the strict round order.
+    const top = rows.find((row) => row.roundRank === 1 && row.raw > 0);
     this.results = {
       roundIndex: r.index,
       gameId: r.gameId,
       rows,
-      winnerIds: rows.filter((row) => raws.has(row.playerId) && row.roundRank === 1 && row.raw > 0).map((row) => row.playerId),
+      winnerIds: top === undefined ? [] : [top.playerId],
       revealAt: now + WINNER_REVEAL_MS,
     };
     this.played.push(r.gameId);

@@ -112,6 +112,13 @@ export interface PlayerPublic {
   readonly connected: boolean;
   /** Cumulative competition points. */
   readonly total: number;
+  /**
+   * Strict overall rank, 1-based: 1..n with no repeats, never shared. Decided
+   * by the server (total, then round wins, then best single round, then the
+   * position in the most recent round, then join order). Screens show this
+   * rank and never derive one from totals.
+   */
+  readonly rank: number;
 }
 
 export interface RoundPublic {
@@ -154,25 +161,34 @@ export interface ResultRow {
   readonly raw: number;
   /** Competition points awarded for this round (0..~1100). */
   readonly points: number;
-  /** 1-based rank within this round (ties share a rank). */
+  /**
+   * 1-based strict position within this round: 1..n, never shared. Raw score
+   * descending; on the same raw score whoever reached it first is ahead.
+   */
   readonly roundRank: number;
+  /**
+   * Server epoch ms at which this player's score last changed to `raw` (the
+   * tie-break between equal raw scores); null for a player who scored nothing.
+   */
+  readonly reachedAt: number | null;
   /** Cumulative points after this round. */
   readonly total: number;
-  /** 1-based overall rank after this round (ties share a rank). */
+  /** 1-based strict overall rank after this round (1..n, never shared). */
   readonly rank: number;
-  /** Overall rank before this round, or null for a first appearance. */
+  /** Strict overall rank before this round, or null for a first appearance. */
   readonly prevRank: number | null;
 }
 
 export interface RoundResults {
   readonly roundIndex: number;
   readonly gameId: GameId;
-  /** Sorted by `rank` (overall), then name. */
+  /** Sorted by `rank` (overall), which is strict: 1..n. */
   readonly rows: readonly ResultRow[];
   /**
-   * Winner(s) of THIS round: every player with roundRank 1 and raw > 0
-   * (several on a tie, none when nobody scored). The round winner gets the
-   * prize, so the TV runs a winner ceremony with the victory song.
+   * The winner of THIS round: exactly ONE id (the player with roundRank 1)
+   * whenever anybody scored, empty when nobody did. Never two: equal raw
+   * scores are decided by who reached the score first. The round winner gets
+   * the prize, so the TV runs a winner ceremony with the victory song.
    */
   readonly winnerIds: readonly string[];
   /**

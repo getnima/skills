@@ -385,10 +385,10 @@
 }
 .pz-demo-rows {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
 }
-.pz-demo .pz-row.is-d2 {
+.pz-demo .is-d2 {
   animation: pz-demo-step 3.4s ease both;
 }
 @keyframes pz-demo-step {
@@ -638,7 +638,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .pz-demo.is-on,
-  .pz-demo .pz-row.is-d2 {
+  .pz-demo .is-d2 {
     animation: none !important;
   }
 }
