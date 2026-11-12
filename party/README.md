@@ -306,7 +306,7 @@ has sizes and framing rules.
 | --- | --- |
 | `client/public/assets/tap/` ([README](client/public/assets/tap/README.md)) | 19 faces and nose-picking frames (`face_*`, `pick_*`), `hand`, `fist`, `fingertip_ear`, `squeegee`, `splat`, six boogers `booger_*`, `background.jpg` |
 | `client/public/assets/icy/` ([README](client/public/assets/icy/README.md)) | the climber, the tower and the ledges per zone: see its README |
-| `client/public/assets/flappy/` ([README](client/public/assets/flappy/README.md)) | `face`, `face_flap`, `face_dead`, `wing`, `halo`, `obstacle`, `obstacle_pole`, `ground`, `skyline` (.png), `background.jpg` |
+| `client/public/assets/flappy/` ([README](client/public/assets/flappy/README.md)) | the flying figurine `angel_0`..`angel_3` (the wing beat) and `angel_dead`, `halo`; the stands `obstacle` (mic), `obstacle_goldmic`, `obstacle_darbuka`, `obstacle_disco`, `obstacle_horn`, each with an optional `pole_*`; `ground`, `skyline` (.png or .webp), `background.jpg`. The old round token (`face`, `face_flap`, `face_dead`, `wing`) is drawn when an angel frame is missing |
 | `client/public/assets/ninja/` ([README](client/public/assets/ninja/README.md)) | `food/` 11 foods + `garden_chair`, `flip_flop`, `gold_falafel`; `bombs/bomb_host_a`, `bomb_host_b`; `background.jpg` |
 | `client/public/assets/plotzel/` ([README](client/public/assets/plotzel/README.md)) | `puff`, `mascot` |
 | `client/public/assets/intro/` ([README](client/public/assets/intro/README.md)) | one picture per game for its intro and lobby card (`tap`, `icy`, `flappy`, `plotzel`, `ninja`) and `show` (the host) |
