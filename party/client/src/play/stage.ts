@@ -6,7 +6,7 @@
 import '../kit/base.css';
 import './stage.css';
 
-import { SCORE_SEND_INTERVAL_MS } from '../../../shared/protocol';
+import { GAMES, SCORE_SEND_INTERVAL_MS } from '../../../shared/protocol';
 import { loadGame } from '../games/registry';
 import { sfx } from '../kit/audio';
 import { haptic } from '../kit/haptics';
@@ -107,6 +107,14 @@ export async function mountStageWith(
   crash.sub.textContent = 'הניקוד שלך נשמר. ממשיכים בסיבוב הבא!';
   root.append(gameRoot, veil, hud, wait.root, crash.root);
   opts.parent.appendChild(root);
+
+  // An elimination round: the raw score is a survival distance (the game shows the friendly
+  // number itself), and a player who is out watches the rest in the game's own view.
+  const elimination = GAMES[opts.gameId].mode === 'elimination';
+  if (elimination) {
+    root.classList.add('is-elimination');
+    scoreBox.style.display = 'none';
+  }
 
   const safe = getSafeArea();
   const durationMs = Math.max(1, opts.durationMs);
@@ -309,14 +317,23 @@ export async function mountStageWith(
       if (over || finished || !gameAlive) return;
       finished = true;
       sendScore();
-      wait.score.textContent = `⭐ ${score.toLocaleString('en-US')}`;
-      wait.root.classList.add('is-on');
+      if (!elimination) {
+        wait.score.textContent = `⭐ ${score.toLocaleString('en-US')}`;
+        wait.root.classList.add('is-on');
+      }
       try {
         opts.onFinish?.(score);
       } catch (err) {
         console.error('[stage] onFinish failed', err);
       }
     },
+    ...(opts.elimination !== undefined
+      ? {
+          activePlayers: opts.elimination.activePlayers,
+          finaleInMs: opts.elimination.finaleInMs,
+          field: opts.elimination.field,
+        }
+      : {}),
   };
 
   // ── boot ──

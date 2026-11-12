@@ -3,10 +3,10 @@
  * a missing file falls back to the placeholder painter below (see README.md
  * in that folder for sizes). Logical sizes are CSS px; files should be 2x.
  */
-import { facePainter, loadAssets, shade } from '../../kit/assets';
+import { facePainter, loadAssets } from '../../kit/assets';
 import { roundRectPath } from '../../kit/canvas';
 import { createRng } from '../../kit/rng';
-import { COLORS } from '../../kit/theme';
+import { PAL } from './look';
 
 import type { AssetSlot, Drawable, Painter } from '../../kit/assets';
 
@@ -27,7 +27,7 @@ const wingPainter: Painter = (ctx, w, h) => {
     { x: 0.56, y: 0.8, r: 0.17 },
   ];
   ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = '#2b1436';
+  ctx.strokeStyle = PAL.ink;
   ctx.lineWidth = Math.max(2, h * 0.07);
   ctx.beginPath();
   ctx.moveTo(rootX, rootY - h * 0.2);
@@ -40,7 +40,7 @@ const wingPainter: Painter = (ctx, w, h) => {
   ctx.fill();
   ctx.stroke();
   // inner feather lines
-  ctx.strokeStyle = 'rgba(120, 90, 180, 0.45)';
+  ctx.strokeStyle = 'rgba(22, 18, 14, 0.3)';
   ctx.lineWidth = Math.max(1.5, h * 0.045);
   ctx.lineCap = 'round';
   for (const l of lobes) {
@@ -52,247 +52,216 @@ const wingPainter: Painter = (ctx, w, h) => {
   ctx.restore();
 };
 
-/** Golden halo ring (seen slightly from above). */
+/** Golden halo ring (seen slightly from above): flat yellow with an ink outline. */
 const haloPainter: Painter = (ctx, w, h) => {
   ctx.save();
   ctx.translate(w / 2, h / 2);
-  const rx = w * 0.42;
-  const ry = h * 0.3;
-  ctx.lineWidth = h * 0.22;
-  ctx.strokeStyle = 'rgba(255, 230, 120, 0.35)';
+  const rx = w * 0.4;
+  const ry = h * 0.27;
+  ctx.lineWidth = h * 0.3;
+  ctx.strokeStyle = PAL.ink;
   ctx.beginPath();
   ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.lineWidth = h * 0.13;
-  ctx.strokeStyle = '#ffd23f';
+  ctx.lineWidth = h * 0.14;
+  ctx.strokeStyle = PAL.yel;
   ctx.beginPath();
   ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.lineWidth = h * 0.05;
-  ctx.strokeStyle = '#fff6c8';
-  ctx.beginPath();
-  ctx.ellipse(0, -ry * 0.12, rx * 0.92, ry * 0.8, 0, Math.PI * 1.1, Math.PI * 1.9);
   ctx.stroke();
   ctx.restore();
 };
 
-/** Microphone head, pointing UP (the bottom obstacle; the top one is flipped). */
+/** Microphone head, pointing UP (the bottom obstacle; the top one is flipped): a chrome ball on a red collar, comic ink outline. */
 const micHeadPainter: Painter = (ctx, w, h) => {
   ctx.save();
   const cx = w / 2;
-  const ink = '#1b0c33';
-  const lw = Math.max(2, w * 0.035);
-  // neck: tapers into the pole at the bottom
-  const neckTop = h * 0.66;
-  ctx.fillStyle = '#2d2d3a';
-  ctx.beginPath();
-  ctx.moveTo(cx - w * 0.2, neckTop);
-  ctx.lineTo(cx + w * 0.2, neckTop);
-  ctx.lineTo(cx + w * 0.2, h);
-  ctx.lineTo(cx - w * 0.2, h);
-  ctx.closePath();
-  ctx.fill();
-  // neon band
-  const bandY = h * 0.58;
-  const bandH = h * 0.13;
-  ctx.shadowColor = COLORS.pink;
-  ctx.shadowBlur = w * 0.08;
-  ctx.fillStyle = COLORS.pink;
-  roundRectPath(ctx, cx - w * 0.36, bandY, w * 0.72, bandH, bandH * 0.4);
-  ctx.fill();
-  ctx.shadowBlur = 0;
+  const lw = Math.max(2.5, w * 0.04);
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = PAL.ink;
   ctx.lineWidth = lw;
-  ctx.strokeStyle = ink;
+  // neck: joins the pole at the bottom centre
+  const neckW = w * 0.3;
+  ctx.fillStyle = PAL.ink;
+  ctx.fillRect(cx - neckW / 2, h * 0.8, neckW, h * 0.2);
+  // red collar
+  const colY = h * 0.62;
+  const colH = h * 0.22;
+  roundRectPath(ctx, cx - w * 0.3, colY, w * 0.6, colH, colH * 0.35);
+  ctx.fillStyle = PAL.red;
+  ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  roundRectPath(ctx, cx - w * 0.3, bandY + bandH * 0.18, w * 0.6, bandH * 0.22, bandH * 0.1);
-  ctx.fill();
-  // grille: a dome
-  const gr = w * 0.44;
-  const gy = bandY;
-  const grad = ctx.createLinearGradient(cx - gr, 0, cx + gr, 0);
-  grad.addColorStop(0, '#7d7f93');
-  grad.addColorStop(0.35, '#f4f5ff');
-  grad.addColorStop(0.6, '#c3c6d8');
-  grad.addColorStop(1, '#5d5f73');
-  ctx.fillStyle = grad;
+  ctx.fillStyle = PAL.yel;
+  ctx.fillRect(cx - w * 0.3 + lw, colY + colH * 0.38, w * 0.6 - lw * 2, colH * 0.2);
+  // the ball
+  const rx = w * 0.45;
+  const ry = h * 0.36;
+  const by = h * 0.37;
   ctx.beginPath();
-  ctx.moveTo(cx - gr, gy);
-  ctx.bezierCurveTo(cx - gr, gy - h * 0.72, cx + gr, gy - h * 0.72, cx + gr, gy);
-  ctx.closePath();
+  ctx.ellipse(cx, by, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#C9CEDA';
   ctx.fill();
-  // mesh
   ctx.save();
   ctx.clip();
-  ctx.strokeStyle = 'rgba(40, 40, 60, 0.35)';
-  ctx.lineWidth = Math.max(1, w * 0.016);
-  const step = w * 0.085;
+  // flat two-tone shading + mesh
+  ctx.fillStyle = '#8E95A8';
+  ctx.beginPath();
+  ctx.ellipse(cx + rx * 0.35, by + ry * 0.45, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(22, 18, 14, 0.4)';
+  ctx.lineWidth = Math.max(1, w * 0.014);
+  const step = w * 0.08;
   for (let d = -w; d < w * 2; d += step) {
     ctx.beginPath();
     ctx.moveTo(d, 0);
     ctx.lineTo(d + h, h);
-    ctx.stroke();
-    ctx.beginPath();
     ctx.moveTo(d + h, 0);
     ctx.lineTo(d, h);
     ctx.stroke();
   }
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillStyle = PAL.white;
   ctx.beginPath();
-  ctx.ellipse(cx - gr * 0.38, gy - h * 0.34, gr * 0.16, h * 0.1, -0.5, 0, Math.PI * 2);
+  ctx.ellipse(cx - rx * 0.42, by - ry * 0.42, rx * 0.2, ry * 0.16, -0.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+  ctx.strokeStyle = PAL.ink;
   ctx.lineWidth = lw;
-  ctx.strokeStyle = ink;
   ctx.beginPath();
-  ctx.moveTo(cx - gr, gy);
-  ctx.bezierCurveTo(cx - gr, gy - h * 0.72, cx + gr, gy - h * 0.72, cx + gr, gy);
+  ctx.ellipse(cx, by, rx, ry, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // the band around the ball
+  ctx.lineWidth = lw * 0.8;
+  ctx.beginPath();
+  ctx.moveTo(cx - rx, by + ry * 0.08);
+  ctx.quadraticCurveTo(cx, by + ry * 0.42, cx + rx, by + ry * 0.08);
   ctx.stroke();
   ctx.restore();
 };
 
-/** Chrome stand pole, tiles vertically. */
+/** Stand pole, tiles vertically: flat chrome with ink edges and one red ring per tile. */
 const polePainter: Painter = (ctx, w, h) => {
-  const grad = ctx.createLinearGradient(0, 0, w, 0);
-  grad.addColorStop(0, '#3b3c4c');
-  grad.addColorStop(0.28, '#d9dbea');
-  grad.addColorStop(0.42, '#ffffff');
-  grad.addColorStop(0.7, '#8f92a8');
-  grad.addColorStop(1, '#30313f');
-  ctx.fillStyle = grad;
+  ctx.fillStyle = '#C9CEDA';
   ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = 'rgba(27, 12, 51, 0.85)';
-  ctx.fillRect(0, 0, Math.max(1.5, w * 0.06), h);
-  ctx.fillRect(w - Math.max(1.5, w * 0.06), 0, Math.max(1.5, w * 0.06), h);
-  // a joint ring per tile
-  ctx.fillStyle = 'rgba(27, 12, 51, 0.35)';
-  ctx.fillRect(0, h * 0.5 - w * 0.06, w, w * 0.12);
+  ctx.fillStyle = PAL.white;
+  ctx.fillRect(w * 0.22, 0, w * 0.16, h);
+  ctx.fillStyle = '#8E95A8';
+  ctx.fillRect(w * 0.62, 0, w * 0.26, h);
+  const edge = Math.max(2, w * 0.12);
+  ctx.fillStyle = PAL.ink;
+  ctx.fillRect(0, 0, edge, h);
+  ctx.fillRect(w - edge, 0, edge, h);
+  // a ring in the middle of the tile (the edges of the tile stay plain, so it tiles)
+  const rh = w * 0.42;
+  ctx.fillStyle = PAL.ink;
+  ctx.fillRect(0, h * 0.5 - rh / 2, w, rh);
+  ctx.fillStyle = PAL.red;
+  ctx.fillRect(edge, h * 0.5 - rh / 2 + edge * 0.6, w - edge * 2, rh - edge * 1.2);
 };
 
-/** Glowing dance floor strip, tiles horizontally. */
+/** The stage floor, tiles horizontally: a yellow lip with an ink line over a cobalt front with footlights. */
 const groundPainter: Painter = (ctx, w, h) => {
-  ctx.fillStyle = '#1a0b3d';
+  ctx.fillStyle = PAL.cobD;
   ctx.fillRect(0, 0, w, h);
-  const top = h * 0.16;
-  const cols = 8;
-  const rows = 3;
-  const cw = w / cols;
-  const rh = (h - top) / rows;
-  const tiles = [COLORS.pink, COLORS.cyan, COLORS.yellow, COLORS.purple, COLORS.green, COLORS.orange];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const color = tiles[(c * 2 + r * 3) % tiles.length] ?? COLORS.pink;
-      const lit = (c + r) % 2 === 0;
-      ctx.fillStyle = lit ? color : shade(color, -0.62);
-      roundRectPath(ctx, c * cw + 2, top + r * rh + 2, cw - 4, rh - 4, 4);
-      ctx.fill();
-      if (lit) {
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
-        roundRectPath(ctx, c * cw + 5, top + r * rh + 4, cw * 0.4, rh * 0.22, 2);
-        ctx.fill();
-      }
-    }
-  }
-  // neon edge on top
-  const edge = ctx.createLinearGradient(0, 0, 0, top);
-  edge.addColorStop(0, '#ffffff');
-  edge.addColorStop(0.35, COLORS.pink);
-  edge.addColorStop(1, shade(COLORS.pink, -0.5));
-  ctx.fillStyle = edge;
-  ctx.fillRect(0, 0, w, top);
-  ctx.fillStyle = '#1b0c33';
-  ctx.fillRect(0, top - 2, w, 2);
-};
-
-/** City / party-hall silhouettes with lit windows, tiles horizontally, transparent sky. */
-const skylinePainter: Painter = (ctx, w, h) => {
-  const rng = createRng(4242);
-  let x = 0;
-  const colors = ['#2b1663', '#341a75', '#26135a'];
-  while (x < w) {
-    let bw = rng.float(w * 0.07, w * 0.14);
-    if (x + bw > w - w * 0.05) bw = w - x; // the last block ends exactly at the edge: seamless tile
-    const bh = rng.float(h * 0.35, h * 0.95);
-    const top = h - bh;
-    ctx.fillStyle = colors[rng.int(0, colors.length - 1)] ?? '#2b1663';
-    ctx.fillRect(x, top, bw + 0.5, bh);
-    if (rng.chance(0.3)) {
-      // antenna with a red light
-      ctx.fillRect(x + bw * 0.48, top - h * 0.08, Math.max(1, bw * 0.05), h * 0.08);
-      ctx.fillStyle = COLORS.red;
-      ctx.beginPath();
-      ctx.arc(x + bw * 0.5, top - h * 0.08, Math.max(1.5, h * 0.02), 0, Math.PI * 2);
-      ctx.fill();
-    }
-    const winW = Math.max(2, bw * 0.14);
-    const winH = Math.max(2, h * 0.045);
-    for (let wy = top + h * 0.06; wy < h - winH; wy += winH * 2.2) {
-      for (let wx = x + bw * 0.14; wx < x + bw - winW; wx += winW * 2) {
-        if (!rng.chance(0.42)) continue;
-        ctx.fillStyle = rng.chance(0.75) ? 'rgba(255, 210, 63, 0.75)' : 'rgba(255, 61, 139, 0.7)';
-        ctx.fillRect(wx, wy, winW, winH);
-      }
-    }
-    x += bw;
-  }
-};
-
-/** Party night sky: gradient, stars, a moon and two spotlight beams. */
-const backgroundPainter: Painter = (ctx, w, h) => {
-  const sky = ctx.createLinearGradient(0, 0, 0, h);
-  sky.addColorStop(0, '#0d0628');
-  sky.addColorStop(0.45, '#2a1263');
-  sky.addColorStop(0.78, '#6a1e7d');
-  sky.addColorStop(1, '#c2366f');
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, w, h);
-  // spotlight beams
-  const beams = [
-    { x: w * 0.12, a: 0.32, c: 'rgba(45, 226, 230, 0.10)' },
-    { x: w * 0.9, a: -0.38, c: 'rgba(255, 61, 139, 0.11)' },
-  ];
-  for (const b of beams) {
-    ctx.save();
-    ctx.translate(b.x, h);
-    ctx.rotate(b.a);
-    ctx.fillStyle = b.c;
+  const lip = h * 0.26;
+  ctx.fillStyle = PAL.yel;
+  ctx.fillRect(0, 0, w, lip);
+  // diagonal red stripes on the lip (period divides the tile width)
+  const period = w / 8;
+  ctx.fillStyle = PAL.red;
+  for (let x = -period; x < w + period; x += period) {
     ctx.beginPath();
-    ctx.moveTo(-w * 0.03, 0);
-    ctx.lineTo(w * 0.03, 0);
-    ctx.lineTo(w * 0.22, -h * 1.1);
-    ctx.lineTo(-w * 0.22, -h * 1.1);
+    ctx.moveTo(x, lip);
+    ctx.lineTo(x + period * 0.5, lip);
+    ctx.lineTo(x + period * 0.5 + lip * 0.7, 0);
+    ctx.lineTo(x + lip * 0.7, 0);
     ctx.closePath();
     ctx.fill();
-    ctx.restore();
   }
-  // stars
-  const rng = createRng(77);
-  for (let i = 0; i < 90; i++) {
-    const sx = rng.float(0, w);
-    const sy = rng.float(0, h * 0.7);
-    const r = rng.float(0.6, 1.8);
-    ctx.fillStyle = `rgba(255,255,255,${rng.float(0.35, 0.95).toFixed(2)})`;
+  ctx.fillStyle = PAL.ink;
+  ctx.fillRect(0, 0, w, Math.max(2.5, h * 0.05));
+  ctx.fillRect(0, lip - 1, w, Math.max(2.5, h * 0.05));
+  // footlights
+  const n = 4;
+  for (let i = 0; i < n; i++) {
+    const cx = (w / n) * (i + 0.5);
+    const cy = lip + (h - lip) * 0.5;
+    const r = Math.min((h - lip) * 0.24, w / n / 4);
     ctx.beginPath();
-    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = i % 2 === 0 ? PAL.yel2 : PAL.white;
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, r * 0.3);
+    ctx.strokeStyle = PAL.ink;
+    ctx.stroke();
+  }
+};
+
+/** Comic clouds, tiles horizontally, transparent sky. */
+const skylinePainter: Painter = (ctx, w, h) => {
+  const rng = createRng(4242);
+  const clouds = 4;
+  ctx.lineJoin = 'round';
+  for (let i = 0; i < clouds; i++) {
+    // kept away from the tile's edges so the tile repeats without a cut cloud
+    const cw = w * rng.float(0.13, 0.19);
+    const cx = (w / clouds) * (i + 0.5) + rng.float(-w * 0.02, w * 0.02);
+    const cy = h * rng.float(0.3, 0.7);
+    const ch = cw * 0.36;
+    const puff = (ox: number, oy: number, r: number): void => {
+      ctx.moveTo(cx + ox + r, cy + oy);
+      ctx.arc(cx + ox, cy + oy, r, 0, Math.PI * 2);
+    };
+    const shape = (): void => {
+      ctx.beginPath();
+      puff(-cw * 0.28, ch * 0.1, ch * 0.42);
+      puff(0, -ch * 0.18, ch * 0.6);
+      puff(cw * 0.28, ch * 0.08, ch * 0.46);
+      ctx.rect(cx - cw * 0.4, cy + ch * 0.05, cw * 0.8, ch * 0.42);
+    };
+    shape();
+    ctx.lineWidth = Math.max(4, h * 0.05);
+    ctx.strokeStyle = PAL.ink;
+    ctx.stroke();
+    ctx.fillStyle = i % 2 === 0 ? PAL.white : PAL.paper;
     ctx.fill();
   }
-  // moon
-  const mx = w * 0.76;
-  const my = h * 0.2;
-  const mr = Math.min(w, h) * 0.09;
-  const glow = ctx.createRadialGradient(mx, my, mr * 0.5, mx, my, mr * 3);
-  glow.addColorStop(0, 'rgba(255, 240, 200, 0.35)');
-  glow.addColorStop(1, 'rgba(255, 240, 200, 0)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(mx - mr * 3, my - mr * 3, mr * 6, mr * 6);
-  ctx.fillStyle = '#fff1c9';
+};
+
+/** The stage backdrop: a cobalt sunburst with a halftone fade, flat colours only. */
+const backgroundPainter: Painter = (ctx, w, h) => {
+  ctx.fillStyle = PAL.cob;
+  ctx.fillRect(0, 0, w, h);
+  // rays from below the middle of the stage
+  const ox = w * 0.5;
+  const oy = h * 0.62;
+  const R = Math.hypot(w, h);
+  const rays = 18;
+  ctx.fillStyle = PAL.cobL;
+  ctx.globalAlpha = 0.55;
+  for (let i = 0; i < rays; i++) {
+    const a0 = (i / rays) * Math.PI * 2;
+    const a1 = a0 + Math.PI / rays;
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(ox + Math.cos(a0) * R, oy + Math.sin(a0) * R);
+    ctx.lineTo(ox + Math.cos(a1) * R, oy + Math.sin(a1) * R);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // halftone dots, denser towards the top and bottom
+  const step = Math.max(9, w * 0.026);
+  ctx.fillStyle = 'rgba(16, 35, 140, 0.55)';
   ctx.beginPath();
-  ctx.arc(mx, my, mr, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(200, 170, 120, 0.35)';
-  ctx.beginPath();
-  ctx.arc(mx - mr * 0.3, my - mr * 0.2, mr * 0.2, 0, Math.PI * 2);
-  ctx.arc(mx + mr * 0.35, my + mr * 0.3, mr * 0.14, 0, Math.PI * 2);
+  for (let j = 0, y = 0; y < h + step; j++, y += step) {
+    const v = y / h;
+    const amount = Math.max(0, Math.abs(v - 0.5) * 2 - 0.25) * 0.9;
+    if (amount <= 0.03) continue;
+    const r = (step / 2) * Math.min(1, amount);
+    for (let x = j % 2 === 0 ? 0 : step / 2; x < w + step; x += step) {
+      ctx.moveTo(x + r, y);
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+    }
+  }
   ctx.fill();
 };
 

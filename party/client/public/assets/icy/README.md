@@ -6,9 +6,9 @@ Look: the party style of `client/public/assets/shimi/README.md` (cobalt / pink /
 
 | File | Recommended pixels | Transparent | What it shows |
 | --- | --- | --- | --- |
-| `face.png` | 256 x 256 | yes | The climber's head (a big bobble head on the small drawn runner), normal / running / standing. Head centred, filling most of the square, chin near the bottom edge (the neck and scarf sit under it). **Now: the owner's Shimi doll head (toy-figurine photo, smiling).** Missing → the doll head `../shimi/head.png` → a generic cartoon face in a beanie. |
-| `face_jump.png` | 256 x 256 | yes | Same head while flying upwards. **Now: the doll head laughing.** Missing → `face.png` → the doll head. |
-| `face_fall.png` | 256 x 256 | yes | Same head falling / just fell off. **Now: the doll head surprised.** Missing → `face.png` → the doll head. |
+| `face.png` | 256 x 256 | yes | The climber's head (a big bobble head on the small drawn runner), normal / running / standing. Head centred, filling most of the square, chin near the bottom edge (the neck and scarf sit under it). **Now: the owner's Shimi doll head as a round token (the head inside a paper disc with an ink ring, 256 x 256, transparent outside the ring), smiling.** A round token is detected by its shape and sits on a short drawn neck above the scarf, with no extra outline (its own ring is the outline); a head picture that is not round (like `../shimi/head.png`) is drawn bigger, chin on the scarf. Missing → the doll head `../shimi/head.png` → a generic cartoon face in a beanie. |
+| `face_jump.png` | 256 x 256 | yes | Same head while flying upwards. **Now: the round token, laughing.** Missing → `face.png` → the doll head. |
+| `face_fall.png` | 256 x 256 | yes | Same head falling / just fell off. **Now: the round token, surprised.** Missing → `face.png` → the doll head. |
 | `shirt.png` | 128 x 128 | yes | The runner's jacket / shirt (torso only, centred), drawn about 24 x 20 px over the body. Missing → the drawn red jacket with a yellow zip. |
 | `platform.png` | 128 x 32 | no (opaque is best) | One tile of a normal floor, repeated along it and clipped to rounded ends (left and right edges must tile). Missing → paper ledge in the zone's colour with an ink outline. The ink outline and the hard shadow are always drawn. |
 | `milestone.png` | 128 x 32 | no | Same for every 10th floor (full width). Missing → red ledge with a yellow top; the "קומה 10/20/…" sign on the wall is always drawn by the game. |

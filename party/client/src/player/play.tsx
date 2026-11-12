@@ -5,13 +5,14 @@
  */
 import { useEffect, useRef } from 'preact/hooks';
 
+import { GAMES } from '../../../shared/protocol';
 import { roundTime } from '../../../shared/round-clock';
 import { mountStage } from '../play/stage';
 import { liveStanding } from '../play/standing';
 
 import type { JSX } from 'preact';
 import type { PlayerPublic, RoundPublic } from '../../../shared/protocol';
-import type { RoundClockSample } from '../games/types';
+import type { FieldPlayer, RoundClockSample, RoundField } from '../games/types';
 import type { PlaceShown } from '../play/hud-place';
 import type { PlayStage } from '../play/stage';
 import type { LiveStanding } from '../play/standing';
@@ -49,6 +50,15 @@ export interface PlayDebug {
   placeAt: number;
   /** ctx.hudHeight the game got (0 until the stage is up). */
   hudHeight: number;
+  // ── elimination rounds ──
+  /** `active` of the latest `scores` message of this round (null: none yet). */
+  active: number | null;
+  /** `out` of that message. */
+  out: readonly string[];
+  /** Ms of round time until the finale (null: none set). */
+  finaleInMs: number | null;
+  /** This phone is out of this round (remembered across a reload). */
+  meOut: boolean;
 }
 
 declare global {
@@ -99,6 +109,10 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
       prevScores: null,
       placeAt: 0,
       hudHeight: 0,
+      active: null,
+      out: [],
+      finaleInMs: null,
+      meOut: false,
     };
     window.__playerPlay = debug;
 
@@ -117,18 +131,73 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
       const me = ctl.snapshot().playerId;
       return me === null ? null : liveStanding(msg.scores, me, nameOf);
     };
+    // ── elimination round: who is still in, the finale, and "I am out" across a reload ──
+    const elimination = GAMES[gameId].mode === 'elimination';
+    const outKey = `party.out.${ctl.snapshot().code}.${index}`;
+    const savedOut = (): number | null => {
+      try {
+        const v = sessionStorage.getItem(outKey);
+        const n = v === null ? Number.NaN : Number(v);
+        return Number.isFinite(n) ? n : null;
+      } catch {
+        return null;
+      }
+    };
+    let latest: LiveScores | null = null;
+    let fieldOf: LiveScores | null = null;
+    let fieldPlayers: readonly FieldPlayer[] = [];
+    const outRaw = (): number | null => {
+      const saved = savedOut();
+      if (saved !== null) return saved;
+      const me = ctl.snapshot().playerId;
+      if (latest === null || me === null || !latest.out.includes(me)) return null;
+      return latest.scores.find(([id]) => id === me)?.[1] ?? 0;
+    };
+    const eliminationSource = {
+      activePlayers: (): number | null => latest?.active ?? null,
+      finaleInMs: (): number | null => {
+        const round = ctl.snapshot().state?.round ?? null;
+        if (round === null || round.index !== index || round.finale === null) return null;
+        return round.finale.atElapsedMs - roundTime(round, ctl.now()).elapsedMs;
+      },
+      field: (): RoundField | null => {
+        if (latest === null) return savedOut() === null ? null : { players: [], outRaw: savedOut() };
+        if (fieldOf !== latest) {
+          fieldOf = latest;
+          const me = ctl.snapshot().playerId;
+          const out = new Set(latest.out);
+          const byId = new Map((ctl.snapshot().state?.players ?? []).map((p) => [p.id, p]));
+          fieldPlayers = latest.scores.map(([id]) => ({
+            id,
+            name: byId.get(id)?.name ?? '',
+            avatar: byId.get(id)?.avatar ?? 0,
+            out: out.has(id),
+            me: id === me,
+          }));
+        }
+        return { players: fieldPlayers, outRaw: outRaw() };
+      },
+    };
+    /** While flying, the "place" among the fliers is noise (everybody is at the same distance): shown once out. */
+    const shownStanding = (msg: LiveScores): LiveStanding | null => (elimination && outRaw() === null ? null : standingOf(msg));
+
     // Only this round's list counts: never a place from a previous round.
     const onScores = (msg: LiveScores): void => {
       if (msg.round !== index) return;
+      latest = msg;
+      debug.active = msg.active;
+      debug.out = msg.out;
       debug.prevScores = debug.lastScores;
       debug.lastScores = msg.scores;
       debug.lastScoresAt = msg.at;
       debug.scoresMsgs++;
       debug.recentScores.push({ scores: msg.scores, at: msg.at });
       if (debug.recentScores.length > 4) debug.recentScores.shift();
-      stage?.setStanding(standingOf(msg));
+      stage?.setStanding(shownStanding(msg));
     };
     const offScores = ctl.onLiveScores(onScores);
+    const early = ctl.liveScores();
+    if (early !== null && early.round === index) latest = early;
     const onPlaceShown = (s: PlaceShown): void => {
       debug.place = s.place;
       debug.ranked = s.count;
@@ -144,6 +213,10 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
       const c = sampleClock(ctl);
       debug.leftMs = c.leftMs;
       debug.frozen = c.frozen;
+      if (elimination) {
+        debug.finaleInMs = eliminationSource.finaleInMs();
+        debug.meOut = outRaw() !== null;
+      }
       return c;
     };
 
@@ -160,12 +233,21 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
         },
         onFinish(score: number): void {
           debug.stageScore = score;
+          if (elimination) {
+            // one life: a reload of this tab must come back out, never flying again
+            try {
+              if (savedOut() === null) sessionStorage.setItem(outKey, String(score));
+            } catch {
+              // storage blocked: the server's `out` list still says so after a reload
+            }
+          }
           ctl.finishEarly(index, score);
         },
         onEnd(finalScore: number): void {
           debug.stageScore = finalScore;
           ctl.endRound(index, finalScore);
         },
+        ...(elimination ? { elimination: eliminationSource } : {}),
       },
       { onPlaceShown },
     ).then((s) => {
@@ -182,7 +264,8 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
           debug.lastScores = last.scores;
           debug.lastScoresAt = last.at;
         }
-        s.setStanding(standingOf(last));
+        if (latest === null) latest = last;
+        s.setStanding(shownStanding(last));
       }
     });
 

@@ -8,6 +8,28 @@ import type { GameId } from '../../../shared/protocol';
  * the round: the stage owns the clock, the HUD (time left + score) and calls
  * `destroy()` when time is up. The last value passed to `setScore` is final.
  */
+/** One participant of an elimination round, as the game's spectator view shows it. */
+export interface FieldPlayer {
+  readonly id: string;
+  readonly name: string;
+  /** PlayerPublic.avatar. */
+  readonly avatar: number;
+  /** Already out (the server has its final). */
+  readonly out: boolean;
+  readonly me: boolean;
+}
+
+/** Who is still in, in an elimination round (from the server's `scores` broadcast). */
+export interface RoundField {
+  /** Every participant in the strict live order (best first): place = index + 1. */
+  readonly players: readonly FieldPlayer[];
+  /**
+   * This phone is already out of this round, with this final raw score (it crashed before a
+   * reload, or the server counted it out): the game must start as a spectator. Null otherwise.
+   */
+  readonly outRaw: number | null;
+}
+
 export interface GameContext {
   /**
    * Full-viewport element the game owns (position: fixed; inset: 0; no scroll;
@@ -38,6 +60,18 @@ export interface GameContext {
    * The stage then shows a "waiting for the others" state.
    */
   finish(): void;
+  /**
+   * Elimination rounds: participants still playing (this one included while it is in), or
+   * null when unknown (no message yet, the dev harness). Missing outside elimination rounds.
+   */
+  activePlayers?(): number | null;
+  /**
+   * Elimination rounds: ms of ROUND time until the finale begins; 0 or negative once it has
+   * begun; null when no finale is set (yet). Stands still while the round is frozen.
+   */
+  finaleInMs?(): number | null;
+  /** Elimination rounds: the field for the "out" view (names of who is still in), or null when unknown. */
+  field?(): RoundField | null;
 }
 
 export interface GameInstance {
@@ -84,6 +118,12 @@ export interface StageOptions {
   onFinish?(score: number): void;
   /** Called exactly once, when `leftMs` reaches 0 while not frozen, with the final score. */
   onEnd(finalScore: number): void;
+  /** Elimination rounds: where the stage gets GameContext.activePlayers / finaleInMs / field from. */
+  readonly elimination?: {
+    activePlayers(): number | null;
+    finaleInMs(): number | null;
+    field(): RoundField | null;
+  };
 }
 
 export interface Stage {

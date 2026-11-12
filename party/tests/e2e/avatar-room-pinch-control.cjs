@@ -4,9 +4,21 @@ const { chromium } = require('playwright');
 const { BASE } = require('./avatar-room-lib.cjs');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function pinch(cdp, cx, cy) {
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cx - 20, y: cy, id: 1 }, { x: cx + 20, y: cy, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [
+      { x: cx - 20, y: cy, id: 1 },
+      { x: cx + 20, y: cy, id: 2 },
+    ],
+  });
   for (let i = 1; i <= 10; i++) {
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: cx - 20 - i * 9, y: cy - i * 3, id: 1 }, { x: cx + 20 + i * 9, y: cy + i * 3, id: 2 }] });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        { x: cx - 20 - i * 9, y: cy - i * 3, id: 1 },
+        { x: cx + 20 + i * 9, y: cy + i * 3, id: 2 },
+      ],
+    });
     await sleep(16);
   }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -21,7 +33,10 @@ async function pinch(cdp, cx, cy) {
     await page.waitForSelector('.dr .dr-rig');
     await sleep(800);
     const cdp = await ctx.newCDPSession(page);
-    const box = await page.locator(where === 'outside' ? '.lab-card' : '.dr-stage').first().boundingBox();
+    const box = await page
+      .locator(where === 'outside' ? '.lab-card' : '.dr-stage')
+      .first()
+      .boundingBox();
     await pinch(cdp, box.x + box.width / 2, box.y + Math.min(box.height / 2, 120));
     console.log(where, 'scale', await page.evaluate(() => visualViewport.scale));
     await ctx.close();

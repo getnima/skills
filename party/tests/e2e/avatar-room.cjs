@@ -218,9 +218,21 @@ async function runSize(browser, size) {
       [stage.x + stage.width / 2, stage.y + stage.height / 2],
       [shelf.x + shelf.width / 2, cy],
     ]) {
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cx - 20, y: cy2, id: 1 }, { x: cx + 20, y: cy2, id: 2 }] });
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [
+          { x: cx - 20, y: cy2, id: 1 },
+          { x: cx + 20, y: cy2, id: 2 },
+        ],
+      });
       for (let i = 1; i <= 10; i++) {
-        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: cx - 20 - i * 9, y: cy2 - i * 3, id: 1 }, { x: cx + 20 + i * 9, y: cy2 + i * 3, id: 2 }] });
+        await cdp.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [
+            { x: cx - 20 - i * 9, y: cy2 - i * 3, id: 1 },
+            { x: cx + 20 + i * 9, y: cy2 + i * 3, id: 2 },
+          ],
+        });
         await sleep(16);
       }
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -234,7 +246,12 @@ async function runSize(browser, size) {
     const same = (a, b) =>
       a.sx === b.sx && a.sy === b.sy && a.top === b.top && a.left === b.left && a.vvx === b.vvx && a.vvy === b.vvy && a.scale === b.scale;
     check(S, 'tray drag scrolls the tray (horizontal)', sl1 !== sl0, `scrollLeft ${sl0} -> ${sl1}`);
-    check(S, 'page never moves or zooms (tray drags x/y, stage drags, pinches, double tap)', same(st0, st1) && same(st0, st2), `${JSON.stringify(st1)} ${JSON.stringify(st2)}`);
+    check(
+      S,
+      'page never moves or zooms (tray drags x/y, stage drags, pinches, double tap)',
+      same(st0, st1) && same(st0, st2),
+      `${JSON.stringify(st1)} ${JSON.stringify(st2)}`,
+    );
     await shot(page, `${S}-02-after-drags`);
 
     // ── every tab reachable ──

@@ -49,6 +49,7 @@ def main():
     ap.add_argument('--max', type=int, default=640)
     ap.add_argument('--pad-bottom', type=float, default=0.0, help='transparent space added below, fraction of height')
     ap.add_argument('--pad-top', type=float, default=0.0)
+    ap.add_argument('--cut-bottom', type=float, default=0.0, help='drop this fraction of the cropped object from the bottom (a headband loop that would run down the face)')
     ap.add_argument('--cut-top', type=float, default=0.0, help='drop this fraction of the cropped object from the top (a ribbon band that would cross the chin)')
     ap.add_argument('--grey', default='', help='"chroma,minvalue": grey pixels (a soft shadow) count as background too')
     ap.add_argument('--peel', default='', help='"iters,minvalue,chroma": peel pale pixels next to the background (a light base / fringe)')
@@ -128,6 +129,10 @@ def main():
     pic = Image.fromarray(rgba, 'RGBA')
     bbox = pic.getchannel('A').point(lambda v: 255 if v > 8 else 0).getbbox()
     pic = pic.crop(bbox)
+    if a.cut_bottom > 0:
+        pw, ph = pic.size
+        pic = pic.crop((0, 0, pw, round(ph * (1 - a.cut_bottom))))
+        pic = pic.crop(pic.getchannel('A').point(lambda v: 255 if v > 8 else 0).getbbox())
     if a.cut_top > 0:
         pw, ph = pic.size
         pic = pic.crop((0, round(ph * a.cut_top), pw, ph))

@@ -1,5 +1,7 @@
 import { io } from 'socket.io-client';
 
+import { tapRoundFeed } from './round-feed';
+
 import type { Socket } from 'socket.io-client';
 import type { C2S, S2C } from '../../../shared/protocol';
 
@@ -16,13 +18,15 @@ export function serverUrl(): string {
 }
 
 export function connect(): PartySocket {
-  return io(serverUrl(), {
+  const socket: PartySocket = io(serverUrl(), {
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionDelay: 300,
     reconnectionDelayMax: 2_000,
     timeout: 8_000,
   });
+  tapRoundFeed(socket);
+  return socket;
 }
 
 /**

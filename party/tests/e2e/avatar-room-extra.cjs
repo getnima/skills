@@ -197,7 +197,7 @@ async function layoutProblems(page) {
       const med = (k) => lat.map((l) => l[k]).sort((a, b) => a - b)[Math.floor(lat.length / 2)];
       const ownMax = Math.max(...lat.map((l) => l.own));
       check(
-        '4x CPU: finger up -> new look in the DOM, median under 100 ms; the room\'s own share (click -> DOM) under 50 ms',
+        "4x CPU: finger up -> new look in the DOM, median under 100 ms; the room's own share (click -> DOM) under 50 ms",
         lat.length >= 6 && med('dom') < 100 && ownMax < 50,
         `${lat.length} taps: finger up -> DOM median ${med('dom').toFixed(0)} / max ${domMax.toFixed(0)} ms, click -> DOM max ${ownMax.toFixed(0)} ms, to the 2nd frame median ${med('frame').toFixed(0)} ms (all finger-up: ${lat.map((l) => l.dom.toFixed(0)).join(',')})`,
       );
@@ -399,12 +399,18 @@ async function layoutProblems(page) {
       }));
       await page.$eval('.dr-shelf', (e) => (e.scrollLeft = -e.scrollWidth));
       await sleep(2500);
-      const t2 = await page.evaluate(() => ({ made: window.__dressingRoom.thumbs().made, shown: document.querySelectorAll('.dr-shelf .dr-tile img').length }));
+      const t2 = await page.evaluate(() => ({
+        made: window.__dressingRoom.thumbs().made,
+        shown: document.querySelectorAll('.dr-shelf .dr-tile img').length,
+      }));
       await tapSel(page, '.dr-tab[data-tab="EYES"]');
       await sleep(1500);
       await tapSel(page, '.dr-tab[data-tab="HEAD"]');
       await sleep(150);
-      const t3 = await page.evaluate(() => ({ made: window.__dressingRoom.thumbs().made, shown: document.querySelectorAll('.dr-shelf .dr-tile img').length }));
+      const t3 = await page.evaluate(() => ({
+        made: window.__dressingRoom.thumbs().made,
+        shown: document.querySelectorAll('.dr-shelf .dr-tile img').length,
+      }));
       check(
         'thumbnails: lazy (only tiles seen), more after scrolling, cached on return',
         t1.made < t1.tiles && t1.shown === t1.made && t2.made > t1.made && t3.shown >= t1.shown,

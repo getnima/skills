@@ -135,6 +135,8 @@ const LOOK_FLOOR = ((): number => {
 const SLOW_FRAME_MS = 24;
 const FAST_FRAME_MS = 19;
 const HEAD_BOX = 2.6;
+/** A round head token (face in a disc) is drawn this big (head radii), its bottom on the neck. */
+const TOKEN_BOX = 2.4;
 const STAR_COLORS = [PAL.yel, PAL.pink, PAL.white, PAL.cobL] as const;
 
 // ───────────────────────────── Camera (pure, shared with the predictor) ─────────────────────────────
@@ -1057,6 +1059,28 @@ export const game: GameModule = {
       g.drawImage(chip.canvas, offX + WALL_W * scale + 6, sy - chip.h / 2, chip.w, chip.h);
     }
 
+    /** Is this head picture a round token (opaque at the middle of its left edge, see-through in the corner)? Cached. */
+    const tokenOf = new Map<Drawable, boolean>();
+    function isToken(d: Drawable): boolean {
+      const hit = tokenOf.get(d);
+      if (hit !== undefined) return hit;
+      let round = false;
+      try {
+        const c = d.source.getContext('2d');
+        if (c) {
+          const w = d.source.width;
+          const h = d.source.height;
+          const edge = c.getImageData(Math.round(w * 0.025), Math.round(h * 0.5), 1, 1).data[3] ?? 0;
+          const corner = c.getImageData(Math.round(w * 0.04), Math.round(h * 0.04), 1, 1).data[3] ?? 255;
+          round = edge > 180 && corner < 40;
+        }
+      } catch {
+        round = false;
+      }
+      tokenOf.set(d, round);
+      return round;
+    }
+
     function headFor(): Drawable {
       if (mode === 'dead') return art.faceFall;
       if (body.grounded >= 0) return art.face;
@@ -1159,10 +1183,21 @@ export const game: GameModule = {
       g.lineWidth = 0.18 * k;
       g.stroke();
       // the head (bobs while running), in front of the scarf tail
-      const hs = HEAD_BOX * k;
       const bob = onFloor ? Math.abs(Math.sin(runPhase)) * 0.08 * k * run : 0;
       const tilt = onFloor ? Math.sin(runPhase) * 0.05 * run : air * 0.06 * f;
-      head.draw(g, 0, -1.12 * k - hs * 0.43 - bob, hs, hs, tilt);
+      if (isToken(head)) {
+        // a round token (face in a disc with its own ring): a short neck, the disc sits on it
+        const hs = TOKEN_BOX * k;
+        g.fillStyle = PAL.paper;
+        g.fillRect(-0.13 * k, -1.36 * k - bob, 0.26 * k, 0.3 * k);
+        g.lineWidth = 0.07 * k;
+        g.strokeStyle = PAL.ink;
+        g.strokeRect(-0.13 * k, -1.36 * k - bob, 0.26 * k, 0.3 * k);
+        head.draw(g, 0, -1.3 * k - hs * 0.49 - bob, hs, hs, tilt);
+      } else {
+        const hs = HEAD_BOX * k;
+        head.draw(g, 0, -1.12 * k - hs * 0.43 - bob, hs, hs, tilt);
+      }
       roundRectPath(g, -0.36 * k, -1.2 * k, 0.72 * k, 0.18 * k, 0.09 * k);
       g.fillStyle = PAL.yel;
       g.fill();

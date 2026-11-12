@@ -10,6 +10,8 @@ const { BASE, OUT } = require('./avatar-room-lib.cjs');
   await p.waitForTimeout(2500);
   const r = await p.locator('.dr-star').boundingBox();
   await p.screenshot({ path: path.join(OUT, 'zoom-star.png'), clip: { x: r.x - 120, y: r.y - 20, width: 240, height: 180 } });
-  console.log(await p.evaluate(() => [...document.querySelectorAll('.dr-stage > *')].map((e) => `${e.className}:${getComputedStyle(e).zIndex}`).join(' ')));
+  console.log(
+    await p.evaluate(() => [...document.querySelectorAll('.dr-stage > *')].map((e) => `${e.className}:${getComputedStyle(e).zIndex}`).join(' ')),
+  );
   await b.close();
 })();

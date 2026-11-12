@@ -1,0 +1,265 @@
+/* פלאפי תבורי: the "out" view (a DOM overlay over the game canvas). Design system: client/public/assets/shimi/README.md */
+/* Motaleh is loaded by the game (look.ts, FontFace API). */
+.fl-out {
+  --yel: #ffd21f;
+  --red: #f2361b;
+  --cob: #1e3fd8;
+  --cob-d: #10238c;
+  --ink: #16120e;
+  --paper: #fff8e6;
+  --disp: 'Motaleh', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  pointer-events: none;
+  direction: rtl;
+  color: var(--ink);
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Arial Hebrew', 'Noto Sans Hebrew', Roboto, Arial, sans-serif;
+  background: rgba(16, 35, 140, 0.62);
+  overflow: hidden;
+}
+.fl-out.is-on {
+  display: flex;
+  animation: fl-in 0.25s ease-out;
+}
+@keyframes fl-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* the star-burst with the verdict */
+.fl-burst {
+  position: relative;
+  flex: none;
+  width: min(74vw, 300px);
+  aspect-ratio: 1.45;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(4px 5px 0 var(--ink));
+  animation: fl-pop 0.45s cubic-bezier(0.2, 1.7, 0.4, 1);
+}
+.fl-burst::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--red);
+  clip-path: polygon(50% 0%, 58.7% 12%, 71.7% 5%, 74.3% 19.5%, 89.1% 18.8%, 85.1% 33.1%, 98.7% 38.9%, 89% 50%, 98.7% 61.1%, 85.1% 66.9%, 89.1% 81.2%, 74.3% 80.5%, 71.7% 95%, 58.7% 88%, 50% 100%, 41.3% 88%, 28.3% 95%, 25.7% 80.5%, 10.9% 81.2%, 14.9% 66.9%, 1.3% 61.1%, 11% 50%, 1.3% 38.9%, 14.9% 33.1%, 10.9% 18.8%, 25.7% 19.5%, 28.3% 5%, 41.3% 12%);
+}
+.fl-out.is-win .fl-burst::before {
+  background: var(--yel);
+}
+@keyframes fl-pop {
+  from {
+    transform: scale(0.3) rotate(-14deg);
+  }
+  to {
+    transform: scale(1) rotate(0);
+  }
+}
+.fl-verdict,
+.fl-place {
+  position: relative;
+  font-family: var(--disp);
+  line-height: 1;
+  transform: skewX(-8deg) rotate(-3deg);
+  -webkit-text-stroke: 0.05em var(--ink);
+  paint-order: stroke fill;
+}
+.fl-verdict {
+  font-size: clamp(34px, 12vw, 52px);
+  color: var(--yel);
+  text-shadow: 0.06em 0.07em 0 var(--ink);
+}
+.fl-out.is-win .fl-verdict {
+  color: var(--red);
+}
+.fl-place {
+  margin-top: 4px;
+  font-size: clamp(22px, 7.4vw, 32px);
+  color: #fff;
+  text-shadow: 0.07em 0.08em 0 var(--ink);
+}
+.fl-place:empty {
+  display: none;
+}
+.fl-passed {
+  flex: none;
+  margin-top: -4px;
+  padding: 3px 12px;
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-weight: 800;
+  font-size: 15px;
+}
+
+/* how many are still in the air */
+.fl-air {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px 6px 12px;
+  border: 3px solid var(--ink);
+  border-radius: 18px;
+  background: var(--yel);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.fl-air-num {
+  font-family: var(--disp);
+  font-size: clamp(40px, 13vw, 58px);
+  line-height: 0.9;
+  color: var(--red);
+  -webkit-text-stroke: 0.05em var(--ink);
+  paint-order: stroke fill;
+  min-width: 1ch;
+  text-align: center;
+}
+.fl-air-num.is-bump {
+  animation: fl-bump 0.35s cubic-bezier(0.2, 1.7, 0.4, 1);
+}
+@keyframes fl-bump {
+  from {
+    transform: scale(1.6) rotate(-8deg);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+.fl-air-label {
+  font-family: var(--disp);
+  font-size: clamp(20px, 6.4vw, 28px);
+  line-height: 1;
+}
+.fl-air.is-hidden,
+.fl-list.is-hidden {
+  display: none;
+}
+
+/* who is still flying */
+.fl-list {
+  flex: 0 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: flex-start;
+  gap: 7px 6px;
+  overflow: hidden;
+}
+.fl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 46%;
+  height: 32px;
+  padding: 0 10px 0 4px;
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-weight: 800;
+  font-size: 15px;
+  box-sizing: border-box;
+}
+.fl-chip i {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  box-sizing: border-box;
+}
+.fl-chip b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+.fl-chip.is-more {
+  padding: 0 10px;
+  background: var(--paper);
+}
+
+/* the finale banner (also the winner line) */
+.fl-finale {
+  flex: none;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 16px;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  background: var(--red);
+  box-shadow: 4px 4px 0 var(--ink);
+  color: #fff;
+  font-family: var(--disp);
+  font-size: clamp(24px, 8vw, 34px);
+  line-height: 1.1;
+  transform: rotate(-2deg);
+}
+.fl-finale.is-on {
+  display: flex;
+  animation: fl-pop 0.4s cubic-bezier(0.2, 1.7, 0.4, 1);
+}
+.fl-finale-count {
+  min-width: 1.1em;
+  height: 1.1em;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: var(--yel);
+  color: var(--ink);
+}
+.fl-finale-count:empty {
+  display: none;
+}
+.fl-winner {
+  flex: none;
+  display: none;
+  max-width: 100%;
+  padding: 8px 18px;
+  border: 3px solid var(--ink);
+  border-radius: 18px;
+  background: var(--yel);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-family: var(--disp);
+  font-size: clamp(24px, 8vw, 36px);
+  line-height: 1.1;
+  text-align: center;
+  transform: rotate(2deg);
+}
+.fl-winner.is-on {
+  display: block;
+  animation: fl-pop 0.45s cubic-bezier(0.2, 1.7, 0.4, 1);
+}
+.fl-winner bdi {
+  color: var(--red);
+  font-family: system-ui, -apple-system, 'Arial Hebrew', 'Noto Sans Hebrew', sans-serif;
+  font-weight: 900;
+}
+@media (max-height: 600px) {
+  .fl-out {
+    gap: 6px;
+  }
+  .fl-burst {
+    width: min(60vw, 220px);
+  }
+}

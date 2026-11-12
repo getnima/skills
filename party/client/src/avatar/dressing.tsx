@@ -841,7 +841,9 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     }
     wobble(0.8, true);
     later(() => wobble(0.6), 160);
-    say(pick(had ? LINES.shake : LINES.shakeEmpty), true);
+    // the big burst sits on his chest for a moment; the line comes once it has popped
+    const line = pick(had ? LINES.shake : LINES.shakeEmpty);
+    later(() => say(line, true), live() ? 480 : 0);
   };
 
   const onRandom = (): void => {
@@ -883,7 +885,9 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
         }
       }
       wobble(0.9, true);
-      say(pick(LINES.random), true);
+      // the big burst sits on his chest for a moment; the line comes once it has popped
+      const line = pick(LINES.random);
+      later(() => say(line, true), live() ? 480 : 0);
     };
     if (!live()) {
       finale();
@@ -926,7 +930,9 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
       confetti(layer, ['#F2361B', '#FFD21F', '#4F6CFF', '#FF7EB6', '#FFFFFF']);
     }
     wobble(1, true);
-    say(pick(LINES.done), true);
+    // the big burst sits on his chest for a moment; the line comes once it has popped
+    const line = pick(LINES.done);
+    later(() => say(line, true), live() ? 480 : 0);
     try {
       propsRef.current.onDone?.(l);
     } catch (err) {

@@ -84,6 +84,10 @@ type Listener = (snap: Snapshot) => void;
 export interface LiveScores {
   readonly round: number;
   readonly scores: ReadonlyArray<readonly [string, number]>;
+  /** Participants still playing; null from a server that does not send it. */
+  readonly active: number | null;
+  /** Ids of the participants whose final is in (elimination: who is out). */
+  readonly out: readonly string[];
   /** performance.now() when it arrived. */
   readonly at: number;
   /** Counts every message this phone received (since the page loaded). */
@@ -260,7 +264,14 @@ export function createController(): PlayerController {
   });
   socket.on('state', applyState);
   socket.on('scores', (msg) => {
-    live = { round: msg.round, scores: msg.scores, at: performance.now(), seq: ++liveSeq };
+    live = {
+      round: msg.round,
+      scores: msg.scores,
+      active: typeof msg.active === 'number' ? msg.active : null,
+      out: Array.isArray(msg.out) ? msg.out : [],
+      at: performance.now(),
+      seq: ++liveSeq,
+    };
     for (const fn of [...scoreListeners]) {
       try {
         fn(live);
