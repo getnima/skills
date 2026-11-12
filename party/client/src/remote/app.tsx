@@ -16,7 +16,7 @@ import { useRemoteLink } from './link';
 
 import type { ComponentChildren, JSX } from 'preact';
 import type { GameId } from '../../../shared/protocol';
-import type { ActionId, ControlAction, ControlModel } from '../host/actions';
+import type { ActionId, ControlAction, ControlModel, SyncView } from '../host/actions';
 import type { RemoteLink, RunResult } from './link';
 
 /** Automation hook for the browser tests (read-only). */
@@ -497,6 +497,85 @@ function ConfirmSheet(props: { readonly ask: Ask; onYes(): void; onClose(): void
   );
 }
 
+/**
+ * The TV's A/V sync, from the remote (while the TV's sync screen is open): this phone's disc
+ * flashes on the TRUE server second (no delay, like every phone), the reference the TV's flash
+ * is tuned to; the buttons nudge the TV's two delays (kit/av-sync.ts).
+ */
+function SyncPanel(props: { readonly link: RemoteLink; readonly sync: SyncView; onAdjust(arg: string): void; onDone(): void }): JSX.Element {
+  const [, setFrame] = useState(0);
+  useEffect(() => {
+    let raf = 0;
+    const loop = (): void => {
+      setFrame((n) => (n + 1) % 1_000_000);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const now = props.link.clock.now();
+  const into = ((now % 1_000) + 1_000) % 1_000;
+  const digit = (((Math.floor(now / 1_000) % 4) + 4) % 4) + 1;
+  const step = (what: 'sound' | 'picture', n: number): JSX.Element => (
+    <button
+      type="button"
+      key={`${what}${n}`}
+      class="rm-sync-step"
+      data-testid={`sync-${what}-${n < 0 ? 'm' : 'p'}${Math.abs(n)}`}
+      onClick={() => {
+        press();
+        props.onAdjust(`${what}:${n < 0 ? '-' : '+'}${Math.abs(n)}`);
+      }}
+    >
+      {n > 0 ? `+${n}` : `−${Math.abs(n)}`}
+    </button>
+  );
+  return (
+    <div class="rm-sync" data-testid="sync-panel">
+      <div class={`rm-sync-disc ${into < 140 ? 'is-flash' : ''} ${digit === 1 ? 'is-one' : ''}`} data-digit={digit}>
+        {digit}
+      </div>
+      <p class="rm-sync-tip">שימו את הטלפון ליד הטלוויזיה: מהבהבים יחד? והביפ על ההבהוב?</p>
+      <div class="rm-sync-row">
+        <div class="rm-sync-label">
+          🔊 צליל <b dir="ltr">{props.sync.soundMs}</b>
+          {props.sync.auto ? <span class="rm-sync-auto">אוטומטי</span> : null}
+          <small>הביפ מאחר ← +</small>
+        </div>
+        <div class="rm-sync-steps" dir="ltr">
+          {step('sound', -200)}
+          {step('sound', -20)}
+          {step('sound', 20)}
+          {step('sound', 200)}
+        </div>
+      </div>
+      <div class="rm-sync-row">
+        <div class="rm-sync-label">
+          📺 תמונה <b dir="ltr">{props.sync.pictureMs}</b>
+          <small>הטלוויזיה מאחרת ← +</small>
+        </div>
+        <div class="rm-sync-steps" dir="ltr">
+          {step('picture', -50)}
+          {step('picture', -10)}
+          {step('picture', 10)}
+          {step('picture', 50)}
+        </div>
+      </div>
+      <div class="rm-sync-presets">
+        <button type="button" class="rm-btn rm-btn--white" data-testid="sync-airplay" onClick={() => props.onAdjust('sound:=2000')}>
+          🛜 AirPlay ≈ 2 שניות
+        </button>
+        <button type="button" class="rm-btn rm-btn--white" onClick={() => props.onAdjust('sound:auto')}>
+          🪄 אוטומטי
+        </button>
+        <button type="button" class="rm-btn rm-btn--red" data-testid="sync-done" onClick={props.onDone}>
+          ✓ סיום
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SheetRow(props: {
   readonly action: ControlAction | undefined;
   readonly label?: string;
@@ -653,8 +732,15 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
   else if (phase === 'results') mid = <RoundTop link={link} />;
   else if (phase === 'final') mid = <Standings link={link} title="🏆 הדירוג הסופי" />;
   else if (phase === 'lobby') mid = s !== null && (s.played.length > 0 || s.results !== null) ? <Standings link={link} title="🏅 הדירוג עד עכשיו" /> : <Players link={link} />;
+  const syncOpen = model?.sync?.open === true;
+  const adjust = (arg: string): void => {
+    void link.run('av-adjust', arg, false).then((r) => {
+      if (!r.ok) say(r);
+    });
+  };
+  if (syncOpen && model?.sync !== undefined) mid = <SyncPanel link={link} sync={model.sync} onAdjust={adjust} onDone={() => send('av-sync', 'off', false)} />;
   const picker =
-    between && model !== null ? (
+    !syncOpen && between && model !== null ? (
       <Picker model={model} selected={selected} enabled={live} onPick={(g) => setSelected((cur) => (cur === g ? null : g))} />
     ) : null;
 
@@ -803,6 +889,15 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
             />
             <SheetRow action={kickAction} chevron testId="more-kick" onPress={() => setSheet('players')} />
             <SheetRow action={act('mute')} testId="more-mute" onPress={() => toggle(act('mute'))} />
+            <SheetRow
+              action={act('av-sync')}
+              label="סנכרון סאונד ותמונה (AirPlay)"
+              testId="more-av-sync"
+              onPress={() => {
+                setSheet('none');
+                toggle(act('av-sync'));
+              }}
+            />
             <SheetRow action={act('calm')} testId="more-calm" onPress={() => toggle(act('calm'))} />
             <SheetRow
               action={act('reset')}

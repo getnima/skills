@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { CUTSCENES } from '../../../shared/cutscenes';
 import { GAMES } from '../../../shared/protocol';
+import { soundOffsetMs } from '../kit/av-sync';
 import { allCutsceneStatuses, cutsceneUrl, resolveSources } from './media';
 import { Btn, Modal, Switch } from './ui';
 
@@ -17,6 +18,13 @@ const PLACEHOLDER_MS = 4_000;
 const START_TIMEOUT_MS = 9_000;
 /** A host that re-attaches this late into a cutscene seeks the video instead of starting over. */
 const SEEK_AFTER_MS = 1_500;
+/**
+ * The speaker is this late or more (AirPlay, kit/av-sync.ts): the soundtrack plays from its own
+ * element and the (muted) picture starts that much after it, so lips and sound meet in the room.
+ */
+const SPLIT_FROM_MS = 40;
+/** The picture is pulled back onto the soundtrack when it drifts further than this (s). */
+const DRIFT_S = 0.15;
 
 type Mode = { kind: 'loading' } | { kind: 'video'; sources: readonly string[]; index: number } | { kind: 'placeholder'; reason: 'missing' | 'failed' };
 
@@ -34,6 +42,8 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
   const [needsUnmute, setNeedsUnmute] = useState(false);
   const [ended, setEnded] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  /** The soundtrack, when it plays ahead of the picture (AirPlay); null otherwise. */
+  const trackRef = useRef<HTMLAudioElement | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const endedRef = useRef(false);
   const startedRef = useRef(false);
@@ -52,6 +62,7 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
     setEnded(true);
     try {
       videoRef.current?.pause();
+      trackRef.current?.pause();
     } catch {
       // ignore
     }
@@ -102,14 +113,49 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
     const v = videoRef.current;
     if (!v) return;
     startedRef.current = false;
+    const lead = soundOffsetMs();
+    let pictureTimer: ReturnType<typeof setTimeout> | null = null;
+    const dropTrack = (): void => {
+      const t = trackRef.current;
+      trackRef.current = null;
+      if (t === null) return;
+      t.pause();
+      t.removeAttribute('src');
+      t.load();
+    };
     const nextSource = (): void => {
       if (endedRef.current) return;
+      dropTrack();
       if (mode.index + 1 < mode.sources.length) setMode({ ...mode, index: mode.index + 1 });
       else setMode({ kind: 'placeholder', reason: 'failed' });
     };
+    /** AirPlay: the soundtrack starts now, the muted picture `lead` ms later. */
+    const startSplit = (at: number): void => {
+      const track = new Audio();
+      track.preload = 'auto';
+      track.src = `${v.currentSrc || v.src}${at > 0 ? `#t=${at.toFixed(2)}` : ''}`;
+      track.muted = mutedRef.current;
+      trackRef.current = track;
+      v.muted = true;
+      track
+        .play()
+        .then(() => {
+          pictureTimer = setTimeout(() => {
+            if (!endedRef.current) v.play().catch(() => nextSource());
+          }, lead);
+        })
+        .catch((err: unknown) => {
+          // no autoplay for the soundtrack: the picture alone, muted, with the one-click unmute
+          dropTrack();
+          if (err instanceof Error && err.name === 'AbortError') return;
+          setNeedsUnmute(true);
+          v.play().catch(() => nextSource());
+        });
+    };
     const start = (): void => {
+      let at = 0;
       if (offsetMs.current > SEEK_AFTER_MS && Number.isFinite(v.duration)) {
-        const at = offsetMs.current / 1000;
+        at = offsetMs.current / 1000;
         offsetMs.current = 0;
         if (at >= v.duration - 0.3) {
           finish();
@@ -120,6 +166,11 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
         } catch {
           // ignore
         }
+      }
+      if (lead >= SPLIT_FROM_MS) {
+        // start() can run twice (metadata already there, then the event): one split start only
+        if (trackRef.current === null) startSplit(at);
+        return;
       }
       v.muted = mutedRef.current;
       v.play().catch((err: unknown) => {
@@ -157,11 +208,19 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
       if (barRef.current && v.duration > 0 && Number.isFinite(v.duration)) {
         barRef.current.style.transform = `scaleX(${Math.min(1, v.currentTime / v.duration)})`;
       }
+      // the picture stays `lead` behind its soundtrack (a stall on either side pulls it back)
+      const track = trackRef.current;
+      if (track !== null && !v.paused && !track.paused) {
+        const want = track.currentTime - lead / 1000;
+        if (want > 0 && Math.abs(v.currentTime - want) > DRIFT_S) v.currentTime = want;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => {
       clearTimeout(watchdog);
+      if (pictureTimer !== null) clearTimeout(pictureTimer);
+      dropTrack();
       cancelAnimationFrame(raf);
       v.removeEventListener('loadedmetadata', onMeta);
       v.removeEventListener('playing', onPlaying);
@@ -170,15 +229,17 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
     };
   }, [mode]);
 
-  // the host's mute (M) also mutes the video
+  // the host's mute (M) also mutes the video (or its soundtrack, when that plays ahead)
   useEffect(() => {
     const v = videoRef.current;
-    if (v && !needsUnmute) v.muted = props.muted;
+    if (trackRef.current !== null) trackRef.current.muted = props.muted;
+    else if (v && !needsUnmute) v.muted = props.muted;
   }, [props.muted, needsUnmute]);
 
   const unmute = (): void => {
     const v = videoRef.current;
     if (!v) return;
+    // after a refused autoplay the picture carries its own sound (no AirPlay split any more)
     v.muted = props.muted;
     setNeedsUnmute(false);
     void v.play().catch(() => undefined);

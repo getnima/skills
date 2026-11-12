@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { sfx } from '../../kit/audio';
+import { soundOffsetMs } from '../../kit/av-sync';
 import { hasTrackFile, playTrack, stopTrack } from '../../kit/music';
 import { WINNER_REVEAL_MS } from '../../../../shared/protocol';
 import { backdropUrl, lastPlaceArt } from './art';
@@ -140,6 +141,9 @@ function viewAt(t: number, plan: Plan): View {
   return { phase: 'standings', shown: plan.reveal.length, tense: false, step: s < MOVE_AFTER ? 0 : s < SPOT_AFTER ? 1 : s < REST_AFTER ? 2 : 3 };
 }
 
+/** The view before anything happened (the first frame compares against it, and is not live). */
+const QUIET_START: View = { phase: 'suspense', shown: 0, tense: false, step: 0 };
+
 function sameView(a: View, b: View): boolean {
   return a.phase === b.phase && a.shown === b.shown && a.tense === b.tense && a.step === b.step;
 }
@@ -186,6 +190,8 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
   const revealRef = useRef(props.results.revealAt);
   revealRef.current = props.results.revealAt;
   const cueAt = useRef({ confetti: 0, landed: false, raved: false });
+  /** The sound side of the timeline (ahead by the speaker's delay, AirPlay): its own view and one-shot cues. */
+  const heard = useRef<{ view: View | null; landed: boolean; booed: boolean }>({ view: null, landed: false, booed: false });
   /** The suspense line of a near-empty board was said (once per round). */
   const suspCue = useRef(false);
   /** The hosts' narration (narrator-bus.ts): which of this showing's moments were cued. */
@@ -211,6 +217,7 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
   useEffect(() => {
     clock.current = { t: Number.NEGATIVE_INFINITY, post: -1, started: false };
     cueAt.current = { confetti: 0, landed: false, raved: false };
+    heard.current = { view: null, landed: false, booed: false };
     suspCue.current = false;
     narrated.current = new Set();
     stopSong(300);
@@ -223,61 +230,69 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
     }
   }, [props.active]);
 
+  /** A beat of the timeline, seen: the pictures and the lines (the sounds are in onSound). */
   const onEnter = (next: View, prev: View, live: boolean, t: number): void => {
     const p = planRef.current;
     const layer = funny.layer();
     if (next.phase === 'suspense' && live) {
       if (next.shown > prev.shown) {
         const row = p.reveal[next.shown - 1];
-        sfx.pop(0.8 + (next.shown / Math.max(1, p.reveal.length)) * 0.9);
         if (row && p.last && row.playerId === p.last.playerId && next.shown === 1) {
           layer?.sayLine('roast', { a: row.name }, 'laugh', { force: true, holdMs: 3_200 });
-          sfx.fart();
         }
       }
-      if (next.tense && !prev.tense) {
-        layer?.hush();
-        sfx.drumroll(Math.max(400, -t));
-      }
+      if (next.tense && !prev.tense) layer?.hush();
     }
-    if (next.phase === 'blackout' && prev.phase !== 'blackout' && live) {
-      layer?.hush();
-      sfx.hit();
-    }
+    if (next.phase === 'blackout' && prev.phase !== 'blackout' && live) layer?.hush();
     if (next.phase === 'ceremony' && prev.phase !== 'ceremony') {
       const elapsed = p.winners.length > 0 ? t - NAME_AT : t;
       setSkipMs(Math.max(0, Math.round(elapsed)));
       cueAt.current = { confetti: 0, landed: false, raved: false };
+      if (p.winners.length > 0 && live) {
+        layer?.flash('#ffffff');
+        layer?.cannons(110);
+      }
+    }
+    if (next.phase === 'standings' && prev.phase !== 'standings') layer?.hush();
+    if (next.phase === 'standings' && live && next.step === 2 && prev.step !== 2) {
+      if (p.newLeader) layer?.sayLine('newLeader', { a: p.newLeader.name }, 'shocked', { force: true });
+      else if (p.climber) layer?.sayLine('climber', { a: p.climber.name, n: p.climbed }, 'happy', { force: true });
+    }
+  };
+
+  /**
+   * The same beats, heard. They run on the timeline shifted ahead by the speaker's delay
+   * (kit/av-sync.ts: 0 without AirPlay), so the drum roll, the hit and the victory song land on
+   * their frames in the room instead of a couple of seconds after them.
+   */
+  const onSound = (next: View, prev: View, live: boolean, t: number): void => {
+    const p = planRef.current;
+    if (next.phase === 'suspense' && live) {
+      if (next.shown > prev.shown) {
+        const row = p.reveal[next.shown - 1];
+        sfx.pop(0.8 + (next.shown / Math.max(1, p.reveal.length)) * 0.9);
+        if (row && p.last && row.playerId === p.last.playerId && next.shown === 1) sfx.fart();
+      }
+      if (next.tense && !prev.tense) sfx.drumroll(Math.max(400, -t));
+    }
+    if (next.phase === 'blackout' && prev.phase !== 'blackout' && live) sfx.hit();
+    if (next.phase === 'ceremony' && prev.phase !== 'ceremony') {
+      const elapsed = p.winners.length > 0 ? t - NAME_AT : t;
       if (p.winners.length > 0) {
         if (elapsed < 6_000 || hasTrackFile('victory')) {
           playTrack('victory', { fallback: 'victory' });
           song.current = true;
         }
-        if (live) {
-          layer?.flash('#ffffff');
-          layer?.cannons(110);
-          sfx.cheer();
-        }
+        if (live) sfx.cheer();
       } else if (live) {
         sfx.fall();
       }
     }
-    if (next.phase === 'standings' && prev.phase !== 'standings') {
-      // the synth tune has just played out; a real song keeps going over the standings
-      if (!hasTrackFile('victory')) stopSong(1_200);
-      layer?.hush();
-    }
+    // the synth tune has just played out; a real song keeps going over the standings
+    if (next.phase === 'standings' && prev.phase !== 'standings' && !hasTrackFile('victory')) stopSong(1_200);
     if (next.phase === 'standings' && live) {
       if (next.step === 1 && prev.step !== 1) sfx.whoosh();
-      if (next.step === 2 && prev.step !== 2) {
-        if (p.newLeader) {
-          layer?.sayLine('newLeader', { a: p.newLeader.name }, 'shocked', { force: true });
-          sfx.success();
-        } else if (p.climber) {
-          layer?.sayLine('climber', { a: p.climber.name, n: p.climbed }, 'happy', { force: true });
-          sfx.success();
-        }
-      }
+      if (next.step === 2 && prev.step !== 2 && (p.newLeader !== null || p.climber !== null)) sfx.success();
     }
   };
 
@@ -303,6 +318,24 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
       viewRef.current = next;
       setView(next);
       onEnter(next, prev, live, t);
+    }
+    // ── the sounds: the same timeline, ahead by the speaker's delay ──
+    const ta = t + soundOffsetMs();
+    const h = heard.current;
+    const nextA = viewAt(ta, p);
+    if (h.view === null || !sameView(nextA, h.view)) {
+      onSound(nextA, h.view ?? QUIET_START, h.view !== null, ta);
+      h.view = nextA;
+    }
+    if (nextA.phase === 'ceremony' && h.view !== null) {
+      if (p.winners.length > 0 && !h.landed && ta - NAME_AT >= 3_300 && ta - NAME_AT < 5_000) {
+        h.landed = true;
+        sfx.success();
+      }
+      if (p.winners.length === 0 && !h.booed && ta >= 1_800 && ta < 4_000) {
+        h.booed = true;
+        sfx.boo();
+      }
     }
     // ── the hosts' narration, at the beats of this timeline (only while it runs live) ──
     if (live) {
@@ -331,7 +364,6 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
         cue.landed = true;
         layer?.cannons(120);
         layer?.rain(70);
-        sfx.success();
       }
       if (e >= 5_200 && e - cue.confetti >= 2_300 && e < CEREMONY_MS - NAME_AT - 800) {
         cue.confetti = e;
@@ -343,7 +375,6 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
       if (!cue.raved && t >= 1_800 && t < 4_000) {
         cue.raved = true;
         funny.layer()?.sayLine('nobody', {}, 'laugh', { force: true, holdMs: 3_600 });
-        sfx.boo();
       }
     }
   });

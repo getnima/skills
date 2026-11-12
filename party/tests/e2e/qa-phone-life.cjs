@@ -228,7 +228,7 @@ function expectedLeft(host) {
 
     // ───────── round 2: cutscene, long network drop, reload ─────────
     await host.call('host:start', { gameId: 'tap' });
-    await L.waitScreen(A, 'playing', 15000);
+    await L.waitScreen(A, 'playing', 40000); // the 30 s how-to + 3-2-1 first
     await L.sleep(2500);
     await tapN(A, 5);
     await tapN(B, 5);
@@ -307,7 +307,7 @@ function expectedLeft(host) {
             await L.waitFor(() => Date.now() > host.state().results.revealAt + 7000, 20000, 'reveal 3');
             await host.call('host:lobby', {});
             await host.call('host:start', { gameId: 'tap' });
-            await L.waitScreen(D, 'playing', 15000);
+            await L.waitScreen(D, 'playing', 40000); // the 30 s how-to + 3-2-1 first
             const [c, d] = await Promise.all([play(C), play(D)]);
             check(c && d && Math.abs(c.leftMs - d.leftMs) < 300, `clock jump of 40 s during a sleep is re-synced on return (${c && Math.round(c.leftMs)} vs ${d && Math.round(d.leftMs)})`);
           },

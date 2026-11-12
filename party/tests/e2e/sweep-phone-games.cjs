@@ -307,7 +307,7 @@ async function startRound(game) {
   await L.sleep(1500);
   await L.sleep(300);
   await shotAll(all(), `${game}-1-intro`);
-  await waitAll(all(), ['countdown', 'playing'], 12000, `${game}-countdown`);
+  await waitAll(all(), ['countdown', 'playing'], 40000, `${game}-countdown`); // the 27 s how-to first
   await L.sleep(200);
   const cd = [];
   for (const p of all()) if ((await L.screen(p)) === 'countdown') cd.push(p);
@@ -508,7 +508,7 @@ const ROUNDS = {
   async tap2() {
     for (const p of all()) p.__label = 'tap2';
     await host.call('host:start', { gameId: 'tap' });
-    await waitAll(all(), 'playing', 25000, 'tap2-playing');
+    await waitAll(all(), 'playing', 45000, 'tap2-playing'); // the 30 s how-to + 3-2-1 first
     await atRound(800);
     await Promise.all([tapN(pages.promax, 50, 8), tapN(pages.se, 5), tapN(pages.ip14, 5), tapN(pages.pixel7, 5), tapN(pages.s8, 5), tapN(pages.a412, 5)]);
     await endBeats('tap2', { quick: true });

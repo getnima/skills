@@ -14,11 +14,13 @@ import { findCutscene } from '../../../shared/cutscenes';
 import { GAMES, GAME_IDS } from '../../../shared/protocol';
 import { roundTime } from '../../../shared/round-clock';
 import { isMuted, preloadClips, setMuted, sfx, unlockAudio } from '../kit/audio';
+import { avSync, onAvSyncChange, pictureClock, pictureLeadMs, soundOffsetMs } from '../kit/av-sync';
 import { enterFullscreen } from '../kit/mobile';
 import { buildControlModel, checkAction, confirmQuestion, findAction, isGameId, nextUnplayed, parseRelay, remoteView, toRelay } from './actions';
 import { CreditsPanel } from './credits';
 import { CutsceneMenu, CutscenePlayer } from './cutscene';
 import { GoSplash, markResumeGo, markStartGong, PreRoundScreen, ResumeOverlay, startGongScheduled, useCountdownCues } from './intro';
+import { applyAvAdjust, AvSyncScreen } from './av-sync-screen';
 import { Lobby } from './lobby';
 import { SoundCheck, useShowMusic } from './music';
 import { Narrator } from './narrator';
@@ -36,7 +38,7 @@ import type { ActResult, HostRoom } from './room';
 import type { ConfirmRequest } from './ui';
 
 /** 'credits' is TV-local (an information panel, not an action of the control model). */
-type MenuKind = 'none' | 'cutscenes' | 'more' | 'sound' | 'credits';
+type MenuKind = 'none' | 'cutscenes' | 'more' | 'sound' | 'credits' | 'sync';
 
 /** Automation hook for the browser tests (read-only). */
 export interface HostHooks {
@@ -124,11 +126,12 @@ function RoundGo(props: { readonly round: RoundPublic; readonly clock: ServerClo
     const rt = roundTime(props.round, props.clock.now());
     return !rt.frozen && rt.elapsedMs < 1_200;
   });
-  // the gong itself is on the audio clock for the exact start (useCountdownCues); the splash only draws
-  return fresh ? <GoSplash gong quiet={startGongScheduled(props.round.index)} /> : null;
+  // the gong itself is on the audio clock for the exact start (useCountdownCues); the splash only draws,
+  // carrying on the GO the countdown screen already drew from the clock
+  return fresh ? <GoSplash gong quiet={startGongScheduled(props.round.index)} at={props.round.startAt} clock={props.clock} soundKey={`start:${props.round.index}`} /> : null;
 }
 
-function PlayingView(props: { readonly state: RoomState; readonly round: RoundPublic; readonly room: HostRoom }): JSX.Element {
+function PlayingView(props: { readonly state: RoomState; readonly round: RoundPublic; readonly room: HostRoom; readonly showClock: ServerClock }): JSX.Element {
   const { state, round, room } = props;
   const roundRef = useRef(round);
   roundRef.current = round;
@@ -147,8 +150,8 @@ function PlayingView(props: { readonly state: RoomState; readonly round: RoundPu
         clock={clockRef.current}
         durationMs={round.endAt - round.startAt}
       />
-      <RoundGo key={round.index} round={round} clock={room.clock} />
-      <ResumeOverlay round={round} clock={room.clock} covered={covered} />
+      <RoundGo key={round.index} round={round} clock={props.showClock} />
+      <ResumeOverlay round={round} clock={props.showClock} covered={covered} />
     </div>
   );
 }
@@ -256,6 +259,10 @@ export function App(): JSX.Element {
   const fullscreen = useFullscreen();
   const calm = useCalm();
   const [menu, setMenu] = useState<MenuKind>('none');
+  // the TV's sound / picture delay (AirPlay): its clock for what is drawn by the server clock
+  const [, setAvRev] = useState(0);
+  useEffect(() => onAvSyncChange(() => setAvRev((n) => n + 1)), []);
+  const showClock = useMemo(() => pictureClock(room.clock), [room.clock]);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [replay, setReplay] = useState(0);
   const [replayAt, setReplayAt] = useState<number | null>(null);
@@ -278,6 +285,9 @@ export function App(): JSX.Element {
     phaseAt.current = performance.now();
   }
   useEffect(() => setArmed(null), [phaseKey]);
+  useEffect(() => {
+    if (phase === 'intro' || phase === 'countdown' || phase === 'playing' || state?.cutscene) setMenu((m) => (m === 'sync' ? 'none' : m));
+  }, [phase, state?.cutscene !== null && state?.cutscene !== undefined]);
   // the show's drop-in clips decode once at boot, so the first air horn and gong land on their moment
   useEffect(() => preloadClips(['airhorn', 'gong']), []);
   // the 3-2-1 heard from the TV, locked to the server clock: the beeps and the start gong on the
@@ -360,7 +370,8 @@ export function App(): JSX.Element {
   // ── the action model: what the host can do right now ──
   const res = state?.results ?? null;
   const ceremonyDone = phase !== 'results' || res === null || room.clock.now() >= standingsAt(replayAt !== null ? { ...res, revealAt: replayAt } : res);
-  const model = buildControlModel({ state, ceremonyDone, muted, calm, fullscreen });
+  const sync = { open: menu === 'sync', soundMs: soundOffsetMs(), auto: !avSync().soundSet, pictureMs: pictureLeadMs() };
+  const model = buildControlModel({ state, ceremonyDone, muted, calm, fullscreen, sync });
   const modelRef = useRef(model);
   modelRef.current = model;
   const action = (id: ActionId): ControlAction | undefined => findAction(model, id);
@@ -419,6 +430,13 @@ export function App(): JSX.Element {
       case 'new-room':
         room.newRoom();
         return done('בוצע');
+      case 'av-sync': {
+        const want = arg === 'on' ? true : arg === 'off' ? false : menu !== 'sync';
+        setMenu(want ? 'sync' : 'none');
+        return done('בוצע');
+      }
+      case 'av-adjust':
+        return applyAvAdjust(arg) ? done('בוצע') : refused('לא הבנתי את הכיוון');
       default: {
         const _exhaustive: never = id;
         throw new Error(`Unhandled action: ${String(_exhaustive)}`);
@@ -553,6 +571,7 @@ export function App(): JSX.Element {
       if (e.repeat) return;
       if (action('end-round')?.enabled === true) key('end-round');
     } else if (code === 'KeyC') key('cutscene-menu');
+    else if (code === 'KeyA') key('av-sync');
     else if (code === 'KeyR') {
       if (action('replay')?.enabled === true) key('replay');
     } else return;
@@ -580,9 +599,9 @@ export function App(): JSX.Element {
   } else if ((phase === 'intro' || phase === 'countdown') && state.round !== null) {
     const game = GAMES[state.round.gameId];
     // one element through the intro and the 3-2-1: the clock decides which one shows
-    scene = <PreRoundScreen key={state.round.index} game={game} round={state.round} clock={room.clock} players={state.players.length} covered={cutscene !== null} />;
+    scene = <PreRoundScreen key={state.round.index} game={game} round={state.round} clock={showClock} players={state.players.length} covered={cutscene !== null} />;
   } else if (phase === 'playing' && state.round !== null) {
-    scene = <PlayingView state={state} round={state.round} room={room} />;
+    scene = <PlayingView state={state} round={state.round} room={room} showClock={showClock} />;
   } else if (phase === 'results') {
     scene = <ResultsView state={state} room={room} replay={replay} replayAt={replayAt} />;
   } else if (phase === 'final') {
@@ -735,6 +754,7 @@ export function App(): JSX.Element {
               testId="btn-sound-check"
               onClick={() => click('sound-check')}
             />
+            <Btn label="סנכרון סאונד ותמונה (AirPlay)" icon="⏱️" kbd="A" testId="btn-av-sync" onClick={() => click('av-sync', 'on')} />
             <Btn label="קרדיטים" icon="📜" testId="btn-credits" onClick={() => setMenu('credits')} />
             <Btn
               label="איפוס תחרות"
@@ -759,7 +779,7 @@ export function App(): JSX.Element {
               <b>קיצורי מקלדת</b>
               <span>
                 <kbd>רווח</kbd>/<kbd>Enter</kbd> הפעולה הראשית · <kbd>N</kbd> המשחק הבא · <kbd>E</kbd> סיום סיבוב · <kbd>C</kbd> סרטונים · <kbd>S</kbd> דילוג על סרטון ·{' '}
-                <kbd>R</kbd> שוב · <kbd>F</kbd> מסך מלא · <kbd>M</kbd> השתקה
+                <kbd>R</kbd> שוב · <kbd>F</kbd> מסך מלא · <kbd>M</kbd> השתקה · <kbd>A</kbd> סנכרון סאונד
               </span>
               <span>לחיצה על שחקן בלובי מוציאה אותו מהחדר.</span>
             </div>
@@ -768,6 +788,8 @@ export function App(): JSX.Element {
       ) : null}
 
       {menu === 'sound' && phase === 'lobby' ? <SoundCheck onClose={() => setMenu('none')} /> : null}
+
+      {menu === 'sync' ? <AvSyncScreen clock={room.clock} pictureClock={showClock} onAdjust={(arg) => void applyAvAdjust(arg)} onClose={() => setMenu('none')} /> : null}
 
       {menu === 'credits' ? <CreditsPanel onClose={() => setMenu('none')} /> : null}
 

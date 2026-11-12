@@ -501,6 +501,20 @@ function gong(): void {
 // ───────────────────────────── Cues on the audio clock ─────────────────────────────
 
 /**
+ * How long after the page plays a sound it leaves the output device, as the browser reports it
+ * (AudioContext.outputLatency + baseLatency; an AirPlay output can report its whole buffer), or
+ * null where the browser does not say or audio is not running yet.
+ */
+export function reportedOutputLatencyMs(): number | null {
+  const c = live();
+  if (!c) return null;
+  const out = (c as AudioContext & { readonly outputLatency?: number }).outputLatency;
+  if (typeof out !== 'number' || !Number.isFinite(out) || out <= 0) return null;
+  const base = Number.isFinite(c.baseLatency) ? c.baseLatency : 0;
+  return (out + base) * 1000;
+}
+
+/**
  * A countdown's sounds, scheduled on the audio clock for an exact moment (sample-accurate, not a
  * timer that fires when the page gets round to it): 'beep' for 3 and 2, 'beepHigh' for 1, 'gong'
  * for a round's start (gong.mp3 when it is decoded, else the synthesized gong), 'go' after a pause.

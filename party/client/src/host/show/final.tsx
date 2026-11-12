@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { sfx } from '../../kit/audio';
+import { soundOffsetMs } from '../../kit/av-sync';
 import { playTrack, stopTrack } from '../../kit/music';
 import { backdropUrl, crownUrl, podiumUrl, prizeArt } from './art';
 import { cardGrid } from './card-grid';
@@ -116,6 +117,9 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
   const clock = useRef(0);
   const [step, setStep] = useState(0);
   const stepRef = useRef(-1);
+  /** The sound side of the timeline: the step last heard, and the curtain's whoosh. */
+  const heardStep = useRef(-1);
+  const heardCurtain = useRef(false);
   const [page, setPage] = useState(0);
   const pageRef = useRef(0);
   const activeRef = useRef(props.active);
@@ -165,13 +169,35 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
   useFrame((dt) => {
     if (!activeRef.current) return;
     clock.current += dt;
-    const t = clock.current;
+    // the sounds keep the podium's clock; the pictures wait for the speaker's delay (AirPlay,
+    // kit/av-sync.ts: 0 without it), so the whoosh, the landings and the song meet their frames
+    const ta = clock.current;
+    const t = ta - soundOffsetMs();
     const next = stepAt(t, tlRef.current);
     const layer = funny.layer();
+    if (!heardCurtain.current && ta >= CURTAIN_OPEN_MS) {
+      heardCurtain.current = true;
+      if (finaleArt().curtain !== null && !isShowCalm()) sfx.whoosh(1.2);
+    }
+    const heard = stepAt(ta, tlRef.current);
+    if (heard !== heardStep.current) {
+      const before = heardStep.current;
+      heardStep.current = heard;
+      if (heard === 0) sfx.drumroll(2_500);
+      if (heard === 1 || heard === 2) {
+        sfx.land();
+        sfx.fanfare();
+        if (heard === 2 || before < 1) sfx.drumroll(tlRef.current.first - ta - 150);
+      }
+      if (heard === 3) {
+        playTrack('final', { fallback: 'victory' });
+        song.current = true;
+        sfx.cheer();
+      }
+    }
     if (!openedRef.current && t >= CURTAIN_OPEN_MS) {
       openedRef.current = true;
       setOpened(true);
-      if (finaleArt().curtain !== null && !isShowCalm()) sfx.whoosh(1.2);
     }
     // the toy cannons pop up with the champion and fire twice
     const shot = CANNON_FIRE_MS[fired.current];
@@ -185,22 +211,13 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
       stepRef.current = next;
       setStep(next);
       if (next === 0) {
-        sfx.drumroll(tlRef.current.third === NEVER ? (tlRef.current.second === NEVER ? 2_500 : 2_500) : 2_500);
         // with the hosts narrating on the TV, the podium's opening line is theirs
         if (!isNarratorOn() || !narrate('podium', 1_500, () => clock.current < tlRef.current.first - 1_500, undefined, 2_400)) {
           layer?.sayLine('finalIntro', {}, 'happy', { force: true, holdMs: 2_300 });
         }
       }
-      if (next === 1 || next === 2) {
-        sfx.land();
-        sfx.fanfare();
-        layer?.burst(next === 1 ? 0.72 : 0.28, 0.6, 50);
-        if (next === 2 || prev < 1) sfx.drumroll(tlRef.current.first - t - 150);
-      }
+      if (next === 1 || next === 2) layer?.burst(next === 1 ? 0.72 : 0.28, 0.6, 50);
       if (next === 3) {
-        playTrack('final', { fallback: 'victory' });
-        song.current = true;
-        sfx.cheer();
         layer?.flash('#ffffff');
         layer?.zoom();
         layer?.rain(90);

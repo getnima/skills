@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { roundTime } from '../../../shared/round-clock';
 import { scheduleCue, sfx } from '../kit/audio';
+import { soundLeadMs } from '../kit/av-sync';
 import { introArtUrl } from './show/art';
 import { GameArt } from './show/common';
 import { PrizeRelic } from './show/prize';
@@ -18,6 +19,7 @@ import './intro.css';
 
 import type { JSX } from 'preact';
 import type { GameMeta, RoundPublic } from '../../../shared/protocol';
+import type { CueKind } from '../kit/audio';
 import type { ServerClock } from '../net/connection';
 
 function msToStart(round: RoundPublic, now: number): number {
@@ -47,8 +49,25 @@ export function markResumeGo(key: string): void {
   resumeGos.add(key);
 }
 
-/** The cues are put on the audio clock this long before the first beep (with the clock just re-measured). */
+/** The cues are put on the audio clock this long before the first one leaves (with the clock just re-measured). */
 const CUE_LEAD_MS = 800;
+
+export interface PlannedCue {
+  /** Server ms the cue must be heard. */
+  readonly at: number;
+  readonly kind: CueKind;
+}
+
+/**
+ * The 3-2-1, heard: a beep on every whole second the countdown shows (T-3, T-2, the high one at
+ * T-1 at the real timing; fewer under a shorter test countdown), then the end cue at T.
+ */
+export function planCountdownCues(target: number, countdownMs: number, end: 'gong' | 'go'): readonly PlannedCue[] {
+  const plan: PlannedCue[] = [];
+  for (let k = Math.floor(countdownMs / 1_000); k >= 1; k--) plan.push({ at: target - k * 1_000, kind: k === 1 ? 'beepHigh' : 'beep' });
+  plan.push({ at: target, kind: end });
+  return plan;
+}
 
 /**
  * The TV's 3-2-1, heard: a beep at T-3 s and T-2 s, a high beep at T-1 s and the end cue at T (the
@@ -63,25 +82,26 @@ export function useCountdownCues(target: number | null, end: 'gong' | 'go', cloc
   onRef.current = onScheduled;
   useEffect(() => {
     if (target === null) return undefined;
-    // a beep on every whole second the 3-2-1 shows (T-3, T-2, the high one at T-1), then the end cue
-    const plan: (readonly [at: number, kind: 'beep' | 'beepHigh' | 'gong' | 'go'])[] = [];
-    for (let k = Math.floor(countdownMs / 1_000); k >= 1; k--) plan.push([target - k * 1_000, k === 1 ? 'beepHigh' : 'beep']);
-    plan.push([target, end]);
-    const first = plan[0]?.[0] ?? target;
+    const plan = planCountdownCues(target, countdownMs, end);
+    const first = plan[0]?.at ?? target;
+    // `at`: when the cue leaves the TV (the moment minus the speaker's delay, AirPlay)
     const queued: { at: number; stop: () => void }[] = [];
     let done = false;
     const tick = (): void => {
       if (done) return;
       const now = clock.now();
+      const lead = soundLeadMs();
       if (now > target + 200) {
         done = true;
         return;
       }
-      if (now < first - CUE_LEAD_MS) return;
+      if (now < first - lead - CUE_LEAD_MS) return;
       let any = false;
-      for (const [at, kind] of plan) {
+      for (const cue of plan) {
+        const at = cue.at - lead;
+        // a cue that can no longer leave in time is skipped: late is worse than silent
         if (at < now - 20) continue;
-        const stop = scheduleCue(kind, at - now);
+        const stop = scheduleCue(cue.kind, at - now);
         if (stop !== null) {
           queued.push({ at, stop });
           any = true;
@@ -109,8 +129,17 @@ export function useCountdownCues(target: number | null, end: 'gong' | 'go', cloc
  */
 export function PreRoundScreen(props: IntroProps): JSX.Element {
   const now = useServerNow(props.clock, !props.covered);
-  const counting = msToStart(props.round, now) <= props.round.countdownMs && !roundTime(props.round, now).frozen;
-  return counting ? <CountdownScreen game={props.game} round={props.round} clock={props.clock} covered={props.covered} /> : <IntroScreen {...props} />;
+  const rt = roundTime(props.round, now);
+  const counting = msToStart(props.round, now) <= props.round.countdownMs && !rt.frozen;
+  if (!counting) return <IntroScreen {...props} />;
+  // GO is drawn from the clock too: with the TV's picture delay (pictureClock) it is due before the
+  // `playing` message can arrive; the GO of the playing view carries on the same animation
+  return (
+    <>
+      <CountdownScreen game={props.game} round={props.round} clock={props.clock} covered={props.covered} />
+      {rt.elapsedMs >= 0 ? <GoSplash gong quiet={startGongScheduled(props.round.index)} at={props.round.startAt} clock={props.clock} soundKey={`start:${props.round.index}`} /> : null}
+    </>
+  );
 }
 
 export interface IntroProps {
@@ -187,40 +216,61 @@ export function CountdownScreen(props: { readonly game: GameMeta; readonly round
   const toStart = msToStart(props.round, now);
   // the digit is read from the server clock every frame; its beep is already on the audio clock
   const n = Math.max(1, Math.min(3, Math.ceil(toStart / 1000)));
+  const started = toStart <= 0;
   return (
     <div class="hs-countdown" data-testid="countdown">
       <div class="hs-countdown-game">
         <GameArt id={props.game.id} emoji={props.game.emoji} class="hs-countdown-art" />
         <span>{props.game.title}</span>
       </div>
-      <div class="hs-countdown-num" key={n} data-testid="countdown-num">
-        {n}
-      </div>
-      <div class="hs-countdown-ring" key={`r${n}`} />
+      {started ? null : (
+        <div class="hs-countdown-num" key={n} data-testid="countdown-num">
+          {n}
+        </div>
+      )}
+      {started ? null : <div class="hs-countdown-ring" key={`r${n}`} />}
       <div class="hs-countdown-hint">תפסו את הטלפונים!</div>
     </div>
   );
 }
 
+const GO_MS = 1_000;
+/** GO sounds already played, by `soundKey` (two splashes can show the same GO). */
+const goSounds = new Set<string>();
+
 /**
  * "יאללה!" for a moment when the round starts. Plays the GO sound once (the gong when a round
  * starts, `gong`; a beep after a pause), unless `quiet`: the countdown already put it on the
- * audio clock for the exact moment.
+ * audio clock for the exact moment. With `at` + `clock` the splash belongs to that server
+ * instant: mounted later, it carries on where its animation is by then (the countdown screen
+ * drew it first) and ends on time; `soundKey` keeps its sound to one play.
  */
-export function GoSplash(props: { readonly text?: string; readonly gong?: boolean; readonly quiet?: boolean }): JSX.Element | null {
-  const [gone, setGone] = useState(false);
+export function GoSplash(props: {
+  readonly text?: string;
+  readonly gong?: boolean;
+  readonly quiet?: boolean;
+  readonly at?: number;
+  readonly clock?: ServerClock;
+  readonly soundKey?: string;
+}): JSX.Element | null {
+  const since = useRef(props.at !== undefined && props.clock !== undefined ? Math.max(0, props.clock.now() - props.at) : 0).current;
+  const [gone, setGone] = useState(since >= GO_MS);
   useEffect(() => {
-    if (props.quiet === true) {
-      // the scheduled cue sounded on the moment
-    } else if (props.gong === true) sfx.gong();
-    else sfx.go();
-    const t = setTimeout(() => setGone(true), 1_000);
+    if (since >= GO_MS) return undefined;
+    const first = props.soundKey === undefined || !goSounds.has(props.soundKey);
+    if (props.soundKey !== undefined) goSounds.add(props.soundKey);
+    // the unscheduled fallback (audio was locked) only when it can still land near its moment
+    if (props.quiet !== true && first && since < 400 && soundLeadMs() < 150) {
+      if (props.gong === true) sfx.gong();
+      else sfx.go();
+    }
+    const t = setTimeout(() => setGone(true), GO_MS - since);
     return () => clearTimeout(t);
   }, []);
   if (gone) return null;
   return (
     <div class="hs-go" data-testid="go">
-      <span>{props.text ?? 'יאללה!'}</span>
+      <span style={since > 0 ? { animationDelay: `-${Math.round(since)}ms` } : undefined}>{props.text ?? 'יאללה!'}</span>
     </div>
   );
 }

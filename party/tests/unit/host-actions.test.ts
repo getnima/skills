@@ -106,7 +106,7 @@ describe('action model', () => {
   it('has every action exactly once, whatever the phase', () => {
     const ids = model(null).actions.map((a) => a.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.length).toBe(19);
+    expect(ids.length).toBe(21);
   });
 
   it('no state yet: nothing to press but the TV tools', () => {

@@ -505,7 +505,7 @@ async function remoteBig(r, expectAction) {
             await scan(tv, 'intro', label);
             if (comp === 1) await shot(tv, `${label}-intro`);
           }
-          await waitAtLeast(tv, 'countdown', 30000);
+          await waitAtLeast(tv, 'countdown', 40000); // the 27 s how-to first
           await L.sleep(800);
           if (await phaseIs(tv, 'countdown')) {
             await scan(tv, 'countdown', label);

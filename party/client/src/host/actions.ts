@@ -33,6 +33,8 @@ export const ACTION_IDS = [
   'more-menu', // TV only: the ☰ menu
   'sound-check', // TV only (lobby)
   'new-room', // TV only: a fresh room code
+  'av-sync', // TV-local toggle: the sound / picture delay screen (AirPlay)
+  'av-adjust', // TV-local: one sync adjustment, arg 'sound:+20' | 'picture:-10' | 'sound:=2000' | 'sound:auto' | 'reset'
 ] as const;
 export type ActionId = (typeof ACTION_IDS)[number];
 
@@ -83,6 +85,19 @@ export interface ControlModel {
   /** The next step (the big button), or null. */
   readonly primary: ActionId | null;
   readonly actions: readonly ControlAction[];
+  /** The TV's A/V sync (the remote shows its panel while it is open). */
+  readonly sync?: SyncView;
+}
+
+/** The TV's sound / picture delay (AirPlay, kit/av-sync.ts) and whether its sync screen is open. */
+export interface SyncView {
+  readonly open: boolean;
+  /** Sound sent this much earlier (ms). */
+  readonly soundMs: number;
+  /** Not set by hand: what the browser reports. */
+  readonly auto: boolean;
+  /** Picture drawn this much earlier (ms). */
+  readonly pictureMs: number;
 }
 
 export interface ModelInput {
@@ -92,6 +107,7 @@ export interface ModelInput {
   readonly muted: boolean;
   readonly calm: boolean;
   readonly fullscreen: boolean;
+  readonly sync?: SyncView;
 }
 
 export function nextUnplayed(played: readonly GameId[]): GameId | null {
@@ -285,6 +301,19 @@ export function buildControlModel(input: ModelInput): ControlModel {
     featured: false,
     tvOnly: true,
   });
+  // the A/V sync screen beeps every second: not over a round or a cutscene
+  const syncOpen = input.sync?.open === true;
+  actions.push({
+    id: 'av-sync',
+    label: 'סנכרון סאונד ותמונה',
+    icon: '⏱️',
+    kind: 'toggle',
+    on: syncOpen,
+    enabled: syncOpen || (state !== null && !running && !cut),
+    featured: false,
+    kbd: 'A',
+  });
+  actions.push({ id: 'av-adjust', label: 'כיוון הסנכרון', icon: '🎚️', kind: 'normal', enabled: syncOpen, featured: false });
   actions.push({
     id: 'new-room',
     label: 'חדר חדש (קוד חדש)',
@@ -306,7 +335,8 @@ export function buildControlModel(input: ModelInput): ControlModel {
   else if (phase === 'final') primary = 'reset';
   else if (running) primary = 'end-round';
 
-  return { v: 1, key: screenKey(state), phase, hint: hintFor(input, next, allPlayed), primary, actions };
+  const hint = syncOpen ? '⏱️ סנכרון סאונד ותמונה פתוח על המסך' : hintFor(input, next, allPlayed);
+  return { v: 1, key: screenKey(state), phase, hint, primary, actions, ...(input.sync !== undefined ? { sync: input.sync } : {}) };
 }
 
 function hintFor(input: ModelInput, next: GameId | null, allPlayed: boolean): string {

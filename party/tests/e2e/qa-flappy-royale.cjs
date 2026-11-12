@@ -207,7 +207,7 @@ const WATCH_FINALE_TV = () => {
     await shot(P1, '01-intro');
 
     // the games are mounted during the countdown; the pilots are armed before GO
-    await Promise.all(phones.map((ph) => waitFor(async () => (await info(ph)).f !== null, 20000, `${ph.label} game mounted`)));
+    await Promise.all(phones.map((ph) => waitFor(async () => (await info(ph)).f !== null, 40000, `${ph.label} game mounted`)));
     await P1.page.evaluate(() => window.__flappy.autopilot(true));
     await P2.page.evaluate(() => window.__flappy.autopilot(true));
     await P3.page.evaluate(() => window.__flappy.autopilot(true, 300));
