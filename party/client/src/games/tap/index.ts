@@ -53,7 +53,7 @@ const NOTE_COLOR_SIZE = 34;
 /** Beats queued behind a running one cut it after max(its snap, this). */
 const MIN_SNAP_S = 0.7;
 const SOFT_GAP_S = 2.5;
-const FILLER_QUIET_S = 2.5;
+const FILLER_QUIET_S = 1.6;
 const INNOCENT_GAP_MS = 900;
 /** Final frame: one small alive gag every this many seconds. */
 const ALIVE_EVERY_S = 2;
@@ -1328,6 +1328,7 @@ export const game: GameModule = {
             digitT = 0;
             sfx.tick(1 + (5 - d) * 0.1);
             haptic.tap();
+            logEvent(`digit-${d}`);
           }
           bandDigit = d;
         } else bandDigit = 0;
