@@ -668,7 +668,13 @@ async function perf() {
   try {
     const { code } = await host.call('host:create', {});
     await host.call('host:setAutoCutscenes', { enabled: false });
-    const initScript = process.env.PERF_NOANIM
+    const initScript = process.env.PERF_NOHUD
+      ? () => {
+          const st = document.createElement('style');
+          st.textContent = '.pa-hud{display:none!important}';
+          document.addEventListener('DOMContentLoaded', () => document.head.append(st));
+        }
+      : process.env.PERF_NOANIM
       ? () => {
           const orig = Element.prototype.animate;
           Element.prototype.animate = function (...a) {
