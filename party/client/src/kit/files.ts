@@ -18,7 +18,7 @@ for (const key of [...assetKeys, ...audioKeys]) {
   known.set(url.toLowerCase(), url);
 }
 
-/** Every indexed public file as its public path ('/assets/tap/face.webp'): what kit/preload.ts loads ahead. */
+/** Every indexed public file as its public path ('/assets/tap/fist.webp'): what kit/preload.ts loads ahead. */
 export function publicFilePaths(): string[] {
   return [...known.values()];
 }

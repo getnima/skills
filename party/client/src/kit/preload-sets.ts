@@ -61,7 +61,7 @@ export const PRELOAD_RULES: readonly PreloadRule[] = [
   { match: /^\/cutscenes\//, sets: ['tv'], rank: 4, why: 'only the TV plays the videos' },
 ];
 
-/** The rule for a public path ('/assets/tap/face.webp'), or null when no rule knows the file. */
+/** The rule for a public path ('/assets/tap/fist.webp'), or null when no rule knows the file. */
 export function preloadRule(path: string): PreloadRule | null {
   return PRELOAD_RULES.find((r) => r.match.test(path)) ?? null;
 }
