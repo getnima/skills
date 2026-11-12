@@ -532,10 +532,12 @@ function SyncPanel(props: { readonly link: RemoteLink; readonly sync: SyncView; 
   );
   return (
     <div class="rm-sync" data-testid="sync-panel">
-      <div class={`rm-sync-disc ${into < 140 ? 'is-flash' : ''} ${digit === 1 ? 'is-one' : ''}`} data-digit={digit}>
-        {digit}
+      <div class="rm-sync-head">
+        <div class={`rm-sync-disc ${into < 140 ? 'is-flash' : ''} ${digit === 1 ? 'is-one' : ''}`} data-digit={digit}>
+          {digit}
+        </div>
+        <p class="rm-sync-tip">הטלפון ליד הטלוויזיה: מהבהבים יחד? והביפ בדיוק על ההבהוב?</p>
       </div>
-      <p class="rm-sync-tip">שימו את הטלפון ליד הטלוויזיה: מהבהבים יחד? והביפ על ההבהוב?</p>
       <div class="rm-sync-row">
         <div class="rm-sync-label">
           🔊 צליל <b dir="ltr">{props.sync.soundMs}</b>
@@ -796,7 +798,7 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
             🏠 חזרה ללובי
           </button>
         </div>
-      ) : (
+      ) : syncOpen ? null : (
         <button
           type="button"
           class={`rm-big ${big?.kind === 'danger' ? 'rm-big--danger' : big?.ask !== null && big?.ask !== undefined ? 'rm-big--ask' : ''}`}

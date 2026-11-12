@@ -137,7 +137,7 @@ export function AvSyncScreen(props: { readonly clock: ServerClock; readonly pict
               <b>🔊 צליל:</b> הביפ בדיוק על ההבהוב? הביפ מאחר ← <b>+</b> · מקדים ← <b>−</b>
             </li>
             <li>
-              <b>📺 תמונה:</b> השלט ליד הטלוויזיה, מהבהבים יחד? הטלוויזיה מאחרת ← <b>+</b>
+              <b>📺 תמונה:</b> השלט ליד המסך, מהבהבים יחד? המסך מאחר ← <b>+</b>
             </li>
           </ol>
           <Row
