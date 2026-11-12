@@ -341,6 +341,9 @@ async function runSize(browser, size) {
   const c0 = await D.playerInfo(C);
   await sleep(800);
   await tv.screenshot({ path: path.join(OUT, `tv-${tag}-lobby-3.png`) });
+  // a bot that scores, so the TV's race has rows (a row appears with the first score of the round)
+  const bot = await L.addBots(code, 1, 'בוט', () => 1234);
+  await D.waitFor(async () => (await tvState(tv)).players.length === 4, 8000, 'the bot');
   const cLook = await D.tapItem(C, 'HEAD', 7); // ...the room has not even reported this one yet...
   await tv.click('[data-testid=game-icy]', { force: true }); // ...and the round starts
   const tStart = Date.now();
@@ -382,7 +385,7 @@ async function runSize(browser, size) {
   await sleep(2500);
   const board = await tv.evaluate(() => [...document.querySelectorAll('.sh-row .sh-avatar')].map((el) => ({ look: el.dataset.look || null, img: !!el.querySelector('img') })));
   const stPlay = await tvState(tv);
-  check(board.length === 3 && board.every((r) => r.img && stPlay.players.some((p) => p.look === r.look)), `${tag}: the TV scoreboard shows the three players' dolls (${JSON.stringify(board)})`);
+  check(board.length === 4 && board.every((r) => r.img && stPlay.players.some((p) => p.look === r.look)), `${tag}: the TV scoreboard shows the dolls of everybody in the round (${JSON.stringify(board)})`);
   await tv.screenshot({ path: path.join(OUT, `tv-${tag}-playing.png`) });
   check(!seenE.includes('dressing') && (await D.playerInfo(E)).screen === 'late', `${tag}: the late guest still waits, without a dressing room`);
 
@@ -391,7 +394,7 @@ async function runSize(browser, size) {
   await tv.waitForSelector('.sh-results--standings', { timeout: 40000 });
   await sleep(1500);
   const stand = await tv.evaluate(() => [...document.querySelectorAll('.sh-trow .sh-avatar')].map((el) => ({ look: el.dataset.look || null, img: !!el.querySelector('img') })));
-  check(stand.length === 4 && stand.every((r) => r.img && r.look), `${tag}: the TV standings show a doll for all four (${stand.length})`);
+  check(stand.length === 5 && stand.every((r) => r.img && r.look), `${tag}: the TV standings show a doll for all five (${stand.length})`);
   await tv.screenshot({ path: path.join(OUT, `tv-${tag}-standings.png`) });
   check((await D.playerInfo(E)).screen !== 'dressing', `${tag}: no dressing room during the results either (${(await D.playerInfo(E)).screen})`);
   await L.waitScreen(A, 'results', 20000);
@@ -414,17 +417,16 @@ async function runSize(browser, size) {
   await sleep(900);
   const table = await A.evaluate(() => [...document.querySelectorAll('.pp-standings li')].map((li) => ({ id: li.dataset.player, look: li.dataset.look, img: !!li.querySelector('.av img') })));
   const stEnd = await tvState(tv);
-  check(table.length === 4 && table.every((r) => r.img && r.id !== undefined) , `${tag}: between rounds the phone's table has a doll in every row (${table.length})`);
+  check(table.length === 5 && table.every((r) => r.img && r.id !== undefined), `${tag}: between rounds the phone's table has a doll in every row (${table.length})`);
   check(stEnd.players.find((p) => p.id === e0.id)?.look === eNew, `${tag}: the late guest's look is on the server after they dressed (${eNew})`);
   check((await D.playerInfo(C)).screen === 'lobby', `${tag}: the guest the round took over is in the waiting room now, not back in the dressing room`);
   await L.shot(A, OUT, '12-waiting-between-rounds', check, { drag: true });
   await L.shot(C, OUT, '12-waiting-between-rounds', check);
   await tv.screenshot({ path: path.join(OUT, `tv-${tag}-lobby-between.png`) });
   const panel = await tv.evaluate(() => [...document.querySelectorAll('.sh-prow .sh-avatar')].map((el) => !!el.querySelector('img')));
-  check(panel.length === 4 && panel.every(Boolean), `${tag}: the TV's table between rounds shows the dolls (${panel.length})`);
+  check(panel.length === 5 && panel.every(Boolean), `${tag}: the TV's table between rounds shows the dolls (${panel.length})`);
 
-  // the podium
-  await tv.keyboard.press('KeyN').catch(() => {});
+  bot.close();
   for (const p of [A, B, C, E, tv]) await p.__ctx.close();
   log(`${tag}: TV latencies after a tap: ${lat.join(', ')} ms; other phone ${msB} ms; redress ${ms2} / ${ms3} ms; takeover ${tookOver} ms`);
 }

@@ -40,7 +40,7 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     emoji: '👆',
     instructions: 'יש לכם 30 שניות להתחיל. מהנגיעה הראשונה: 20 שניות של ספאם על שימי. כל הקשה נקודה!',
     durationMs: 50_000,
-    maxRaw: 5_000,
+    maxRaw: 300,
     mode: 'score',
   },
   icy: {

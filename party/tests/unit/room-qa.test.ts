@@ -1028,7 +1028,7 @@ describe('abuse and limits', () => {
   it('200 score messages a second from one player: one broadcast per 250ms, the last value wins', () => {
     const h = makeRoom();
     const a = h.join('a');
-    h.room.start('tap');
+    h.room.start('ninja'); // its score cap is far above the 999 this flood reaches (tap's is 300)
     h.toPlaying();
     const before = h.scores.length;
     for (let ms = 0; ms < 5_000; ms += 5) {

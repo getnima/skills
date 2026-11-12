@@ -4,7 +4,7 @@
 //   node tests/e2e/qa-tap-play.cjs fair [seed]       same scripted taps at 60 Hz and 20 fps, 320x568 and 430x932
 // Prints each player's raw score, time in the picking phase, digs and BIG boogers.
 const { chromium, check, fails, sleep, outDir, mulberry, openGame, tapAt, touch, party } = require('./qa-tap-lib.cjs');
-const GAMES_MAXRAW = 5000; // GAMES.tap.maxRaw in shared/protocol.ts
+const GAMES_MAXRAW = 300; // GAMES.tap.maxRaw in shared/protocol.ts
 const OUT = outDir('qa-tap');
 const MODE = process.argv[2] || 'all';
 const SEED = Number(process.argv[3] || 11);
