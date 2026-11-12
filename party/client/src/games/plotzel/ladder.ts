@@ -110,76 +110,79 @@ function codeOf(w: string): number {
 }
 
 function buildLadder(): Ladder {
-  // ── words (unique, first occurrence order = the original's Set order) ──
-  const idByCode = new Int32Array(LETTERS ** WORD_LEN).fill(-1);
-  const letters: number[] = [];
-  const words: string[] = [];
+  // ── words (unique, first occurrence order = the original's Set order), as letter codes ──
   const total = Math.floor(DICT.length / WORD_LEN);
-  for (let w = 0; w < total; w++) {
-    let code = 0;
-    for (let i = 0; i < WORD_LEN; i++) code = code * LETTERS + (DICT.charCodeAt(w * WORD_LEN + i) - 97);
+  const idByCode = new Int32Array(LETTERS ** WORD_LEN).fill(-1);
+  const codes = new Int32Array(total); // base-22 word code: comparing codes = comparing the strings
+  let n = 0;
+  for (let w = 0, at = 0; w < total; w++, at += WORD_LEN) {
+    const code = ((DICT.charCodeAt(at) - 97) * LETTERS + DICT.charCodeAt(at + 1) - 97) * LETTERS * LETTERS + (DICT.charCodeAt(at + 2) - 97) * LETTERS + DICT.charCodeAt(at + 3) - 97;
     if (idByCode[code] !== -1) continue;
-    idByCode[code] = words.length;
-    for (let i = 0; i < WORD_LEN; i++) letters.push(DICT.charCodeAt(w * WORD_LEN + i) - 97);
-    words.push(DICT.slice(w * WORD_LEN, w * WORD_LEN + WORD_LEN));
+    idByCode[code] = n;
+    codes[n++] = code;
   }
-  const n = words.length;
-  const L = Uint8Array.from(letters);
-  const text: string[] = new Array<string>(n);
-  for (let w = 0; w < n; w++) {
-    let s = '';
-    for (let i = 0; i < WORD_LEN; i++) s += HEB[L[w * WORD_LEN + i] ?? 0];
-    text[w] = s;
-  }
+  const textOf = (id: number): string => {
+    const c = codes[id] ?? 0;
+    return (HEB[Math.floor(c / 10648)] ?? '') + (HEB[Math.floor(c / 484) % LETTERS] ?? '') + (HEB[Math.floor(c / LETTERS) % LETTERS] ?? '') + (HEB[c % LETTERS] ?? '');
+  };
   const idOf = (w: string): number => {
     const c = codeOf(w);
     return c < 0 ? -1 : (idByCode[c] ?? -1);
   };
 
-  // ── buckets: one per (word with one position blanked); members in dictionary order ──
-  const KB = LETTERS + 1; // digit 22 = the blank
+  // ── buckets: one per (word with one position blanked, digit 22); members in dictionary order ──
+  const KB = LETTERS + 1;
   const keyCount = KB ** WORD_LEN;
-  const keyOf = (w: number, p: number): number => {
-    let k = 0;
-    for (let i = 0; i < WORD_LEN; i++) k = k * KB + (i === p ? LETTERS : (L[w * WORD_LEN + i] ?? 0));
-    return k;
-  };
   const start = new Int32Array(keyCount + 1);
   const keys = new Int32Array(n * WORD_LEN);
   for (let w = 0; w < n; w++) {
-    for (let p = 0; p < WORD_LEN; p++) {
-      const k = keyOf(w, p);
-      keys[w * WORD_LEN + p] = k;
-      start[k + 1] = (start[k + 1] ?? 0) + 1;
-    }
+    const c = codes[w] ?? 0;
+    const d0 = Math.floor(c / 10648);
+    const d1 = Math.floor(c / 484) % LETTERS;
+    const d2 = Math.floor(c / LETTERS) % LETTERS;
+    const d3 = c % LETTERS;
+    const o = w * WORD_LEN;
+    const k0 = ((LETTERS * KB + d1) * KB + d2) * KB + d3;
+    const k1 = ((d0 * KB + LETTERS) * KB + d2) * KB + d3;
+    const k2 = ((d0 * KB + d1) * KB + LETTERS) * KB + d3;
+    const k3 = ((d0 * KB + d1) * KB + d2) * KB + LETTERS;
+    keys[o] = k0;
+    keys[o + 1] = k1;
+    keys[o + 2] = k2;
+    keys[o + 3] = k3;
+    start[k0 + 1]++;
+    start[k1 + 1]++;
+    start[k2 + 1]++;
+    start[k3 + 1]++;
   }
-  for (let k = 0; k < keyCount; k++) start[k + 1] = (start[k + 1] ?? 0) + (start[k] ?? 0);
+  for (let k = 0; k < keyCount; k++) start[k + 1] = (start[k + 1] as number) + (start[k] as number);
   const fill = start.slice(0, keyCount);
   const members = new Int32Array(n * WORD_LEN);
-  for (let w = 0; w < n; w++) {
-    for (let p = 0; p < WORD_LEN; p++) {
-      const k = keys[w * WORD_LEN + p] ?? 0;
-      const at = fill[k] ?? 0;
-      members[at] = w;
-      fill[k] = at + 1;
-    }
+  for (let j = 0; j < n * WORD_LEN; j++) {
+    const k = keys[j] as number;
+    members[fill[k]++] = (j / WORD_LEN) | 0;
   }
 
   // ── common words: rank like the original's Map (a later duplicate overwrites the value) ──
   const commonWords = unpack(COMMON);
   const rankOf = new Int32Array(n).fill(NO_RANK);
+  const commonMask = new Uint8Array(n);
   const commonSet = new Set<string>();
   commonWords.forEach((w, i) => {
     commonSet.add(w);
     const id = idOf(w);
-    if (id >= 0) rankOf[id] = i;
+    if (id >= 0) {
+      rankOf[id] = i;
+      commonMask[id] = 1;
+    }
   });
   const commonList = [...commonSet];
   const target = idOf(TARGET);
-  const isCommonId = (id: number): boolean => id === target || (rankOf[id] ?? NO_RANK) < NO_RANK;
+  if (target >= 0) commonMask[target] = 1;
+  const isCommonId = (id: number): boolean => commonMask[id] === 1;
 
-  // ── BFS from the goal ──
-  function bfs(allowed: (id: number) => boolean): Int8Array {
+  // ── BFS from the goal (mask null = every word allowed) ──
+  function bfs(mask: Uint8Array | null): Int8Array {
     const d = new Int8Array(n).fill(-1);
     const q = new Int32Array(n);
     let tail = 0;
@@ -187,14 +190,14 @@ function buildLadder(): Ladder {
     d[target] = 0;
     q[tail++] = target;
     for (let h = 0; h < tail; h++) {
-      const w = q[h] ?? 0;
-      const next = (d[w] ?? 0) + 1;
-      for (let p = 0; p < WORD_LEN; p++) {
-        const k = keys[w * WORD_LEN + p] ?? 0;
-        const end = start[k + 1] ?? 0;
-        for (let j = start[k] ?? 0; j < end; j++) {
-          const m = members[j] ?? 0;
-          if (m === w || d[m] !== -1 || !allowed(m)) continue;
+      const w = q[h] as number;
+      const next = (d[w] as number) + 1;
+      for (let o = w * WORD_LEN, e = o + WORD_LEN; o < e; o++) {
+        const k = keys[o] as number;
+        const end = start[k + 1] as number;
+        for (let j = start[k] as number; j < end; j++) {
+          const m = members[j] as number;
+          if (d[m] !== -1 || (mask !== null && mask[m] !== 1)) continue;
           d[m] = next;
           q[tail++] = m;
         }
@@ -202,8 +205,8 @@ function buildLadder(): Ladder {
     }
     return d;
   }
-  const DIST = bfs(() => true);
-  const CDIST = bfs(isCommonId);
+  const DIST = bfs(null);
+  const CDIST = bfs(commonMask);
 
   function neighborIds(w: number): number[] {
     const out: number[] = [];
@@ -231,7 +234,7 @@ function buildLadder(): Ladder {
       if (common ? !isCommonId(m) || distOf(CDIST, m) !== d - 1 : distOf(DIST, m) !== d - 1) continue;
       const rm = rankOf[m] ?? NO_RANK;
       const rb = best < 0 ? NO_RANK : (rankOf[best] ?? NO_RANK);
-      if (best < 0 || rm < rb || (rm === rb && (text[m] ?? '') < (text[best] ?? ''))) best = m;
+      if (best < 0 || rm < rb || (rm === rb && (codes[m] ?? 0) < (codes[best] ?? 0))) best = m;
     }
     return best;
   }
@@ -249,14 +252,14 @@ function buildLadder(): Ladder {
     },
     neighbors: (w: string): string[] => {
       const id = idOf(w);
-      return id < 0 ? [] : neighborIds(id).map((m) => text[m] ?? '');
+      return id < 0 ? [] : neighborIds(id).map(textOf);
     },
     dist: (w: string): number | undefined => distOf(DIST, idOf(w)),
     cdist: (w: string): number | undefined => distOf(CDIST, idOf(w)),
     bestNext: (w: string): string | null => {
       const id = idOf(w);
       const b = id < 0 ? -1 : bestNextId(id);
-      return b < 0 ? null : (text[b] ?? null);
+      return b < 0 ? null : textOf(b);
     },
     shortestPath: (w: string): string[] => {
       const p = [w];
@@ -265,7 +268,7 @@ function buildLadder(): Ladder {
       for (let guard = 0; id >= 0 && id !== target && guard < 64; guard++) {
         id = bestNextId(id);
         if (id < 0) break;
-        p.push(text[id] ?? '');
+        p.push(textOf(id));
       }
       return p;
     },
