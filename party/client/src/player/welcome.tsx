@@ -449,7 +449,7 @@ export function LobbyScreen(props: { readonly ctl: PlayerController; readonly sn
             <span class="pp-pill">⭐ {fmt(me.total)} נק׳</span>
           </div>
         ) : (
-          <div class="pp-me-in">ככה רואים אותך על המסך הגדול</div>
+          <div class="pp-me-in">בן פורת יוסף! ככה רואים אותך בטלוויזיה</div>
         )}
         <button type="button" class="pw-btn pw-redress" onClick={() => ctl.openDressing()}>
           חזרה לחדר ההלבשה

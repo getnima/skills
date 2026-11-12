@@ -44,7 +44,9 @@ export const TAP = {
   LAST_SHARE: 0.25,
   LAST_MIN_LEVEL: 3,
   /** Milestone beats at these counted taps (for a 20 s sprint; scaled by tapScale). */
-  MILESTONES: [8, 18, 30, 45, 62, 80, 100, 130, 160],
+  // (every set piece starts before the last 5 s for the player it is for: slow 3/s reaches
+  // mini Shimi, normal 6/s the king, fast 11/s the cork)
+  MILESTONES: [8, 18, 28, 40, 54, 68, 84, 120, 150],
   /** Final rank tiers: under 70 / 70-129 / 130-189 / 190+ (scaled the same way). */
   RANKS: [70, 130, 190],
 } as const;

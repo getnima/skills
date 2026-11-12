@@ -44,8 +44,8 @@ const STEP_MS = 1000 / 60;
 const RESYNC_MS = 400;
 /** Taps wait for the step that covers their round time, unless the game lags more than this (a 20 fps phone lags ~130 ms). */
 const FLUSH_LAG_MS = 250;
-/** A touch is stamped with when the finger landed (the event's own timeStamp), at most this far back. */
-const MAX_TOUCH_AGE_MS = 250;
+/** A touch is stamped with when the finger landed (the event's own timeStamp), at most this far back (a first frame on a slow phone can take ~1 s). */
+const MAX_TOUCH_AGE_MS = 1200;
 /** Live boogers on the glass (flying + sliding); a new one sends the oldest to the pile at once. */
 const MAX_LIVE = 6;
 /** Splat decals on the glass (a ring: the 7th replaces the oldest). */
@@ -70,6 +70,10 @@ const GOO_MIN = 0.14;
 const GOO_SPAN = 0.04;
 const INTRO_SCALE = 2;
 const INTRO_S = 0.6;
+/** Boogers on the glass keep off the head: an ellipse (shares of D) around the token centre, raised a little. */
+const HEAD_KEEP_RX = 0.36;
+const HEAD_KEEP_RY = 0.46;
+const HEAD_KEEP_DY = 0.03;
 /** The last-5-seconds booger on the fingertip: start and maximum size (share of D). */
 const TROPHY_MIN = 0.05;
 const TROPHY_MAX = 0.3;
@@ -177,7 +181,8 @@ export interface TapDebugState {
     readonly pile: number;
     readonly pileTotal: number;
     readonly fingerprints: number;
-    readonly glassOps: number;
+    /** Splat decals on the glass (at most 6). */
+    readonly decals: number;
     readonly fx: number;
   };
   /** Token centre and radius (CSS px), and the layout bands. */
@@ -293,7 +298,6 @@ interface Pose {
   tipOn: boolean;
   tipU: number;
   tipV: number;
-  hand2: boolean;
   sx: number;
   sy: number;
   rot: number;
@@ -466,7 +470,7 @@ export const game: GameModule = {
     const ckKnock = chipRemark(W.knock);
     const ckSleep = chipRemark(W.sleep);
     const ckPeek = chipRemark(W.peek);
-    const stSelf = renderSticker(W.self, { flat: true, size: 26, fill: PAL.white, burst: PAL.cob, shadow: PAL.cobD });
+    const ckSelf = renderChip(W.self, 20, PAL.cob, PAL.white);
     const stAuto = renderSticker(W.auto, { flat: true, size: 28, sub: W.autoSub, subScale: 0.8, fill: PAL.yel, burst: PAL.red, shadow: PAL.redD });
     const stClick = renderSticker(W.click, { size: 34, fill: PAL.white, burst: PAL.red, shadow: PAL.redD });
     const stShrug = renderSticker(W.shrug, { size: 32, fill: PAL.yel, shadow: PAL.cob });
@@ -681,8 +685,6 @@ export const game: GameModule = {
       pileDirty = true;
     }
 
-    const nu = (x: number): number => (x - geo.cx) / Math.max(1, geo.D);
-    const nv = (y: number): number => (y - geo.cy) / Math.max(1, geo.D);
 
     function boogerDims(kind: BoogerKind, size: number, stretch: number): { w: number; h: number } {
       const d = art.boogers[kind];
@@ -717,42 +719,38 @@ export const game: GameModule = {
     let flashMax = 0.9;
     let flashDur = 0.22;
     let dim = 0;
-    let fogA = 0;
-    let fogPuff = 1;
-    let fogDigit = -1;
-    let fogDigitRot = 0;
     let finalShown = false;
     let l5Held = 0;
     let l5Count = 0;
     let l5Fired = false;
-    let steamT = 0;
     let lastTapRound = -1;
     let innocentArmed = true;
     let innocentCount = 0;
     let lastQuarter = false;
-    let sweatAlive = 0;
     let quietT = 0;
     let fillersUsed = 0;
     let soloFace: FrameId | null = null;
     let soloFaceT = 0;
-    let soloTilt = 0;
     let finalT = -1;
     let aliveIdx = 0;
     let aliveT = 0;
     let aliveKind = -1;
     let aliveAge = 9;
     let aliveGoo = -1;
-    let nextIdleAt = timing.startWindowMs * 0.13;
+    let nextIdleAt = timing.startWindowMs * 0.05;
+    /** Seconds since the countdown digit changed (its punch-in). */
+    let digitT = 9;
     let idleIdx = 0;
     let sneakSeen = 0;
     let countdownDigit = 6;
     let lastDigit = 6;
-    let pressExtra = 0;
     let gooSerial = 0;
     let yossiTip = 0;
     let pileSerial = 0;
     let pileTotal = 0;
     let quarterDigit = 6;
+    /** The countdown digit on the band: 1..5, or 0 = none. */
+    let bandDigit = 0;
 
     // innocence gag: 0 none, 1 pick_out, 2 whip, 3 whistle, 4 caught
     let inno = 0;
@@ -779,6 +777,9 @@ export const game: GameModule = {
     const corkHead = { st: 0, t: 0, y: 0, rot: 0 }; // 0 in, 1 up, 2 gone, 3 falling
     const squeegee = { on: false, t: 0, x: 0, y: 0, x0: 0, y0: 0, x1: 0, y1: 0, px: 0, py: 0 };
     const orbit = { t: 9 };
+    const knock = { on: false, up: 0, punch: 0, cracks: 0 };
+    const zzz = { t: 9 };
+    const peek = { k: 0, look: 0 };
     const streak = { t: 9 };
     const slick = { a: 0 };
     const sniff = { t: 9 };
@@ -860,10 +861,12 @@ export const game: GameModule = {
       const m = 8 + size * 0.5;
       let x = m + tr.u * Math.max(1, geo.w - 2 * m);
       let y = geo.top + m + tr.v * Math.max(1, geo.pileTop - size * 0.6 - geo.top - m);
-      const ex = fx_(0.5);
-      const ey = fy_(0.6);
-      const rx = 0.3 * geo.D + size * 0.5;
-      const ry = 0.34 * geo.D + size * 0.5;
+      // keep off the whole head (hat, eyes, nose, mouth): the doll stays readable and the hat
+      // stays free for the final booger
+      const ex = geo.cx;
+      const ey = geo.cy - HEAD_KEEP_DY * geo.D;
+      const rx = HEAD_KEEP_RX * geo.D + size * 0.5;
+      const ry = HEAD_KEEP_RY * geo.D + size * 0.5;
       const nx = (x - ex) / rx;
       const ny = (y - ey) / ry;
       const d = Math.hypot(nx, ny);
@@ -967,31 +970,31 @@ export const game: GameModule = {
       return m ? { row: m.row, slot: m.slot } : { row: 0, slot: 0 };
     }
     let namesGiven = 1; // יוסי is given by its beat; the next three arrivals get מוטי, ציפי, אבי
-    /** A free row-1 slot near x at least 2 slots from every named member (so the name chips do not overlap). */
-    function namedSlot(x: number): number {
-      const named: number[] = [];
-      if (yossi.slot >= 0) named.push(yossi.slot);
-      if (mini.slot >= 0) named.push(mini.slot);
-      for (const m of pile) if (m.name >= 0 && m.row === 0) named.push(m.slot);
-      let best = -1;
-      let bd = Infinity;
-      for (let s = 1; s < PILE_ROW1 - 1; s++) {
-        if (slotTaken(0, s)) continue;
-        if (named.some((n) => Math.abs(n - s) < 2)) continue;
-        const d = Math.abs(pileSlotX(0, s) - x);
-        if (d < bd) {
-          bd = d;
-          best = s;
-        }
-      }
-      return best;
+    /**
+     * Name chips sit on six fixed slots across the width, on two staggered lines (even slots
+     * low, odd slots high), so no two chips ever overlap: יוסי 0, מוטי 1, ציפי 5, אבי 4,
+     * שימי הקטן 2 and the king (מלך הנזלת) 3. A named booger stands in the pile under its chip.
+     */
+    const CHIP_SLOT = [0, 1, 5, 4, 2] as const;
+    const KING_CHIP_SLOT = 3;
+    function chipSlotX(k: number): number {
+      return ((k + 0.5) / 6) * geo.w;
+    }
+    function chipLineY(k: number, h: number): number {
+      const low = pileBaseY(0) - 0.15 * geo.D - h * 0.5;
+      return k % 2 === 0 ? low : low - h * 1.1;
+    }
+    /** A free row-1 pile slot under the chip of name #n. */
+    function namedSlot(n: number): number {
+      const k = n < 0 ? KING_CHIP_SLOT : (CHIP_SLOT[n] ?? 0);
+      return nearestFree(0, chipSlotX(k));
     }
     function toPile(g: Goo): void {
       g.live = false;
       pileTotal++;
       if (g.yossi) {
         yossi.st = 2;
-        yossi.slot = namedSlot(g.x);
+        yossi.slot = namedSlot(0);
         if (yossi.slot < 0) yossi.slot = nearestFree(0, g.x);
         yossi.wave = 0;
         return;
@@ -999,7 +1002,7 @@ export const game: GameModule = {
       let name = -1;
       let s = { row: 0, slot: -1 };
       if (namesGiven < 4) {
-        const ns = namedSlot(g.x);
+        const ns = namedSlot(namesGiven);
         if (ns >= 0) {
           name = namesGiven++;
           s.slot = ns;
@@ -1011,8 +1014,8 @@ export const game: GameModule = {
     }
 
     function updateGoos(dt: number): void {
-      const ex = fx_(0.5);
-      const ey = fy_(0.6);
+      const ex = geo.cx;
+      const ey = geo.cy - HEAD_KEEP_DY * geo.D;
       for (const g of goos) {
         if (!g.live) continue;
         g.t += dt;
@@ -1079,9 +1082,9 @@ export const game: GameModule = {
             g.age += dt;
             g.y += g.vy * dt * (1 + g.t * 0.3);
             if (g.kind !== BOOGER.Googly) g.rot *= 1 - Math.min(1, dt * 2);
-            // keep off the face: slide around the keep-out ellipse
-            const rx = 0.3 * geo.D + g.size * 0.5;
-            const ry = 0.34 * geo.D + g.size * 0.5;
+            // keep off the head: slide around the keep-out ellipse
+            const rx = HEAD_KEEP_RX * geo.D + g.size * 0.5;
+            const ry = HEAD_KEEP_RY * geo.D + g.size * 0.5;
             const ny = (g.y - ey) / ry;
             if (Math.abs(ny) < 1) {
               const half = rx * Math.sqrt(1 - ny * ny);
@@ -1091,7 +1094,7 @@ export const game: GameModule = {
               if (g.yossi) {
                 g.live = false;
                 yossi.st = 2;
-                yossi.slot = namedSlot(g.x);
+                yossi.slot = namedSlot(0);
                 if (yossi.slot < 0) yossi.slot = Math.max(0, nearestFree(0, g.x));
                 pileTotal++;
               } else toPile(g);
@@ -1137,12 +1140,6 @@ export const game: GameModule = {
           d.draw(c, x, by - dims.h / 2, dims.w, dims.h, m.rot);
         }
       }
-      for (const m of pile) {
-        if (m.name < 0) continue;
-        const ck = ckNames[m.name];
-        const dims = boogerDims(m.kind, m.size, 1);
-        if (ck) blit(c, ck, chipX(pileSlotX(m.row, m.slot), ck.w), pileBaseY(m.row) - top - dims.h - ck.h * (m.slot % 2 === 0 ? 0.35 : 0.9));
-      }
     }
 
     /** Keep a name chip on screen. */
@@ -1151,12 +1148,11 @@ export const game: GameModule = {
     }
 
     // ── pose ──
-    const pose: Pose = { frame: FR.Normal, handK: -1, tipOn: false, tipU: 0, tipV: 0, hand2: false, sx: 1, sy: 1, rot: 0, dx: 0, dy: 0, prot: 0, pscale: 1, nose: 0, still: false, headOut: false, label: 'hidden' };
+    const pose: Pose = { frame: FR.Normal, handK: -1, tipOn: false, tipU: 0, tipV: 0, sx: 1, sy: 1, rot: 0, dx: 0, dy: 0, prot: 0, pscale: 1, nose: 0, still: false, headOut: false, label: 'hidden' };
     function resetPose(): void {
       pose.frame = FR.Normal;
       pose.handK = -1;
       pose.tipOn = false;
-      pose.hand2 = false;
       pose.sx = 1;
       pose.sy = 1;
       pose.rot = 0;
@@ -1170,6 +1166,8 @@ export const game: GameModule = {
       pose.label = 'hidden';
     }
 
+    /** Faces of the start window's countdown, for the digits 1..5. */
+    const COUNTDOWN_FACE: readonly FrameId[] = [FR.NosePick, FR.NosePick, FR.Angry, FR.Surprised, FR.Surprised];
     function levelPose(dt: number): void {
       const s = engine.state;
       if (s.phase === 'waiting') {
@@ -1179,10 +1177,27 @@ export const game: GameModule = {
         waitHandK += (waitHandTarget - waitHandK) * Math.min(1, dt * 14);
         pose.handK = waitHandK;
         pose.label = waitHandK > kRim ? 'rising' : 'hidden';
-        if (countdownDigit <= 5) pose.frame = countdownDigit >= 4 ? FR.Surprised : FR.Angry;
+        // the countdown: he gets impatient, and his finger is on its way in by itself
+        if (countdownDigit <= 5) {
+          pose.frame = COUNTDOWN_FACE[countdownDigit - 1] ?? FR.Surprised;
+          pose.handK = -1;
+          pose.label = countdownDigit <= 2 ? 'nostril' : 'hidden';
+        }
         return;
       }
       if (s.phase === 'done') return;
+      // The last 5 seconds: the money shot. The finger pulls a long strand to his chin, one
+      // last booger grows on the fingertip with every tap, the head bobs harder and harder.
+      if (lastQuarter && trophy.st === 1) {
+        const k = clamp((elapsed - (s.endAt - timing.sprintMs * TAP.LAST_SHARE)) / (timing.sprintMs * TAP.LAST_SHARE), 0, 1);
+        pose.frame = FR.Big;
+        pose.label = 'last';
+        pose.prot = Math.sin(gt * Math.PI * 2.4) * lerp(4, 12, k) * DEG;
+        pose.nose = noseK;
+        return;
+      }
+      // The hand level: only the first climb is the separate hand (L1); from the nostril on
+      // the finger is in the head frames themselves (realistic, never a "shh" finger).
       const L = s.level;
       let target = 0;
       switch (L) {
@@ -1191,15 +1206,14 @@ export const game: GameModule = {
           pose.label = 'hidden';
           break;
         case 1: {
-          const p = clamp((s.rateSm - 0.8) / 1.4, 0, 1);
-          target = kRim + (1 - kRim) * 0.5 * p;
-          pose.frame = p > 0.5 ? FR.Angry : FR.Normal;
+          const p = clamp((s.rateSm - 0.8) / 1.0, 0, 1);
+          target = kRim + (1 - kRim) * 0.85 * p;
+          pose.frame = p > 0.5 ? FR.Surprised : FR.Normal;
           pose.label = 'rising';
           break;
         }
         case 2:
-          target = 1;
-          pose.frame = FR.Surprised;
+          pose.frame = FR.NosePick;
           pose.label = 'nostril';
           break;
         case 3:
@@ -1209,16 +1223,17 @@ export const game: GameModule = {
         case 4:
           pose.frame = FR.Deep;
           pose.label = 'deep';
+          // head thrown back a little: the picture tilts, the ring stays
+          pose.prot = -6 * DEG;
           break;
         default:
-          pose.frame = FR.Deep;
-          pose.hand2 = true;
+          pose.frame = FR.Double;
           pose.label = 'absurd';
           pose.dx = Math.sin(gt * 97) * 0.006 * geo.D;
           pose.dy = Math.cos(gt * 83) * 0.006 * geo.D;
           break;
       }
-      if (L <= 2) {
+      if (L <= 1) {
         handK += (target - handK) * Math.min(1, dt * 12);
         pose.handK = handK;
       } else handK = 1;
@@ -1228,7 +1243,6 @@ export const game: GameModule = {
 
     function innocencePose(): void {
       if (inno === 0) return;
-      pose.hand2 = false;
       pose.dx = 0;
       pose.dy = 0;
       pose.label = 'innocent';
@@ -1373,28 +1387,98 @@ export const game: GameModule = {
       };
     }
     function beatKnock(): Beat {
+      // his fist comes up to the glass and knocks three times (a crack star on the glass at
+      // each knock), then he squashes his face to the glass to look for you
       return {
         id: 'wait-knock',
-        dur: 1.2,
+        dur: 2.3,
         snap: 0,
         t: 0,
         cue(prev, t) {
-          if (crossed(prev, t, 0)) showRemark(ckKnock);
+          if (crossed(prev, t, 0)) showRemark(ckKnock, 2.2);
           for (let i = 0; i < 3; i++) {
-            if (crossed(prev, t, 0.1 + i * 0.18)) {
-              sfx.tap(0.8);
+            if (crossed(prev, t, 0.35 + i * 0.22)) {
+              sfx.tap(0.7);
               haptic.tap();
+              fx.shake(3, 90);
+              knock.cracks = i + 1;
             }
+          }
+          if (crossed(prev, t, 1.2)) squeak(520, 380, 300, 0.25);
+        },
+        pose(t, p) {
+          p.frame = t < 1.15 ? FR.Angry : FR.GlassPress;
+          if (t >= 1.15) p.pscale = lerp(1, 1.06, ease.outBack(clamp((t - 1.15) / 0.25, 0, 1)));
+          // the fist: up from below (0.3 s), three knocks (a punch towards the glass), down
+          knock.on = t < 1.15;
+          knock.up = t < 0.3 ? ease.outBack(t / 0.3) : t < 0.95 ? 1 : 1 - ease.inQuad(clamp((t - 0.95) / 0.2, 0, 1));
+          let k = 0;
+          for (let i = 0; i < 3; i++) k = Math.max(k, bump(t, 0.3 + i * 0.22, 0.42 + i * 0.22));
+          knock.punch = k;
+          p.label = 'beat';
+        },
+        end() {
+          knock.on = false;
+          knock.cracks = 0;
+        },
+      };
+    }
+    function beatSleep(): Beat {
+      // he dozes off (eyes shut, snoring, Z's rising), then jolts awake: "I just closed my eyes"
+      return {
+        id: 'wait-sleep',
+        dur: 2.9,
+        snap: 0,
+        t: 0,
+        cue(prev, t) {
+          for (let i = 0; i < 2; i++) if (crossed(prev, t, 0.2 + i * 0.85)) tone({ freq: 110, to: 70, dur: 0.6, type: 'sawtooth', vol: 0.07, lowpass: 400 });
+          if (crossed(prev, t, 2.0)) {
+            sfx.pop(1.3);
+            haptic.bump();
+            showRemark(ckSleep, 1.6);
           }
         },
         pose(t, p) {
-          p.frame = FR.Angry;
-          let k = 0;
-          for (let i = 0; i < 3; i++) k = Math.max(k, bump(t, 0.1 + i * 0.18, 0.1 + i * 0.18 + 0.06));
-          p.sx *= 1 + 0.05 * k;
-          p.sy *= 1 + 0.05 * k;
+          p.label = 'beat';
+          if (t < 2.0) {
+            p.frame = FR.Squeeze;
+            const br = Math.sin(((t - 0.2) / 0.85) * Math.PI * 2);
+            p.sy *= 1 + 0.025 * br;
+            p.sx *= 1 + 0.015 * br;
+            p.prot = 7 * DEG * ease.inOutQuad(clamp(t / 0.8, 0, 1));
+            zzz.t = t;
+          } else {
+            p.frame = FR.Surprised;
+            p.dy = -12 * bump(t, 2.0, 2.25);
+            zzz.t = 9;
+          }
         },
-        end() {},
+        end() {
+          zzz.t = 9;
+        },
+      };
+    }
+    function beatPeek(): Beat {
+      // a little booger peeks out of his nostril, looks around and hides again; he whistles
+      return {
+        id: 'wait-peek',
+        dur: 2.6,
+        snap: 0,
+        t: 0,
+        cue(prev, t) {
+          if (crossed(prev, t, 0.1)) sfx.pop(1.5);
+          if (crossed(prev, t, 0.6)) showRemark(ckPeek, 1.8);
+          if (crossed(prev, t, 1.35)) sfx.whoosh(1.6);
+        },
+        pose(t, p) {
+          p.label = 'beat';
+          p.frame = t < 1.4 ? FR.Surprised : FR.Whistle;
+          peek.k = t < 0.1 ? 0 : t < 0.45 ? ease.outBack((t - 0.1) / 0.35) : t < 1.3 ? 1 : 1 - clamp((t - 1.3) / 0.12, 0, 1);
+          peek.look = t > 0.5 && t < 1.25 ? Math.sin((t - 0.5) * Math.PI * 4) * 0.35 : 0;
+        },
+        end() {
+          peek.k = 0;
+        },
       };
     }
 
@@ -1659,9 +1743,9 @@ export const game: GameModule = {
           if (crossed(prev, t, 0.45)) {
             for (let i = 0; i < SNEEZE_N; i++) {
               const kind = ([BOOGER.Round, BOOGER.Googly, BOOGER.Hairy, BOOGER.Stretchy] as const)[i % 4] ?? BOOGER.Round;
-              throwBooger(kind, 50_000 + i, nx(), ny(), { sneeze: true });
+              throwBooger(kind, 50_000 + i, nx(), ny(), { sneeze: true, size: 0.13 * geo.D });
             }
-            fx.shake(12, 350);
+            fx.shake(8, 350);
             sfx.explode();
             sfx.splat(0.7);
             haptic.heavy();
@@ -1679,7 +1763,7 @@ export const game: GameModule = {
             p.sx *= lerp(1, 1.1, k);
             p.sy *= lerp(1, 1.1, k);
           } else {
-            const k = keys(t - 0.45, [0, 1.25, 0.12, 0.95, 0.3, 1]);
+            const k = keys(t - 0.45, [0, 1.15, 0.12, 0.95, 0.3, 1]);
             p.sx *= k;
             p.sy *= k;
             p.frame = t < 0.85 ? FR.Surprised : FR.Happy;
@@ -1699,10 +1783,11 @@ export const game: GameModule = {
           if (crossed(prev, t, 0.15)) {
             squeegee.on = true;
             squeegee.t = 0;
-            squeegee.x0 = geo.w + 0.15 * geo.w;
-            squeegee.y0 = geo.top - 0.05 * geo.h;
-            squeegee.x1 = -0.2 * geo.w;
-            squeegee.y1 = geo.pileBottom;
+            // from beyond the top-right corner, through the token centre, out at the bottom-left
+            squeegee.x0 = geo.cx + 0.95 * geo.D;
+            squeegee.y0 = geo.cy - 0.95 * geo.D;
+            squeegee.x1 = geo.cx - 0.95 * geo.D;
+            squeegee.y1 = geo.cy + 0.95 * geo.D;
             squeegee.px = squeegee.x0;
             squeegee.py = squeegee.y0;
             squeak(900, 1400, 700, 0.55);
@@ -1722,31 +1807,14 @@ export const game: GameModule = {
     function dumpSqueegee(): void {
       if (!squeegee.on) return;
       squeegee.on = false;
-      // the smear: three strokes along the whole path, painted once (uniform, no beads)
-      {
-        const dx = squeegee.x - squeegee.x0;
-        const dy = squeegee.y - squeegee.y0;
-        const len = Math.hypot(dx, dy) || 1;
-        const bx = -dy / len;
-        const by = dx / len;
-        const half = 0.25 * geo.w;
-        for (let i = -1; i <= 1; i++) {
-          const o = i * half * 0.45;
-          glassOp({ k: 'smear', u0: nu(squeegee.x0 + bx * o), v0: nv(squeegee.y0 + by * o), u1: nu(squeegee.x + bx * o), v1: nv(squeegee.y + by * o), off: i });
-        }
-      }
       // every booger on the glass ends on the pile (the performance reset)
       for (const g of goos) {
         if (!g.live || g.yossi) continue;
-        if (g.sneeze) {
-          glassOp({ k: 'sprite', kind: g.kind, u: nu(g.x), v: nv(g.y), s: g.size / geo.D, rot: g.rot });
-          g.live = false;
-          continue;
-        }
         g.x = clamp(g.x, 10, geo.w - 10);
         toPile(g);
       }
-      glassOp({ k: 'decal', u: nu(0.12 * geo.w), v: nv(geo.pileTop), s: 0.14, rot: -0.6, sx: 3 });
+      // the glass is clean again (that is the joke: "ניקיתי. בערך.")
+      for (const d of decals) d.live = false;
       sfx.land(0.9);
       fx.shake(6, 200);
       haptic.bump();
@@ -1755,7 +1823,7 @@ export const game: GameModule = {
     function updateSqueegee(dt: number): void {
       if (!squeegee.on) return;
       squeegee.t += dt;
-      const k = ease.inOutCubic(clamp(squeegee.t / 0.55, 0, 1));
+      const k = ease.inOutCubic(clamp(squeegee.t / 0.5, 0, 1));
       const x = lerp(squeegee.x0, squeegee.x1, k);
       const y = lerp(squeegee.y0, squeegee.y1, k);
       const dx = squeegee.x1 - squeegee.x0;
@@ -1766,7 +1834,7 @@ export const game: GameModule = {
       // blade across the direction of travel
       const bx = -uy;
       const by = ux;
-      const half = 0.25 * geo.w;
+      const half = 0.45 * geo.D;
       for (const g of goos) {
         if (!g.live || g.yossi || g.st === GOO_FLY) continue;
         const along = (g.x - x) * ux + (g.y - y) * uy;
@@ -1893,8 +1961,8 @@ export const game: GameModule = {
     function beatCork(): Beat {
       return {
         id: 'cork',
-        dur: 2.5,
-        snap: 1.9,
+        dur: 1.75,
+        snap: 1.15,
         t: 0,
         cue(prev, t) {
           if (crossed(prev, t, 0)) tone({ freq: 200, to: 900, dur: 0.5, type: 'sawtooth', vol: 0.07, lowpass: 1400 });
@@ -1929,11 +1997,12 @@ export const game: GameModule = {
             haptic.heavy();
             showSticker(stCork, 1.5);
           }
-          if (crossed(prev, t, 1.6)) {
+          // off the disc for about half a second: up and out (0.25 s), back down (0.28 s)
+          if (crossed(prev, t, 0.8)) {
             corkHead.st = 3;
             corkHead.t = 0;
           }
-          if (crossed(prev, t, 1.88)) {
+          if (crossed(prev, t, 1.08)) {
             corkHead.st = 0;
             sfx.land(0.8);
             haptic.bump();
@@ -1949,12 +2018,14 @@ export const game: GameModule = {
             p.sx *= lerp(1, 1.22, k);
             p.sy *= lerp(1, 1.22, k);
             p.rot += Math.sin(t * Math.PI * 40) * 2 * DEG;
-          } else if (t < 1.88) {
+          } else if (t < 1.08) {
             p.frame = FR.Squeeze;
             p.headOut = true;
           } else {
-            p.frame = t < 2.48 ? FR.Dizzy : FR.Happy;
-            p.sy *= keys(t - 1.88, [0, 0.85, 0.1, 1.05, 0.26, 1]);
+            p.frame = t < 1.6 ? FR.Dizzy : FR.Happy;
+            const k = keys(t - 1.08, [0, 0.82, 0.1, 1.15, 0.22, 0.96, 0.32, 1]);
+            p.sy *= k;
+            p.sx *= 2 - k;
           }
         },
         end() {
@@ -1995,6 +2066,12 @@ export const game: GameModule = {
       };
     }
 
+    /**
+     * The final frame, per rank: a trophy picture to show the person next to you. The booger
+     * grown in the last 5 seconds lands on his head (the boss with its crown at the top rank),
+     * the tap count sits on a red star sticker on the token, the rank on the band above.
+     */
+    const FINAL_FACE: readonly FrameId[] = [FR.Bored, FR.Knuckle, FR.Big, FR.Double];
     function beatFinal(): Beat {
       return {
         id: 'final',
@@ -2012,41 +2089,69 @@ export const game: GameModule = {
             ear.on = false;
             squeegee.on = false;
             corkHead.st = 0;
-            if (king.st === 1 || king.st === 2) {
-              king.st = 3;
-            }
+            if (king.st === 1 || king.st === 2) king.st = 3;
             if (mini.st === 1 || mini.st === 2) {
               mini.st = 3;
               placeMini();
             }
-            const r = rankOf(engine.state.taps, timing.tapScale);
-            const st = stRanks[r];
+            const taps = engine.state.taps;
+            finalRank = rankOf(taps, timing.tapScale);
+            const st = stRanks[finalRank];
             if (st) showSticker(st, 1e9);
-            fogA = 0;
+            stScore = renderSticker(String(taps), { size: Math.max(22, Math.round(geo.D * 0.15)), fill: PAL.yel, burst: PAL.red, shadow: PAL.redD, tilt: 0.08 });
+            launchTrophy();
           }
-          if (crossed(prev, t, 0.3)) {
-            squeak(500, 400, 300, 0.2);
-            fogPuff = 0;
+          if (crossed(prev, t, 0.35)) {
+            sfx.land(1.1);
+            fx.burst(geo.cx, fy_(0.02), { count: 12, speed: 260, size: 6, life: 0.5, gravity: 300, shape: 'star', colors: [PAL.yel, PAL.white] });
             finalShown = true;
+          }
+          if (crossed(prev, t, 0.55)) {
+            if (finalRank >= 2) sfx.cheer();
+            else sfx.laugh(1.1);
           }
         },
         pose(t, p) {
           p.handK = -1;
           p.label = 'final';
-          if (t < 0.3) {
-            p.frame = FR.Out;
-            return;
-          }
-          p.frame = FR.GlassPress;
-          p.pscale = lerp(1, 1.08, ease.outBack(clamp((t - 0.3) / 0.25, 0, 1))) + pressExtra;
+          p.frame = FINAL_FACE[finalRank] ?? FR.Proud;
+          // the landing on his head squashes him; then the alive gags (a nod)
+          if (t >= 0.35) p.sy *= keys(t - 0.35, [0, 0.9, 0.1, 1.05, 0.25, 1]);
+          if (aliveKind === ALIVE.Nod && aliveAge < 0.8) p.prot = Math.sin((aliveAge / 0.8) * Math.PI * 2) * 5 * DEG;
         },
         end() {},
       };
     }
+    let finalRank = 0;
+
+    // ── the last-5-seconds booger (on the fingertip, then on his head) ──
+    const trophy = { st: 0, size: 0, t: 0, x0: 0, y0: 0, pulse: 0 }; // 0 none, 1 growing, 2 flying to the head, 3 on the head
+    function trophyGrow(): void {
+      trophy.size = Math.min(TROPHY_MAX * geo.D, trophy.size + 0.005 * geo.D);
+      trophy.pulse = 1;
+    }
+    function launchTrophy(): void {
+      trophy.x0 = fx_(FRAME.bigTipX);
+      trophy.y0 = fy_(FRAME.bigTipY);
+      if (trophy.st === 0) trophy.size = TROPHY_MIN * geo.D;
+      trophy.st = 2;
+      trophy.t = 0;
+      sfx.jump(1.1);
+    }
+    /** Where the trophy sits: on the hat (its bottom just inside the ring's top). */
+    function trophyHeadY(size: number): number {
+      return fy_(0.04) - size * 0.4;
+    }
+    function trophyKind(): BoogerKind {
+      return finalRank >= 3 ? BOOGER.Boss : BOOGER.Round;
+    }
+    function trophySize(): number {
+      return finalRank >= 3 ? Math.max(trophy.size, 0.26 * geo.D) : Math.max(trophy.size, 0.07 * geo.D);
+    }
 
     function placeMini(): void {
-      let slot = namedSlot(geo.w * 0.8);
-      if (slot < 0) slot = nearestFree(0, geo.w * 0.8);
+      let slot = namedSlot(4);
+      if (slot < 0) slot = nearestFree(0, geo.w * 0.4);
       mini.slot = slot >= 0 ? slot : 9;
       mini.size = 0.16 * geo.D;
       mini.rot = 0;
@@ -2054,7 +2159,6 @@ export const game: GameModule = {
 
     // ── engine events ──
     function onStart(auto: boolean): void {
-      fogA = 0;
       remark = null;
       band = null;
       if (auto) preempt(beatAutoStart());
@@ -2062,6 +2166,7 @@ export const game: GameModule = {
       waitHandK = 0;
       handK = auto ? 1 : 0;
       lastTapRound = auto ? elapsed : lastTapRound;
+      persist(true);
     }
 
     function onTap(n: number): void {
@@ -2078,6 +2183,7 @@ export const game: GameModule = {
         lastScore = n;
         ctx.setScore(n);
       }
+      persist(false);
       // bobble squash + tilt, blip, haptic
       bobT = 0;
       bobSign = -bobSign;
@@ -2087,19 +2193,10 @@ export const game: GameModule = {
         haptic.tap();
         if (s.level === 3) squelch(n);
       }
-      if (s.level === 2) jabV -= 9;
-      if (s.level === 3) {
-        deepFlash = 0.09;
-        noseK = 1;
-      }
+      if (s.level >= 2) noseK = 1;
+      if (s.level === 3) deepFlash = 0.09;
+      if (lastQuarter && trophy.st === 1) trophyGrow();
       if (s.level >= 4) twistV += bobSign * 9;
-      if (lastQuarter) {
-        for (const side of [FRAME.templeLX, FRAME.templeRX]) {
-          if (sweatAlive >= 12) break;
-          sweatAlive += 1;
-          fx.burst(fx_(side), fy_(FRAME.templeY), { count: 1, speed: 260, size: 5, life: 0.45, gravity: 700, angle: side < 0.5 ? -2.4 : -0.7, spread: 0.5, colors: ['#4fb3ff'] });
-        }
-      }
       if (inno === 3 || inno === 1 || inno === 2) {
         inno = 4;
         innoT = 0;
@@ -2152,6 +2249,16 @@ export const game: GameModule = {
       if (oncePerStep()) tone({ freq: 700, to: 500, dur: 0.06, type: 'sine', vol: 0.04 });
     }
     function onMilestone(id: MilestoneId): void {
+      // No new set piece in the last 5 seconds (that is the money shot): a milestone there
+      // is a burst of stars and a bigger booger on the fingertip.
+      if (lastQuarter) {
+        logEvent(`milestone-${id}`);
+        fx.burst(nx(), ny(), { count: 10, speed: 300, size: 6, life: 0.5, gravity: 400, shape: 'star', colors: [PAL.yel, PAL.white] });
+        sfx.pop(1.3);
+        haptic.bump();
+        for (let i = 0; i < 4; i++) trophyGrow();
+        return;
+      }
       switch (id) {
         case 'yossi':
           enqueue(beatYossi());
@@ -2191,9 +2298,13 @@ export const game: GameModule = {
     }
     function onLast(): void {
       lastQuarter = true;
-      showSticker(stLast, 1.3);
-      fogA = 1;
-      fogPuff = 0;
+      // what is waiting does not start any more; a running set piece finishes
+      while (queue.length) queue.shift()?.end(true);
+      pendingSoft = null;
+      inno = 0;
+      trophy.st = 1;
+      trophy.size = TROPHY_MIN * geo.D;
+      logEvent('last');
     }
     function onDone(n: number): void {
       lastScore = n;
@@ -2201,8 +2312,8 @@ export const game: GameModule = {
       inno = 0;
       preempt(beatFinal());
       finalT = 0;
-      fogA = 1;
       view.canvas.dataset.tapFinal = '1';
+      persist(true);
       if (!finished) {
         finished = true;
         finishedAtMs = Math.round(elapsed);
@@ -2225,7 +2336,11 @@ export const game: GameModule = {
       touches++;
       touchPts.push({ x: p.x, y: p.y });
       if (touchPts.length > 64) touchPts.shift();
-      engine.tap(ctx.durationMs - ctx.timeLeftMs(), 1);
+      // stamp: the round time when the finger landed (the event's own time, not when we got it)
+      const stamp = downStamp.get(p.id);
+      downStamp.delete(p.id);
+      const age = stamp === undefined ? 0 : clamp(performance.now() - stamp, 0, MAX_TOUCH_AGE_MS);
+      engine.tap(ctx.durationMs - ctx.timeLeftMs() - age, 1);
     });
 
     // ── waiting timeline (round time) ──
@@ -2241,26 +2356,41 @@ export const game: GameModule = {
         if (d !== lastDigit) {
           lastDigit = d;
           if (cur && cur.id.startsWith('wait-')) preempt(null);
-          fogA = 1;
-          fogPuff = 0;
-          fogDigit = d;
-          fogDigitRot = (seeded(ctx.seed, 31, d) - 0.5) * 12 * DEG;
+          digitT = 0;
           sfx.tick(1 + (5 - d) * 0.1);
           haptic.tap();
           fx.shake(2 + (5 - d), 200);
           waitHandTarget = kRim + ((1 - kRim) * (6 - d)) / 5;
-          remark = null;
-          if (d === 2) band = { s: stSelf, t: 0, life: 1e9, chip: false };
+          remark = d === 2 ? { s: ckSelf, t: 0, life: 2.2 } : null;
         }
         return;
       }
+      // one bit every 11% of the window (3.3 s), all five before any repeats; a bit that is
+      // still running pushes the next one back a little instead of skipping it
       if (elapsed >= nextIdleAt) {
-        nextIdleAt += timing.startWindowMs * 0.13;
-        if (!cur && queue.length === 0 && elapsed + 1500 < cdStart) {
-          const b = level.idleBits[idleIdx % level.idleBits.length] ?? IDLE_BIT.Yawn;
-          idleIdx++;
-          enqueue(b === IDLE_BIT.Sneak ? beatSneak() : b === IDLE_BIT.Yawn ? beatYawn() : beatKnock());
+        if (cur || queue.length > 0) nextIdleAt = elapsed + 300;
+        else {
+          nextIdleAt = elapsed + timing.startWindowMs * 0.11;
+          if (elapsed + 2200 < cdStart) {
+            const b = level.idleBits[idleIdx % level.idleBits.length] ?? IDLE_BIT.Yawn;
+            idleIdx++;
+            enqueue(idleBeat(b));
+          }
         }
+      }
+    }
+    function idleBeat(b: number): Beat {
+      switch (b) {
+        case IDLE_BIT.Sneak:
+          return beatSneak();
+        case IDLE_BIT.Knock:
+          return beatKnock();
+        case IDLE_BIT.Sleep:
+          return beatSleep();
+        case IDLE_BIT.Peek:
+          return beatPeek();
+        default:
+          return beatYawn();
       }
     }
 
@@ -2302,8 +2432,7 @@ export const game: GameModule = {
         noseK = Math.max(0, noseK - dt / 0.12);
         flash = Math.max(0, flash - dt / Math.max(0.05, flashDur));
         dim = Math.max(0, dim - dt / 0.4);
-        fogPuff = Math.min(1, fogPuff + dt / 0.15);
-        sweatAlive = Math.max(0, sweatAlive - dt * 26);
+        digitT += dt;
         if (soloFaceT > 0) soloFaceT -= dt;
         if (band) {
           band.t += dt;
@@ -2326,7 +2455,9 @@ export const game: GameModule = {
 
         // fake innocence (sprint only, never during a beat)
         if (s.phase === 'sprint') {
-          if (inno === 0 && innocentArmed && !cur && s.lastTapMs >= 0 && elapsed - Math.max(s.lastTapMs, s.t0) > INNOCENT_GAP_MS) triggerInnocence();
+          if (lastQuarter) {
+            // no innocence in the money shot
+          } else if (inno === 0 && innocentArmed && !cur && s.lastTapMs >= 0 && elapsed - Math.max(s.lastTapMs, s.t0) > INNOCENT_GAP_MS) triggerInnocence();
           else if (inno === 0 && innocentArmed && !cur && s.lastTapMs < 0 && elapsed - s.t0 > INNOCENT_GAP_MS + 600) triggerInnocence();
         }
         if (inno !== 0) {
@@ -2345,13 +2476,8 @@ export const game: GameModule = {
         }
 
         // L5 held: the double-finger stickers
-        if (s.phase === 'sprint' && s.level >= 5) {
-          l5Held += dt;
-          steamT += dt;
-          if (steamT >= 0.4) {
-            steamT = 0;
-            for (const u of [0.17, FRAME.earRX]) fx.burst(fx_(u), fy_(0.55), { count: 3, speed: 90, size: 6, life: 0.5, gravity: -120, angle: -Math.PI / 2, spread: 0.6, colors: [PAL.white] });
-          }
+        if (s.phase === 'sprint' && s.level >= 5 && !lastQuarter) {
+          if (!cur) l5Held += dt;
           if (!l5Fired && l5Held >= 1.5) {
             l5Fired = true;
             l5Count++;
@@ -2367,7 +2493,7 @@ export const game: GameModule = {
         if (s.phase === 'sprint') {
           if (band || cur) quietT = 0;
           else quietT += dt;
-          if (quietT >= FILLER_QUIET_S && !cur && queue.length === 0 && s.rateSm < 5 && fillersUsed < level.fillers.length && (inno === 0 || inno === 3)) {
+          if (quietT >= FILLER_QUIET_S && !cur && queue.length === 0 && !lastQuarter && s.rateSm < 4 && fillersUsed < level.fillers.length && (inno === 0 || inno === 3)) {
             const f = level.fillers[fillersUsed] ?? FILLER.EyeRoll;
             fillersUsed++;
             quietT = 0;
@@ -2375,22 +2501,28 @@ export const game: GameModule = {
           }
         }
 
-        // last 5 seconds of the sprint: digits in the fog
-        if (s.phase === 'sprint' && lastQuarter) {
-          const q = timing.sprintMs * 0.25;
+        // the countdown digit on the band: the start window's last 5 s, the sprint's last 5 s
+        if (s.phase === 'waiting') bandDigit = countdownDigit <= 5 ? countdownDigit : 0;
+        else if (s.phase === 'sprint' && lastQuarter) {
+          const q = timing.sprintMs * TAP.LAST_SHARE;
           const d = clamp(Math.ceil(((s.endAt - elapsed) / q) * 5), 1, 5);
           if (d !== quarterDigit) {
             quarterDigit = d;
-            fogPuff = 0;
-            fogDigit = d;
-            fogDigitRot = (seeded(ctx.seed, 33, d) - 0.5) * 12 * DEG;
+            digitT = 0;
             sfx.tick(1 + (5 - d) * 0.1);
             haptic.tap();
           }
-        }
-        if (s.phase === 'sprint' && !lastQuarter && fogA > 0 && !cur) fogA = Math.max(0, fogA - dt / 0.4);
-        if (s.phase === 'sprint' && !lastQuarter && cur && cur.id !== 'autostart') fogA = Math.max(0, fogA - dt / 0.4);
-        if (s.phase === 'sprint' && !lastQuarter && cur?.id === 'autostart') fogA = Math.max(0, fogA - dt / 0.4);
+          bandDigit = d;
+        } else bandDigit = 0;
+        // the last-5 booger: pulse, flight to his head
+        trophy.pulse = Math.max(0, trophy.pulse - dt / 0.12);
+        if (trophy.st === 2) {
+          trophy.t += dt;
+          if (trophy.t >= 0.35) {
+            trophy.st = 3;
+            trophy.t = 0;
+          }
+        } else if (trophy.st === 3) trophy.t += dt;
 
         // pose: level, innocence, solo faces, then the running beat
         resetPose();
@@ -2402,12 +2534,10 @@ export const game: GameModule = {
         }
         if (cur) {
           // a set piece owns the doll: no second hand, no absurd-rate vibration
-          pose.hand2 = false;
           pose.dx = 0;
           pose.dy = 0;
           cur.pose(cur.t, pose);
         }
-        void soloTilt;
 
         // entities
         updateGoos(dt);
@@ -2447,7 +2577,7 @@ export const game: GameModule = {
         if (king.st === 2) {
           king.t += dt;
           const k = clamp(king.t / 0.35, 0, 1);
-          king.x = lerp(king.k0x, geo.cx, k);
+          king.x = lerp(king.k0x, chipSlotX(KING_CHIP_SLOT), k);
           const ty = pileBaseY(0) - 0.26 * geo.D * 0.5 - 0.015 * geo.D;
           king.y = lerp(king.k0y, ty, k) - Math.sin(k * Math.PI) * 0.25 * geo.D;
           king.size = lerp(king.size, 0.26 * geo.D, k);
@@ -2463,7 +2593,7 @@ export const game: GameModule = {
           corkHead.t += dt;
           corkHead.y -= geo.h * 3.5 * dt;
           corkHead.rot += Math.PI * 4 * dt;
-          if (corkHead.t > 0.6) corkHead.st = 2;
+          if (corkHead.t > 0.3) corkHead.st = 2;
         } else if (corkHead.st === 3) corkHead.t += dt;
         orbit.t += dt;
         streak.t += dt;
@@ -2478,14 +2608,13 @@ export const game: GameModule = {
           finalT += dt;
           aliveT += dt;
           aliveAge += dt;
-          pressExtra = 0.02 * bump(aliveAge, 0, 0.4) * (aliveKind === ALIVE.Press ? 1 : 0);
-          if (aliveT >= 4) {
+          if (aliveT >= ALIVE_EVERY_S) {
             aliveT = 0;
             aliveAge = 0;
-            aliveKind = level.alive[aliveIdx % level.alive.length] ?? ALIVE.Fog;
+            aliveKind = level.alive[aliveIdx % level.alive.length] ?? ALIVE.Nod;
             aliveIdx++;
-            if (aliveKind === ALIVE.Fog) fogPuff = 0;
-            else if (aliveKind === ALIVE.Press) squeak(520, 420, 320, 0.2);
+            if (aliveKind === ALIVE.Hat) sfx.pop(0.8);
+            else if (aliveKind === ALIVE.Nod) squeak(520, 420, 320, 0.2);
             else if (aliveKind === ALIVE.Slide) {
               aliveGoo = -1;
               for (let i = 0; i < goos.length; i++) {
@@ -2548,24 +2677,24 @@ export const game: GameModule = {
       if (rot !== 0) g.rotate(rot);
       g.scale(sx, sy);
       g.translate(-cx, -cy);
-      // the cream disc (its hard ink shadow is painted once into the backdrop layer)
+      // the hard ink shadow (one filled circle, it moves with the token), then the cream disc
+      g.fillStyle = PAL.ink;
+      g.beginPath();
+      g.arc(cx + 5, cy + 6, R, 0, Math.PI * 2);
+      g.fill();
       g.fillStyle = '#FFF6E0';
       g.beginPath();
       g.arc(cx, cy, R, 0, Math.PI * 2);
       g.fill();
-      // the picture, clipped to the circle (a porthole)
-      g.save();
-      // The porthole. Everything of the doll stays within 0.48 D of the centre except what
-      // comes up from below (the hands, a pressed chin), so a straight cut just above the
-      // bottom of the ring is enough, and an axis-aligned rect clip costs nothing (a round
-      // anti-aliased clip cost ~20% of a frame on a throttled phone). The ring covers the rest.
-      g.beginPath();
-      g.rect(cx - R, cy - R, D, R + 0.462 * D);
-      g.clip();
-      if (p.prot !== 0 || p.pscale !== 1) {
+      // the picture: every head frame is pre-masked to the circle (art.ts), so a plain drawImage
+      // is a perfect porthole, and it stays round when the picture spins
+      const turned = p.prot !== 0 || p.pscale !== 1;
+      if (turned) {
+        g.save();
         g.translate(cx, cy);
         g.rotate(p.prot);
-        g.scale(p.pscale, p.pscale);
+        const ps = Math.min(1.065, p.pscale);
+        g.scale(ps, ps);
         g.translate(-cx, -cy);
       }
       // the fingertip out of the ear goes UNDER the head (its base hides inside the ear)
@@ -2581,19 +2710,25 @@ export const game: GameModule = {
       }
       const fr = frameDrawable();
       if (fr && !p.headOut) {
-        const S = 0.94 * D;
+        const S = FRAME_SCALE * D;
         const x0 = cx - S / 2;
-        const y0 = cy - 0.46 * D;
+        const y0 = cy - FRAME_TOP * D;
         if (p.nose > 0.01) {
           const nX = nx();
           const nY = ny();
           g.save();
           g.translate(nX, nY);
-          g.scale(1, 1 + 0.05 * p.nose);
+          g.scale(1, 1 + 0.04 * p.nose);
           g.translate(-nX, -nY);
           g.drawImage(fr.source, x0, y0, S, S);
           g.restore();
         } else g.drawImage(fr.source, x0, y0, S, S);
+      }
+      // the shy booger peeking out of the nostril (waiting bit)
+      if (peek.k > 0.01) {
+        const b = art.boogers[BOOGER.Round];
+        const sz = 0.075 * D * peek.k;
+        if (b) b.draw(g, nx() + 0.01 * D, ny() + sz * 0.35, sz, sz, peek.look);
       }
       // the snot slick of mini Shimi
       if (slick.a > 0.02) {
@@ -2624,26 +2759,64 @@ export const game: GameModule = {
           g.stroke();
         }
       }
-      // the rising hand (sprite) when the frame does not show the doll's own hand
-      if (!p.headOut && !HAND_IN_FRAME.has(p.frame)) {
-        if (p.tipOn) drawHand(g, fx_(p.tipU), fy_(p.tipV), false);
-        else if (p.handK > kRim * 0.6) {
-          const tremble = p.label === 'nostril' ? Math.sin(gt * Math.PI * 36) * 0.004 * D : 0;
-          drawHand(g, fx_(handTipU(p.handK)) + tremble, fy_(handTipV(p.handK)) + jab * 0.03 * D, false);
-        }
-      }
-      if (p.hand2 && !p.headOut) drawHand(g, fx_(FRAME.nostril2X), fy_(FRAME.nostril2Y - 0.01), true);
       // Yossi on the fingertip (pick_out), before he is flicked
       if (yossiTip > 0) {
         const b = art.boogers[BOOGER.Round];
         if (b) b.draw(g, fx_(FRAME.outTipX), fy_(FRAME.outTipY) - yossiTip * 0.03 * D, yossiTip * 0.11 * D, yossiTip * 0.11 * D);
       }
-      // the king growing at the fingertip
-      if (king.st === 1) {
-        const b = art.boogers[BOOGER.Boss];
-        if (b) b.draw(g, king.x, king.y, king.size, king.size, king.rot);
+      if (turned) g.restore();
+
+      // What comes up from below the rim (the rising hand, the knocking fist, a booger growing
+      // at the chin) needs the porthole: one round clip, only while one of them is on screen.
+      const handOn = !p.headOut && !HAND_IN_FRAME.has(p.frame) && (p.tipOn || p.handK > kRim * 0.6);
+      const kingOn = king.st === 1;
+      const trophyOn = trophy.st === 1;
+      const fistOn = knock.on && knock.up > 0.01;
+      if (handOn || kingOn || trophyOn || fistOn) {
+        g.save();
+        g.beginPath();
+        g.arc(cx, cy, R - geo.ring * 0.5, 0, Math.PI * 2);
+        g.clip();
+        if (handOn) {
+          if (p.tipOn) drawHand(g, fx_(p.tipU), fy_(p.tipV), false);
+          else drawHand(g, fx_(handTipU(p.handK)), fy_(handTipV(p.handK)) + jab * 0.03 * D, false);
+        }
+        if (kingOn) {
+          const b = art.boogers[BOOGER.Boss];
+          if (b) b.draw(g, king.x, king.y, king.size, king.size, king.rot);
+        }
+        if (trophyOn) {
+          const b = art.boogers[BOOGER.Round];
+          const sz = trophy.size * (1 + 0.08 * trophy.pulse);
+          // hangs at the end of the strand, kept inside the porthole as it grows
+          const ty = Math.min(fy_(FRAME.bigTipY) + sz * 0.15, cy + 0.43 * D - sz * 0.5);
+          if (b) b.draw(g, fx_(FRAME.bigTipX) + p.prot * 0.2 * D, ty, sz, sz, Math.sin(gt * 9) * 0.15);
+        }
+        if (fistOn) {
+          const fw = 0.34 * D * (1 + 0.14 * knock.punch);
+          const fh = (fw * art.fist.height) / art.fist.width;
+          art.fist.draw(g, cx + 0.2 * D, cy + R + fh * 0.5 - knock.up * (fh * 0.5 + 0.38 * D), fw, fh, -0.12);
+        }
+        g.restore();
       }
-      g.restore();
+      // crack stars on the glass where he knocked
+      if (knock.on && knock.cracks > 0) {
+        g.strokeStyle = PAL.ink;
+        g.lineWidth = 2.5;
+        g.lineCap = 'round';
+        g.beginPath();
+        for (let c = 0; c < knock.cracks; c++) {
+          const kx = cx + (0.14 + c * 0.07) * D;
+          const ky = cy + (0.02 - c * 0.04) * D;
+          for (let i = 0; i < 6; i++) {
+            const a = i * 1.05 + c;
+            const l = (0.05 + 0.03 * ((i + c) % 3)) * D;
+            g.moveTo(kx, ky);
+            g.lineTo(kx + Math.cos(a) * l, ky + Math.sin(a) * l);
+          }
+        }
+        g.stroke();
+      }
       if (yossiTip > 0.5) {
         const ck = ckNames[0];
         if (ck) blit(g, ck, fx_(FRAME.outTipX), fy_(FRAME.outTipY) - 0.1 * D - ck.h * 0.5, yossiTip);
@@ -2673,7 +2846,9 @@ export const game: GameModule = {
     function drawGoo(g: CanvasRenderingContext2D, d: Goo): void {
       const sp = art.boogers[d.kind];
       if (!sp) return;
-      const dims = boogerDims(d.kind, d.size, d.stretch);
+      // the first booger of each kind arrives big (a close-up), then shrinks to its size
+      const big = d.intro > 0 ? 1 + (INTRO_SCALE - 1) * (d.st === GOO_FLY ? 1 : ease.inQuad(d.intro / INTRO_S)) : 1;
+      const dims = boogerDims(d.kind, d.size * big, d.stretch);
       if (d.st === GOO_FLY) {
         const k = 0.25 + 0.75 * ease.inQuad(Math.min(1, d.t / FLY_S));
         sp.draw(g, d.x, d.y, dims.w * k, dims.h * k, d.rot);
@@ -2714,15 +2889,11 @@ export const game: GameModule = {
         const y = pileBaseY(0) - s * 0.5 - hop;
         const wave = yossi.wave < 1.2 ? Math.sin(yossi.wave * Math.PI * 3.3) * 12 * DEG : 0;
         if (d) d.draw(g, x, y, s, s, wave);
-        const ck = ckNames[0];
-        if (ck) blit(g, ck, chipX(x, ck.w), y - s * 0.5 - ck.h * 0.45);
       }
       if (mini.st === 3 && mini.slot >= 0) {
         const x = chipX(pileSlotX(0, mini.slot), mini.size);
         const y = pileBaseY(0) - mini.size * 0.5 - hop - mini.hop * 6;
         art.mini.draw(g, x, y, mini.size, mini.size);
-        const ck = ckNames[4];
-        if (ck) blit(g, ck, chipX(x, ck.w), y - mini.size * 0.5 - ck.h * 0.45);
       }
       if (king.st === 3 || king.st === 2) {
         const b = art.boogers[BOOGER.Boss];
@@ -2731,81 +2902,68 @@ export const game: GameModule = {
         const s = king.size * fl;
         const y = king.st === 3 ? king.y - hop : king.y;
         if (b) b.draw(g, king.x, y + (s * (1 - land)) / 2, s * (2 - land), s * land, 0);
-        if (king.st === 3) blit(g, ckKing, king.x, y - s * 0.3);
       }
-    }
-
-    function drawFog(g: CanvasRenderingContext2D): void {
-      if (!fog || fogA <= 0.01) return;
-      const k = 0.9 + 0.1 * ease.outQuad(fogPuff);
-      const w = 0.6 * geo.D * k;
-      const h = 0.26 * geo.D * k;
-      const x = fx_(0.5);
-      const y = fy_(0.86);
-      g.globalAlpha = 0.85 * fogA;
-      g.drawImage(fog.canvas, x - w / 2, y - h / 2, w, h);
-      g.globalAlpha = fogA;
-      const digitH = 0.2 * geo.D;
-      if (finalT >= 0 && finalShown) {
-        const str = String(engine.state.taps);
-        const dw = digitH * 0.62;
-        const total = dw * str.length;
-        g.save();
-        g.translate(x, y);
-        g.rotate(-4 * DEG);
-        for (let i = 0; i < str.length; i++) {
-          const d = digits[Number(str[i])];
-          if (d) g.drawImage(d.canvas, -total / 2 + i * dw + dw / 2 - (d.w * digitH) / d.h / 2, -digitH / 2, (d.w * digitH) / d.h, digitH);
-        }
-        g.restore();
-      } else if (fogDigit >= 0 && fogDigit <= 9 && (engine.state.phase === 'waiting' || lastQuarter)) {
-        const d = digits[fogDigit];
-        if (d) {
-          g.save();
-          g.translate(x, y);
-          g.rotate(fogDigitRot);
-          g.drawImage(d.canvas, -(d.w * digitH) / d.h / 2, -digitH / 2, (d.w * digitH) / d.h, digitH);
-          g.restore();
-        }
+      // the name chips last, on their fixed slots (never over each other)
+      const chip = (ck: Sticker | undefined, k: number): void => {
+        if (ck) blit(g, ck, chipX(chipSlotX(k), ck.w), chipLineY(k, ck.h) - hop);
+      };
+      if (yossi.st === 2) chip(ckNames[0], CHIP_SLOT[0]);
+      for (const m of pile) if (m.name > 0) chip(ckNames[m.name], CHIP_SLOT[m.name] ?? 1);
+      if (mini.st === 3) chip(ckNames[4], CHIP_SLOT[4]);
+      if (king.st === 3) {
+        const top = king.y - king.size * 0.5 - hop;
+        blit(g, ckKing, chipX(king.x, ckKing.w), Math.min(chipLineY(KING_CHIP_SLOT, ckKing.h) - hop, top - ckKing.h * 0.3));
       }
-      g.globalAlpha = 1;
     }
 
     function drawBand(g: CanvasRenderingContext2D): void {
       const s = engine.state;
+      if (geo.bandH <= 0) return;
       const maxW = geo.w * 0.86;
       // stickers may grow into the free glass above the band (up to 1.5 bands)
       const maxH = Math.max(geo.bandH, Math.min(geo.bandBottom - geo.top - 6, geo.bandH * 1.5));
       const centreFor = (h: number): number => geo.bandBottom - Math.min(maxH, Math.max(h, geo.bandH)) / 2;
-      if (s.phase === 'waiting' && countdownDigit > 5) {
-        // the big start sticker, pulsing; remarks under it
+      // the countdown digit (last 5 s of the wait, last 5 s of the sprint): a red star sticker
+      // that punches in every second; it never covers the doll
+      if (bandDigit > 0) {
+        const st = s.phase === 'sprint' && bandDigit === 5 ? stDigit5Last : stDigits[bandDigit - 1];
+        if (st) {
+          const fit = Math.min(maxW / st.w, maxH / st.h, (0.36 * geo.D) / (st.h * 0.62));
+          const punch = 1 + 0.4 * (1 - ease.outBack(clamp(digitT / 0.22, 0, 1)));
+          blit(g, st, geo.w / 2, centreFor(st.h * fit), fit * punch);
+        }
+        if (remark && s.phase === 'waiting') drawRemark(g, remark, geo.top + 4, maxW);
+        return;
+      }
+      if (s.phase === 'waiting') {
+        // a remark replaces the start sticker for its time; otherwise the start sticker pulses
+        if (remark) {
+          const r = remark;
+          const f = Math.min(1.3, maxW / r.s.w, maxH / r.s.h);
+          drawRemark(g, r, centreFor(r.s.h * f) - (r.s.h * f) / 2, maxW, 1.3);
+          return;
+        }
         const fit = Math.min(1.15, maxW / stStart.w, maxH / stStart.h);
         const pulse = 1 + 0.03 * (1 + Math.sin(gt * Math.PI * 3));
-        const sh = stStart.h * fit;
-        const sy = centreFor(sh);
-        blit(g, stStart, geo.w / 2, sy, fit * pulse);
-        if (remark) {
-          // the remark chip sits above the sticker (on small screens it may overlap its top)
-          const r = remark;
-          const k = r.t / r.life;
-          const f = Math.min(1, maxW / r.s.w);
-          g.globalAlpha = k > 0.85 ? (1 - k) / 0.15 : 1;
-          const ry = Math.max(geo.top + (r.s.h * f) / 2 + 4, sy - sh * 0.42 - (r.s.h * f) / 2);
-          blit(g, r.s, geo.w / 2, ry, f * ease.outBack(clamp(r.t / 0.2, 0, 1)));
-          g.globalAlpha = 1;
-        }
+        blit(g, stStart, geo.w / 2, centreFor(stStart.h * fit), fit * pulse);
         return;
       }
       if (!band) return;
       const b = band;
-      const k = b.t / b.life;
       const fit = Math.min(1.1, maxW / b.s.w, maxH / b.s.h);
       const cyBand = centreFor(b.s.h * fit);
       const inK = clamp(b.t / 0.25, 0, 1);
       const sc = ease.outBack(inK) * (b.chip ? 1 : 1 + Math.sin(gt * 9) * 0.02);
       g.globalAlpha = b.life - b.t < 0.2 ? clamp((b.life - b.t) / 0.2, 0, 1) : 1;
-      void k;
       blit(g, b.s, geo.w / 2, cyBand, sc * fit);
+      g.globalAlpha = 1;
+    }
+    /** A remark chip with its top at `top`, popping in and fading out. */
+    function drawRemark(g: CanvasRenderingContext2D, r: { s: Sticker; t: number; life: number }, top: number, maxW: number, maxK = 1): void {
+      const k = r.t / r.life;
+      const f = Math.min(maxK, maxW / r.s.w);
+      g.globalAlpha = k > 0.85 ? (1 - k) / 0.15 : 1;
+      blit(g, r.s, geo.w / 2, Math.max(geo.top + 4, top) + (r.s.h * f) / 2, f * ease.outBack(clamp(r.t / 0.2, 0, 1)));
       g.globalAlpha = 1;
     }
 
@@ -2855,26 +3013,29 @@ export const game: GameModule = {
       g.stroke();
     }
 
+    /** The waiting screen's hint: a toy finger pokes Shimi's nose five times a second. */
     function drawGhost(g: CanvasRenderingContext2D): void {
       const cycle = (gt % 0.2) / 0.2;
       const press = cycle < 0.4 ? ease.inQuad(cycle / 0.4) : 1 - ease.outQuad((cycle - 0.4) / 0.6);
-      const px = geo.w * 0.3;
-      const py = geo.pileTop + geo.pileH * 0.3;
-      const gw = clamp(geo.pileH * 0.6, 34, 52);
-      const gh = (gw * art.ghost.height) / art.ghost.width;
-      const lift = (1 - press) * gw * 0.3;
+      const tipX = nx() + 0.02 * geo.D;
+      const tipY = ny() - 0.01 * geo.D;
+      const lift = (1 - press) * 0.07 * geo.D;
+      const hw = 0.13 * geo.D;
+      const hh = (hw * HAND.h) / HAND.w;
       g.save();
-      g.globalAlpha = 0.85;
-      art.ghost.draw(g, px + lift * 0.4, py + lift + gh * 0.46, gw, gh, -0.35);
+      g.translate(tipX + lift * 0.95, tipY + lift * 0.3);
+      g.rotate(-1.25);
+      art.hand.draw(g, (0.5 - HAND.tipX) * hw, hh / 2, hw, hh);
+      g.restore();
       if (cycle < 0.5) {
         g.globalAlpha = 0.9 * (1 - cycle * 2);
         g.strokeStyle = PAL.white;
         g.lineWidth = 4;
         g.beginPath();
-        g.arc(px, py, 8 + cycle * 40, 0, Math.PI * 2);
+        g.arc(tipX, tipY, 8 + cycle * 40, 0, Math.PI * 2);
         g.stroke();
+        g.globalAlpha = 1;
       }
-      g.restore();
     }
 
     function draw(): void {
@@ -2890,8 +3051,44 @@ export const game: GameModule = {
 
       g.save();
       fx.applyShake(g);
+      // the absurd rate: speed lines around the token (outside the ring) and steam from both sides
+      if (pose.label === 'absurd' && !cur) {
+        g.strokeStyle = PAL.ink;
+        g.lineWidth = 3;
+        g.lineCap = 'round';
+        g.beginPath();
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 + 0.2;
+          const r0 = geo.R + 8 + ((gt * 160 + i * 9) % 14);
+          g.moveTo(geo.cx + Math.cos(a) * r0, geo.cy + Math.sin(a) * r0);
+          g.lineTo(geo.cx + Math.cos(a) * (r0 + 0.07 * geo.D), geo.cy + Math.sin(a) * (r0 + 0.07 * geo.D));
+        }
+        g.stroke();
+      }
       drawToken(g);
-      if (tokenGlass && tokenGlassUsed) g.drawImage(tokenGlass, geo.cx - geo.R, geo.cy - geo.R, geo.D, geo.D);
+      if (pose.label === 'absurd' && !cur) {
+        for (let i = 0; i < 2; i++) {
+          const ph = (gt * 2.2 + i * 0.5) % 1;
+          const y = fy_(0.55) - ph * 0.16 * geo.D;
+          const sz = 0.8 + ph * 0.6;
+          g.globalAlpha = 1 - ph * ph;
+          for (const side of [-1, 1]) {
+            const x = geo.cx + side * (geo.R + 0.02 * geo.D + ph * 0.04 * geo.D);
+            g.drawImage(cloud.canvas, x - (cloud.w * sz) / 2, y - (cloud.h * sz) / 2, cloud.w * sz, cloud.h * sz);
+          }
+        }
+        g.globalAlpha = 1;
+      }
+
+      // splat decals on the glass (opaque, outlined; at most DECALS_N)
+      for (const d of decals) {
+        if (!d.live) continue;
+        g.save();
+        g.translate(d.x, d.y);
+        g.rotate(d.rot);
+        g.drawImage(splat.canvas, -d.s / 2, -d.s / 2, d.s, d.s);
+        g.restore();
+      }
 
       // the pile under the token, hopping with every tap
       const hop = bobT < 0.1 ? 3 * Math.sin((bobT / 0.1) * Math.PI) : 0;
@@ -2907,20 +3104,23 @@ export const game: GameModule = {
           const y = lerp(hanger.y0, hanger.y, k) - Math.sin(k * Math.PI) * 40;
           const cyc = (hanger.t % 1.6) / 1.6;
           const st = k < 1 ? 1 : cyc < 0.8 ? 1 + 0.7 * ease.inOutQuad(cyc / 0.8) : 1.7 - 0.7 * ease.outBack((cyc - 0.8) / 0.2);
-          const dims = boogerDims(BOOGER.Stretchy, 0.13 * geo.D, st);
+          const dims = boogerDims(BOOGER.Stretchy, 0.16 * geo.D, st);
           b.draw(g, x, y + dims.h / 2, dims.w, dims.h, 0);
         }
       }
       if (golden.st > 0) {
         const b = art.boogers[BOOGER.Golden];
-        const s0 = 0.12 * geo.D * (golden.st === 1 ? 0.5 + 0.5 * clamp(golden.t / 0.5, 0, 1) : 1);
-        if (b) b.draw(g, golden.x, golden.y, s0, s0, 0);
-        if (golden.st === 2 && golden.t % 1 < 0.25) {
-          const k = (golden.t % 1) / 0.25;
-          g.globalAlpha = 1 - k;
-          g.drawImage(star.canvas, golden.x + s0 * 0.25 - 9, golden.y - s0 * 0.3 - 9, 18 + k * 8, 18 + k * 8);
-          g.globalAlpha = 1;
+        const s0 = 0.14 * geo.D * (golden.st === 1 ? 0.5 + 0.5 * clamp(golden.t / 0.5, 0, 1) : 1);
+        // a hard yellow star burst behind it, turning slowly (a glint each second)
+        if (golden.st === 2) {
+          const k = 1 + 0.12 * Math.max(0, 1 - (golden.t % 1) / 0.25);
+          g.save();
+          g.translate(golden.x, golden.y);
+          g.rotate(golden.t * 0.6);
+          stickerShape(g, STAR14, -s0 * 0.85 * k, -s0 * 0.85 * k, s0 * 1.7 * k, s0 * 1.7 * k, PAL.yel, PAL.ink, 2.5);
+          g.restore();
         }
+        if (b) b.draw(g, golden.x, golden.y, s0, s0, 0);
       }
       for (const b of bits) {
         if (!b.live) continue;
@@ -2932,30 +3132,16 @@ export const game: GameModule = {
       }
       // mini Shimi on its way out
       if (mini.st === 1 || mini.st === 2) art.mini.draw(g, mini.x, mini.y, mini.size, mini.size, mini.rot);
-      // squeegee
+      // the squeegee: a big one, across the token
       if (squeegee.on) {
-        const dx = squeegee.x - squeegee.x0;
-        const dy = squeegee.y - squeegee.y0;
-        const len = Math.hypot(dx, dy) || 1;
-        g.strokeStyle = 'rgba(111, 191, 42, 0.18)';
-        g.lineCap = 'round';
-        g.lineWidth = 0.04 * geo.D;
-        g.beginPath();
-        for (let i = -1; i <= 1; i++) {
-          const o = i * 0.25 * geo.w * 0.45;
-          g.moveTo(squeegee.x0 - (dy / len) * o, squeegee.y0 + (dx / len) * o);
-          g.lineTo(squeegee.x - (dy / len) * o, squeegee.y + (dx / len) * o);
-        }
-        g.stroke();
-        const sw = 0.5 * geo.w;
-        art.squeegee.draw(g, squeegee.x, squeegee.y + sw * 0.35, sw, sw, -35 * DEG);
+        const sw = 0.9 * geo.D;
+        art.squeegee.draw(g, squeegee.x, squeegee.y, sw, sw, -45 * DEG);
       }
 
-      drawFog(g);
-
-      // fingerprints
+      // fingerprints on the glass, never over the doll
       for (const p of prints) {
         if (!p.live) continue;
+        if (Math.hypot(p.x - geo.cx, p.y - geo.cy) < geo.R + 10) continue;
         g.globalAlpha = 0.3 * (1 - p.t / 1.5);
         g.save();
         g.translate(p.x, p.y);
@@ -2965,26 +3151,34 @@ export const game: GameModule = {
       }
       g.globalAlpha = 1;
 
-      // the absurd rate: speed lines from the nostril
-      if (pose.label === 'absurd' && !cur) {
-        const x = nx();
-        const y = ny();
-        g.strokeStyle = 'rgba(22,18,14,0.55)';
-        g.lineWidth = 3;
-        g.beginPath();
-        for (let i = 0; i < 8; i++) {
-          const a = (i / 8) * Math.PI * 2 + gt * 2;
-          const r0 = 0.12 * geo.D + ((gt * 300 + i * 17) % 20);
-          g.moveTo(x + Math.cos(a) * r0, y + Math.sin(a) * r0);
-          g.lineTo(x + Math.cos(a) * (r0 + 0.1 * geo.D), y + Math.sin(a) * (r0 + 0.1 * geo.D));
-        }
-        g.stroke();
-      }
       // whistling: a music note bobbing
       if (pose.frame === FR.Whistle) {
         const x = fx_(0.8);
         const y = fy_(0.4) + Math.sin(gt * 6) * 6;
         g.drawImage(note.canvas, x - note.w / 2, y - note.h / 2, note.w, note.h);
+      }
+      // dozing: Z's rising from his head
+      if (zzz.t < 2.1) {
+        g.lineJoin = 'round';
+        for (let i = 0; i < 3; i++) {
+          const ph = (zzz.t * 0.7 + i / 3) % 1;
+          const zs = (0.05 + 0.03 * i) * geo.D * (0.6 + ph * 0.6);
+          const x = fx_(0.78) + ph * 0.1 * geo.D + i * 0.02 * geo.D;
+          const y = fy_(0.25) - ph * 0.3 * geo.D;
+          g.globalAlpha = 1 - ph * ph;
+          g.beginPath();
+          g.moveTo(x - zs / 2, y - zs / 2);
+          g.lineTo(x + zs / 2, y - zs / 2);
+          g.lineTo(x - zs / 2, y + zs / 2);
+          g.lineTo(x + zs / 2, y + zs / 2);
+          g.strokeStyle = PAL.ink;
+          g.lineWidth = 7;
+          g.stroke();
+          g.strokeStyle = PAL.white;
+          g.lineWidth = 3.5;
+          g.stroke();
+        }
+        g.globalAlpha = 1;
       }
       // dizzy stars over the hat
       if (orbit.t < 1.2) {
@@ -2995,18 +3189,54 @@ export const game: GameModule = {
           g.drawImage(star.canvas, x - star.w / 2, y - star.h / 2, star.w, star.h);
         }
       }
+      // the last-5 booger flying to his head, then sitting on it (crowned at the top rank)
+      if (trophy.st >= 2) {
+        const kind = trophyKind();
+        const b = art.boogers[kind];
+        const sz = trophySize();
+        const hx = geo.cx;
+        const hy = trophyHeadY(sz);
+        let x = hx;
+        let y = hy;
+        let sx = 1;
+        let sy = 1;
+        if (trophy.st === 2) {
+          const k = clamp(trophy.t / 0.35, 0, 1);
+          x = lerp(trophy.x0, hx, k);
+          y = lerp(trophy.y0, hy, k) - Math.sin(k * Math.PI) * 0.35 * geo.D;
+        } else {
+          const land = keys(trophy.t, [0, 0.75, 0.1, 1.12, 0.24, 1]);
+          sy = land;
+          sx = 2 - land;
+          if (aliveKind === ALIVE.Hat && aliveAge < 0.4) {
+            const j = bump(aliveAge, 0, 0.4);
+            y -= j * 0.06 * geo.D;
+            sy *= 1 + 0.08 * j;
+          }
+        }
+        if (b) {
+          const dims = boogerDims(kind, sz, 1);
+          b.draw(g, x, y + (dims.h * (1 - sy)) / 2, dims.w * sx, dims.h * sy, 0);
+        }
+      }
+      // the tap count on a red star sticker, on the token's lower right
+      if (stScore && finalShown) {
+        const k = ease.outBack(clamp((finalT - 0.35) / 0.3, 0, 1));
+        const f = Math.min(1, (0.42 * geo.D) / stScore.w);
+        blit(g, stScore, geo.cx + 0.34 * geo.D, geo.cy + 0.36 * geo.D, f * k);
+      }
       g.restore();
 
-      // the cork: the head picture flies, unclipped, over everything
+      // the cork: the head picture flies over everything
       if (corkHead.st === 1 || corkHead.st === 3) {
         const fr = art.frames[FR.Squeeze];
         if (fr) {
-          const S = 0.94 * geo.D;
-          let y = geo.cy - 0.46 * geo.D + corkHead.y;
+          const S = FRAME_SCALE * geo.D;
+          let y = geo.cy - FRAME_TOP * geo.D + corkHead.y;
           let rot = corkHead.rot;
           if (corkHead.st === 3) {
             const k = ease.inQuad(clamp(corkHead.t / 0.28, 0, 1));
-            y = lerp(-S - 20, geo.cy - 0.46 * geo.D, k);
+            y = lerp(-S - 20, geo.cy - FRAME_TOP * geo.D, k);
             rot = 0;
           }
           g.save();
@@ -3019,17 +3249,15 @@ export const game: GameModule = {
 
       fx.draw(g);
       drawCounter(g);
-      if (s.phase === 'waiting') drawGhost(g);
+      if (s.phase === 'waiting' && !cur && countdownDigit > 5) drawGhost(g);
       drawBand(g);
 
-      // last 5 s of the sprint: the red frame pulses
+      // last 5 s of the sprint: a hard red frame pulses
       if (s.phase === 'sprint' && lastQuarter) {
         const k = 0.5 + 0.5 * Math.sin(gt * 14);
-        g.globalAlpha = 0.5 + 0.4 * k;
         g.strokeStyle = PAL.red;
-        g.lineWidth = 8 + 6 * k;
+        g.lineWidth = 5 + 5 * k;
         g.strokeRect(0, geo.top, w, geo.counterTop - geo.top);
-        g.globalAlpha = 1;
       }
       if (dim > 0) {
         g.fillStyle = `rgba(22,18,14,${(0.3 * Math.min(1, dim / 0.4)).toFixed(3)})`;
@@ -3077,7 +3305,7 @@ export const game: GameModule = {
         events: eventLog.slice(),
         finished,
         finishedAtMs,
-        sprites: { live: liveCount(), sneeze: sneezeN, cork: corkN, pile: pile.length + (yossi.st === 2 ? 1 : 0) + (mini.st === 3 ? 1 : 0) + (king.st === 3 ? 1 : 0), pileTotal, fingerprints: fpN, glassOps: glassOps.length, fx: fx.count },
+        sprites: { live: liveCount(), sneeze: sneezeN, cork: corkN, pile: pile.length + (yossi.st === 2 ? 1 : 0) + (mini.st === 3 ? 1 : 0) + (king.st === 3 ? 1 : 0), pileTotal, fingerprints: fpN, decals: decals.filter((d) => d.live).length, fx: fx.count },
         x: geo.cx,
         y: geo.cy,
         r: geo.R,
@@ -3091,6 +3319,20 @@ export const game: GameModule = {
     void rankAt;
 
     computeGeo();
+    // a reload: continue the sprint (or show the final frame) this phone already played
+    if (resumed) {
+      const st = engine.state;
+      lastScore = st.taps;
+      ctx.setScore(st.taps);
+      savedTaps = st.taps;
+      logEvent('resumed');
+      if (st.phase === 'done') {
+        trophy.size = TROPHY_MIN * geo.D;
+        onDone(st.taps);
+      } else if (st.endAt - startOffset <= timing.sprintMs * TAP.LAST_SHARE) onLast();
+    }
+    const onPageHide = (): void => persist(true);
+    window.addEventListener('pagehide', onPageHide);
     loop.start();
 
     return {
@@ -3101,26 +3343,23 @@ export const game: GameModule = {
         input.dispose();
         fx.clear();
         ctx.setClock?.(null);
+        ctx.root.removeEventListener('pointerdown', onDownCapture, { capture: true });
+        window.removeEventListener('pagehide', onPageHide);
+        downStamp.clear();
         view.dispose();
         backdrop.dispose();
-        style.remove();
         chipCache.dispose();
-        for (const l of [counter, fog, print, note, star, ...digits]) freeLayer(l);
-        for (const c of [glass, pileCanvas, tokenGlass]) {
+        for (const l of [counter, print, note, star, splat, cloud]) freeLayer(l);
+        for (const c of [glass, pileCanvas]) {
           if (c) {
             c.width = 0;
             c.height = 0;
           }
         }
         glass = null;
-        glassCtx = null;
-        tokenGlass = null;
-        tokenCtx = null;
         pileCanvas = null;
         pileCtx = null;
         counter = null;
-        fog = null;
-        digits = [];
         debugSource = null;
       },
     };

@@ -1,6 +1,6 @@
-// Scripted players over full production rounds (50 s) of the tap game, driven with real CDP
+// Scripted players over full production rounds (53 s: 30 s window, 20 s sprint, 3 s hold) of the tap game, driven with real CDP
 // touches on a wall-clock schedule: slow / normal / fast (two thumbs) / five-finger mash / a
-// held finger / starts at 1 s / starts at 25 s / never taps. Prints raw scores, the beats each
+// held finger / starts at 1 s / starts at 25 s / starts at 29.5 s / never taps. Prints raw scores, the beats each
 // saw and when, and checks the round-format rules.
 //   QA_BASE=http://localhost:5321 node tests/e2e/qa-tap-comedy-play.cjs [WxH] [fps] [seed]
 const L = require('./qa-tap-comedy-lib.cjs');
@@ -9,7 +9,8 @@ const SIZE = process.argv[2] || '390x844';
 const FPS = Number(process.argv[3] || 0);
 const SEED = Number(process.argv[4] || 7);
 const [W, H] = SIZE.split('x').map(Number);
-const DURATION = 50000;
+const DURATION = 53000;
+const CAP = 243; // 3 + 12/s x 20 s (pick.ts TAP.BURST + TAP.RATE x sprint)
 
 const PLAYERS = [
   { name: 'slow', times: () => L.steady(3, 2000, 21000, 0.6, 11) },
@@ -21,6 +22,8 @@ const PLAYERS = [
   { name: 'held', held: true, times: () => [2000] },
   { name: 'start1s', times: () => L.steady(6, 1000, 21000, 0.3, 15) },
   { name: 'start25s', times: () => L.steady(6, 25000, 21000, 0.3, 16) },
+  // the last moment of the start window: the final frame must still show before the round ends
+  { name: 'start29s', times: () => L.steady(6, 29500, 21000, 0.3, 18) },
   { name: 'never', times: () => [] },
 ];
 
@@ -110,15 +113,19 @@ function gaps(s) {
   const sc = (n) => (by[n] ? by[n].taps : -1);
   L.check('order fast > normal > slow > never', sc('fast') > sc('normal') && sc('normal') > sc('slow') && sc('slow') > sc('never'), [sc('fast'), sc('normal'), sc('slow'), sc('never')]);
   L.check('five-finger slaps do not beat the fast player', sc('mash5') < sc('fast'), [sc('mash5'), sc('fast')]);
-  L.check('five-finger drumming stays under the 283 ceiling', sc('drum5') <= 283, sc('drum5'));
+  L.check(`five-finger drumming stays under the ${CAP} ceiling`, sc('drum5') <= CAP, sc('drum5'));
   L.check('never: auto-start at 30 s, score 0', by.never && by.never.t0 === 30000 && sc('never') === 0, by.never && by.never.t0);
+  for (const n of ['never', 'start29s']) {
+    const s = by[n];
+    L.check(`${n}: finished at least 2.5 s before the round ends (the final frame is seen)`, s && s.finishedAtMs >= 0 && s.finishedAtMs <= DURATION - 2500, s && s.finishedAtMs);
+  }
   L.check('held finger counts once', sc('held') === 1, sc('held'));
   for (const r of results) {
     const s = r.s;
     if (!s || s.endAt < 0) continue;
     L.check(`${r.p.name}: sprint is exactly 20 s of round time`, s.endAt - s.t0 === 20000 || s.endAt === DURATION, s.endAt - s.t0);
     if (s.finishedAtMs >= 0) L.check(`${r.p.name}: finished within one step of the sprint end`, s.finishedAtMs - s.endAt >= 0 && s.finishedAtMs - s.endAt <= 17, s.finishedAtMs - s.endAt);
-    L.check(`${r.p.name}: round ends at the cap (50 s)`, r.endedAtWall >= 49000 && r.endedAtWall < 53500, r.endedAtWall);
+    L.check(`${r.p.name}: round ends at the cap (53 s)`, r.endedAtWall >= 52000 && r.endedAtWall < 56500, r.endedAtWall);
   }
   if (by.slow) L.check('slow player sees something new at least every 3 s', gaps(by.slow) <= 3000, gaps(by.slow));
   console.log(L.fails.length ? `\n${L.fails.length} FAILED: ${L.fails.join(', ')}` : '\nALL OK');

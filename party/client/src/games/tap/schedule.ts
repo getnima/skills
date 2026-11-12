@@ -23,16 +23,17 @@ export const BOOGER_KINDS = 6;
 /** Length of the precomputed drip sequence; it repeats after that (at most ~95 drips in a sprint). */
 export const BOOGER_SEQ_LEN = 256;
 
-/** The waiting bits (index order of IDLE_BITS in the game). */
-export const IDLE_BIT = { Sneak: 0, Yawn: 1, Knock: 2 } as const satisfies Record<string, number>;
+/** The waiting bits: the sneak, the yawn, the knock on the glass, falling asleep, the shy booger. */
+export const IDLE_BIT = { Sneak: 0, Yawn: 1, Knock: 2, Sleep: 3, Peek: 4 } as const satisfies Record<string, number>;
+export const IDLE_BITS = 5;
 export type IdleBit = (typeof IDLE_BIT)[keyof typeof IDLE_BIT];
 
 /** Slow-player fillers, each at most once per round. */
 export const FILLER = { EyeRoll: 0, Wink: 1, Sniff: 2 } as const satisfies Record<string, number>;
 export type Filler = (typeof FILLER)[keyof typeof FILLER];
 
-/** Small gags of the final frame (one every 4 s). */
-export const ALIVE = { Slide: 0, Blink: 1, Fog: 2, Press: 3 } as const satisfies Record<string, number>;
+/** Small gags of the final frame (one every 2 s): a booger slides, the googly one blinks, he nods, the booger on his head bounces. */
+export const ALIVE = { Slide: 0, Blink: 1, Nod: 2, Hat: 3 } as const satisfies Record<string, number>;
 export type Alive = (typeof ALIVE)[keyof typeof ALIVE];
 
 /** Golden booger: one per player, on a drip between these counted taps (scaled). */
@@ -103,15 +104,15 @@ export function buildLevel(seed: number, durationMs: number, tapScale = 1, dripE
   const hi = Math.max(lo, Math.floor((GOLDEN_TAPS[1] * tapScale) / dripEvery) - 1);
   const goldenDrip = rgold.int(lo, hi);
 
-  // ── waiting bits: seeded, never the same twice in a row ──
+  // ── waiting bits: seeded rounds of all five (no bit repeats before all five played, and
+  // never the same twice in a row across a round boundary) ──
   const ri = root.fork('idle');
   const idleBits: IdleBit[] = [];
-  let prevBit = -1;
-  for (let i = 0; i < 16; i++) {
-    let b = prevBit < 0 ? ri.int(0, 2) : ri.int(0, 1);
-    if (prevBit >= 0 && b >= prevBit) b++;
-    idleBits.push(b as IdleBit);
-    prevBit = b;
+  const all: IdleBit[] = [IDLE_BIT.Sneak, IDLE_BIT.Yawn, IDLE_BIT.Knock, IDLE_BIT.Sleep, IDLE_BIT.Peek];
+  for (let r = 0; r < 4; r++) {
+    const order = ri.shuffle(all);
+    if (order[0] === idleBits[idleBits.length - 1]) order.push(order.shift() as IdleBit);
+    idleBits.push(...order);
   }
 
   const fillers = root.fork('fillers').shuffle([FILLER.EyeRoll, FILLER.Wink, FILLER.Sniff]) as Filler[];
