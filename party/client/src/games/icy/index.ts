@@ -205,10 +205,7 @@ export const game: GameModule = {
     let follow = CAM_FOLLOW_WORLD;
     /** UI scale for short play areas (landscape phones). */
     let ui = 1;
-    let glowL: CanvasGradient | null = null;
-    let glowR: CanvasGradient | null = null;
     function layout(): void {
-      const g = view.ctx;
       top = ctx.hudHeight;
       bottom = Math.max(top + 200, view.height - ctx.safeBottom);
       playH = bottom - top;
@@ -218,13 +215,6 @@ export const game: GameModule = {
       visH = playH / scale;
       follow = Math.min(CAM_FOLLOW_WORLD, visH * CAM_FOLLOW_MAX_SHARE);
       ui = clamp(Math.min(playW / 360, playH / 560), 0.62, 1.1);
-      const edge = Math.min(140, view.width * 0.3);
-      glowL = g.createLinearGradient(0, 0, edge, 0);
-      glowL.addColorStop(0, 'rgba(45, 226, 230, 0.45)');
-      glowL.addColorStop(1, 'rgba(45, 226, 230, 0)');
-      glowR = g.createLinearGradient(view.width, 0, view.width - edge, 0);
-      glowR.addColorStop(0, 'rgba(255, 61, 139, 0.45)');
-      glowR.addColorStop(1, 'rgba(255, 61, 139, 0)');
     }
     layout();
     const offResize = view.onResize(layout);
@@ -238,6 +228,14 @@ export const game: GameModule = {
     ctx.root.prepend(skyA, skyB);
     let skyZone = -1;
     let skyMix = -1;
+    // held-side glows: above the canvas, below the stage HUD, never catch touches
+    const glowEls = [document.createElement('div'), document.createElement('div')] as const;
+    glowEls[0].style.cssText =
+      'position:absolute;left:0;top:0;bottom:0;width:min(140px,30%);pointer-events:none;opacity:0;background:linear-gradient(to right, rgba(45,226,230,0.45), rgba(45,226,230,0))';
+    glowEls[1].style.cssText =
+      'position:absolute;right:0;top:0;bottom:0;width:min(140px,30%);pointer-events:none;opacity:0;background:linear-gradient(to left, rgba(255,61,139,0.45), rgba(255,61,139,0))';
+    ctx.root.append(glowEls[0], glowEls[1]);
+    let glowShown = 0;
     const zoneCss = (z: number): string => {
       const zone = ZONES[Math.min(ZONES.length - 1, z)] ?? ZONES[0];
       return zone ? `linear-gradient(to bottom, ${zone[0]}, ${zone[1]})` : '';
@@ -906,20 +904,14 @@ export const game: GameModule = {
       g.globalAlpha = 1;
     }
 
+    /** Show which half is pushed: a glow on that edge (CSS, so it costs no canvas fill). */
     function drawHeldGlow(): void {
       // the side that pushes now (the newest finger), so two fingers never light both
-      const d = heldDir();
-      if (mode !== 'run' || d === 0) return;
-      const g = view.ctx;
-      const edge = Math.min(140, view.width * 0.3);
-      if (d < 0 && glowL) {
-        g.fillStyle = glowL;
-        g.fillRect(0, top, edge, playH);
-      }
-      if (d > 0 && glowR) {
-        g.fillStyle = glowR;
-        g.fillRect(view.width - edge, top, edge, playH);
-      }
+      const d = mode === 'run' ? heldDir() : 0;
+      if (d === glowShown) return;
+      glowShown = d;
+      glowEls[0].style.opacity = d < 0 ? '1' : '0';
+      glowEls[1].style.opacity = d > 0 ? '1' : '0';
     }
 
     function drawSnow(): void {
@@ -1171,6 +1163,8 @@ export const game: GameModule = {
         view.dispose();
         skyA.remove();
         skyB.remove();
+        glowEls[0].remove();
+        glowEls[1].remove();
         if (window.__icy === debug) delete window.__icy;
       },
     };

@@ -17,6 +17,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 
 need_cmd curl
 require_gcloud
+require_billing
 
 URL="$(cloudrun_url)"
 [[ -z "$URL" ]] || guard_live_party "$URL" "A deploy replaces the instance and drops them."
@@ -98,7 +99,7 @@ if is_dry; then
   info "(dry run) would wait for $URL/healthz"
 else
   code=000
-  for i in $(seq 1 30); do
+  for _ in $(seq 1 30); do
     code="$(health_code)"
     [[ "$code" == 200 || "$code" == 403 ]] && break
     sleep 3
@@ -109,7 +110,7 @@ else
     warn "The service answers 403: public access was refused (organization policy). Turning off the invoker IAM check."
     gc run services update "$SERVICE" --region="$REGION" --no-invoker-iam-check --quiet ||
       die "Could not make the service public. A project Owner runs:  gcloud run services update $SERVICE --region=$REGION --no-invoker-iam-check"
-    for i in $(seq 1 20); do
+    for _ in $(seq 1 20); do
       code="$(health_code)"
       [[ "$code" == 200 ]] && break
       sleep 3

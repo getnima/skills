@@ -4,7 +4,10 @@
 #
 #   deploy/doctor.sh
 set -euo pipefail
+# shellcheck source=deploy/config.sh
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
+# Read-only already: --dry-run changes nothing here.
+DRY_RUN=0
 
 problems=0
 problem() {
@@ -21,9 +24,9 @@ if command -v node >/dev/null 2>&1; then
 else
   problem "node is not installed" "install Node 22 from https://nodejs.org"
 fi
-command -v npm >/dev/null 2>&1 && ok "npm $(npm --version)" || problem "npm is not installed" "install Node 22 from https://nodejs.org"
+if command -v npm >/dev/null 2>&1; then ok "npm $(npm --version)"; else problem "npm is not installed" "install Node 22 from https://nodejs.org"; fi
 for tool in curl tar ssh; do
-  command -v "$tool" >/dev/null 2>&1 && ok "$tool" || problem "$tool is not installed" "install $tool with your package manager"
+  if command -v "$tool" >/dev/null 2>&1; then ok "$tool"; else problem "$tool is not installed" "install $tool with your package manager"; fi
 done
 if [[ -d "$PARTY_ROOT/node_modules" ]]; then ok "node_modules installed"; else problem "dependencies are not installed" "cd $PARTY_ROOT && npm install"; fi
 
@@ -39,7 +42,12 @@ account="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/
 if [[ -z "$account" ]]; then
   problem "gcloud is not logged in" "gcloud auth login"
 else
-  ok "logged in as $account"
+  if gcloud auth print-access-token >/dev/null 2>&1; then
+    ok "logged in as $account"
+  else
+    problem "the gcloud login of $account has expired" "gcloud auth login"
+    account=""
+  fi
 fi
 
 project_ok=0
@@ -79,6 +87,7 @@ if ((project_ok)); then
   if grep -qx compute.googleapis.com <<<"$enabled"; then
     step "Compute quota in $REGION (for path A)"
     have_ip="$(vm_ip)"
+    # shellcheck disable=SC2016 # a node program, not shell
     gc compute regions describe "$REGION" --format=json 2>/dev/null | HAVE_IP="$have_ip" node -e '
       let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
         const q = Object.fromEntries((JSON.parse(s).quotas ?? []).map((x) => [x.metric, x]));

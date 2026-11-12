@@ -8,10 +8,17 @@
 # Checks: /healthz, the phone page / and its script bundle, /host, /show, and a
 # real socket.io websocket (wss) round trip: handshake, a clock ping with ack,
 # and a join to a room that cannot exist (no side effects on the server).
+# Read-only, so there is no --dry-run: it changes nothing anywhere.
 set -euo pipefail
+case "${1:-}" in
+  -h | --help | '')
+    awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
+    [[ -n "${1:-}" ]] && exit 0
+    exit 2
+    ;;
+esac
 
 if [[ -t 1 ]]; then G=$'\e[32m' R=$'\e[31m' Y=$'\e[33m' B=$'\e[1m' N=$'\e[0m'; else G='' R='' Y='' B='' N=''; fi
-[[ $# -ge 1 ]] || { echo "usage: deploy/smoke.sh <party-url> [<game-server-url>]" >&2; exit 2; }
 PAGES="${1%/}"
 SERVER="${2:-$1}"
 SERVER="${SERVER%/}"
@@ -29,7 +36,7 @@ for u in "${urls[@]}"; do
   case "$u" in
     https://*) ;;
     http://localhost* | http://127.0.0.1*) note "$u is plain http: fine for a local test, phones need https" ;;
-    http://*) fail "$u is plain http: phones need HTTPS (wake lock, fullscreen, wss)" ;;
+    http://*) note "$u is plain http: the game works, but phones get no screen wake lock (use the https address when it works)" ;;
     *) fail "$u is not a URL (start it with https://)" ;;
   esac
 done

@@ -6,10 +6,17 @@
 # address. This script:
 #   1. finds that server (FIREBASE_BACKEND=auto | gce | cloudrun | https://...),
 #   2. builds the client with VITE_SERVER_URL=<server>,
-#   3. allows the web.app origin on the server (CLIENT_ORIGIN; restarts it only if it changed),
+#   3. checks the server accepts the web.app origin (it does by default: nothing restarts),
 #   4. deploys dist/client to Firebase Hosting with npx firebase-tools.
 # One-time: npx --yes firebase-tools login
+#
+#   deploy/firebase-deploy.sh            find the server, build, deploy (safe to re-run)
+#   deploy/firebase-deploy.sh --dry-run  print the commands, run nothing
+#
+# It buys a second, nicer address (<project>.web.app) and a CDN for the pages,
+# nothing else: the single-origin address of A or B already serves everything.
 set -euo pipefail
+# shellcheck source=deploy/config.sh
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 
 need_cmd npm "Install Node.js 22: https://nodejs.org"
@@ -18,10 +25,12 @@ need_cmd curl
 require_gcloud
 [[ -n "$FIREBASE_PROJECT" ]] || die "FIREBASE_PROJECT is empty (defaults to PROJECT_ID)."
 
-fb() { npx --yes "firebase-tools@$FIREBASE_TOOLS_VERSION" --non-interactive "$@"; }
+fb() { run npx --yes "firebase-tools@$FIREBASE_TOOLS_VERSION" --non-interactive "$@"; }
 
 step "Firebase login"
-if ! fb login:list 2>/dev/null | grep -q '@'; then
+if is_dry; then
+  info "(dry run) would check: npx --yes firebase-tools login:list"
+elif ! fb login:list 2>/dev/null | grep -q '@'; then
   die "firebase-tools is not logged in. Run once:  npx --yes firebase-tools login   (then re-run this script)"
 fi
 ok "logged in"
@@ -37,7 +46,8 @@ case "$BACKEND" in
 esac
 if [[ "$BACKEND" == auto || "$BACKEND" == gce ]]; then
   IP="$(vm_ip)"
-  if [[ -n "$IP" ]] && gc compute instances describe "$INSTANCE" --zone="$ZONE" --format='value(name)' >/dev/null 2>&1; then
+  if is_dry; then IP="$DRY_IP"; fi
+  if [[ -n "$IP" ]] && { is_dry || gc compute instances describe "$INSTANCE" --zone="$ZONE" --format='value(name)' >/dev/null 2>&1; }; then
     SERVER_URL="https://$(party_hostname "$IP")"
     BACKEND=gce
   elif [[ "$BACKEND" == gce ]]; then
@@ -49,13 +59,18 @@ if [[ -z "$SERVER_URL" && ( "$BACKEND" == auto || "$BACKEND" == cloudrun ) ]]; t
   BACKEND=cloudrun
   [[ -n "$SERVER_URL" ]] || die "No game server found. Deploy one first: deploy/gce-up.sh (recommended) or deploy/cloudrun-deploy.sh"
 fi
-curl -fsS --max-time 8 "$SERVER_URL/healthz" >/dev/null || die "The game server at $SERVER_URL does not answer /healthz. Fix it first (deploy/smoke.sh $SERVER_URL)."
+is_dry || curl -fsS --max-time 8 "$SERVER_URL/healthz" >/dev/null || die "The game server at $SERVER_URL does not answer /healthz. Fix it first (deploy/smoke.sh $SERVER_URL)."
 ok "$SERVER_URL ($BACKEND)"
 
 # ── Firebase project + its default site ──
 step "Firebase project $FIREBASE_PROJECT"
 enable_apis firebase.googleapis.com firebasehosting.googleapis.com
-if ! SITES_JSON="$(fb hosting:sites:list --project "$FIREBASE_PROJECT" --json 2>/dev/null)"; then
+if is_dry; then
+  fb hosting:sites:list --project "$FIREBASE_PROJECT" --json
+  info "(dry run) when that fails (Firebase not added to the project yet):"
+  fb projects:addfirebase "$FIREBASE_PROJECT"
+  SITES_JSON=''
+elif ! SITES_JSON="$(fb hosting:sites:list --project "$FIREBASE_PROJECT" --json 2>/dev/null)"; then
   info "adding Firebase to the Google Cloud project"
   fb projects:addfirebase "$FIREBASE_PROJECT"
   SITES_JSON="$(fb hosting:sites:list --project "$FIREBASE_PROJECT" --json)"
@@ -78,38 +93,45 @@ ok "site $SITE_URL"
 # ── 2. build the client against the server ──
 step "Building the client with VITE_SERVER_URL=$SERVER_URL"
 cd "$PARTY_ROOT"
-[[ -d node_modules ]] || npm ci --no-audit --no-fund
-VITE_SERVER_URL="$SERVER_URL" npm run build:client
-[[ -f dist/client/index.html ]] || die "dist/client/index.html missing after the build."
+[[ -d node_modules ]] || run npm ci --no-audit --no-fund
+run env VITE_SERVER_URL="$SERVER_URL" npm run build:client
+is_dry || [[ -f dist/client/index.html ]] || die "dist/client/index.html missing after the build."
 ok "dist/client"
 
-# ── 3. allow the web.app origin on the server ──
-step "Allowing $SITE_URL on the game server (CLIENT_ORIGIN)"
+# ── 3. the server must accept the web.app origin ──
+# The game server accepts every origin unless CLIENT_ORIGIN is set (the default
+# is empty), so normally there is nothing to change and nothing restarts. Only a
+# server that was locked to other origins gets web.app added (that restarts it).
+step "Checking that the game server accepts $SITE_URL (CLIENT_ORIGIN)"
 if [[ "$BACKEND" == gce ]]; then
   gc compute ssh "$INSTANCE" --zone="$ZONE" --quiet --command="
     set -e
-    want='CLIENT_ORIGIN=$ORIGINS'
-    if [ \"\$(sudo cat /etc/party-arena.env 2>/dev/null)\" != \"\$want\" ]; then
-      echo \"\$want\" | sudo tee /etc/party-arena.env >/dev/null
-      sudo systemctl restart party-arena
-      echo '    restarted the server with the new CLIENT_ORIGIN'
-    else
-      echo '    already set'
-    fi"
+    cur=\$(sudo sed -n 's/^CLIENT_ORIGIN=//p' /etc/party-arena.env 2>/dev/null | tail -n1)
+    case \"\$cur\" in
+      '') echo '    any origin is allowed (CLIENT_ORIGIN empty): nothing to change' ;;
+      *$SITE_ID.web.app*) echo '    already allowed' ;;
+      *)
+        echo \"CLIENT_ORIGIN=\$cur,$ORIGINS\" | sudo tee /etc/party-arena.env >/dev/null
+        sudo systemctl restart party-arena
+        echo '    added web.app to CLIENT_ORIGIN and restarted the server' ;;
+    esac"
 elif [[ "$BACKEND" == cloudrun ]]; then
-  CURRENT="$(gc run services describe "$SERVICE" --region="$REGION" --format=json | node -e '
+  CURRENT="$( (gc run services describe "$SERVICE" --region="$REGION" --format=json 2>/dev/null || echo '{}') | node -e '
     let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
       const env = JSON.parse(s).spec?.template?.spec?.containers?.[0]?.env ?? [];
       process.stdout.write(env.find((e) => e.name === "CLIENT_ORIGIN")?.value ?? "");
     });')"
-  if [[ "$CURRENT" == "$ORIGINS" ]]; then
-    ok "already set"
-  else
-    gc run services update "$SERVICE" --region="$REGION" --update-env-vars="^@^CLIENT_ORIGIN=$ORIGINS" --quiet
-    ok "updated (new revision)"
-  fi
+  case "$CURRENT" in
+    '') ok "any origin is allowed (CLIENT_ORIGIN empty): nothing to change" ;;
+    *"$SITE_ID.web.app"*) ok "already allowed" ;;
+    *)
+      guard_live_party "$SERVER_URL" "Adding web.app to CLIENT_ORIGIN makes a new revision and drops them."
+      gc run services update "$SERVICE" --region="$REGION" --update-env-vars="^@^CLIENT_ORIGIN=$CURRENT,$ORIGINS" --quiet
+      ok "added web.app to CLIENT_ORIGIN (new revision)"
+      ;;
+  esac
 else
-  warn "Custom server URL: set CLIENT_ORIGIN=$ORIGINS on it yourself."
+  warn "Custom server URL: if it sets CLIENT_ORIGIN, add $ORIGINS to it."
 fi
 
 # ── 4. deploy ──
@@ -119,7 +141,7 @@ ok "deployed"
 
 # Put the same-origin build back, so a later local `npm start` does not point at the server.
 step "Restoring the same-origin client build"
-env -u VITE_SERVER_URL npm run build:client >/dev/null
+run env -u VITE_SERVER_URL npm run build:client >/dev/null
 ok "dist/client rebuilt without VITE_SERVER_URL"
 
 print_party_urls "$SITE_URL" "$SERVER_URL"

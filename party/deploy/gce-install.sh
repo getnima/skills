@@ -4,6 +4,8 @@
 # Unpacks a release next to the previous ones, installs production
 # dependencies, switches the `current` symlink and restarts the service.
 set -euo pipefail
+# Runs on the VM only (deploy/gce-deploy.sh / gce-up.sh call it; their --dry-run shows how).
+case "${1:-}" in -h | --help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;; esac
 
 TGZ="$1"
 RELEASE="$2"
@@ -35,7 +37,8 @@ chown -R "$APP_USER:$APP_USER" "$REL"
 log "unpacked $RELEASE"
 
 cd "$REL"
-sudo -u "$APP_USER" -H env NODE_ENV=production npm ci --omit=dev --no-audit --no-fund --loglevel=error
+# runuser (util-linux) is on every Debian; HOME so npm's cache lands in the app user's home.
+runuser -u "$APP_USER" -- env HOME="$APP_DIR" NODE_ENV=production npm ci --omit=dev --no-audit --no-fund --loglevel=error
 log "production dependencies installed"
 
 ln -sfn "$REL" "$APP_DIR/current.tmp"
@@ -60,8 +63,9 @@ for i in $(seq 1 40); do
 done
 systemctl is-active --quiet caddy || systemctl restart caddy
 
-# Keep the newest $KEEP releases.
+# Keep the newest $KEEP releases (names are UTC timestamps, so they sort by name).
 cd "$APP_DIR/releases"
-ls -1t | tail -n +$((KEEP + 1)) | while read -r old; do rm -rf "${APP_DIR:?}/releases/$old"; done
+find . -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -r | tail -n +$((KEEP + 1)) |
+  while read -r old; do rm -rf "${APP_DIR:?}/releases/$old"; done
 rm -f "$TGZ" /tmp/party-install.sh
 log "release $RELEASE is live"

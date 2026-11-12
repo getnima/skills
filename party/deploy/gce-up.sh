@@ -2,15 +2,21 @@
 # A. Compute Engine: create (or update) the party VM, then deploy the app to it.
 #
 #   deploy/gce-up.sh                 everything, safe to re-run
+#   deploy/gce-up.sh --dry-run       print the gcloud commands, run nothing
 #   SKIP_DEPLOY=1 deploy/gce-up.sh   only the infrastructure
 #
 # Creates: static IP $IP_NAME, firewall rules $FW_WEB (80/443) and $FW_SSH (22)
-# for the tag $NETWORK_TAG, and the VM $INSTANCE (Debian 12, Node, Caddy with
-# automatic HTTPS at <ip-with-dashes>.sslip.io or $DOMAIN).
+# for the tag $NETWORK_TAG, and the VM $INSTANCE (e2-small, Debian 12, Node, Caddy
+# with automatic HTTPS at <ip-with-dashes>.sslip.io, also <ip-with-dashes>.nip.io
+# and $DOMAIN when set, and plain http://<ip> as the last resort).
+# Re-running it on a running VM does not restart the game server unless its
+# settings changed.
 set -euo pipefail
+# shellcheck source=deploy/config.sh
 source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 
 require_gcloud
+require_billing
 enable_apis compute.googleapis.com
 
 step "Network '$NETWORK'"
@@ -27,9 +33,12 @@ if [[ -z "$(vm_ip)" ]]; then
     --description="Party Arena public address"
 fi
 IP="$(vm_ip)"
+if is_dry; then IP="$DRY_IP"; fi
 [[ -n "$IP" ]] || die "Could not read the static IP '$IP_NAME'."
 HOSTNAME_PUBLIC="$(party_hostname "$IP")"
 ok "$IP  ->  https://$HOSTNAME_PUBLIC"
+# A re-run during the party would restart the server (the deploy at the end).
+guard_live_party "https://$HOSTNAME_PUBLIC" "Re-running gce-up.sh redeploys and restarts it, which drops them."
 
 ensure_firewall() {
   local name="$1" rules="$2" desc="$3"
@@ -42,7 +51,7 @@ ensure_firewall() {
   fi
 }
 step "Firewall rules (tag $NETWORK_TAG)"
-ensure_firewall "$FW_WEB" "tcp:80,tcp:443,udp:443" "Party Arena: HTTP (certificate challenge, redirect) and HTTPS / HTTP3"
+ensure_firewall "$FW_WEB" "tcp:80,tcp:443,udp:443" "Party Arena: HTTP (certificate challenge, plain-http fallback) and HTTPS / HTTP3"
 ensure_firewall "$FW_SSH" "tcp:22" "Party Arena: SSH for gcloud compute ssh/scp (deploys)"
 
 METADATA="party-domain=$DOMAIN,party-port=$APP_PORT,party-node=$NODE_MAJOR,party-email=$ACME_EMAIL"
@@ -51,7 +60,7 @@ STARTUP="$PARTY_ROOT/deploy/gce-startup.sh"
 step "VM '$INSTANCE' ($MACHINE_TYPE, $ZONE)"
 STATUS="$(gc compute instances describe "$INSTANCE" --zone="$ZONE" --format='value(status)' 2>/dev/null || true)"
 if [[ -z "$STATUS" ]]; then
-  gc compute instances create "$INSTANCE" \
+  if ! gc compute instances create "$INSTANCE" \
     --zone="$ZONE" \
     --machine-type="$MACHINE_TYPE" \
     --image-family="$IMAGE_FAMILY" \
@@ -62,16 +71,21 @@ if [[ -z "$STATUS" ]]; then
     --address="$IP" \
     --tags="$NETWORK_TAG" \
     --labels=app=party-arena \
+    --maintenance-policy=MIGRATE \
     --shielded-secure-boot \
     --metadata="$METADATA" \
-    --metadata-from-file=startup-script="$STARTUP"
+    --metadata-from-file=startup-script="$STARTUP"; then
+    die "Could not create the VM in $ZONE. If the message says the zone has no capacity
+   (ZONE_RESOURCE_POOL_EXHAUSTED), pick another zone of $REGION and keep it for every script:
+      echo ZONE=$REGION-c >> .env && deploy/gce-up.sh"
+  fi
   ok "created; first boot installs Node + Caddy (about 2 minutes)"
 else
   info "exists (status $STATUS): updating its startup script and settings"
   gc compute instances add-metadata "$INSTANCE" --zone="$ZONE" \
     --metadata="$METADATA" --metadata-from-file=startup-script="$STARTUP"
   if [[ "$STATUS" == "RUNNING" ]]; then
-    info "re-running the startup script on the VM"
+    info "re-running the startup script on the VM (restarts nothing that did not change)"
     gc compute ssh "$INSTANCE" --zone="$ZONE" --quiet \
       --command='sudo google_metadata_script_runner startup' ||
       warn "could not re-run the startup script now; it runs on the next boot (deploy/gce-logs.sh startup)"
@@ -87,4 +101,7 @@ if [[ "${SKIP_DEPLOY:-0}" == "1" ]]; then
   exit 0
 fi
 
+if is_dry; then
+  exec "$PARTY_ROOT/deploy/gce-deploy.sh" --dry-run
+fi
 exec "$PARTY_ROOT/deploy/gce-deploy.sh"

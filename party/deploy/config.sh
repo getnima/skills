@@ -175,7 +175,7 @@ gc() {
   gcloud --project="$PROJECT_ID" "$@"
 }
 
-# Login, project, billing: stop early with the exact fix instead of a gcloud stack of errors.
+# Login and project: stop early with the exact fix instead of a gcloud stack of errors.
 require_gcloud() {
   if is_dry; then
     command -v gcloud >/dev/null 2>&1 || warn "gcloud is not installed (dry run goes on): https://cloud.google.com/sdk/docs/install"
@@ -186,7 +186,7 @@ require_gcloud() {
     return 0
   fi
   need_cmd gcloud "Install the Google Cloud CLI: https://cloud.google.com/sdk/docs/install"
-  local account billing
+  local account
   account="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | head -n1 || true)"
   [[ -n "$account" ]] || die "gcloud is not logged in. Run:  gcloud auth login"
   gcloud auth print-access-token >/dev/null 2>&1 ||
@@ -195,6 +195,13 @@ require_gcloud() {
   PROJECT_NUMBER="$(gc projects describe "$PROJECT_ID" --format='value(projectNumber)' 2>/dev/null || true)"
   [[ -n "$PROJECT_NUMBER" ]] ||
     die "Project '$PROJECT_ID' does not exist or $account cannot open it. See:  gcloud projects list   then  gcloud config set project THE_ID"
+  info "account $account · project $PROJECT_ID · region $REGION"
+}
+
+# Billing must be on before anything is created (VMs, Cloud Run, Cloud Build).
+require_billing() {
+  is_dry && return 0
+  local billing
   billing="$(gc billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>/dev/null || true)"
   case "$billing" in
     True | true) ;;
@@ -206,7 +213,6 @@ require_gcloud() {
       ;;
     *) warn "Could not read the billing state of $PROJECT_ID (fine if you know billing is on)." ;;
   esac
-  info "account $account · project $PROJECT_ID · region $REGION"
 }
 
 # Enable APIs; a no-op for the ones already on. The first time on a new project
@@ -221,6 +227,7 @@ enable_apis() {
 
 # A documentation-range address (RFC 5737) stands in for the VM's IP in a dry run.
 DRY_IP=203.0.113.10
+export DRY_IP
 
 # 34.77.1.2 -> 34-77-1-2.sslip.io (or $DOMAIN when set).
 party_hostname() {

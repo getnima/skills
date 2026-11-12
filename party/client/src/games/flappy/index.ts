@@ -514,10 +514,26 @@ export const game: GameModule = {
     // ── drawing ──
     const g = view.ctx;
 
-    function drawBackground(): void {
+    /**
+     * The backdrop is static: it lives on its own canvas behind the game canvas and is
+     * painted once per screen size, so no frame pays a full-screen blit for it.
+     */
+    const bgCanvas = document.createElement('canvas');
+    bgCanvas.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none';
+    ctx.root.prepend(bgCanvas);
+    let bgSized = '';
+    function paintBackdrop(): void {
+      const key = `${L.W}x${L.H}x${view.dpr}`;
+      if (key === bgSized) return;
+      bgSized = key;
+      bgCanvas.width = Math.max(1, Math.round(L.W * view.dpr));
+      bgCanvas.height = Math.max(1, Math.round(L.H * view.dpr));
+      const b = bgCanvas.getContext('2d');
+      if (!b) return;
+      b.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
       const bg = art.background;
       const s = Math.max(L.W / bg.width, L.H / bg.height);
-      bg.draw(g, L.W / 2, L.H / 2, bg.width * s, bg.height * s);
+      bg.draw(b, L.W / 2, L.H / 2, bg.width * s, bg.height * s);
     }
 
     function drawTiledX(d: typeof art.ground, y: number, h: number, offset: number): void {
@@ -785,7 +801,7 @@ export const game: GameModule = {
         const d = lerp(prevDist, dist, alpha);
         const gs = lerp(prevGroundScroll, groundScroll, alpha);
         g.clearRect(0, 0, L.W, L.H);
-        drawBackground();
+        paintBackdrop();
         g.save();
         fx.applyShake(g);
         const skyH = L.playH * 0.3;
@@ -886,6 +902,7 @@ export const game: GameModule = {
         loop.stop();
         input.dispose();
         view.dispose();
+        bgCanvas.remove();
         fx.clear();
         if (window.__flappy) delete window.__flappy;
       },
