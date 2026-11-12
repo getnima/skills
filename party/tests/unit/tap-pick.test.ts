@@ -1,274 +1,351 @@
 import { describe, expect, it } from 'vitest';
 
-import { createPickEngine, PICK } from '../../client/src/games/tap/pick';
-import { BIG_FIRST, BIG_GAP, BOOGER, BOOGER_SEQ_LEN, boogerOf, boogerTraits, buildLevel } from '../../client/src/games/tap/schedule';
-import { GAMES } from '../../shared/protocol';
+import { createTapEngine, MILESTONE_IDS, rankOf, scaledThresholds, TAP, tapTiming } from '../../client/src/games/tap/pick';
+import { BOOGER, boogerOf, buildLevel, GOLDEN_TAPS } from '../../client/src/games/tap/schedule';
 
-import type { PickListener } from '../../client/src/games/tap/pick';
+import type { TapListener } from '../../client/src/games/tap/pick';
 
 const STEP = 1000 / 60;
-const D = 60_000;
-const MAX = GAMES.tap.maxRaw;
 
-interface Tap {
-  t: number;
-  face: boolean;
+interface Run {
+  taps: number;
+  t0: number;
+  endAt: number;
+  auto: boolean;
+  doneCalls: number;
+  doneAtStep: number;
+  milestones: Array<{ id: string; taps: number; ms: number }>;
+  levels: number[];
+  maxLevelAfter: (ms: number) => number;
+  minLevelBetween: (a: number, b: number) => number;
+  bounces: number;
+  late: number;
+  trace: string;
 }
 
-/** Run a whole round: taps are queued `batchSteps` steps ahead (1 = 60 Hz, 3 = 20 fps). */
-function play(seed: number, taps: readonly Tap[], opts: { batchSteps?: number; dur?: number; on?: PickListener } = {}) {
-  const dur = opts.dur ?? D;
-  const level = buildLevel(seed, dur);
-  const e = createPickEngine(level, MAX, opts.on);
-  const batch = opts.batchSteps ?? 1;
-  let i = 0;
-  const steps = Math.floor(dur / STEP);
-  for (let k = 1; k <= steps; k++) {
-    // a frame: everything that happened up to the end of this frame is queued first
-    if ((k - 1) % batch === 0) {
-      const frameEnd = Math.min(steps, k + batch - 1) * STEP;
-      while (i < taps.length && (taps[i]?.t ?? Infinity) <= frameEnd) {
-        const tp = taps[i++];
-        if (tp) e.tap(tp.t, tp.face);
+/**
+ * Play a whole round: `times` = round times of touches. `mode` 'jit' queues each touch just
+ * before the step that covers it, 'ahead' queues everything at the start, 'lag' runs steps in
+ * batches of `batch` (a 20 fps phone: 3 steps per frame, the touches of a frame arrive together).
+ */
+function play(durationMs: number, times: readonly number[], mode: 'jit' | 'ahead' | 'lag' = 'jit', batch = 3, joinedAt = 0): Run {
+  const sorted = [...times].sort((a, b) => a - b);
+  const r: Run = {
+    taps: 0,
+    t0: -1,
+    endAt: -1,
+    auto: false,
+    doneCalls: 0,
+    doneAtStep: -1,
+    milestones: [],
+    levels: [],
+    maxLevelAfter: () => 0,
+    minLevelBetween: () => 0,
+    bounces: 0,
+    late: 0,
+    trace: '',
+  };
+  let step = 0;
+  let now = 0;
+  const on: TapListener = {
+    milestone: (id, _i, taps) => r.milestones.push({ id, taps, ms: Math.round(now) }),
+    done: () => {
+      r.doneCalls++;
+      r.doneAtStep = step;
+    },
+  };
+  const e = createTapEngine(durationMs, on, joinedAt);
+  const levelAt: Array<[number, number]> = [];
+  let qi = 0;
+  if (mode === 'ahead') for (const t of sorted) e.tap(t);
+  const steps = Math.ceil(durationMs / STEP) + 2;
+  const trace: string[] = [];
+  for (step = 1; step <= steps; step++) {
+    now = joinedAt + step * STEP;
+    if (mode === 'jit') {
+      while (qi < sorted.length && (sorted[qi] ?? 0) <= now) e.tap(sorted[qi++] ?? 0);
+    } else if (mode === 'lag' && step % batch === 1) {
+      const frameEnd = now + (batch - 1) * STEP;
+      while (qi < sorted.length && (sorted[qi] ?? 0) <= frameEnd) e.tap(sorted[qi++] ?? 0);
+    }
+    e.step(now);
+    levelAt.push([now, e.state.level]);
+    if (step % 30 === 0) trace.push(`${step}:${e.state.taps}:${e.state.level}:${e.state.phase}`);
+  }
+  const s = e.state;
+  r.taps = s.taps;
+  r.t0 = s.t0;
+  r.endAt = s.endAt;
+  r.auto = s.auto;
+  r.bounces = s.bounces;
+  r.late = s.late;
+  r.levels = levelAt.map(([, l]) => l);
+  r.maxLevelAfter = (ms) => Math.max(0, ...levelAt.filter(([t]) => t >= ms).map(([, l]) => l));
+  r.minLevelBetween = (a, b) => Math.min(9, ...levelAt.filter(([t]) => t >= a && t < b).map(([, l]) => l));
+  r.trace = trace.join(',');
+  return r;
+}
+
+/** Steady taps at `hz` from `from` for `forMs` (optionally jittered by a seeded LCG). */
+function steady(hz: number, from: number, forMs: number, jitter = 0, seed = 1): number[] {
+  const out: number[] = [];
+  let x = seed;
+  const rnd = (): number => {
+    x = (Math.imul(x, 1103515245) + 12345) >>> 0;
+    return x / 4294967296;
+  };
+  const gap = 1000 / hz;
+  for (let t = from; t < from + forMs; t += gap * (1 + (rnd() - 0.5) * jitter)) out.push(Math.round(t * 10) / 10);
+  return out;
+}
+
+describe('tap timing', () => {
+  it('derives the start window (60%) and the sprint (40%) from the round', () => {
+    const t = tapTiming(50_000);
+    expect(t.startWindowMs).toBe(30_000);
+    expect(t.sprintMs).toBe(20_000);
+    expect(t.tapScale).toBe(1);
+    const s = tapTiming(10_000);
+    expect(s.startWindowMs).toBe(6_000);
+    expect(s.sprintMs).toBe(4_000);
+    expect(s.tapScale).toBeCloseTo(0.2);
+  });
+
+  it('scales thresholds and keeps them strictly increasing', () => {
+    expect(scaledThresholds(TAP.MILESTONES, 1)).toEqual([8, 18, 30, 45, 62, 80, 100, 140, 190]);
+    const tiny = scaledThresholds(TAP.MILESTONES, 0.05);
+    for (let i = 1; i < tiny.length; i++) expect(tiny[i]).toBeGreaterThan(tiny[i - 1] ?? 0);
+    expect(tiny[0]).toBeGreaterThanOrEqual(1);
+  });
+
+  it('ranks the final count (under 70 / 70-129 / 130-189 / 190+)', () => {
+    expect(rankOf(0, 1)).toBe(0);
+    expect(rankOf(69, 1)).toBe(0);
+    expect(rankOf(70, 1)).toBe(1);
+    expect(rankOf(129, 1)).toBe(1);
+    expect(rankOf(130, 1)).toBe(2);
+    expect(rankOf(190, 1)).toBe(3);
+    expect(rankOf(283, 1)).toBe(3);
+  });
+});
+
+describe('tap engine: the round format', () => {
+  it('the first touch starts the sprint and counts as tap #1', () => {
+    const r = play(50_000, [5_000]);
+    expect(r.t0).toBe(5_000);
+    expect(r.auto).toBe(false);
+    expect(r.taps).toBe(1);
+    expect(r.endAt).toBe(25_000);
+  });
+
+  it('starts by itself at the end of the window with 0 taps, and still finishes', () => {
+    const r = play(50_000, []);
+    expect(r.t0).toBe(30_000);
+    expect(r.auto).toBe(true);
+    expect(r.taps).toBe(0);
+    expect(r.endAt).toBe(50_000);
+    expect(r.doneCalls).toBe(1);
+  });
+
+  it('counts a touch at t0 + sprint - 1 and not one at t0 + sprint', () => {
+    const r = play(50_000, [1_000, 20_999, 21_000]);
+    expect(r.taps).toBe(2);
+    expect(r.late).toBe(1);
+    const auto = play(50_000, [49_999, 50_000]);
+    expect(auto.taps).toBe(1);
+  });
+
+  it('finishes exactly 20 s after the start, whenever the player starts', () => {
+    for (const start of [1_000, 12_345, 25_000, 29_990]) {
+      const r = play(50_000, steady(6, start, 25_000));
+      expect(r.endAt - r.t0).toBe(20_000);
+      expect(r.doneCalls).toBe(1);
+      expect(r.doneAtStep * STEP).toBeGreaterThanOrEqual(r.endAt);
+      expect(r.doneAtStep * STEP - r.endAt).toBeLessThan(STEP + 0.01);
+    }
+  });
+
+  it('a phone that joins after the window starts at once and is cut at the end of the round', () => {
+    const r = play(50_000, steady(8, 40_100, 20_000), 'jit', 3, 40_000);
+    expect(r.auto).toBe(true);
+    expect(r.t0).toBe(40_000);
+    expect(r.endAt).toBe(50_000);
+    expect(r.taps).toBeLessThanOrEqual(81);
+  });
+
+  it('fires done exactly once', () => {
+    const r = play(50_000, steady(10, 2_000, 40_000));
+    expect(r.doneCalls).toBe(1);
+  });
+});
+
+describe('tap engine: the anti-mash cap', () => {
+  it('never counts more than 283 in a sprint, however many fingers', () => {
+    const five: number[] = [];
+    for (const t of steady(30, 1_000, 25_000)) for (let f = 0; f < 5; f++) five.push(t + f * 0.3);
+    const r = play(50_000, five);
+    expect(r.taps).toBeLessThanOrEqual(283);
+    expect(r.taps).toBeGreaterThan(270);
+    const r30 = play(50_000, steady(30, 1_000, 25_000));
+    expect(r30.taps).toBeLessThanOrEqual(283);
+  });
+
+  it('never caps two fast thumbs at 12 taps/s', () => {
+    const r = play(50_000, steady(12, 1_000, 20_000));
+    expect(r.bounces).toBe(0);
+    expect(r.taps).toBe(240);
+    const jittery = play(50_000, steady(12, 1_000, 19_900, 0.5, 7));
+    expect(jittery.bounces).toBe(0);
+  });
+
+  it('counts a slow, normal and fast player in order', () => {
+    const slow = play(50_000, steady(3, 2_000, 20_000, 0.6, 3)).taps;
+    const normal = play(50_000, steady(6, 2_000, 20_000, 0.3, 4)).taps;
+    const fast = play(50_000, steady(11, 2_000, 20_000, 0.2, 5)).taps;
+    expect(slow).toBeGreaterThan(50);
+    expect(slow).toBeLessThan(70);
+    expect(normal).toBeGreaterThan(110);
+    expect(normal).toBeLessThan(130);
+    expect(fast).toBeGreaterThan(200);
+    expect(fast).toBeLessThanOrEqual(240);
+  });
+});
+
+describe('tap engine: determinism', () => {
+  it('the same touches give the same result at any step batching', () => {
+    const times = steady(9, 3_210, 21_000, 0.7, 42);
+    const a = play(50_000, times, 'jit');
+    const b = play(50_000, times, 'ahead');
+    const c = play(50_000, times, 'lag', 3);
+    const d = play(50_000, times, 'lag', 7);
+    for (const x of [b, c, d]) {
+      expect(x.taps).toBe(a.taps);
+      expect(x.milestones).toEqual(a.milestones);
+      expect(x.levels).toEqual(a.levels);
+      expect(x.trace).toBe(a.trace);
+    }
+  });
+});
+
+describe('tap engine: the smoothed rate and the hand level', () => {
+  it('settles at the tap rate', () => {
+    const e = createTapEngine(50_000);
+    let t = 0;
+    for (let i = 1; i <= 60 * 8; i++) {
+      const now = i * STEP;
+      while (t <= now) {
+        e.tap(t + 1_000);
+        t += 1000 / 6;
+      }
+      e.step(now + 1_000);
+    }
+    expect(e.state.rate).toBeGreaterThan(5.2);
+    expect(e.state.rate).toBeLessThan(7);
+    expect(e.state.rateSm).toBeGreaterThan(5.2);
+    expect(e.state.rateSm).toBeLessThan(7);
+  });
+
+  it('a slow tapper lives in L2/L3, a normal one in L3/L4, a fast one in L4/L5', () => {
+    const mid = (hz: number, j: number, seed: number): number[] => {
+      const r = play(50_000, steady(hz, 1_000, 20_000, j, seed));
+      // the middle of the sprint (before the last-quarter lock)
+      return r.levels.slice(Math.round(5_000 / STEP), Math.round(15_000 / STEP));
+    };
+    const share = (ls: number[], ok: (l: number) => boolean): number => ls.filter(ok).length / ls.length;
+    expect(share(mid(3, 0.2, 1), (l) => l === 2 || l === 3)).toBeGreaterThan(0.85);
+    expect(share(mid(6, 0.2, 2), (l) => l === 3 || l === 4)).toBeGreaterThan(0.85);
+    expect(share(mid(11, 0.2, 3), (l) => l === 4 || l === 5)).toBeGreaterThan(0.85);
+  });
+
+  it('stays in a level at least 300 ms and in the nose at least 700 ms', () => {
+    // a burst to the knuckle, then nothing
+    const r = play(50_000, steady(5, 1_000, 1_200));
+    const levels = r.levels;
+    let runStart = 0;
+    for (let i = 1; i < levels.length; i++) {
+      if (levels[i] !== levels[i - 1]) {
+        const prev = levels[i - 1] ?? 0;
+        const next = levels[i] ?? 0;
+        if (next < prev) expect((i - runStart) * STEP).toBeGreaterThanOrEqual(300 - 0.01);
+        runStart = i;
       }
     }
-    e.step(k * STEP);
-  }
-  return e.state;
-}
+    const firstIn = levels.findIndex((l) => l >= 3);
+    if (firstIn >= 0) {
+      const out = levels.findIndex((l, i) => i > firstIn && l < 3);
+      expect((out - firstIn) * STEP).toBeGreaterThanOrEqual(700 - 0.01);
+    }
+  });
 
-function mulberry(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+  it('locks the finger in (at least L3) in the last quarter of the sprint, and drops to 0 after it', () => {
+    const r = play(50_000, steady(1.5, 1_000, 22_000));
+    expect(r.minLevelBetween(16_100, 21_000)).toBeGreaterThanOrEqual(3);
+    expect(r.maxLevelAfter(21_100)).toBe(0);
+  });
+});
 
-/** Taps every `gap(t)` ms from 300 ms until the end; `fingers` taps a few ms apart per beat. */
-function rhythm(r: () => number, gap: (t: number) => number, fingers = 1, face: (i: number) => boolean = () => true, dur = D): Tap[] {
-  const out: Tap[] = [];
-  let t = 300;
-  while (t < dur - 250) {
-    for (let f = 0; f < fingers; f++) out.push({ t: t + f * (4 + r() * 12), face: face(f) });
-    t += gap(t);
-  }
-  // touches reach the page in time order
-  return out.sort((x, y) => x.t - y.t);
-}
+describe('tap engine: the ladder', () => {
+  it('fires every milestone once, in order, at the scaled counts', () => {
+    const r = play(50_000, steady(12, 1_000, 20_000));
+    expect(r.milestones.map((m) => m.id)).toEqual([...MILESTONE_IDS]);
+    expect(r.milestones.map((m) => m.taps)).toEqual([8, 18, 30, 45, 62, 80, 100, 140, 190]);
+  });
 
-const players = {
-  /** ~3 taps/s, irregular, with lapses and an excited flurry now and then. */
-  clumsy: (r: () => number): Tap[] => {
-    let flurry = 0;
-    return rhythm(
-      r,
-      () => {
-        if (flurry > 0) {
-          flurry--;
-          return 170 + r() * 60;
-        }
-        if (r() < 0.04) flurry = 6 + Math.floor(r() * 8);
-        if (r() < 0.06) return 500 + r() * 500;
-        return 260 + r() * 260;
-      },
-      1,
-      () => r() > 0.05,
-    );
-  },
-  normal: (r: () => number): Tap[] => rhythm(r, () => (r() < 0.02 ? 300 + r() * 200 : 150 + r() * 35)),
-  expert: (r: () => number): Tap[] => rhythm(r, () => 95 + r() * 10),
-  mash5face: (r: () => number): Tap[] => rhythm(r, () => 230 + r() * 40, 5),
-  mash5anywhere: (r: () => number): Tap[] => rhythm(r, () => 230 + r() * 40, 5, () => r() < 0.5),
-};
+  it('a slow player reaches the first four, a normal one up to the king', () => {
+    const slow = play(50_000, steady(3, 1_000, 20_000)).milestones.map((m) => m.id);
+    expect(slow).toEqual(['yossi', 'rope', 'ear', 'mini']);
+    const normal = play(50_000, steady(6, 1_000, 20_000)).milestones.map((m) => m.id);
+    expect(normal).toEqual(['yossi', 'rope', 'ear', 'mini', 'sneeze', 'squeegee', 'king']);
+  });
 
-describe('tap schedule', () => {
-  it('is a pure function of the seed and the length', () => {
-    const a = buildLevel(7, D);
-    const b = buildLevel(7, D);
-    const c = buildLevel(8, D);
+  it('scales with a short test round', () => {
+    const r = play(10_000, steady(12, 500, 4_000));
+    expect(r.milestones.length).toBe(9);
+    expect(r.milestones[0]?.taps).toBe(Math.round(8 * 0.2));
+  });
+});
+
+describe('tap schedule (seeded gags)', () => {
+  it('is the same for the same seed and differs between seeds', () => {
+    const a = buildLevel(7, 50_000);
+    const b = buildLevel(7, 50_000);
+    const c = buildLevel(8, 50_000);
     expect(a.fingerprint).toBe(b.fingerprint);
-    expect(a.boogers).toEqual(b.boogers);
-    expect(a.bigAt).toEqual(b.bigAt);
-    expect(c.fingerprint).not.toBe(a.fingerprint);
-    expect(boogerTraits(7, 12)).toEqual(boogerTraits(7, 12));
-    expect(boogerTraits(7, 12)).not.toEqual(boogerTraits(7, 13));
+    expect(a.fingerprint).not.toBe(c.fingerprint);
   });
 
-  it('booger sequence: no boss in normal digs, no golden twice in a row, no character three times', () => {
-    for (const seed of [1, 2, 3, 11, 99]) {
-      const lv = buildLevel(seed, D);
-      expect(lv.boogers).toHaveLength(BOOGER_SEQ_LEN);
-      const counts = new Map<number, number>();
-      lv.boogers.forEach((k, i) => {
-        counts.set(k, (counts.get(k) ?? 0) + 1);
-        expect(k).not.toBe(BOOGER.Boss);
-        if (i > 0 && k === BOOGER.Golden) expect(lv.boogers[i - 1]).not.toBe(BOOGER.Golden);
-        if (i > 1) expect(k === lv.boogers[i - 1] && k === lv.boogers[i - 2]).toBe(false);
-      });
-      // every normal character shows up, golden stays rare
-      for (const k of [BOOGER.Round, BOOGER.Stretchy, BOOGER.Googly, BOOGER.Hairy, BOOGER.Golden]) expect(counts.get(k) ?? 0).toBeGreaterThan(0);
-      expect((counts.get(BOOGER.Golden) ?? 0) / BOOGER_SEQ_LEN).toBeLessThan(0.08);
-      expect(boogerOf(lv, BOOGER_SEQ_LEN + 3)).toBe(lv.boogers[3]);
+  it('never drips the same kind twice in a row, roughly at the planned weights', () => {
+    const counts = [0, 0, 0, 0, 0, 0];
+    for (let seed = 1; seed <= 40; seed++) {
+      const l = buildLevel(seed, 50_000);
+      for (let i = 1; i < l.boogers.length; i++) expect(l.boogers[i]).not.toBe(l.boogers[i - 1]);
+      for (const k of l.boogers) counts[k] = (counts[k] ?? 0) + 1;
+      expect(l.boogers.includes(BOOGER.Golden)).toBe(false);
+      expect(l.boogers.includes(BOOGER.Boss)).toBe(false);
+    }
+    const total = counts.reduce((s, n) => s + n, 0);
+    expect((counts[BOOGER.Round] ?? 0) / total).toBeGreaterThan(0.3);
+    expect((counts[BOOGER.Stretchy] ?? 0) / total).toBeGreaterThan(0.08);
+  });
+
+  it('has exactly one golden drip, between taps 42 and 108', () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const l = buildLevel(seed, 50_000, 1, 6);
+      const tapOfDrip = (l.goldenDrip + 1) * 6;
+      expect(tapOfDrip).toBeGreaterThanOrEqual(GOLDEN_TAPS[0]);
+      expect(tapOfDrip).toBeLessThanOrEqual(GOLDEN_TAPS[1]);
+      let golden = 0;
+      for (let i = 0; i < 300; i++) if (boogerOf(l, i) === BOOGER.Golden) golden++;
+      expect(golden).toBe(1);
     }
   });
 
-  it('BIG booger thresholds rise in seeded gaps', () => {
-    const lv = buildLevel(5, D);
-    const first = lv.bigAt[0] ?? 0;
-    expect(first).toBeGreaterThanOrEqual(BIG_FIRST[0]);
-    expect(first).toBeLessThanOrEqual(BIG_FIRST[1]);
-    for (let i = 1; i < 30; i++) {
-      const gap = (lv.bigAt[i] ?? 0) - (lv.bigAt[i - 1] ?? 0);
-      expect(gap).toBeGreaterThanOrEqual(BIG_GAP[0]);
-      expect(gap).toBeLessThanOrEqual(BIG_GAP[1]);
-    }
-    expect(lv.frenzyFrom).toBe(45_000);
-  });
-});
-
-describe('tap pick meter and phases', () => {
-  it('6 taps/s fills the meter: the finger goes in within ~2 s and stays in', () => {
-    const taps = rhythm(mulberry(1), () => 1000 / 6, 1, () => true, 20_000);
-    let enteredAt = -1;
-    let exits = 0;
-    const s = play(1, taps, { dur: 20_000, on: { enter: () => (enteredAt = enteredAt < 0 ? 1 : enteredAt), exit: () => exits++ } });
-    expect(enteredAt).toBe(1);
-    expect(s.picks).toBe(1);
-    expect(exits).toBe(0);
-    expect(s.pickingMs).toBeGreaterThan(17_000);
-  });
-
-  it('3 regular taps/s never fills it before the frenzy; the hand rises and sinks', () => {
-    const taps = rhythm(mulberry(2), () => 1000 / 3, 1, () => true, 40_000);
-    const s = play(2, taps);
-    expect(s.picks).toBe(0);
-    expect(s.digs).toBe(0);
-    expect(s.score).toBeGreaterThan(50);
-  });
-
-  it('slowing down pulls the finger out and the hand sinks; spamming brings it back', () => {
-    // 8/s for 5 s, then 2/s for 4 s, then 8/s again
-    const taps: Tap[] = [];
-    for (let t = 300; t < 5_300; t += 125) taps.push({ t, face: true });
-    for (let t = 5_300; t < 9_300; t += 500) taps.push({ t, face: true });
-    for (let t = 9_300; t < 14_000; t += 125) taps.push({ t, face: true });
-    const meters: number[] = [];
-    const level = buildLevel(3, 20_000);
-    const e = createPickEngine(level, MAX, { exit: () => meters.push(e.state.meter) });
-    let i = 0;
-    const phases = new Set<string>();
-    for (let k = 1; k * STEP <= 14_500; k++) {
-      while (i < taps.length && (taps[i]?.t ?? 0) <= k * STEP) e.tap(taps[i]!.t, true), i++;
-      e.step(k * STEP);
-      phases.add(e.state.phase);
-    }
-    expect(e.state.picks).toBe(2);
-    expect(meters[0]).toBeLessThanOrEqual(PICK.EXIT_SINK + 1e-9);
-    expect([...phases].sort()).toEqual(['idle', 'picking', 'rising']);
-  });
-
-  it('a dig is +5 and throws the seeded booger; the BIG booger comes at the seeded dig count', () => {
-    const level = buildLevel(4, D);
-    const digs: Array<[number, number, number]> = [];
-    const bigs: number[] = [];
-    const taps = rhythm(mulberry(4), () => 100, 1, () => true, 12_000);
-    play(4, taps, { dur: 12_000, on: { dig: (i, k, p) => digs.push([i, k, p]), bigStart: (i) => bigs.push(i) } });
-    expect(digs.length).toBeGreaterThan(40);
-    for (const [i, k, p] of digs) {
-      expect(k).toBe(boogerOf(level, i));
-      expect(p).toBe(k === BOOGER.Golden ? PICK.DIG_POINTS + PICK.GOLDEN_BONUS : PICK.DIG_POINTS);
-    }
-    expect(bigs.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('the BIG moment: taps pull (+1), the bonus is counted once, the finger stays in', () => {
-    let sawPull = 0;
-    let bonus = 0;
-    const s = play(9, rhythm(mulberry(9), () => 100, 1, () => true, 15_000), {
-      dur: 15_000,
-      on: { pull: (_i, p) => (sawPull += p), bigStart: (_i, b) => (bonus += b) },
-    });
-    expect(s.bigBoogers).toBeGreaterThanOrEqual(2);
-    expect(bonus).toBe(s.bigBoogers * PICK.BIG_BONUS);
-    expect(sawPull).toBeGreaterThan(0);
-    expect(s.picks).toBe(1);
-  });
-});
-
-describe('tap fairness', () => {
-  it('same taps = same result at 60 Hz and at 20 fps (taps applied at their own step)', () => {
-    for (const [name, mk] of Object.entries(players)) {
-      const taps = mk(mulberry(31));
-      const a = play(11, taps, { batchSteps: 1 });
-      const b = play(11, taps, { batchSteps: 3 });
-      const c = play(11, taps, { batchSteps: 6 });
-      expect({ name, ...b }).toEqual({ name, ...a });
-      expect({ name, ...c }).toEqual({ name, ...a });
-    }
-  });
-
-  it('a held finger is one tap; the meter drains to nothing', () => {
-    const s = play(1, [{ t: 400, face: true }]);
-    expect(s.hits).toBe(1);
-    expect(s.score).toBe(1);
-    expect(s.meter).toBeLessThan(0.001);
-    expect(s.phase).toBe('idle');
-  });
-
-  it('no steps (a freeze) = nothing drains, nothing scores', () => {
-    const level = buildLevel(2, D);
-    const e = createPickEngine(level, MAX);
-    for (let k = 1; k <= 120; k++) {
-      if (k % 10 === 0) e.tap(k * STEP, true);
-      e.step(k * STEP);
-    }
-    const before = { ...e.state };
-    e.tap(2_100, true); // queued but its step never comes while frozen
-    expect({ ...e.state }).toEqual(before);
-  });
-
-  it('five fingers at once count as one or two taps, and never more than HIT_RATE per second', () => {
-    const chord: Tap[] = [];
-    for (let t = 300; t < 10_300; t += 250) for (let f = 0; f < 5; f++) chord.push({ t: t + f * 8, face: true });
-    const s = play(1, chord, { dur: 11_000 });
-    expect(s.hits).toBeLessThanOrEqual(40 * 2);
-    expect(s.bounces).toBeGreaterThan(s.hits);
-    const fast = rhythm(mulberry(5), () => 25, 1, () => true, 11_000); // 40 taps/s
-    const f = play(1, fast, { dur: 11_000 });
-    expect(f.hits / 10.5).toBeLessThanOrEqual(PICK.HIT_RATE + 0.5);
-  });
-
-  it('a miss costs 1 (never below 0) and breaks the combo', () => {
-    const s = play(1, [
-      { t: 300, face: false },
-      { t: 400, face: true },
-      { t: 500, face: true },
-      { t: 600, face: false },
-    ]);
-    expect(s.misses).toBe(2);
-    expect(s.score).toBe(1);
-    expect(s.combo).toBe(0);
-  });
-
-  it('players: expert > normal > clumsy > 0 with clear gaps, expert below 60% of maxRaw, mashing below one finger', () => {
-    const res: Record<string, number[]> = {};
-    for (const seed of [11, 12, 13, 14]) {
-      for (const [name, mk] of Object.entries(players)) (res[name] ??= []).push(play(seed, mk(mulberry(seed * 13 + name.length))).score);
-    }
-    for (let i = 0; i < 4; i++) {
-      const c = res.clumsy?.[i] ?? 0;
-      const n = res.normal?.[i] ?? 0;
-      const x = res.expert?.[i] ?? 0;
-      expect(c).toBeGreaterThan(100);
-      expect(n).toBeGreaterThan(c * 2);
-      expect(x).toBeGreaterThan(n * 1.3);
-      expect(x).toBeLessThan(MAX * 0.6);
-      expect(res.mash5face?.[i] ?? 0).toBeLessThan(x * 0.75); // five fingers never beat one fast finger
-      expect(res.mash5anywhere?.[i] ?? 0).toBeLessThan(n);
+  it('never repeats a waiting bit or a final-frame gag twice in a row, and uses each filler once', () => {
+    for (let seed = 1; seed <= 30; seed++) {
+      const l = buildLevel(seed, 50_000);
+      for (let i = 1; i < l.idleBits.length; i++) expect(l.idleBits[i]).not.toBe(l.idleBits[i - 1]);
+      for (let i = 1; i < l.alive.length; i++) expect(l.alive[i]).not.toBe(l.alive[i - 1]);
+      expect([...l.fillers].sort()).toEqual([0, 1, 2]);
     }
   });
 });
