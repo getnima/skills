@@ -270,6 +270,8 @@ function flightOf(seed: number, finaleAtMs: number | null): ReturnType<typeof cr
 
 const stateLatency = new Stats();
 const scoreEcho = new Stats();
+/** Set before the final checks: no new random drops, so "everybody is back" is a fair question. */
+let churnStopped = false;
 /** What one phone (bot 0) receives: messages and JSON bytes per event, the biggest state. */
 const downlink = { since: 0, bytes: 0, maxState: 0, byEvent: new Map<string, { n: number; bytes: number }>() };
 
@@ -470,7 +472,7 @@ class Bot {
 
   private maybeChurn(): boolean {
     const perTick = this.opts.churn * (SCORE_SEND_INTERVAL_MS / 1000);
-    if (!this.joined || this.awaitingAck || Math.random() >= perTick) return false;
+    if (churnStopped || !this.joined || this.awaitingAck || Math.random() >= perTick) return false;
     this.reconnects++;
     this.joined = false;
     this.socket.disconnect();
@@ -672,6 +674,12 @@ async function selfHosted(opts: Options): Promise<number> {
   await waitFor('the podium cutscene to end', 2 * 60_000, () => state?.cutscene === null);
   await sleep(200);
 
+  // a phone dropped by the churn a moment ago is still on its way back: stop the churn and give it time
+  if (opts.churn > 0 || opts.storm) {
+    churnStopped = true;
+    await waitFor('every bot back in its own seat', 8_000, () => bots.every((b) => b.isJoined)).catch(() => undefined);
+    await sleep(300);
+  }
   const finalState = state as RoomState | null;
   if (finalState === null) throw new Error('no final state');
   let totalsBad = 0;

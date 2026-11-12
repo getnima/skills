@@ -207,9 +207,14 @@ real party timing: 40 phones played all five games (`tests/load/bots.ts --player
 --rounds 5 --churn 0.02 --storm`: every phone also drops at random ~2% of seconds, and in
 every round all 40 drop at once mid-round and come back 0.5-3 s later), with every row,
 point, rank and total equal to `shared/scoring.ts` and nobody ever becoming a second
-player. The server used about 2% of one core on average (5% at the peak), about 85 MB of
-memory, and answered a ping in 0.5 ms (p99 under 5 ms) throughout, including the storms.
-So the e2-small VM (2 shared vCPUs, 2 GB) has room to spare. Phones send a live score
+player: 503 random drops plus five storms (38-40 phones at once), and all 40 ended in their
+own seats. The server used 1.6% of one core on average (9% in its busiest second), at most
+91 MB of memory, and answered a ping in 0.5 ms (p99 2.2 ms, slowest 24 ms, none lost); a room
+update reached the phones in 2 ms (p99 7 ms). One phone received 24 KB/s on average in that
+churn-heavy run (the biggest room update is 13 KB with 40 guests). The room's cap, 60
+phones, also passes the same run (461 drops and five storms, all 60 back in their seats,
+every total right, room updates in 3.5 ms, p99 25 ms). So the e2-small VM (2 shared vCPUs,
+2 GB) has room to spare. Phones send a live score
 every 250 ms; the server merges them into one `scores` message per 250 ms for the whole
 room, and dolls into one `looks` message per 200 ms, so traffic grows gently with the
 head count. The TV shows 40: the lobby grid holds every name, the race shows the top 5 and
