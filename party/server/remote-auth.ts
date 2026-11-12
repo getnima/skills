@@ -112,7 +112,7 @@ export class GuessThrottle {
 /** Hebrew "wait N seconds", rounded up. */
 export function waitText(retryMs: number): string {
   const s = Math.max(1, Math.ceil(retryMs / 1000));
-  return `יותר מדי ניסיונות. נסו שוב בעוד ${s} שניות`;
+  return `יותר מדי ניסיונות. נסו שוב בעוד ${s === 1 ? 'שנייה' : `${s} שניות`}`;
 }
 
 // ───────────────────────────── Relay ─────────────────────────────

@@ -33,6 +33,7 @@ export default defineConfig({
       input: {
         player: resolve(import.meta.dirname, 'client/index.html'),
         host: resolve(import.meta.dirname, 'client/host.html'),
+        remote: resolve(import.meta.dirname, 'client/remote.html'),
         dev: resolve(import.meta.dirname, 'client/dev.html'),
         show: resolve(import.meta.dirname, 'client/show.html'),
         avatar: resolve(import.meta.dirname, 'client/avatar-lab.html'),

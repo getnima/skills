@@ -2,7 +2,7 @@
 const { chromium } = require('playwright');
 (async () => {
   const browser = await chromium.launch();
-  for (const mode of (process.env.MODES || 'canvas,presized,presized-contain,presized-240').split(',')) {
+  for (const mode of (process.env.MODES || 'presized-240,img-240').split(',')) {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     await page.goto(`http://localhost:${process.env.AVATAR_PORT || 5291}/avatar-lab.html?view=room`);

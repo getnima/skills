@@ -32,9 +32,10 @@ export interface PlayDebug {
   chase: string;
   /** The HUD shows the first-place crown. */
   first: boolean;
-  /** ▲ / ▼ shown this round. */
+  /** ▲ / ▼ shown this round, and the latest of the two. */
   ups: number;
   downs: number;
+  lastMove: 'up' | 'down' | null;
   /** This round's `scores` messages received by this phone. */
   scoresMsgs: number;
   /** The latest of them ([playerId, score] in the strict live order) and when it came (performance.now()). */
@@ -42,8 +43,12 @@ export interface PlayDebug {
   lastScoresAt: number;
   /** The one before it (the HUD paints at most 4 a second, so it may still show that one). */
   prevScores: ReadonlyArray<readonly [string, number]> | null;
+  /** The last few messages with their arrival times, newest last. */
+  recentScores: Array<{ readonly scores: ReadonlyArray<readonly [string, number]>; readonly at: number }>;
   /** performance.now() when the HUD last painted. */
   placeAt: number;
+  /** ctx.hudHeight the game got (0 until the stage is up). */
+  hudHeight: number;
 }
 
 declare global {
@@ -86,11 +91,14 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
       first: false,
       ups: 0,
       downs: 0,
+      lastMove: null,
       scoresMsgs: 0,
+      recentScores: [],
       lastScores: null,
       lastScoresAt: 0,
       prevScores: null,
       placeAt: 0,
+      hudHeight: 0,
     };
     window.__playerPlay = debug;
 
@@ -116,6 +124,8 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
       debug.lastScores = msg.scores;
       debug.lastScoresAt = msg.at;
       debug.scoresMsgs++;
+      debug.recentScores.push({ scores: msg.scores, at: msg.at });
+      if (debug.recentScores.length > 4) debug.recentScores.shift();
       stage?.setStanding(standingOf(msg));
     };
     const offScores = ctl.onLiveScores(onScores);
@@ -126,6 +136,7 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
       debug.first = s.first;
       debug.ups = s.ups;
       debug.downs = s.downs;
+      debug.lastMove = s.lastMove;
       debug.placeAt = s.appliedAt;
     };
 
@@ -163,6 +174,7 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
         return;
       }
       stage = s;
+      debug.hudHeight = s.hudHeight;
       // A message that came while the game was loading (or before a reload's first paint).
       const last = ctl.liveScores();
       if (last !== null && last.round === index) {

@@ -10,7 +10,7 @@ const PORT = process.env.AVATAR_PORT || 5291;
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(`http://localhost:${PORT}/avatar-lab.html?${q}`);
-  await page.waitForFunction(() => window.__avatarLab && window.__avatarLab.ready, null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__avatarLab && window.__avatarLab.ready, null, { timeout: 60000, polling: 250 });
   await page.waitForTimeout(500);
   const out = path.join(__dirname, 'out', 'avatar-core', `${name}.png`);
   await page.screenshot({ path: out, fullPage: full === '1' });

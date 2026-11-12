@@ -23,7 +23,7 @@ async function open(browser, query, opts = {}) {
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
   if (opts.before) await opts.before(page, ctx);
   await page.goto(`${BASE}?${query}`);
-  await page.waitForFunction(() => window.__avatarLab && window.__avatarLab.ready, null, { timeout: 120000 });
+  await page.waitForFunction(() => window.__avatarLab && window.__avatarLab.ready, null, { timeout: 120000, polling: 250 });
   await page.waitForTimeout(400);
   return { ctx, page, errors };
 }
@@ -39,7 +39,7 @@ async function open(browser, query, opts = {}) {
     check(errors.length === 0 && lab.errors.length === 0, `${name}: no errors ${JSON.stringify([...errors, ...lab.errors])}`);
     if (name === 'view-items') {
       const n = await page.locator('[data-item]').count();
-      const imgs = await page.evaluate(() => [...document.querySelectorAll(".av canvas")].every((c) => c.dataset.ready === "1" && c.width >= 48));
+      const imgs = await page.evaluate(() => [...document.querySelectorAll(".av")].every((a) => { const i = a.querySelector("img"); return i && i.complete && i.naturalWidth >= 48; }));
       check(n >= 17 && imgs, `items view: ${n} items, every avatar has a loaded picture`);
     }
     if (name === 'view-room') {
@@ -93,8 +93,8 @@ async function open(browser, query, opts = {}) {
       before: async (p, c) => { const cdp = await c.newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 }); },
     });
     const lab = await page.evaluate(() => window.__avatarLab);
-    const loaded = await page.evaluate(() => [...document.querySelectorAll(".av canvas")].filter((c) => c.dataset.ready === "1").length);
-    console.log(`     wall n=${n} (x2 sizes: 40 and 96 css px -> 48 and 96 device px), 4x CPU: ${lab.wallMs.toFixed(0)} ms (composing ${lab.wallComposeMs.toFixed(0)} ms), cache ${lab.cache.bitmaps} pictures ${(lab.cache.bitmapBytes / 1024).toFixed(0)} KB, ${loaded} avatars painted`);
+    const loaded = await page.evaluate(() => [...document.querySelectorAll(".av img")].filter((i) => i.complete && i.naturalWidth >= 48).length);
+    console.log(`     wall n=${n} (x2 sizes: 40 and 96 css px -> 48 and 96 device px), 4x CPU: ${lab.wallMs.toFixed(0)} ms (composing ${lab.wallComposeMs.toFixed(0)} ms), cache ${lab.cache.bitmaps} bitmaps ${(lab.cache.bitmapBytes / 1024).toFixed(0)} KB + ${lab.cache.urls} URLs ${(lab.cache.urlBytes / 1024).toFixed(0)} KB, ${loaded} avatars painted`);
     check(lab.wallMs < 1500, `wall n=${n}: composed and shown in ${lab.wallMs.toFixed(0)} ms (< 1500)`);
     check(loaded === n * 3 && errors.length === 0, `wall n=${n}: all ${n * 3} avatars painted (40, 96, then the 28 px row), no errors ${JSON.stringify(errors)}`);
     if (n === 60) {
@@ -124,7 +124,7 @@ async function open(browser, query, opts = {}) {
     });
     await page.screenshot({ path: path.join(OUT, 'broken-pictures.png'), fullPage: true });
     const lab = await page.evaluate(() => window.__avatarLab);
-    const shown = await page.evaluate(() => [...document.querySelectorAll(".av canvas")].every((c) => c.dataset.ready === "1" && c.width >= 48));
+    const shown = await page.evaluate(() => [...document.querySelectorAll(".av")].every((a) => { const i = a.querySelector("img"); return i && i.complete && i.naturalWidth >= 48; }));
     check(errors.length === 0 && lab.errors.length === 0, `404: nothing throws ${JSON.stringify([...errors, ...lab.errors])}`);
     check(shown, '404: every avatar still shows a picture (the broken items are simply not worn)');
     await ctx.close();

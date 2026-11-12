@@ -5,11 +5,11 @@
  */
 import './avatar.css';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useLayoutEffect, useState } from 'preact/hooks';
 
 import { lookKey } from '../../../shared/avatar';
 import { plateColor } from './catalog';
-import { avatarBitmap, avatarBucket, avatarUrl, holdAvatarUrl, peekAvatarBitmap, peekAvatarUrl } from './compose';
+import { avatarUrl, holdAvatarUrl, peekAvatarUrl } from './compose';
 
 import type { JSX } from 'preact';
 
@@ -44,9 +44,8 @@ function keyOf(look: AvatarLook | string | null | undefined): string {
 }
 
 /**
- * The picture URL of a look (for your own <img> or a CSS background), or null until it is ready.
+ * The picture URL of a look (for an <img> or a CSS background), or null until it is ready.
  * The URL is kept alive while the component is mounted. `size` is in CSS pixels.
- * <Avatar /> itself does not use it: it paints the cached canvas, which is cheaper.
  */
 export function useAvatarUrl(look: AvatarLook | string | null | undefined, size: number, crop: AvatarCrop = 'icon'): string | null {
   const key = keyOf(look);
@@ -56,7 +55,7 @@ export function useAvatarUrl(look: AvatarLook | string | null | undefined, size:
   }));
   const id = `${key}|${size}|${crop}`;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let alive = true;
     const release = holdAvatarUrl(key, size, crop);
     const cached = peekAvatarUrl(key, size, crop);
@@ -81,44 +80,16 @@ function bgOf(key: string): number {
   return Number(key.split('.')[1] ?? 0) || 0;
 }
 
-function paint(target: HTMLCanvasElement | null, source: HTMLCanvasElement): void {
-  if (target === null) return;
-  if (target.width !== source.width || target.height !== source.height) {
-    target.width = source.width;
-    target.height = source.height;
-  }
-  const g = target.getContext('2d');
-  if (g === null) return;
-  g.clearRect(0, 0, target.width, target.height);
-  g.drawImage(source, 0, 0);
-  target.dataset.ready = '1';
-}
-
 /**
- * The avatar. A fixed square span in the plate's colour with a small canvas inside; the cached
- * composed picture is painted into it (no PNG encode / decode, so a wall of 120 is cheap).
- * While a new look is being composed the previous picture stays.
+ * The avatar: a fixed square span in the plate's colour with an <img> inside once the picture is
+ * composed. (An <img>, not a <canvas>: a wall of small canvases makes the browser re-upload each
+ * of them on every frame; images are painted once.) While a new look is being composed the
+ * previous picture stays.
  */
 export function Avatar(props: AvatarProps): JSX.Element {
   const { size, crop = 'icon', ring = false, round = false, label } = props;
   const key = keyOf(props.look);
-  const ref = useRef<HTMLCanvasElement>(null);
-  const bucket = avatarBucket(size);
-
-  useLayoutEffect(() => {
-    let alive = true;
-    const cached = peekAvatarBitmap(key, size, crop);
-    if (cached !== null) paint(ref.current, cached);
-    else {
-      void avatarBitmap(key, size, crop).then((c) => {
-        if (alive) paint(ref.current, c);
-      });
-    }
-    return () => {
-      alive = false;
-    };
-  }, [key, size, crop]);
-
+  const url = useAvatarUrl(key, size, crop);
   const cls = `av${ring ? ' av-ring' : ''}${round ? ' av-round' : ''}${props.class !== undefined ? ` ${props.class}` : ''}`;
   return (
     <span
@@ -128,7 +99,7 @@ export function Avatar(props: AvatarProps): JSX.Element {
       aria-label={label}
       aria-hidden={label === undefined ? 'true' : undefined}
     >
-      <canvas ref={ref} width={bucket} height={bucket} />
+      {url !== null && <img src={url} alt="" draggable={false} />}
     </span>
   );
 }

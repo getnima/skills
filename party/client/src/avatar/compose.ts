@@ -239,7 +239,8 @@ function composeInner(input: AvatarLook | string, opts: ComposeOptions): Compose
   const crop = opts.crop ?? 'icon';
   const look = normalizeLook(typeof input === 'string' ? decodeLook(input) : input);
   const out = makeCanvas(size, size);
-  const g = out.getContext('2d');
+  // small pictures are read back (BMP) right after: keep them in plain memory, not on the GPU
+  const g = out.getContext('2d', { willReadFrequently: size <= 192 });
   if (g === null) return { canvas: out, complete: false };
   if (opts.plate !== false) drawPlate(g, look.bg, size);
 
@@ -443,7 +444,7 @@ const SLICE_MS = 8;
  * Finished pictures are handed out in batches (when the queue is empty, or every FLUSH_MS):
  * every hand-out repaints the page, and one repaint for 40 new icons costs far less than 40 repaints.
  */
-const FLUSH_MS = 120;
+const FLUSH_MS = 160;
 let handOut: (() => void)[] = [];
 let lastFlush = 0;
 
@@ -522,7 +523,7 @@ function fromBigger(r: Request): Composed | null {
     }
     if (big === undefined) continue;
     const c = makeCanvas(r.bucket, r.bucket);
-    const g = c.getContext('2d');
+    const g = c.getContext('2d', { willReadFrequently: true });
     if (g === null) return null;
     g.imageSmoothingQuality = 'high';
     g.drawImage(big, 0, 0, r.bucket, r.bucket);
@@ -609,14 +610,46 @@ function dataUrl(canvas: HTMLCanvasElement): string {
   }
 }
 
-function blobOf(canvas: HTMLCanvasElement): Promise<Blob | null> {
-  return new Promise((resolve) => {
-    try {
-      canvas.toBlob((b) => resolve(b), 'image/png');
-    } catch {
-      resolve(null);
+/**
+ * The canvas as an uncompressed 32-bit BMP. Why not PNG: encoding 240 PNGs and decoding them again
+ * costs seconds on a slow TV laptop; a BMP is a header plus the raw pixels, so both ways are a copy.
+ * Every browser shows BMP in <img> and CSS. The plate is opaque, so alpha is not needed
+ * (a transparent pixel comes out black: use avatarCanvas for cut-outs).
+ */
+export function canvasToBmp(canvas: HTMLCanvasElement): Blob | null {
+  try {
+    const w = canvas.width;
+    const h = canvas.height;
+    const g = canvas.getContext('2d');
+    if (g === null) return null;
+    const src = new Uint32Array(g.getImageData(0, 0, w, h).data.buffer);
+    const out = new ArrayBuffer(54 + w * h * 4);
+    const v = new DataView(out);
+    v.setUint16(0, 0x4d42, true); // "BM"
+    v.setUint32(2, out.byteLength, true);
+    v.setUint32(10, 54, true); // pixel data offset
+    v.setUint32(14, 40, true); // BITMAPINFOHEADER
+    v.setInt32(18, w, true);
+    v.setInt32(22, h, true); // positive = bottom-up rows, the form every decoder knows
+    v.setUint16(26, 1, true);
+    v.setUint16(28, 32, true);
+    v.setUint32(34, w * h * 4, true);
+    v.setUint32(38, 2835, true);
+    v.setUint32(42, 2835, true);
+    const dst = new DataView(out, 54);
+    // canvas pixels are RGBA bytes = 0xAABBGGRR as little-endian words; BMP wants BGRX bytes = 0xXXRRGGBB
+    let o = 0;
+    for (let y = h - 1; y >= 0; y--) {
+      let i = y * w;
+      for (let x = 0; x < w; x++, i++, o += 4) {
+        const p = src[i] ?? 0;
+        dst.setUint32(o, ((p & 0xff) << 16) | (p & 0xff00) | ((p >>> 16) & 0xff) | 0xff000000, true);
+      }
     }
-  });
+    return new Blob([out], { type: 'image/bmp' });
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -625,7 +658,7 @@ function blobOf(canvas: HTMLCanvasElement): Promise<Blob | null> {
  * Resolves at once when cached. Never rejects: when a picture cannot be loaded the URL shows the
  * plate with what could be drawn (the bare head). The URL is an object URL that is revoked when
  * the cache is full, unless it is held (holdAvatarUrl / useAvatarUrl): ask again rather than
- * storing it. For lists of many avatars prefer <Avatar /> (it paints the cached canvas, no PNG).
+ * storing it. The picture is a BMP (see canvasToBmp): instant to make and to show.
  */
 export function avatarUrl(look: AvatarLook | string, size: number, crop: AvatarCrop = 'icon'): Promise<string> {
   let r: Request;
@@ -642,10 +675,10 @@ export function avatarUrl(look: AvatarLook | string, size: number, crop: AvatarC
   const running = urlPending.get(r.key);
   if (running !== undefined) return running;
   const p = bitmapFor(r)
-    .then(async (canvas) => {
+    .then((canvas) => {
       // only pictures that made it into the bitmap cache are complete
       if (bitmaps.get(r.key)?.canvas !== canvas) return dataUrl(canvas);
-      const blob = await blobOf(canvas);
+      const blob = canvasToBmp(canvas);
       if (blob === null) return dataUrl(canvas);
       const url = URL.createObjectURL(blob);
       urls.set(r.key, { url, bytes: blob.size, refs: earlyRefs.get(r.key) ?? 0 });

@@ -30,6 +30,8 @@ export interface PlayStage extends Stage {
   setStanding(standing: LiveStanding | null): void;
   /** What the place chip / chase line show right now. */
   placeShown(): PlaceShown;
+  /** ctx.hudHeight as given to the game (HUD block + safe-area top). */
+  readonly hudHeight: number;
 }
 
 /** Shell-only extras (not part of the game contract). */
@@ -342,6 +344,7 @@ export async function mountStageWith(
       if (!over) place.set(standing);
     },
     placeShown: (): PlaceShown => place.shown(),
+    hudHeight: ctx.hudHeight,
     destroy(): void {
       if (root.isConnected) root.remove();
       if (over) return;

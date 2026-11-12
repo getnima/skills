@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { AVATAR_SLOTS, decodeLook, defaultLook, encodeLook, randomLook } from '../../../shared/avatar';
 import { Avatar } from './Avatar';
 import { AVATAR_BGS, CATALOG_PROBLEMS, DOLL, ITEMS, ITEM_IDS, getItem, itemAr, itemsOfSlot, normalizeLook } from './catalog';
-import { avatarBitmap, avatarCacheStats, composeAvatar, preloadAvatarAssets } from './compose';
+import { avatarCacheStats, avatarUrl, composeAvatar, preloadAvatarAssets } from './compose';
 import { frameLook } from './layout';
 
 import type { ComponentType, JSX } from 'preact';
@@ -177,6 +177,16 @@ function SlotsView(): JSX.Element {
   );
 }
 
+/** Resolves when every avatar on the page has its picture decoded and a frame was painted. */
+async function imagesShown(): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    await new Promise((r) => setTimeout(r, 16));
+    const spans = document.querySelectorAll('.av');
+    const imgs = document.querySelectorAll<HTMLImageElement>('.av > img');
+    if (imgs.length === spans.length && [...imgs].every((im) => im.complete && im.naturalWidth > 0)) break;
+  }
+}
+
 function WallView(): JSX.Element {
   const n = Math.max(1, Math.min(400, Number(query.get('n') ?? 120) || 120));
   const [looks] = useState(() => Array.from({ length: n }, (_, i) => randomLook(seed * 1000 + i, ITEM_IDS)));
@@ -191,7 +201,8 @@ function WallView(): JSX.Element {
       await new Promise((r) => setTimeout(r, 300));
       const t0 = performance.now();
       setGo(true);
-      await Promise.all(looks.flatMap((l) => [avatarBitmap(l, 40), avatarBitmap(l, 96)]));
+      await Promise.all(looks.flatMap((l) => [avatarUrl(l, 40), avatarUrl(l, 96)]));
+      await imagesShown();
       report.wallComposeMs = performance.now() - t0;
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       const dt = performance.now() - t0;
@@ -200,7 +211,8 @@ function WallView(): JSX.Element {
       report.cache = avatarCacheStats();
       if (alive) setMs(dt);
       // the 28 px row (the TV lobby at 60 players) comes after the measurement: the brief's wall is 40 + 96
-      await Promise.all(looks.map((l) => avatarBitmap(l, 28)));
+      await Promise.all(looks.map((l) => avatarUrl(l, 28)));
+      await imagesShown();
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       report.ready = true;
     });
@@ -219,7 +231,7 @@ function WallView(): JSX.Element {
         <p class="lab-note" id="wall-stat" style={{ direction: 'ltr' }}>
           {ms === null
             ? 'composing…'
-            : `${n} looks x 2 sizes (40, 96) in ${ms.toFixed(0)} ms · cache ${stats?.bitmaps} pictures, ${((stats?.bitmapBytes ?? 0) / 1024).toFixed(0)} KB`}
+            : `${n} looks x 2 sizes (40, 96) in ${ms.toFixed(0)} ms · cache ${stats?.bitmaps} pictures ${((stats?.bitmapBytes ?? 0) / 1024).toFixed(0)} KB + ${stats?.urls} URLs ${((stats?.urlBytes ?? 0) / 1024).toFixed(0)} KB`}
         </p>
         <div class="lab-wall tv" data-wall="28" style={{ minHeight: '28px' }}>
           {ms !== null && looks.map((l, i) => <Avatar key={i} look={l} size={28} />)}
@@ -400,7 +412,7 @@ function Lab(): JSX.Element {
     if (view === 'items' || view === 'slots') {
       void preloadAvatarAssets().then(() => setTimeout(() => {
         const wait = (): void => {
-          if (avatarCacheStats().pending === 0) report.ready = true;
+          if (avatarCacheStats().pending === 0) void imagesShown().then(() => (report.ready = true));
           else setTimeout(wait, 100);
         };
         wait();
@@ -424,7 +436,7 @@ function Lab(): JSX.Element {
           ))}
         </nav>
         <span class="lab-stat">
-          {ITEMS.length} items · cache {s.bitmaps} / {(s.bitmapBytes / 1024).toFixed(0)} KB · pending {s.pending}
+          {ITEMS.length} items · cache {s.bitmaps} / {((s.bitmapBytes + s.urlBytes) / 1024).toFixed(0)} KB · pending {s.pending}
           {CATALOG_PROBLEMS.length > 0 ? ` · ${CATALOG_PROBLEMS.length} CATALOG PROBLEMS` : ''}
         </span>
       </header>

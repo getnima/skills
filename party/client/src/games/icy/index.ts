@@ -249,11 +249,13 @@ export const game: GameModule = {
     // one fading in) that the compositor moves; no full-screen fill on the canvas per frame ──
     const skyA = document.createElement('div');
     const skyB = document.createElement('div');
-    for (const el of [skyA, skyB]) el.style.cssText = 'position:absolute;inset:0;pointer-events:none';
+    for (const el of [skyA, skyB]) el.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:-2';
     const backEls = [document.createElement('canvas'), document.createElement('canvas')] as const;
-    for (const el of backEls) el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;will-change:transform;opacity:1';
+    for (const el of backEls) el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;will-change:transform;opacity:1;z-index:-1';
     backEls[1].style.opacity = '0';
-    ctx.root.prepend(skyA, skyB, backEls[0], backEls[1]);
+    ctx.root.prepend(skyA, skyB);
+    // after the game canvas in the DOM (it stays the root's first canvas for the test hooks), behind it by z-index
+    view.canvas.after(backEls[0], backEls[1]);
     let skyZone = -1;
     let skyMix = -1;
     const backZone = [-1, -1];
@@ -975,7 +977,8 @@ export const game: GameModule = {
       const half = level.half[j] ?? 0;
       const left = wx((level.x[j] ?? 0) - half);
       const w = half * 2 * scale;
-      const h = FLOOR_H * scale;
+      // drawn a bit thicker than FLOOR_H (looks only: the walkable line is the top edge)
+      const h = FLOOR_H * scale * 1.35;
       const tile = milestone ? art.milestone : art.platform;
       const r = Math.min(h * 0.4, 6);
       // hard shadow on the back wall
@@ -995,6 +998,8 @@ export const game: GameModule = {
         g.fillStyle = milestone ? PAL.red : L.face;
         roundRectPath(g, left, sy, w, h, r);
         g.fill();
+        g.fillStyle = milestone ? PAL.redD : 'rgba(22, 18, 14, 0.22)';
+        g.fillRect(left + 1.5, sy + h * 0.74, w - 3, h * 0.26 - 1.5);
         g.fillStyle = milestone ? PAL.yel : PAL.paper;
         g.fillRect(left + 1.5, sy + 1.5, w - 3, h * 0.42);
         // ice shine on the face
@@ -1305,18 +1310,18 @@ export const game: GameModule = {
     function drawDanger(): void {
       if (mode !== 'run' || !cam.camOn) return;
       const margin = body.py + 2 * R - cam.cam;
-      const k = clamp(1 - (margin - 10) / 130, 0, 1);
+      const k = clamp(1 - (margin - 10) / 170, 0, 1);
       if (k <= 0) return;
       const g = view.ctx;
       const pulse = 0.75 + 0.25 * Math.sin(steps * (0.25 + k * 0.25));
-      const h = (8 + 22 * k) * pulse;
+      const h = (10 + 30 * k) * pulse;
       const yb = view.height;
       const y0 = bottom - h;
       // stepped flat red bands above the tape (no gradient)
       g.fillStyle = PAL.red;
       for (let i = 1; i <= 3; i++) {
-        g.globalAlpha = 0.16 * k * (4 - i) * 0.5;
-        g.fillRect(offX, y0 - i * 12 * k, playW, 12 * k);
+        g.globalAlpha = 0.2 * k * (4 - i) * 0.5;
+        g.fillRect(offX, y0 - i * 16 * k, playW, 16 * k);
       }
       g.globalAlpha = 0.55 + 0.45 * k;
       g.save();

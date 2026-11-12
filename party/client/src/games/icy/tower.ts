@@ -25,7 +25,7 @@ export interface ZoneLook {
   readonly deco: 'window' | 'heart' | 'torch' | 'sun';
   /** Front face of a normal floor (its top is always paper). */
   readonly face: string;
-  /** CSS sky outside the tower (landscape / desktop only). */
+  /** CSS background outside the tower (landscape / desktop only): flat, the summit a sunburst. */
   readonly sky: string;
   /** Snow colour. */
   readonly snow: string;
@@ -43,7 +43,7 @@ export const ZONE_LOOKS: readonly ZoneLook[] = [
     joint: 'rgba(22, 18, 14, 0.55)',
     deco: 'window',
     face: '#bcd2ff',
-    sky: `linear-gradient(to bottom, ${PAL.cobD}, ${PAL.cob})`,
+    sky: PAL.cobD,
     snow: 'rgba(255, 255, 255, 0.8)',
   },
   {
@@ -57,7 +57,7 @@ export const ZONE_LOOKS: readonly ZoneLook[] = [
     joint: 'rgba(22, 18, 14, 0.6)',
     deco: 'heart',
     face: '#ffd2e6',
-    sky: `linear-gradient(to bottom, #51123c, ${PAL.pink})`,
+    sky: '#51123c',
     snow: 'rgba(255, 220, 238, 0.85)',
   },
   {
@@ -71,7 +71,7 @@ export const ZONE_LOOKS: readonly ZoneLook[] = [
     joint: 'rgba(22, 18, 14, 0.65)',
     deco: 'torch',
     face: '#ffd3bd',
-    sky: `linear-gradient(to bottom, #3a0a02, ${PAL.red})`,
+    sky: '#3a0a02',
     snow: 'rgba(255, 210, 120, 0.8)',
   },
   {

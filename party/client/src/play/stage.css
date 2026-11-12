@@ -66,6 +66,7 @@
 /* live place: "מקום 3 /12" */
 .pa-place {
   position: relative;
+  z-index: 1; /* its ▲ / ▼ badge pops over the score chip */
   flex: none;
   min-width: 82px;
   height: 34px;
@@ -83,6 +84,7 @@
   line-height: 1;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  transform-origin: 100% 50%; /* the bump grows away from the screen edge */
   will-change: transform;
 }
 .pa-place-word {
@@ -122,7 +124,8 @@
 }
 .pa-place-flash {
   position: absolute;
-  inset: -2.5px;
+  z-index: -1; /* over the chip's paper, under its digits */
+  inset: 0;
   border-radius: inherit;
   background: var(--pa-red);
   opacity: 0;
@@ -130,10 +133,10 @@
 }
 .pa-place-move {
   position: absolute;
-  top: 6px;
-  left: -11px;
-  width: 20px;
-  height: 20px;
+  top: -5px;
+  left: -9px;
+  width: 19px;
+  height: 19px;
   display: flex;
   align-items: center;
   justify-content: center;

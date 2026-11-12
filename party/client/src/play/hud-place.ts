@@ -129,10 +129,10 @@ export function createPlaceHud(onShown?: (s: PlaceShown) => void): PlaceHud {
         animate(
           move,
           [
-            { opacity: 0, transform: 'translateY(8px) scale(0.4)' },
-            { opacity: 1, transform: 'translateY(-3px) scale(1.25)', offset: 0.25 },
-            { opacity: 1, transform: 'translateY(-5px) scale(1)', offset: 0.7 },
-            { opacity: 0, transform: 'translateY(-9px) scale(1)' },
+            { opacity: 0, transform: 'translateY(7px) scale(0.4)' },
+            { opacity: 1, transform: 'translateY(0) scale(1.25)', offset: 0.25 },
+            { opacity: 1, transform: 'translateY(0) scale(1)', offset: 0.7 },
+            { opacity: 0, transform: 'translateY(-4px) scale(1)' },
           ],
           { duration: 750, easing: 'ease-out' },
         );
@@ -151,10 +151,10 @@ export function createPlaceHud(onShown?: (s: PlaceShown) => void): PlaceHud {
         animate(
           move,
           [
-            { opacity: 0, transform: 'translateY(-6px)' },
-            { opacity: 1, transform: 'translateY(2px)', offset: 0.2 },
-            { opacity: 1, transform: 'translateY(2px)', offset: 0.65 },
-            { opacity: 0, transform: 'translateY(6px)' },
+            { opacity: 0, transform: 'translateY(-3px)' },
+            { opacity: 1, transform: 'translateY(1px)', offset: 0.2 },
+            { opacity: 1, transform: 'translateY(1px)', offset: 0.65 },
+            { opacity: 0, transform: 'translateY(5px)' },
           ],
           { duration: 650, easing: 'ease-out' },
         );

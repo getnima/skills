@@ -225,6 +225,11 @@ async function shotsFor(browser, w, h) {
     await swipe(page, cdp, id++, ax, y, bx, y - 20, multi ? 12 : 8, multi ? midShot : null);
     if (shotP) await shotP;
     if (multi) await burst(page, `${tag}-2-multi`, 450, 150);
+    const cb = await page.evaluate(() => window.__ninja.comboBonus);
+    if (!seen.combo && cb > 0) {
+      seen.combo = true;
+      await burst(page, `${tag}-2b-combo`, 600, 150);
+    }
     else if (!seen.splat && (await page.evaluate(() => window.__ninja.sliced)) >= 6) {
       seen.splat = true;
       await burst(page, `${tag}-3-splats`, 900, 150);
