@@ -29,7 +29,7 @@ export const PAL = {
 
 const FONT_URL = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/fonts/motaleh.woff2`;
 const FONT_TIMEOUT_MS = 1500;
-/** Motaleh's glyphs minus the digits (its 2 reads as a Z); its own ז stays. */
+/** Motaleh's glyphs minus the digits (same as the CSS @font-face rules). */
 const MOTALEH_RANGE = 'U+0020-002F, U+003A-0040, U+005B-0060, U+007B-007E, U+00A0-00BF, U+0590-05FF, U+2010-2027, U+20AA';
 const FONT_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/fonts`;
 
@@ -41,7 +41,9 @@ function loadFill(): Promise<void> {
   try {
     let faces = [...document.fonts].filter((f) => f.family.replace(/["']/g, '') === 'Motaleh Fill');
     if (faces.length === 0) {
-      faces = [new FontFace('Motaleh Fill', `url(${FONT_BASE}/rubik-latin.woff2) format('woff2')`, { weight: '800', display: 'swap', unicodeRange: 'U+0030-0039' })];
+      faces = [
+        new FontFace('Motaleh Fill', `url(${FONT_BASE}/rubik-latin.woff2) format('woff2')`, { weight: '800', display: 'swap', unicodeRange: 'U+0030-0039' }),
+      ];
       for (const f of faces) document.fonts.add(f);
     }
     return Promise.all(faces.map((f) => f.load().catch(() => undefined))).then(() => undefined);
@@ -93,7 +95,7 @@ export function loadDisplayFont(): Promise<boolean> {
           return;
         }
       }
-      // not the digits (2 reads as Z): those fall through to the next font (the heavy Rubik fill)
+      // not the digits (Motaleh's 2 reads as a Z): those fall through to 'Motaleh Fill'
       const face = new FontFace('Motaleh', `url(${FONT_URL}) format('woff2')`, { display: 'swap', unicodeRange: MOTALEH_RANGE });
       face
         .load()

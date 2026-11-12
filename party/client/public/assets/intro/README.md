@@ -7,7 +7,7 @@ Every picture is one scene, composed to read at about 200 px on a phone and 500 
 | File | Game | What it shows | Pixels | Weight |
 | --- | --- | --- | --- | --- |
 | `show.webp` | the show (lobby, the show's own intro) | Shimi as the game-show host in a sparkly pink sequin jacket, yellow bow tie and red shoes: one arm up, mic at his chin, shouting "welcome to the show!" | 415 x 768 | 58 KB |
-| `tap.webp` | שימי טאפ (tap) | Shimi sitting like a baby doll, caught with a finger up his nose, eyes sliding sideways, a green googly-eyed booger on his shoulder | 421 x 768 | 45 KB |
+| `tap.webp` | שימי טאפ (tap) | Shimi sitting like a baby doll in a blue onesie, finger up his nose, eyes rolled up in bliss (made with a frame of the game's picking clip as the reference) | 435 x 768 | 40 KB |
 | `icy.webp` | אייסי שימי (tower climb) | Shimi in the climber's outfit from `../icy/hero/` (red puffer, yellow scarf and mittens, blue trousers, white boots) leaping between two snowy stone-brick ledges with icicles | 647 x 768 | 55 KB |
 | `flappy.webp` | פלאפי תבורי (flying) | Shimi's head with white angel wings and a golden halo, flying past a giant silver stage microphone | 739 x 768 | 72 KB |
 | `plotzel.webp` | פלוצל (word ladder) | Shimi sitting proudly on a stack of five blank letter cubes, hands on hips, a smiling mint puff cloud coming out behind him (the cubes are blank on purpose: no letters) | 496 x 768 | 44 KB |
