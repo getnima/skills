@@ -92,12 +92,29 @@ const check = (ok, msg, extra) => {
       await shot(`results-${game}-standings-a`);
       await sleep(6500);
       await shot(`results-${game}-standings-b`);
+      // once every game was played the results' primary button is the podium itself, not the lobby
+      if (r === ROUNDS - 1 && (await page.evaluate(() => window.__host.model().actions.find((a) => a.id === 'podium').kind === 'primary'))) break;
       await page.click('[data-testid=btn-primary]', { force: true });
       await waitPhase('lobby');
     }
-    await sleep(1200);
-    await shot('lobby-between');
-    await page.click('[data-testid=btn-final]', { force: true });
+    if ((await st()).phase === 'lobby') {
+      await sleep(1200);
+      await shot('lobby-between');
+    }
+    // with games still unplayed the podium is a decision (the strip's btn-final): the first press only
+    // arms it ("sure? press again") and a second press 0.4-3.5 s later goes; after every game it is
+    // the primary button and one press goes
+    const podium = await page.evaluate(() => window.__host.model().actions.find((a) => a.id === 'podium'));
+    const podiumBtn = podium.kind === 'primary' ? '[data-testid=btn-primary]' : '[data-testid=btn-final]';
+    const phaseBefore = (await st()).phase;
+    await page.click(podiumBtn, { force: true });
+    if (podium.confirmStyle === 'arm') {
+      await page.waitForSelector(`${podiumBtn}.is-armed [data-testid=armed-hint]`, { timeout: 3000 });
+      await sleep(700);
+      check((await st()).phase === phaseBefore, `early podium: the first press arms the button and the room stays in the ${phaseBefore}`);
+      await shot('podium-armed');
+      await page.click(podiumBtn, { force: true });
+    }
     await waitPhase('final');
     await page.waitForFunction(() => window.__host.state().cutscene === null, null, { timeout: 15000 });
     for (const [name, ms] of [['podium-a', 3000], ['podium-b', 4500], ['podium-c', 6000], ['podium-d', 7000]]) {

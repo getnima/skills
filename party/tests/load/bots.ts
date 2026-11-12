@@ -43,6 +43,7 @@
  *                        places for their own phones.
  *   --prefix <text>      bot name prefix                    (default "בוט")
  *   --quiet              only print the summary
+ *   -h, --help           print this text and exit
  *
  * EXAMPLES
  *   PARTY_TEST_FAST=1 PORT=8801 npx tsx server/index.ts &
@@ -53,6 +54,8 @@
  * Round timing comes only from the round fields through roundTime() with a synced
  * server clock, exactly like the real clients.
  */
+import { readFileSync } from 'node:fs';
+
 import { io } from 'socket.io-client';
 
 import { createFlight, STEP_MS, survivalRaw } from '../../client/src/games/flappy/course';
@@ -82,6 +85,16 @@ interface Options {
   elimBy: number | null;
   /** Every round: all bots drop at once at half time and come back (see --storm). */
   storm: boolean;
+}
+
+/** The comment at the top of this file is the usage text: one copy, never out of date. */
+function usage(): string {
+  const source = readFileSync(new URL(import.meta.url), 'utf8');
+  const block = /\/\*\*\n([\s\S]*?)\n \*\//.exec(source)?.[1] ?? '';
+  return block
+    .split('\n')
+    .map((line) => line.replace(/^ \*( |$)/, ''))
+    .join('\n');
 }
 
 function parseArgs(argv: readonly string[]): Options {
@@ -155,6 +168,10 @@ function parseArgs(argv: readonly string[]): Options {
       case '--elim-by':
         opts.elimBy = Number(value(++i, flag));
         break;
+      case '-h':
+      case '--help':
+        console.log(usage());
+        process.exit(0);
       default:
         throw new Error(`unknown flag ${String(flag)} (see the top of tests/load/bots.ts)`);
     }

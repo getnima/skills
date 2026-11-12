@@ -6,7 +6,7 @@
 // A TCP proxy in this script stands between the browsers and the game server and cuts every
 // open connection on demand (in the lobby, mid-round, during the results).
 //
-// Run against the production image (or any built server):
+// Run against the production image (or any built server), freshly started: the checks count its rooms.
 //   docker run -d --name qa-deploy-run -p 8825:8080 -e PORT=8080 -e PARTY_TEST_FAST=1 \
 //     -e PARTY_TEST_DURATION_MS=30000 party-arena:qa
 //   TARGET=127.0.0.1:8825 PROXY_PORT=8824 node tests/e2e/qa-deploy-reconnect.cjs
@@ -97,8 +97,21 @@ async function healthz() {
     const host = await hostCtx.newPage();
     const errs = [];
     const track = (page, label) => {
-      const t = { label, page, ws: [], polling: 0 };
-      page.on('websocket', (ws) => t.ws.push(ws.url()));
+      const t = { label, page, ws: [], polling: 0, finals: [] };
+      page.on('websocket', (ws) => {
+        t.ws.push(ws.url());
+        // every player:final this page sends (socket.io frame 42[<ack id>]["player:final", {round, score}])
+        ws.on('framesent', (f) => {
+          const m = typeof f.payload === 'string' ? /^42\d*(\[[\s\S]*\])$/.exec(f.payload) : null;
+          if (!m) return;
+          try {
+            const [ev, body] = JSON.parse(m[1]);
+            if (ev === 'player:final' && body) t.finals.push(body);
+          } catch {
+            /* not JSON: not ours */
+          }
+        });
+      });
       page.on('request', (req) => {
         if (req.url().includes('/socket.io/') && req.url().includes('transport=polling')) t.polling++;
       });
@@ -207,9 +220,18 @@ async function healthz() {
     }
     await Promise.all(pages.map((p) => p.page.screenshot({ path: path.join(OUT, `2-midround-after-cut-${p.label}.png`) })));
     check(took < 5000, `mid-round: reconnect took ${took} ms (< 5 s)`);
-    await sleep(3000);
+    // the automatic tap_freeze cutscene may hold the round (and every score) still around the cut:
+    // the scores can only rise once the TV has played it and the 3-2-1 after it is over
+    await host.waitForFunction(() => {
+      const s = window.__host.state();
+      return s.phase !== 'playing' || (s.cutscene === null && s.round.frozenAt === null && (s.round.resumeAt === null || window.__host.now() > s.round.resumeAt + 300));
+    }, null, { timeout: 100000 });
+    for (const ph of phones) ph.running = (await pinfo(ph)).score;
+    const sprinting = await Promise.all(phones.map((ph) => ph.page.evaluate(() => (window.__tap && window.__tap() ? window.__tap().phase : null))));
+    check(sprinting.every((x) => x === 'sprint'), 'both phones are still in their sprint once the round runs again', sprinting);
+    await sleep(2500);
     for (const ph of phones) ph.later = (await pinfo(ph)).score;
-    check(phones.every((p) => p.later > p.beforeCut), 'scores keep rising after the reconnect', phones.map((p) => [p.beforeCut, p.later]));
+    check(phones.every((p) => p.running >= p.beforeCut && p.later > p.running), 'scores keep rising after the reconnect', phones.map((p) => [p.beforeCut, p.running, p.later]));
 
     await host.waitForFunction(() => window.__host.state().phase === 'results', null, { timeout: 60000 });
     tapping.on = false;
@@ -219,7 +241,11 @@ async function healthz() {
       const row = res.rows.find((r) => r.playerId === ph.id);
       const i = await pinfo(ph);
       check(row && row.raw >= ph.later, `${ph.label}: the server's round score includes the taps from before and after the cut (${row && row.raw})`);
-      check(row && i.endedRound === res.roundIndex && i.endedScore === row.raw, `${ph.label}: server raw = the phone's final score`, { phone: i.endedScore, server: row && row.raw });
+      // tap is a personal sprint: the phone sends its final when its sprint is over (finishEarly) and
+      // the server ends the round once every final is in, so the phone's final is the player:final it
+      // sent (on the wire, resent after a cut), not snap.endedScore, which only a clock end sets
+      const sent = ph.finals.filter((x) => x.round === res.roundIndex).map((x) => x.score);
+      check(row && sent.length > 0 && sent.every((x) => x === row.raw), `${ph.label}: server raw = the phone's final score`, { phone: sent, endedRound: i.endedRound, endedScore: i.endedScore, server: row && row.raw });
     }
 
     // ── cut 3: during the results (the winner reveal is server-timed) ──

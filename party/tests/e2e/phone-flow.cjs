@@ -92,6 +92,18 @@ async function shot(page, name) {
     const W = window.innerWidth;
     const H = window.innerHeight;
     const out = [];
+    // Motion is measured where it settles, not at the frame the shot happened to catch: an endless
+    // loop (the intro art's 2 degree bob, a wobble) at its rest frame (time 0), and a one-shot (the
+    // intro art's pop, which overshoots past full size) at its end. Caught at their widest, both poke
+    // a pixel or two past the edge of a 360 px phone. Everything is put back afterwards. Whatever
+    // the layout, or the place a one-shot animation leaves it, puts off screen is still caught.
+    const moving = document.getAnimations().filter((a) => (a.playState === 'running' || a.playState === 'paused') && a.effect);
+    const saved = moving.map((a) => ({ a, t: a.currentTime, running: a.playState === 'running' }));
+    for (const a of moving) {
+      const timing = a.effect.getComputedTiming();
+      a.pause();
+      a.currentTime = timing.iterations === Infinity ? 0 : timing.endTime;
+    }
     for (const el of document.querySelectorAll('#app *')) {
       if (el.closest('.kit-scroll, .pp-confetti, .pp-rays, .pp-spot, .pa-stage, .pp-tv-legs, .pp-me-glow, .pp-prize-shine')) continue;
       if (el.children.length > 0 && !/^(BUTTON|INPUT)$/.test(el.tagName)) continue;
@@ -100,6 +112,10 @@ async function shot(page, name) {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
       if (r.left < -1 || r.top < -1 || r.right > W + 1 || r.bottom > H + 1) out.push(`${el.tagName}.${el.className} "${(el.textContent || '').slice(0, 20)}" ${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.right)},${Math.round(r.bottom)}`);
+    }
+    for (const { a, t, running } of saved) {
+      a.currentTime = t;
+      if (running) a.play();
     }
     return { sh: se.scrollHeight, sw: se.scrollWidth, H, W, sy: window.scrollY, clipped: out };
   });

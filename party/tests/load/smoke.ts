@@ -8,8 +8,8 @@
  *   2. host-only events from a player answer NOT_HOST; a TV refresh re-attaches with code + hostKey
  *   3. a manual cutscene in the middle of a round freezes the clock and the round continues with
  *      the same time left after the 3-2-1; a score sent during the freeze counts
- *   4. a disconnect / reconnect storm (every phone drops and resumes several times mid-round)
- *      loses no player and no score
+ *   4. a disconnect / reconnect storm (every phone drops and resumes several times mid-round of
+ *      flappy, an elimination game) loses no player, no final and knocks nobody out
  * Exit code 1 on any failed check.
  */
 import { io } from 'socket.io-client';
@@ -201,9 +201,13 @@ async function main(): Promise<void> {
   await until('results', () => now().phase === 'results', 60_000);
   const results = now().results;
   check(Math.abs(now().serverNow - (expectedEnd + 1_500)) < 250, 'the round ended at the shifted endAt + grace');
-  check(results?.rows.find((row) => row.playerId === phones[5]?.id)?.raw === 105, 'finals counted');
-  check(results?.rows.find((row) => row.playerId === phones[11]?.id)?.raw === 20 + 11 + 3, 'last live score after the storm counted for a phone without a final');
-  check(results?.winnerIds.length === 1 && results.winnerIds[0] === phones[5]?.id, 'winnerIds names the round winner');
+  // flappy is an elimination game: a final means "out" with that distance, and whoever is still in
+  // the air when the clock runs out outlasted them all, so the server lifts them to best final + 1
+  const rawOf = (i: number): number | undefined => results?.rows.find((row) => row.playerId === phones[i]?.id)?.raw;
+  check([0, 1, 2, 3, 4, 5].every((i) => rawOf(i) === 100 + i), 'finals counted');
+  check([6, 7, 8, 9, 10, 11].every((i) => rawOf(i) === 106), 'nobody was knocked out by the storm: every phone without a final is still in the air at best final + 1');
+  // they tie at the top on the same instant: the earlier join wins (shared/scoring.ts orderRound)
+  check(results?.winnerIds.length === 1 && results.winnerIds[0] === phones[6]?.id, 'winnerIds names the round winner');
   check(results?.rows.find((row) => row.name === 'מאחר')?.points === 0, 'the late joiner is listed with 0 points');
   check(results !== null && results !== undefined && results.revealAt > now().serverNow, 'revealAt is in the future when results arrive');
 

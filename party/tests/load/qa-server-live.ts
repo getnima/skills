@@ -1,14 +1,17 @@
 /**
  * QA against a RUNNING server with real party timing (no PARTY_TEST_FAST):
- * host reloads in every phase, a phone that drops for 20 s mid-round, the
- * automatic mid-game freeze, the round ending with no TV attached, a cutscene
- * before the winner reveal. Takes about two minutes.
+ * host reloads in every phase, the automatic mid-game freeze, a phone that
+ * drops for 20 s mid-round, the round ending with no TV attached, a cutscene
+ * before the winner reveal. Takes about two minutes. Every timing it expects
+ * comes from shared/ (INTRO_MS, the tap_freeze atMs, ...), and it measures on
+ * the server's clock (time:ping), so it also works against the deployed server.
  *
  *   PARTY_SERVER_PORT=8831 npx tsx server/index.ts &
  *   npx tsx tests/load/qa-server-live.ts http://localhost:8831
  */
 import { io } from 'socket.io-client';
 
+import { findCutscene } from '../../shared/cutscenes';
 import { COUNTDOWN_MS, FINAL_GRACE_MS, GAMES, INTRO_MS, RESUME_COUNTDOWN_MS, WINNER_REVEAL_MS } from '../../shared/protocol';
 import { roundTime } from '../../shared/round-clock';
 import { computeRoundScores } from '../../shared/scoring';
@@ -60,6 +63,31 @@ function call(c: Conn, event: string, req: unknown): Promise<any> {
   });
 }
 
+/** Server clock minus this machine's clock: a deployed server's clock is not this laptop's. */
+let clockOffset = 0;
+const serverNow = (): number => Date.now() + clockOffset;
+
+/** The best of a few time:pings (the shortest round trip says the most). */
+async function syncClock(c: Conn): Promise<void> {
+  let best = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < 8; i++) {
+    const sent = Date.now();
+    const res = await new Promise<{ serverNow: number }>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('no ack: time:ping')), 5_000);
+      c.s.emit('time:ping', sent, (r: { serverNow: number }) => {
+        clearTimeout(t);
+        resolve(r);
+      });
+    });
+    const back = Date.now();
+    if (back - sent < best) {
+      best = back - sent;
+      clockOffset = res.serverNow - (sent + back) / 2;
+    }
+  }
+  console.log(`server clock ${clockOffset >= 0 ? '+' : ''}${Math.round(clockOffset)}ms from this machine (round trip ${best}ms)`);
+}
+
 async function until(what: string, fn: () => boolean, ms: number): Promise<boolean> {
   const end = Date.now() + ms;
   while (!fn()) {
@@ -78,6 +106,7 @@ async function main(): Promise<void> {
   const code: string = created.code;
   const hostKey: string = created.hostKey;
   console.log(`room ${code} on ${url}`);
+  await syncClock(host);
 
   const reloadHost = async (label: string): Promise<void> => {
     const before = host.state;
@@ -104,33 +133,60 @@ async function main(): Promise<void> {
   }
   const [a, b, g] = players as [(typeof players)[0], (typeof players)[0], (typeof players)[0]];
 
-  const t0 = Date.now();
+  const tapFreeze = findCutscene('tap_freeze');
+  if (tapFreeze === undefined || tapFreeze.when.at !== 'during') throw new Error('shared/cutscenes.ts has no tap_freeze during the round');
+  const freezeAtMs = tapFreeze.when.atMs;
+
+  const t0 = serverNow();
   check('host:start tap', (await call(host, 'host:start', { gameId: 'tap' })).ok === true);
   await sleep(50);
   const round0 = host.state?.round;
   check('intro: startAt = now + INTRO + COUNTDOWN', Math.abs((round0?.startAt ?? 0) - t0 - INTRO_MS - COUNTDOWN_MS) < 300, round0);
-  check('endAt - startAt = 60s', (round0?.endAt ?? 0) - (round0?.startAt ?? 0) === GAMES.tap.durationMs);
+  check(`endAt - startAt = ${GAMES.tap.durationMs / 1000}s`, (round0?.endAt ?? 0) - (round0?.startAt ?? 0) === GAMES.tap.durationMs);
   await sleep(2_000);
   await reloadHost('mid-intro');
-  await until('countdown', () => b.c.state?.phase === 'countdown', 8_000);
-  check('countdown began at startAt - 3s', Math.abs(Date.now() - ((round0?.startAt ?? 0) - COUNTDOWN_MS)) < 400, Date.now() - (round0?.startAt ?? 0));
+  await until('countdown', () => b.c.state?.phase === 'countdown', (round0?.startAt ?? 0) - COUNTDOWN_MS - serverNow() + 2_000);
+  check('countdown began at startAt - 3s', Math.abs(serverNow() - ((round0?.startAt ?? 0) - COUNTDOWN_MS)) < 400, serverNow() - ((round0?.startAt ?? 0) - COUNTDOWN_MS));
   await sleep(800);
   await reloadHost('mid-countdown');
-  await until('playing', () => b.c.state?.phase === 'playing', 5_000);
-  check('playing began at startAt', Math.abs(Date.now() - (round0?.startAt ?? 0)) < 400, Date.now() - (round0?.startAt ?? 0));
+  await until('playing', () => b.c.state?.phase === 'playing', (round0?.startAt ?? 0) - serverNow() + 2_000);
+  check('playing began at startAt', Math.abs(serverNow() - (round0?.startAt ?? 0)) < 400, serverNow() - (round0?.startAt ?? 0));
 
-  // Live scores; A drops for 20s.
   a.c.s.emit('player:score', { round: 0, score: 40 });
   b.c.s.emit('player:score', { round: 0, score: 25 });
   g.c.s.emit('player:score', { round: 0, score: 10 });
-  await sleep(600);
+
+  // The automatic freeze, early in the round (shared/cutscenes.ts).
+  await until('tap_freeze cutscene', () => host.state?.cutscene?.id === 'tap_freeze', (round0?.startAt ?? 0) + freezeAtMs - serverNow() + 3_000);
+  const frozen = host.state;
+  const leftFrozen = frozen?.round ? roundTime(frozen.round, serverNow()).leftMs : -1;
+  // A real timer fires a few ms late; what must be exact is that the time left never moves afterwards.
+  check(`freeze at ${freezeAtMs / 1000}s of round time (${leftFrozen}ms left)`, Math.abs(leftFrozen - (GAMES.tap.durationMs - freezeAtMs)) <= 100, leftFrozen);
+  check('phase stays playing under the cutscene', frozen?.phase === 'playing');
+  check('a second cutscene is BAD_PHASE', (await call(host, 'host:cutscene', { id: 'joker_1' })).error === 'BAD_PHASE');
+  await sleep(2_000);
+  await reloadHost('mid-cutscene');
+  check('time left did not move under the video', host.state?.round ? roundTime(host.state.round, serverNow()).leftMs === leftFrozen : false);
+  await sleep(2_000);
+  const endedAt = serverNow();
+  check('host:cutsceneEnd', (await call(host, 'host:cutsceneEnd', {})).ok === true);
+  check('host:cutsceneEnd again is harmless', (await call(host, 'host:cutsceneEnd', {})).ok === true);
+  await sleep(100);
+  const r = host.state?.round;
+  check('resumeAt = end + 3s', r !== null && r !== undefined && Math.abs((r.resumeAt ?? 0) - endedAt - RESUME_COUNTDOWN_MS) < 300, r);
+  check('exactly the same time left right after the video', r ? roundTime(r, serverNow()).leftMs === leftFrozen : false);
+  check('endAt = resumeAt + time left', r ? r.endAt - (r.resumeAt ?? 0) === leftFrozen : false, r);
+  const endAt = r?.endAt ?? 0;
+
+  // After the 3-2-1, A drops for 20s with the round running.
+  await sleep(RESUME_COUNTDOWN_MS + 600);
   a.c.s.close();
   const dropAt = Date.now();
   await until('A shown offline', () => host.state?.players.find((p) => p.id === a.id)?.connected === false, 3_000);
   await sleep(3_000);
   await reloadHost('mid-round');
   await sleep(20_000 - (Date.now() - dropAt));
-  check('20s later the round is still playing', b.c.state?.phase === 'playing', b.c.state?.phase);
+  check('20s later the round is still playing', b.c.state?.phase === 'playing' && b.c.state.cutscene === null, [b.c.state?.phase, b.c.state?.cutscene]);
   a.c = await connect();
   const resumed = await call(a.c, 'player:join', { code, name: 'אבי', playerId: a.id, secret: a.secret });
   check('A resumes as the same player', resumed.ok === true && resumed.playerId === a.id, resumed.error);
@@ -142,28 +198,8 @@ async function main(): Promise<void> {
   b.c.s.emit('player:score', { round: 0, score: 26 });
   await sleep(500);
   check("A's score survived the drop (40)", b.c.scores.get(a.id) === 40, [...b.c.scores]);
-
-  // The automatic freeze at 30s of round time.
-  await until('tap_freeze cutscene', () => host.state?.cutscene?.id === 'tap_freeze', 15_000);
-  const frozen = host.state;
-  const leftFrozen = frozen?.round ? roundTime(frozen.round, Date.now()).leftMs : -1;
-  // A real timer fires a few ms late; what must be exact is that the time left never moves afterwards.
-  check(`freeze at 30s of round time (${leftFrozen}ms left)`, Math.abs(leftFrozen - 30_000) <= 100, leftFrozen);
-  check('phase stays playing under the cutscene', frozen?.phase === 'playing');
-  check('a second cutscene is BAD_PHASE', (await call(host, 'host:cutscene', { id: 'joker_1' })).error === 'BAD_PHASE');
-  await sleep(2_000);
-  await reloadHost('mid-cutscene');
-  check('time left did not move under the video', host.state?.round ? roundTime(host.state.round, Date.now()).leftMs === leftFrozen : false);
-  await sleep(2_000);
-  const endedAt = Date.now();
-  check('host:cutsceneEnd', (await call(host, 'host:cutsceneEnd', {})).ok === true);
-  check('host:cutsceneEnd again is harmless', (await call(host, 'host:cutsceneEnd', {})).ok === true);
-  await sleep(100);
-  const r = host.state?.round;
-  check('resumeAt = end + 3s', r !== null && r !== undefined && Math.abs((r.resumeAt ?? 0) - endedAt - RESUME_COUNTDOWN_MS) < 300, r);
-  check('exactly the same time left right after the video', r ? roundTime(r, Date.now()).leftMs === leftFrozen : false);
-  check('endAt = resumeAt + time left', r ? r.endAt - (r.resumeAt ?? 0) === leftFrozen : false, r);
-  const endAt = r?.endAt ?? 0;
+  check('the drop did not move the clock', host.state?.round?.endAt === endAt, [host.state?.round?.endAt, endAt]);
+  check('the round is still running with time to spare', endAt - serverNow() > 5_000, endAt - serverNow());
 
   // Finals: A sends one, B never does (live counts), G sends garbage then a real one.
   await sleep(RESUME_COUNTDOWN_MS + 5_000);
@@ -176,8 +212,8 @@ async function main(): Promise<void> {
 
   // The TV goes away; the round must end by itself at endAt + grace.
   host.s.close();
-  await until('results with no host attached', () => b.c.state?.phase === 'results', endAt - Date.now() + FINAL_GRACE_MS + 3_000);
-  const scoredAt = Date.now();
+  await until('results with no host attached', () => b.c.state?.phase === 'results', endAt - serverNow() + FINAL_GRACE_MS + 3_000);
+  const scoredAt = serverNow();
   check('scored at endAt + FINAL_GRACE_MS', Math.abs(scoredAt - endAt - FINAL_GRACE_MS) < 500, scoredAt - endAt);
   const res = b.c.state?.results;
   const expected = computeRoundScores(
