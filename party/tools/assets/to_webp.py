@@ -1,5 +1,8 @@
 """Convert a game's PNG art to WebP (much lighter for 20 phones on party Wi-Fi) and remove the PNGs.
 
+Superseded by tools/assets/optimize.py, which `npm run build` runs on all of client/public/assets
+(and which measures every file against its PNG). Kept for its one-folder use.
+
     python3 -I tools/assets/to_webp.py client/public/assets/tap client/public/assets/ninja [--dry-run]
 
 Every game loads its art through the kit (client/src/kit/assets.ts), which asks for the slot's file

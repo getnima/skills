@@ -1,5 +1,5 @@
 # Builds the shipped avatar pictures (python3 -I tests/e2e/avatar-review-webp.py [quality]).
-#   client/public/assets/shimi/prop_NN_*.png (the owner's 17, left alone: other screens use them)
+#   client/public/assets/shimi/prop_NN_*.webp (the owner's 17, kept LOSSLESS by tools/assets/optimize.py: the same pixels as the PNGs)
 #   client/src/avatar/art-src/NNN_*.png      (PNG sources of the new accessories, not shipped)
 #     ->  client/public/assets/shimi/props/<same name>.webp   (what catalog*.ts points at)
 import glob, os, re, sys
@@ -12,9 +12,9 @@ MAX = 960  # long side
 CAT = ''.join(open(f, encoding='utf8').read() for f in glob.glob(ROOT + 'client/src/avatar/catalog*.ts'))
 WIDTH = {m.group(1): float(m.group(2)) for m in re.finditer(r"file: '/assets/shimi/props/([\w.]+)',\s+place: \[[-\d.]+, [-\d.]+, ([\d.]+),", CAT)}
 before = after = 0
-for src in sorted(glob.glob(ROOT + 'client/public/assets/shimi/prop_*.png') + glob.glob(ROOT + 'client/src/avatar/art-src/*.png')):
+for src in sorted(glob.glob(ROOT + 'client/public/assets/shimi/prop_*.png') + glob.glob(ROOT + 'client/public/assets/shimi/prop_*.webp') + glob.glob(ROOT + 'client/src/avatar/art-src/*.png')):
     im = Image.open(src).convert('RGBA')
-    name = os.path.basename(src).replace('prop_', '').replace('.png', '.webp')
+    name = os.path.splitext(os.path.basename(src).replace('prop_', ''))[0] + '.webp'
     k = min(1, MAX / max(im.size), WIDTH[name] / 100 * 483 * 1.5 / im.width)
     if k < 1:
         im = im.resize((round(im.width * k), round(im.height * k)), Image.LANCZOS)

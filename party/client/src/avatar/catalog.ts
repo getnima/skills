@@ -43,7 +43,7 @@ export interface AvatarItem {
   /** Public path of a transparent WebP (or PNG), e.g. '/assets/shimi/props/103_chef_hat.webp'. */
   file: string;
   /**
-   * [left, top, width, height] in % of the doll box (doll.png, 483 x 1200 px): where the picture sits
+   * [left, top, width, height] in % of the doll box (doll.webp, 483 x 1200 px): where the picture sits
    * on the bare doll. May be negative / wider than 100 (hats stick out).
    */
   place: readonly [number, number, number, number];
@@ -75,12 +75,12 @@ export interface AvatarItem {
  * the hat tower (bottom to top), NECK. The source has no per-item z rules.
  */
 export const DOLL = {
-  file: '/assets/shimi/doll.png',
+  file: '/assets/shimi/doll.webp',
   width: 483,
   height: 1200,
   /** The head is the top 43% of the doll (the chin dips to 48%). */
   headSplit: 43,
-  /** Source `.d-head` clip-path: the head part of doll.png, in % of the doll box. */
+  /** Source `.d-head` clip-path: the head part of the doll picture, in % of the doll box. */
   headClip: [[0, 0], [100, 0], [100, 43], [73, 43], [71, 45.3], [62, 47.4], [51, 48], [40, 47.4], [32, 45], [30, 43], [0, 43]],
   /** Source `.d-body` clip-path. */
   bodyClip: [[0, 43], [30, 43], [34, 44.8], [40, 46], [51, 46.6], [62, 46], [67.5, 45.2], [71, 45], [100, 45], [100, 100], [0, 100]],

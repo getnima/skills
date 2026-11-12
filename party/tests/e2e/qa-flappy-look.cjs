@@ -87,7 +87,7 @@ async function harness(browser) {
   const dressed = await harnessCase(browser, 'look', `&look=${LOOK}`);
   check(dressed.head.look === LOOK && dressed.head.dressed === true && dressed.head.w > 20 && dressed.head.h > dressed.head.w, '?look=: the dressed head (a three-hat tower is taller than wide)', dressed.head);
   check(dressed.mode === 'fly' && dressed.errors.length === 0, '?look=: flying, no errors', { mode: dressed.mode, errors: dressed.errors });
-  const noDoll = await harnessCase(browser, 'no-doll', `&look=${LOOK}`, '**/assets/shimi/doll.png');
+  const noDoll = await harnessCase(browser, 'no-doll', `&look=${LOOK}`, '**/assets/shimi/doll.webp');
   check(noDoll.head.look === LOOK && noDoll.head.dressed === false, 'the doll picture fails: the round token', noDoll.head);
   check(noDoll.mode === 'fly' && noDoll.errors.length === 0, 'the doll picture fails: flying, no errors', { mode: noDoll.mode, errors: noDoll.errors });
   const noHat = await harnessCase(browser, 'no-hat', `&look=${LOOK}`, '**/assets/shimi/props/10_*');

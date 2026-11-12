@@ -345,7 +345,7 @@ function picSize(file: string): [number, number] {
 
 describe('catalog files and placement', () => {
   it('the doll picture is the box the placement refers to', () => {
-    expect(pngSize(resolve(PUBLIC, DOLL.file.slice(1)))).toEqual([DOLL.width, DOLL.height]);
+    expect(picSize(resolve(PUBLIC, DOLL.file.slice(1)))).toEqual([DOLL.width, DOLL.height]);
   });
 
   it('every item has a picture on disk whose proportions match its placement', () => {

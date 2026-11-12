@@ -7,13 +7,17 @@ and the look below come from that page. This is the design language for the whol
 
 | File | Size | What it is |
 | --- | --- | --- |
-| `doll.png` | 483x1200, transparent | The whole Shimi doll (head + body, strawberry hat, standing). |
-| `head.png` | 512x512, transparent | The doll's head only, centred on a square. Use as the "face". |
-| `body.png` | 473x680, transparent | The doll's body only (neck down). |
-| `prop_01_beer_helmet.png` .. `prop_17_party_hat.png` | various, transparent | 17 accessories: 01 beer helmet, 02 straw hat, 03 pirate hat, 04 backwards cap, 05 shutter glasses, 06 green ears, 07 pink bow, 08 crown, 09 heart glasses, 10 top hat, 11 moustache, 12 sombrero, 13 headphones, 14 viking helmet, 15 lei, 16 bucket hat, 17 party hat. |
+| `doll.webp` | 483x1200, transparent | The whole Shimi doll (head + body, strawberry hat, standing). |
+| `head.webp` | 512x512, transparent | The doll's head only, centred on a square. Use as the "face". |
+| `body.webp` | 473x680, transparent | The doll's body only (neck down). |
+| `prop_01_beer_helmet.webp` .. `prop_17_party_hat.webp` | various, transparent | 17 accessories: 01 beer helmet, 02 straw hat, 03 pirate hat, 04 backwards cap, 05 shutter glasses, 06 green ears, 07 pink bow, 08 crown, 09 heart glasses, 10 top hat, 11 moustache, 12 sombrero, 13 headphones, 14 viking helmet, 15 lei, 16 bucket hat, 17 party hat. |
 
 On the source page the head is the top 43% of the doll and accessories sit on it by slot
 (HEAD / EYES / EARS / FACE / NECK).
+
+The owner's PNGs ship as WebP (`npm run build` runs `tools/assets/optimize.py`; the PNGs are in git history):
+the doll, head, body and faces visually lossless (PSNR >= 42 dB), the 17 `prop_*` originals LOSSLESS (the same
+pixels; `tests/e2e/avatar-review-webp.py` builds `props/*.webp` from them).
 
 Accessory photo credits (Wikimedia Commons, as listed on the source page; keep them in the app's credits):
 crown: Gryffindor, CC BY-SA 3.0 · heart glasses: ShyAndroid, CC0 · top hat: The Metropolitan Museum of Art, CC0 ·

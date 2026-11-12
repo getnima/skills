@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -52,6 +52,58 @@ export function lanIps(): string[] {
   return out;
 }
 
+/** True when an Accept-Encoding header allows `coding` (a `q=0` refuses it). */
+export function acceptsEncoding(header: string | undefined, coding: string): boolean {
+  if (header === undefined) return false;
+  for (const part of header.split(',')) {
+    const [name, ...params] = part.split(';');
+    if (name === undefined || name.trim().toLowerCase() !== coding) continue;
+    const q = params.map((p) => p.trim()).find((p) => p.startsWith('q='));
+    return q === undefined || Number(q.slice(2)) > 0;
+  }
+  return false;
+}
+
+/**
+ * The bundles' compressed copies that the build wrote (tools/assets/compress-dist.mjs:
+ * dist/client/assets/<bundle>.js.br / .gz): sent instead of the plain file to a browser
+ * that accepts them. Same content, a third of the bytes. Only the hashed top-level
+ * bundles (never media: they are compressed already, and video needs byte ranges).
+ */
+function serveCompressedBundles(app: Express, dir: string): void {
+  let encoded: ReadonlySet<string>;
+  try {
+    encoded = new Set(readdirSync(join(dir, 'assets')).filter((f) => f.endsWith('.br') || f.endsWith('.gz')));
+  } catch {
+    encoded = new Set();
+  }
+  if (encoded.size === 0) return;
+  const codings = [
+    ['br', '.br'],
+    ['gzip', '.gz'],
+  ] as const;
+  app.use('/assets', (req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    const m = /^\/([\w.-]+\.(js|css))$/.exec(req.path);
+    if (m === null || m[1] === undefined || m[2] === undefined) return next();
+    const name = m[1];
+    const type = m[2];
+    res.setHeader('Vary', 'Accept-Encoding');
+    const accept = req.headers['accept-encoding'];
+    const pick = codings.find(([coding, ext]) => encoded.has(name + ext) && acceptsEncoding(typeof accept === 'string' ? accept : undefined, coding));
+    if (pick === undefined) return next();
+    res.setHeader('Content-Encoding', pick[0]);
+    res.type(type);
+    res.sendFile(join(dir, 'assets', name + pick[1]), { immutable: true, maxAge: '365d', acceptRanges: false }, (err) => {
+      if (err === undefined || res.headersSent) return;
+      // the copy is gone: the plain file
+      res.removeHeader('Content-Encoding');
+      res.removeHeader('Content-Type');
+      next();
+    });
+  });
+}
+
 function mountClient(app: Express, dir: string): void {
   const html = (file: string) => (_req: express.Request, res: express.Response): void => {
     res.setHeader('Cache-Control', 'no-cache');
@@ -66,6 +118,7 @@ function mountClient(app: Express, dir: string): void {
   ] as const) {
     if (existsSync(join(dir, file))) app.get(route, html(file));
   }
+  serveCompressedBundles(app, dir);
   // Hashed build output never changes under the same name.
   app.use(
     '/assets',

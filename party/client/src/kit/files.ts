@@ -18,6 +18,17 @@ for (const key of [...assetKeys, ...audioKeys]) {
   known.set(url.toLowerCase(), url);
 }
 
+/** Every indexed public file as its public path ('/assets/tap/face.webp'): what kit/preload.ts loads ahead. */
+export function publicFilePaths(): string[] {
+  return [...known.values()];
+}
+
+/** The URL of a public path, with the Vite base applied. */
+export function publicUrl(path: string): string {
+  const prefix = import.meta.env.BASE_URL.replace(/\/$/, '');
+  return prefix + encodeURI(path);
+}
+
 function stripExt(path: string): string {
   const slash = path.lastIndexOf('/');
   const dot = path.lastIndexOf('.');
@@ -36,6 +47,5 @@ export function findPublicFile(path: string, exts: readonly string[]): string | 
   let hit = exact ?? null;
   for (let i = 0; i < exts.length && hit === null; i++) hit = known.get(`${base}.${exts[i]}`) ?? null;
   if (hit === null) return null;
-  const prefix = import.meta.env.BASE_URL.replace(/\/$/, '');
-  return prefix + encodeURI(hit);
+  return publicUrl(hit);
 }

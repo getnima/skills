@@ -135,7 +135,7 @@ async function open(browser, query, opts = {}) {
   {
     // the doll itself is missing
     const { ctx, page, errors } = await open(browser, 'view=slots', {
-      before: async (p) => { await p.route('**/doll.png', (r) => r.fulfill({ status: 404, body: 'gone' })); },
+      before: async (p) => { await p.route('**/doll.webp', (r) => r.fulfill({ status: 404, body: 'gone' })); },
     });
     await page.screenshot({ path: path.join(OUT, 'broken-doll.png'), fullPage: false });
     const lab = await page.evaluate(() => window.__avatarLab);

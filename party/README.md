@@ -314,9 +314,11 @@ Every slot is a file name. Drop the file in, then:
 **dev:** reload the page. **Production:** re-run the build/deploy
 (`deploy/gce-deploy.sh` or `deploy/cloudrun-deploy.sh`), because the list of
 present files is taken at build time. Any of `.png .webp .jpg .jpeg .svg` works
-for a picture slot with the same base name (the game art ships as `.webp`, made with
-`tools/assets/to_webp.py`; a file with the exact slot name wins). Each folder's README
-has sizes and framing rules.
+for a picture slot with the same base name (a file with the exact slot name wins). The art
+ships as `.webp`: `npm run build` first runs `tools/assets/optimize.py`, which turns every PNG
+under `client/public/assets` into a visually lossless WebP of the same name (or keeps the PNG
+when WebP is not smaller; it needs python3 with Pillow, else the build goes on with the PNG).
+Each folder's README has sizes and framing rules.
 
 | Folder | Slots (at the time of writing) |
 | --- | --- |
