@@ -392,7 +392,6 @@ export function WinScreen(props: { readonly onDone: () => void; readonly look: s
       <div class="pp-rays" aria-hidden="true" />
       <StageLight />
       <Confetti bursts={5} intensity={1.3} />
-      <Burst text="מחורחר!" class="ps-win-burst" />
       <h1 class="pp-win-title ps-logo">
         זכית <span class="is-red">בשימי אנג׳ל!</span>
       </h1>
@@ -402,6 +401,7 @@ export function WinScreen(props: { readonly onDone: () => void; readonly look: s
             👑
           </span>
           <Avatar look={props.look} size={dollPx(v, 0.38, 0.19, 96, 160)} crop="bust" />
+          <Burst text="מחורחר!" class="ps-hero-burst" />
         </div>
         <Prize />
       </div>
@@ -654,7 +654,10 @@ export function FinalScreen(props: { readonly state: RoomState; readonly me: str
             `מקום ${PLACE_WORD[rank] ?? rank}!`
           ) : (
             <>
-              מקום <Num>{rank}</Num> מתוך <Num>{rows.length}</Num>
+              מקום <Num>{rank}</Num>{' '}
+              <span class="ps-of">
+                מתוך <Num>{rows.length}</Num>
+              </span>
             </>
           )}
         </div>

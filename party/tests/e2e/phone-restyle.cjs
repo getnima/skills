@@ -159,7 +159,9 @@ const call = (s, ev, req) =>
       const order = gameId === 'tap' ? [A, B, C, D] : [D, C, B, A];
       for (const want of ['3', '2', '1']) {
         const p = order.shift();
-        await L.waitFor(async () => (await digit(p)).trim() === want, 4000, `digit ${want}`).catch(() => {});
+        const seen = await L.waitFor(async () => (await digit(p)).trim() === want, 4000, `digit ${want}`).catch(() => false);
+        // a slow machine can miss a digit: no picture of a number still zooming in
+        if (!seen) continue;
         await sleep(380);
         await shot(p.page, `${cdLabel}-${want}`, { allowOverlap: true });
       }
@@ -349,11 +351,11 @@ const call = (s, ev, req) =>
           rank: document.querySelector('.pp-res-rank').textContent.replace(/\s+/g, ' ').trim(),
           raw: (document.querySelector('.pp-res-raw') || {}).textContent || '',
           totals: [...document.querySelectorAll('.pp-top3 .pp-st-total')].map((e) => e.textContent.trim()),
-          text: document.querySelector('.pp-results').textContent,
+          card: document.querySelector('.pp-res-card').textContent,
         }));
         check(card.rank === `מקום ${row.roundRank} בסיבוב`, `${p.tag}: flappy results say the place (${card.rank})`);
         check(p === B ? /באוויר/.test(card.raw) : card.raw.includes(`מתוך ${scorers}`), `${p.tag}: ...out of the ${scorers} who flew (${card.raw})`);
-        check(!card.text.includes(String(row.raw)) || row.raw < 10, `${p.tag}: the distance ${row.raw} is nowhere on the screen`);
+        check(!new RegExp(`(^|[^0-9,])${row.raw}([^0-9,]|$)`).test(card.card) || row.raw === row.points, `${p.tag}: the distance ${row.raw} is not on the result card (${card.card.replace(/\s+/g, ' ').slice(0, 80)})`);
         check(card.totals[0] === 'אחרון באוויר' && card.totals.every((t) => !t.includes('⭐')), `${p.tag}: the table marks who was last in the air and shows no raw score (${card.totals.slice(0, 3).join(' | ')})`);
       }
       await tour(D, `${label}-place`);

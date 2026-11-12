@@ -167,6 +167,10 @@
   font-style: normal;
   font-variant-numeric: tabular-nums;
 }
+.ps-logo .ps-n {
+  display: inline-block;
+  line-height: 0.9;
+}
 
 /* a headline: Motaleh, white, ink outline, hard shadow, a little skewed */
 .ps .pp-title {
@@ -1074,17 +1078,18 @@
   color: var(--ink);
   background-color: var(--yel);
 }
-.pp-win > :not(.pp-rays):not(.pw-glow):not(.pw-dots):not(.pp-confetti):not(.pw-burst) {
+.pp-win > :not(.pp-rays):not(.pw-glow):not(.pw-dots):not(.pp-confetti) {
   position: relative;
   z-index: 2;
 }
-.pp-win .ps-win-burst {
-  z-index: 3;
-  top: calc(var(--sat) + 6px);
-  left: calc(5px + var(--sal));
-  width: clamp(68px, 21vw, 92px);
+.ps-win-me .ps-hero-burst {
+  top: auto;
+  bottom: -18px;
+  right: -20px;
+  left: auto;
+  width: clamp(72px, 22vw, 96px);
 }
-.pp-win .ps-win-burst span {
+.ps-win-me .ps-hero-burst span {
   font-size: clamp(14px, 4.4vw, 19px);
 }
 .pp-win-title {
@@ -1333,7 +1338,7 @@
   justify-content: center;
   gap: 12px;
   width: 100%;
-  padding-top: 4px;
+  padding: 4px 12px 0;
 }
 .is-winner .ps-res-me {
   padding-top: clamp(25px, 7.4vw, 31px);
@@ -1592,10 +1597,29 @@
   white-space: normal;
 }
 .pp-final:not(.is-podium) .pp-final-place {
-  font-size: clamp(32px, 10.4vw, 46px);
+  font-size: clamp(46px, 15vw, 66px);
 }
 .pp-final-place .ps-n {
   font-size: 1.06em;
+}
+/* "מתוך 21": a white pill under the big place */
+.pp-final-place .ps-of {
+  display: block;
+  width: fit-content;
+  margin: 8px auto 0;
+  padding: 3px 14px 6px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  color: var(--cob);
+  font-size: 0.46em;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+}
+.pp-final-place .ps-of .ps-n {
+  font-size: 1.1em;
+  color: var(--ink);
 }
 .pp-final .pp-score-big {
   padding: 3px 18px 5px;
@@ -1764,6 +1788,9 @@
   from {
     transform: translate(-50%, -80px);
   }
+}
+.pp-app:has(> .pp-banner) .pw-bar .pw-live {
+  visibility: hidden;
 }
 .pp-spinner {
   flex: none;

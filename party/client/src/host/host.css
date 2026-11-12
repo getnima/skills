@@ -601,7 +601,6 @@ body {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  pointer-events: none;
 }
 /* between rounds the join panel is small; the designed code still gets 420 px of the board */
 .hs-lobby.is-between.has-designed-qr {
@@ -1207,6 +1206,12 @@ body {
   height: calc(64 * var(--hu));
   font-size: calc(58 * var(--hu));
   line-height: 1;
+}
+/* a key-art box is a plain block: in a grid the picture's 100% height would follow its own size */
+.hs-intro-emoji.is-pic,
+.hs-game-emoji.is-pic,
+.hs-countdown-art.is-pic {
+  display: block;
 }
 /* the game's key art: it stands a little out of the top of its tile */
 .hs-game-emoji.is-pic {

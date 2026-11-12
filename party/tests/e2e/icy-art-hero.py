@@ -63,36 +63,63 @@ def reconstruct(seed, mask):
         cur = nxt
 
 
+def largest_component(mask):
+    """The biggest 4-connected component of `mask` (by repeated flood fill from unvisited pixels)."""
+    rest = mask.copy()
+    best = np.zeros_like(mask)
+    best_n = 0
+    while rest.any():
+        ys, xs = np.nonzero(rest)
+        seed = np.zeros_like(rest)
+        seed[ys[0], xs[0]] = True
+        comp = reconstruct(seed, rest)
+        n = int(comp.sum())
+        if n > best_n:
+            best, best_n = comp, n
+        rest &= ~comp
+        if best_n > rest.sum():
+            break
+    return best
+
+
 def head_of(px):
-    """(mask of the head: hat, hair, face down to the chin; chin x, chin y)."""
+    """(mask of the head: hat, hair, face and ears down to the chin; chin x, chin y)."""
     r, g, b, al = px[:, :, 0], px[:, :, 1], px[:, :, 2], px[:, :, 3]
     opaque = al > 100
-    yellow = opaque & (r > 165) & (g > 120) & (b < 125) & (r - b > 80)
-    skin = opaque & (r > 120) & (g > r * 0.52) & (g < r * 0.76) & (b > r * 0.36) & (b < r * 0.66) & (r - b > 40) & (r < 235)
-    hair = opaque & (np.maximum(np.maximum(r, g), b) < 80)
-    hy, _ = np.nonzero(hair)
-    # the face is the skin next to the hair, above the scarf: rows with plenty of skin, down to the last one
-    rows = skin.sum(axis=1)
-    top = int(np.percentile(hy, 5))
-    ys = np.nonzero(rows >= 22)[0]
-    ys = ys[ys >= top]
-    # stop at the first gap (the mittens are below, they are yellow anyway)
-    chin = int(ys[0])
-    for y in ys:
-        if y - chin > 6:
-            break
-        chin = int(y)
-    xs = np.nonzero(skin[chin - 8 : chin + 1].any(axis=0))[0]
-    chin_x = float(np.median(xs))
+    # the scarf / mittens: saturated yellow (skin is redder, its highlights are paler)
+    yellow = opaque & (r > 150) & (g > r * 0.72) & (b < r * 0.48)
+    skin = opaque & (r > 110) & (g > r * 0.5) & (g < r * 0.78) & (b > r * 0.34) & (b < r * 0.68) & (r - b > 35)
+    face = largest_component(skin)
+    fy, fx = np.nonzero(face)
+    chin = int(fy.max())
+    chin_x = float(np.median(fx[fy >= chin - 10]))
     ok = opaque & ~yellow
     ok[chin + 1 :] = False
     seed = np.zeros_like(ok)
-    fy, fx = np.nonzero(skin & ok)
-    seed[int(np.median(fy)), int(np.median(fx))] = True
+    seed[int(np.median(fy)), int(np.median(fx[fy == int(np.median(fy))]))] = True
     seed &= ok
     if not seed.any():
-        seed[fy[len(fy) // 2], fx[len(fx) // 2]] = True
-    return reconstruct(seed, ok), chin_x, float(chin)
+        seed = face & ok
+    head = reconstruct(seed, ok)
+    # fill holes (skin highlights read as scarf yellow): whatever the outside cannot reach is head
+    outside = np.zeros_like(head)
+    outside[0, :] = outside[-1, :] = outside[:, 0] = outside[:, -1] = True
+    outside = reconstruct(outside, ~head)
+    head = ~outside
+    # close small notches on the outline (a highlight on the jaw next to the scarf)
+    m = head
+    for _ in range(4):
+        g2 = m.copy()
+        g2[1:] |= m[:-1]
+        g2[:-1] |= m[1:]
+        g2[:, 1:] |= m[:, :-1]
+        g2[:, :-1] |= m[:, 1:]
+        m = g2
+    for _ in range(4):
+        m = m & np.roll(m, 1, 0) & np.roll(m, -1, 0) & np.roll(m, 1, 1) & np.roll(m, -1, 1)
+    head = (head | m) & opaque
+    head[chin + 1 :] = False
+    return head, chin_x, float(chin)
 
 
 def swap_head(px, donor, ratio, sink=5.0):

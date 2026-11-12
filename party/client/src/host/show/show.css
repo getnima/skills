@@ -349,11 +349,11 @@
 .sh-row .sh-name {
   width: calc(330 * var(--u) + (var(--rh) - 84 * var(--u)) * 1.1);
   min-width: calc(310 * var(--u));
-  font-size: clamp(calc(46 * var(--u)), calc(var(--rh) * 0.4), calc(74 * var(--u)));
+  font-size: clamp(calc(52 * var(--u)), calc(var(--rh) * 0.42), calc(76 * var(--u)));
 }
 /* a 12-14 letter (often Latin) name: a little smaller instead of cut */
 .sh-row .sh-name.is-long {
-  font-size: clamp(calc(40 * var(--u)), calc(var(--rh) * 0.34), calc(62 * var(--u)));
+  font-size: clamp(calc(42 * var(--u)), calc(var(--rh) * 0.35), calc(62 * var(--u)));
 }
 .sh-badges {
   flex: none;
@@ -371,9 +371,9 @@
 .sh-score {
   flex: none;
   width: calc(176 * var(--u) + (var(--rh) - 84 * var(--u)) * 0.5);
-  min-width: calc(170 * var(--u));
+  min-width: calc(180 * var(--u));
   text-align: left;
-  font-size: clamp(calc(48 * var(--u)), calc(var(--rh) * 0.4), calc(70 * var(--u)));
+  font-size: clamp(calc(52 * var(--u)), calc(var(--rh) * 0.42), calc(72 * var(--u)));
   font-weight: 900;
   color: var(--cob-d);
   font-variant-numeric: tabular-nums;
@@ -664,6 +664,10 @@
 }
 .sh-playing.is-elimination .sh-game-emoji.is-pic {
   height: calc(120 * var(--u));
+}
+.sh-game-emoji.is-pic,
+.sh-aside-emoji.is-pic {
+  display: block;
 }
 .sh-game-emoji.is-pic > img,
 .sh-aside-emoji.is-pic > img {
