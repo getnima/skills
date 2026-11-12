@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { findCutscene } from '../../../shared/cutscenes';
 import { GAMES, GAME_IDS } from '../../../shared/protocol';
 import { roundTime } from '../../../shared/round-clock';
-import { isMuted, setMuted, unlockAudio } from '../kit/audio';
+import { isMuted, preloadClips, setMuted, sfx, unlockAudio } from '../kit/audio';
 import { enterFullscreen } from '../kit/mobile';
 import { buildControlModel, checkAction, confirmQuestion, findAction, isGameId, nextUnplayed, parseRelay, remoteView, toRelay } from './actions';
 import { CreditsPanel } from './credits';
@@ -124,7 +124,7 @@ function RoundGo(props: { readonly round: RoundPublic; readonly clock: ServerClo
     const rt = roundTime(props.round, props.clock.now());
     return !rt.frozen && rt.elapsedMs < 1_200;
   });
-  return fresh ? <GoSplash /> : null;
+  return fresh ? <GoSplash gong /> : null;
 }
 
 function PlayingView(props: { readonly state: RoomState; readonly round: RoundPublic; readonly room: HostRoom }): JSX.Element {
@@ -277,6 +277,14 @@ export function App(): JSX.Element {
     phaseAt.current = performance.now();
   }
   useEffect(() => setArmed(null), [phaseKey]);
+  // the show's drop-in clips decode once at boot, so the first air horn and gong land on their moment
+  useEffect(() => preloadClips(['airhorn', 'gong']), []);
+  // the gong when a round is over: play ends and the results come up
+  const prevPhase = useRef(phase);
+  useEffect(() => {
+    if (prevPhase.current === 'playing' && phase === 'results') sfx.gong();
+    prevPhase.current = phase;
+  }, [phase]);
   useEffect(() => {
     if (armed === null) return undefined;
     const t = setTimeout(() => setArmed(null), Math.max(0, armed.until - performance.now()));

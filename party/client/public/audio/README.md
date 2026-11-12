@@ -19,6 +19,8 @@ sound check panel (below).
 | `round.mp3` | the fallback for every game that has no song of its own, quieter | 1 to 2 min, loops | silence |
 | `victory.mp3` | the round winner's song: starts when the winner is revealed and runs over the standings | 15 to 40 s (the chorus) | a built-in synth victory tune |
 | `final.mp3` | the champion's song on the final podium, when first place is revealed | 30 to 60 s | the built-in synth victory tune |
+| `airhorn.mp3` | **in place.** The DJ air horn, once each time the show switches to the next game (the intro screen) | 2.8 s (the owner's sample, leading silence trimmed) | a synthesized air horn |
+| `gong.mp3` | **in place.** The gong, when a round starts (with "יאללה!") and when it is over (the results come up); at most 4.5 s, faded | 6.1 s (the owner's sample, trimmed and faded) | a synthesized gong |
 
 How a game's song behaves
 

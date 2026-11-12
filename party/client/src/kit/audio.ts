@@ -1,8 +1,11 @@
 /**
- * WebAudio synth: every sound effect is generated, there are no audio files.
+ * WebAudio synth: the sound effects are generated, except a few drop-in clips from
+ * client/public/audio (the air horn and the gong) that play when their file exists and
+ * fall back to a synth otherwise.
  * Everything here is safe to call before the audio is unlocked, when the
  * AudioContext is missing, and when muted: it then simply does nothing.
  */
+import { findPublicFile } from './files';
 
 type AudioCtor = typeof AudioContext;
 
@@ -405,6 +408,93 @@ function drumroll(ms = 1600): void {
   }
 }
 
+// ───────────────────────────── Drop-in clips ─────────────────────────────
+
+const CLIP_EXTS = ['mp3', 'm4a', 'ogg', 'wav', 'webm'] as const;
+const clips = new Map<string, Promise<AudioBuffer | null>>();
+
+/** Decode /audio/<name>.mp3 (or another extension) once; null when there is no such file or it does not decode. */
+function loadClip(name: string): Promise<AudioBuffer | null> {
+  const known = clips.get(name);
+  if (known) return known;
+  const url = findPublicFile(`/audio/${name}.mp3`, CLIP_EXTS);
+  const c = getAudioContext();
+  const p: Promise<AudioBuffer | null> =
+    url === null || !c
+      ? Promise.resolve(null)
+      : fetch(url)
+          .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+          .then((b) => c.decodeAudioData(b))
+          .catch(() => null);
+  clips.set(name, p);
+  return p;
+}
+
+/** Decode clips ahead, so the first one plays right on its moment (e.g. when the TV boots). */
+export function preloadClips(names: readonly string[]): void {
+  for (const n of names) void loadClip(n);
+}
+
+/**
+ * Play a drop-in clip through the master output (it honours mute), at most `maxS` seconds
+ * (faded out over the last second). With no such file, or one that does not decode, `fallback`
+ * plays instead. A clip still decoding plays when ready, unless its moment has passed (1.5 s).
+ */
+function playClip(name: string, fallback: () => void, vol = 1, maxS = 0): void {
+  const asked = performance.now();
+  void loadClip(name).then((buf) => {
+    if (!buf) {
+      fallback();
+      return;
+    }
+    if (performance.now() - asked > 1500) return;
+    const c = live();
+    if (!c || !master) return;
+    try {
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      const g = c.createGain();
+      const t0 = c.currentTime;
+      g.gain.setValueAtTime(vol, t0);
+      const len = maxS > 0 ? Math.min(maxS, buf.duration) : buf.duration;
+      if (maxS > 0 && buf.duration > maxS) {
+        g.gain.setValueAtTime(vol, t0 + Math.max(0, len - 1));
+        g.gain.linearRampToValueAtTime(0.0001, t0 + len);
+      }
+      src.connect(g);
+      g.connect(master);
+      src.start(t0);
+      src.stop(t0 + len + 0.02);
+    } catch {
+      // never let a sound break the show
+    }
+  });
+}
+
+/** A struck gong (the fallback when gong.mp3 is missing): a low inharmonic ring with a long tail. */
+function gongSynth(): void {
+  const partials: ReadonlyArray<readonly [number, number, number]> = [
+    // [Hz, peak, seconds]
+    [98, 0.32, 3.6],
+    [146, 0.2, 3.0],
+    [207, 0.14, 2.4],
+    [263, 0.1, 2.0],
+    [349, 0.07, 1.6],
+  ];
+  for (const [f, v, d] of partials) tone({ freq: f, to: f * 0.985, dur: d, type: 'sine', vol: v, attack: 0.01, vibrato: { depth: f * 0.004, rate: 4.5 } });
+  noise({ dur: 0.25, vol: 0.12, filter: { type: 'bandpass', freq: 900, q: 0.8 } });
+}
+
+/** The DJ air horn: airhorn.mp3 when it is there, else the synthesized one. */
+function airhorn(pitch = 1): void {
+  playClip('airhorn', () => airhornSynth(pitch), 0.9);
+}
+
+/** The gong: gong.mp3 (at most 4.5 s) when it is there, else a synthesized gong. */
+function gong(): void {
+  playClip('gong', gongSynth, 0.9, 4.5);
+}
+
 /** A soft-clip curve for the air horn's rasp (made once). */
 let hornCurve: Float32Array<ArrayBuffer> | null = null;
 function hornShape(): Float32Array<ArrayBuffer> {
@@ -420,11 +510,11 @@ function hornShape(): Float32Array<ArrayBuffer> {
 }
 
 /**
- * The DJ air horn: "bwa-bwa-bwaaaa". Three blasts of a detuned, rasped sawtooth stack
- * with a nasal formant, each scooping up into pitch and the last one sagging at its end.
- * Synthesized, so there is no sample to license or load. `pitch` 1 = about B♭4.
+ * The synthesized DJ air horn (the fallback when airhorn.mp3 is missing): "bwa-bwa-bwaaaa".
+ * Three blasts of a detuned, rasped sawtooth stack with a nasal formant, each scooping up into
+ * pitch and the last one sagging at its end. `pitch` 1 = about B♭4.
  */
-function airhorn(pitch = 1): void {
+function airhornSynth(pitch = 1): void {
   const c = live();
   if (!c || !master) return;
   try {
@@ -578,8 +668,10 @@ export const sfx = {
   drumroll,
   /** Brass flourish (~2s). */
   fanfare: (): void => playFanfare(0),
-  /** The DJ air horn, "bwa-bwa-bwaaaa" (~1.3 s): the TV plays it when the show switches to the next game. */
+  /** The DJ air horn (airhorn.mp3, ~2.8 s; a synthesized "bwa-bwa-bwaaaa" without it): the TV plays it when the show switches to the next game. */
   airhorn,
+  /** A gong (~4 s): the TV strikes it when a round starts and when it is over. */
+  gong,
   /** Crowd-ish swell. */
   cheer: (): void => {
     noise({ dur: 1.3, vol: 0.2, attack: 0.3, filter: { type: 'bandpass', freq: 1100, to: 2100, q: 0.7 } });

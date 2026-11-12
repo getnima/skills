@@ -9,7 +9,7 @@ import './preview.css';
 
 import { GAMES, GAME_IDS } from '../../../shared/protocol';
 import { encodeLook, randomLook } from '../../../shared/avatar';
-import { sfx, unlockAudio } from '../kit/audio';
+import { preloadClips, sfx, unlockAudio } from '../kit/audio';
 import { findPublicFile } from '../kit/files';
 import { initMobileViewport } from '../kit/mobile';
 import { mountStage } from '../play/stage';
@@ -118,6 +118,8 @@ function renderMenu(): void {
 
 async function play(gameId: GameId): Promise<void> {
   const meta = GAMES[gameId];
+  // the DJ air horn as the next game comes up (the TV plays it at every game switch)
+  sfx.airhorn();
   const durationMs = meta.durationMs;
   const seed = 1 + Math.floor(Math.random() * 1_000_000);
 
@@ -145,7 +147,8 @@ async function play(gameId: GameId): Promise<void> {
       stage?.destroy();
       stage = null;
     }
-    sfx.success();
+    // the gong: game over (the TV strikes it when a round ends, and when one starts)
+    sfx.gong();
     host.append(endCard(gameId, finalScore));
   }
 
@@ -235,5 +238,12 @@ async function dressingRoom(): Promise<void> {
 // ───────────────────────────── Boot ─────────────────────────────
 
 initMobileViewport();
-window.addEventListener('pointerdown', () => unlockAudio(), { once: true });
+window.addEventListener(
+  'pointerdown',
+  () => {
+    unlockAudio();
+    preloadClips(['airhorn', 'gong']);
+  },
+  { once: true },
+);
 renderMenu();

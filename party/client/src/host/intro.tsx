@@ -99,11 +99,12 @@ export function CountdownScreen(props: { readonly game: GameMeta; readonly round
   );
 }
 
-/** "יאללה!" for a moment when the round starts. Plays the GO sound once. */
-export function GoSplash(props: { readonly text?: string }): JSX.Element | null {
+/** "יאללה!" for a moment when the round starts. Plays the GO sound once: the gong when a round starts (`gong`), a beep after a pause. */
+export function GoSplash(props: { readonly text?: string; readonly gong?: boolean }): JSX.Element | null {
   const [gone, setGone] = useState(false);
   useEffect(() => {
-    sfx.go();
+    if (props.gong === true) sfx.gong();
+    else sfx.go();
     const t = setTimeout(() => setGone(true), 1_000);
     return () => clearTimeout(t);
   }, []);

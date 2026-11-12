@@ -74,6 +74,14 @@ for d in KEEP_DIRS:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(src, dst)
             files.append(rel)
+# the drop-in sound clips the preview plays: the air horn and the gong (the songs stay out)
+for rel in ('audio/airhorn.mp3', 'audio/gong.mp3'):
+    src = os.path.join(public, rel)
+    if os.path.exists(src):
+        dst = os.path.join(site, rel)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copyfile(src, dst)
+        files.append(rel)
 json.dump(sorted(files), open(os.path.join(site, 'files.json'), 'w'), indent=0)
 total = sum(os.path.getsize(os.path.join(site, f)) for f in files)
 print(f'index.html {len(page) / 1024:.0f} KB (css {len(css) / 1024:.0f} KB, js {len(js) / 1024:.0f} KB, {n_fonts} fonts inlined); {len(files)} pictures, {total / 1e6:.1f} MB')
