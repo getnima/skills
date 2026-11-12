@@ -33,6 +33,17 @@ interface Track {
 
 const AUDIO_EXTS = ['mp3', 'm4a', 'ogg', 'wav', 'webm'] as const;
 const tracks = new Map<string, Track>();
+/** Names passed to playTrack, in order (read by the browser tests through window.__partyMusic). */
+const startedLog: string[] = [];
+
+declare global {
+  interface Window {
+    __partyMusic?: { readonly started: readonly string[]; playing(name: string): boolean };
+  }
+}
+if (typeof window !== 'undefined') {
+  window.__partyMusic = { started: startedLog, playing: (name: string): boolean => isTrackPlaying(name) };
+}
 
 onMuteChange((m) => {
   for (const t of tracks.values()) if (t.el) t.el.muted = m;
@@ -60,6 +71,8 @@ export function hasTrackFile(name: string): boolean {
 export function playTrack(name: string, opts: PlayTrackOptions = {}): void {
   try {
     kill(name);
+    startedLog.push(name);
+    if (startedLog.length > 200) startedLog.shift();
     const track: Track = { name, stopped: false, el: null, gain: null, loopTimer: null, fadeTimer: null };
     tracks.set(name, track);
     const volume = clamp01(opts.volume ?? 1);

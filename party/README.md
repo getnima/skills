@@ -34,6 +34,13 @@ Other commands: `npm test` (unit tests), `npm run typecheck`, `npm run build`,
 `npm start` (serves the built app on :8787, or `PORT`).
 Fast rounds for testing: `PARTY_TEST_FAST=1 npm run dev` (12 s games).
 
+End-to-end regression (Playwright + Chromium installed globally): a real TV page
+and four emulated phones play all five games, the cutscenes, every round-winner
+ceremony and the podium. How to start the stack is at the top of each script.
+`npm run test:e2e` runs `tests/e2e/full-flow.cjs`; `npm run test:room` runs
+`tests/e2e/full-room.cjs` (the TV with 30 bots). Screenshots land in
+`tests/e2e/out/`.
+
 Local Wi-Fi is fine for a rehearsal. For the party use a public HTTPS address
 (below): phones need a secure page for screen wake lock, fullscreen and `wss`,
 and then any guest on mobile data can join too.

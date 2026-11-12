@@ -100,6 +100,13 @@ export interface TapDebugState {
 
 let debugSource: (() => TapDebugState) | null = null;
 
+declare global {
+  interface Window {
+    /** Read-only state of the running tap game for test scripts (like __flappy / __ninja). */
+    __tap?: () => TapDebugState | null;
+  }
+}
+
 /** Live state of the running tap game, for automated checks. Null when none runs. */
 export function tapDebug(): TapDebugState | null {
   return debugSource ? debugSource() : null;
@@ -705,6 +712,8 @@ export const game: GameModule = {
       picks: picksSeen,
       hops: hopsSeen,
     });
+
+    window.__tap = tapDebug;
 
     computeGeo();
     loop.start();

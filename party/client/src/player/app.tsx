@@ -40,6 +40,8 @@ const REVEAL_HOLD_MS = 5_500;
 /** Results that were already revealed this long ago skip the moment (e.g. after a reload). */
 const REVEAL_LATE_MS = 1_500;
 const BANNER_DELAY_MS = 700;
+/** The TV holds a short blackout beat at revealAt before the winner's name; phones land on that beat, not ahead of it. */
+const TV_NAME_BEAT_MS = 650;
 
 export type ScreenName =
   | 'boot'
@@ -157,8 +159,9 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
       case 'results': {
         if (results === null) break;
         const idx = results.roundIndex;
+        const revealAt = results.revealAt + TV_NAME_BEAT_MS;
         if (!revealMode.current.has(idx)) {
-          revealMode.current.set(idx, now < results.revealAt + REVEAL_LATE_MS || state.cutscene !== null ? 'live' : 'skip');
+          revealMode.current.set(idx, now < revealAt + REVEAL_LATE_MS || state.cutscene !== null ? 'live' : 'skip');
         }
         const justEnded = snap.endedRound === idx && performance.now() - snap.endedAt < SENDING_MS;
         if (justEnded) {
@@ -166,14 +169,14 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
           body = <SendingScreen score={snap.endedScore} acked={snap.finalAcked} />;
           break;
         }
-        if (now < results.revealAt || state.cutscene !== null) {
+        if (now < revealAt || state.cutscene !== null) {
           screen = 'suspense';
           body = <SuspenseScreen />;
           break;
         }
         const winner = results.winnerIds.includes(me);
         const hold = winner ? WIN_HOLD_MS : REVEAL_HOLD_MS;
-        const moment = revealMode.current.get(idx) === 'live' && dismissed !== idx && now < results.revealAt + hold;
+        const moment = revealMode.current.get(idx) === 'live' && dismissed !== idx && now < revealAt + hold;
         if (moment) {
           screen = winner ? 'win' : 'reveal';
           body = winner ? (
