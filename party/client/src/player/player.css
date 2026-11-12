@@ -1461,3 +1461,297 @@
   opacity: 0.72;
   white-space: nowrap;
 }
+
+/* ───────── me bar: this player's standing, pinned to the bottom of every screen but the game ─────────
+   Design system (client/public/assets/shimi/README.md): cobalt-dark bottom tray, ink outlines,
+   hard offset shadows, Motaleh for Hebrew + digits. Height: --pp-mebar-h (ME_BAR_PX in me-bar.tsx)
+   + the home-indicator inset. */
+@font-face {
+  font-family: 'Motaleh';
+  src: url('/fonts/motaleh.woff2') format('woff2');
+  font-display: swap;
+}
+.pp-app {
+  --pp-mebar-h: 52px;
+  --mb-yel: #ffd21f;
+  --mb-org: #ff9f0a;
+  --mb-red: #f2361b;
+  --mb-cob: #1e3fd8;
+  --mb-cob-d: #10238c;
+  --mb-ink: #16120e;
+  --mb-paper: #fff8e6;
+  --mb-up: #1fbf6a;
+  --mb-disp: 'Motaleh', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
+}
+/* the screens make room for it (their own bottom padding + the tray) */
+.pp-app.has-mebar .pp-screen,
+.pp-app.has-mebar .pp-cutscene {
+  padding-bottom: calc(var(--sab) + var(--pp-mebar-h) + 12px);
+}
+.pp-app.has-mebar .pp-countdown {
+  padding-bottom: calc(var(--sab) + var(--pp-mebar-h));
+}
+
+.pp-mebar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 55;
+  height: calc(var(--pp-mebar-h) + var(--sab));
+  padding: 0 max(12px, var(--sar)) var(--sab) max(12px, var(--sal));
+  display: none;
+  align-items: center;
+  gap: 8px;
+  direction: rtl;
+  background: var(--mb-cob-d);
+  border-top: 3px solid var(--mb-ink);
+  color: #fff;
+  pointer-events: none;
+  contain: layout style;
+}
+.pp-mebar.is-on {
+  display: flex;
+  animation: pp-mb-in 0.28s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes pp-mb-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+.pp-mb-avatar {
+  flex: none;
+  display: flex;
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 2.5px solid var(--mb-ink);
+  border-radius: 50%;
+  background: var(--mb-paper);
+  box-shadow: 2px 2px 0 var(--mb-ink);
+  overflow: hidden;
+}
+.pp-mb-avatar .pp-avatar {
+  box-shadow: none;
+}
+.pp-mb-who {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+.pp-mb-name {
+  max-width: 100%;
+  font-family: var(--mb-disp);
+  font-size: 18px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  unicode-bidi: isolate;
+}
+.pp-mb-total {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  font-family: var(--mb-disp);
+  font-size: 15px;
+  line-height: 17px;
+  color: var(--mb-yel);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pp-mb-pts {
+  font-size: 12px;
+  color: #fff;
+  opacity: 0.8;
+}
+.pp-mb-ready,
+.pp-mb-place {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 11px;
+  border: 2.5px solid var(--mb-ink);
+  border-radius: 999px;
+  box-shadow: 2px 2px 0 var(--mb-ink);
+  font-family: var(--mb-disp);
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pp-mb-ready {
+  background: var(--mb-red);
+  color: #fff;
+  font-size: 18px;
+  transform: rotate(-2deg);
+}
+.pp-mb-place {
+  position: relative;
+  background: var(--mb-paper);
+  color: var(--mb-ink);
+  font-size: 14px;
+}
+.pp-mebar.is-first .pp-mb-place {
+  background: var(--mb-yel);
+  box-shadow: 2px 2px 0 var(--mb-ink), 0 0 0 2px var(--mb-org);
+}
+.pp-mb-crown {
+  font-family: system-ui, sans-serif;
+  font-size: 15px;
+}
+.pp-mb-num {
+  position: relative;
+  display: inline-block;
+  min-width: 0.6em;
+  height: 22px;
+  font-size: 22px;
+  line-height: 22px;
+  text-align: center;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.pp-mb-num.is-new {
+  animation: pp-mb-pop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) 0.15s both;
+}
+@keyframes pp-mb-pop {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+}
+/* old place → new place: the digits roll (up = the new number rises in from below) */
+.pp-mb-roll {
+  min-width: 1.2em;
+}
+.pp-mb-roll > span {
+  display: block;
+  height: 22px;
+}
+.pp-mb-roll .pp-mb-old {
+  position: absolute;
+  inset: 0;
+}
+.pp-mb-roll.is-up .pp-mb-old {
+  animation: pp-mb-out-up 0.55s cubic-bezier(0.5, 0, 0.3, 1) 0.35s both;
+}
+.pp-mb-roll.is-up .pp-mb-new {
+  animation: pp-mb-in-up 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) 0.35s both;
+}
+.pp-mb-roll.is-down .pp-mb-old {
+  animation: pp-mb-out-down 0.55s cubic-bezier(0.5, 0, 0.3, 1) 0.35s both;
+}
+.pp-mb-roll.is-down .pp-mb-new {
+  animation: pp-mb-in-down 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) 0.35s both;
+}
+@keyframes pp-mb-out-up {
+  to {
+    transform: translateY(-110%);
+  }
+}
+@keyframes pp-mb-in-up {
+  from {
+    transform: translateY(110%);
+  }
+}
+@keyframes pp-mb-out-down {
+  to {
+    transform: translateY(110%);
+  }
+}
+@keyframes pp-mb-in-down {
+  from {
+    transform: translateY(-110%);
+  }
+}
+.pp-mb-of {
+  font-size: 13px;
+  color: var(--mb-cob);
+}
+.pp-mb-move {
+  position: absolute;
+  top: -15px;
+  left: -6px;
+  padding: 2px 6px;
+  border: 2px solid var(--mb-ink);
+  border-radius: 999px;
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  color: #fff;
+  box-shadow: 1px 1px 0 var(--mb-ink);
+  animation: pp-mb-badge 3.2s ease-out 0.35s both;
+}
+.pp-mb-move.is-up {
+  background: var(--mb-up);
+}
+.pp-mb-move.is-down {
+  background: var(--mb-red);
+}
+@keyframes pp-mb-badge {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  10% {
+    transform: scale(1.25);
+    opacity: 1;
+  }
+  18%,
+  80% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+.pp-mb-star {
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+}
+/* narrow phones: a little tighter */
+@media (max-width: 345px) {
+  .pp-mebar {
+    gap: 7px;
+  }
+  .pp-mb-place {
+    padding: 0 9px;
+  }
+  .pp-mb-name {
+    font-size: 17px;
+  }
+}
+/* short phones: the screens above the tray give up a little (the tray already shows the
+   total and the overall place, so the results card drops its own copy of them) */
+@media (max-height: 700px) {
+  .pp-app.has-mebar .pp-results {
+    gap: 10px;
+  }
+  .pp-app.has-mebar .pp-res-card {
+    padding: 12px 14px 10px;
+  }
+  .pp-app.has-mebar .pp-res-points {
+    font-size: clamp(52px, 17vw, 72px);
+  }
+  .pp-app.has-mebar .pp-res-grid {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pp-mebar.is-on,
+  .pp-mb-num.is-new,
+  .pp-mb-roll > span {
+    animation: none;
+  }
+  .pp-mb-roll .pp-mb-old {
+    display: none;
+  }
+}

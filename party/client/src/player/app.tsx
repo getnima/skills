@@ -6,6 +6,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { roundTime } from '../../../shared/round-clock';
+import { MeBar } from './me-bar';
+import { meStanding } from './me-standing';
 import { Play } from './play';
 import {
   BootScreen,
@@ -31,6 +33,7 @@ import { useTick } from './ui';
 
 import type { JSX } from 'preact';
 import type { PlayerController, Snapshot } from './controller';
+import type { MeStanding } from './me-standing';
 
 /** The "score sent" beat after a round ends on this phone. */
 const SENDING_MS = 1_400;
@@ -61,9 +64,28 @@ export type ScreenName =
   | 'results'
   | 'final';
 
+/** The me bar as the e2e scripts read it. */
+export interface MeBarDebug {
+  readonly visible: boolean;
+  /** Overall place shown (null: "מוכנים?" or no bar). */
+  readonly place: number | null;
+  readonly count: number | null;
+  readonly total: number | null;
+  /** The bar still shows the standing from before the round that just ended. */
+  readonly hidingRound: boolean;
+}
+
 declare global {
   interface Window {
-    __player?: { screen: ScreenName; cutscene: boolean; resuming: boolean; banner: boolean; snap: Snapshot; now(): number };
+    __player?: {
+      screen: ScreenName;
+      cutscene: boolean;
+      resuming: boolean;
+      banner: boolean;
+      snap: Snapshot;
+      now(): number;
+      meBar: MeBarDebug;
+    };
   }
 }
 
@@ -108,6 +130,9 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
   let body: JSX.Element = <BootScreen />;
   let overlay: JSX.Element | null = null;
   const me = snap.playerId ?? '';
+  // The round that just ended stays secret on this phone until the TV reveals the winner
+  // (the 'sending' beat and the suspense below): the me bar keeps the standing from before it.
+  let hideRound = false;
 
   if (snap.status === 'join' || snap.status === 'joining') {
     screen = 'join';
@@ -166,11 +191,13 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
         }
         const justEnded = snap.endedRound === idx && performance.now() - snap.endedAt < SENDING_MS;
         if (justEnded) {
+          hideRound = true;
           screen = 'sending';
           body = <SendingScreen score={snap.endedScore} acked={snap.finalAcked} />;
           break;
         }
         if (now < revealAt || state.cutscene !== null) {
+          hideRound = true;
           screen = 'suspense';
           body = <SuspenseScreen />;
           break;
@@ -204,6 +231,10 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
   }
 
   const resuming = round !== null && state?.cutscene === null && roundTime(round, now).resumeInMs > 0;
+  // Every screen in the room except the game itself (a cutscene over the game counts as outside).
+  const inRoom = snap.status === 'in' && state !== null && screen !== 'boot';
+  const mine: MeStanding | null = inRoom && state !== null ? meStanding(state, me, hideRound) : null;
+  const meBarOn = mine !== null && (screen !== 'playing' || overlay !== null);
   window.__player = {
     screen,
     cutscene: state?.cutscene !== null && state?.cutscene !== undefined,
@@ -211,12 +242,20 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
     banner,
     snap,
     now: () => ctl.now(),
+    meBar: {
+      visible: meBarOn,
+      place: meBarOn ? (mine?.rank ?? null) : null,
+      count: meBarOn && mine !== null && mine.rank !== null ? mine.count : null,
+      total: meBarOn ? (mine?.total ?? null) : null,
+      hidingRound: hideRound,
+    },
   };
 
   return (
-    <div class={`pp-app pp-on-${screen}`} data-screen={screen}>
+    <div class={`pp-app pp-on-${screen} ${meBarOn ? 'has-mebar' : ''}`} data-screen={screen}>
       {body}
       {overlay}
+      <MeBar standing={mine} visible={meBarOn} />
       {banner ? <ReconnectBanner /> : null}
       <RotateOverlay />
     </div>

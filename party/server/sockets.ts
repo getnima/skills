@@ -2,17 +2,41 @@
  * Thin socket.io adapter around RoomRegistry / Room: validates payloads,
  * checks who is asking, and forwards. No game logic lives here.
  */
-import { RoomRegistry } from './rooms';
+import { RELAY_MAX_PER_SECOND } from '../shared/protocol';
+
+import { remoteFromEnv } from './config';
+import { checkPassword, chooseRoom, cleanRelayData, clientAddress, GuessThrottle, RateLimiter, screenRooms, waitText } from './remote-auth';
+import { normalizeRoomCode, RoomRegistry } from './rooms';
 
 import type { Server, Socket } from 'socket.io';
-import type { Ack, C2S, ErrorCode, S2C } from '../shared/protocol';
+import type { Ack, C2S, ErrorCode, HostRole, RemoteAttachAck, RemoteAttachFailure, S2C } from '../shared/protocol';
+import type { RemoteThrottleConfig } from './config';
 import type { Room, RoomSink } from './room';
 import type { RoomRegistryDeps } from './rooms';
 
 interface SocketData {
   roomCode?: string;
   role?: 'host' | 'player';
+  /** For role 'host': the TV page or a phone remote. */
+  hostRole?: HostRole;
   playerId?: string;
+}
+
+export interface RemoteOptions {
+  /** The remote password (server only). */
+  readonly password: string;
+  readonly throttle: RemoteThrottleConfig;
+  /** Clock of the guess throttle and the relay limit (tests). */
+  readonly now?: () => number;
+}
+
+function defaultRemoteOptions(): RemoteOptions {
+  const r = remoteFromEnv({});
+  return { password: r.remotePassword, throttle: r.remoteThrottle };
+}
+
+function remoteFail(error: ErrorCode, message: string, rooms: readonly string[] = [], retryMs: number | null = null): RemoteAttachFailure {
+  return { ok: false, error, message, rooms, retryMs };
 }
 
 export type PartyServer = Server<C2S, S2C, Record<string, never>, SocketData>;
@@ -56,6 +80,7 @@ export function createRegistry(io: PartyServer, deps: Omit<RoomRegistryDeps, 'si
         void socket.leave(code);
         socket.data.roomCode = undefined;
         socket.data.role = undefined;
+        socket.data.hostRole = undefined;
         socket.data.playerId = undefined;
       }
     },
@@ -63,8 +88,14 @@ export function createRegistry(io: PartyServer, deps: Omit<RoomRegistryDeps, 'si
   return new RoomRegistry({ ...deps, sinkFor });
 }
 
-export function attachSocketHandlers(io: PartyServer, registry: RoomRegistry): void {
+export function attachSocketHandlers(io: PartyServer, registry: RoomRegistry, remote: RemoteOptions = defaultRemoteOptions()): void {
+  const now = remote.now ?? Date.now;
+  const throttle = new GuessThrottle(remote.throttle);
+  const sweeper = setInterval(() => throttle.sweep(now()), 5 * 60_000);
+  sweeper.unref();
   io.on('connection', (socket: PartySocket) => {
+    const relayLimit = new RateLimiter(RELAY_MAX_PER_SECOND, 1_000);
+
     /** Wraps a handler so a bug or a hostile payload answers BAD_REQUEST instead of throwing. */
     function guarded<R>(event: string, ack: unknown, run: (reply: (res: R | Failure) => void) => void): void {
       const reply = safeAck<R | Failure>(ack);
@@ -83,6 +114,7 @@ export function attachSocketHandlers(io: PartyServer, registry: RoomRegistry): v
       void socket.leave(code);
       socket.data.roomCode = undefined;
       socket.data.role = undefined;
+      socket.data.hostRole = undefined;
       socket.data.playerId = undefined;
     }
 
@@ -107,8 +139,67 @@ export function attachSocketHandlers(io: PartyServer, registry: RoomRegistry): v
         void socket.join(room.code);
         socket.data.roomCode = room.code;
         socket.data.role = 'host';
-        const state = room.attachHost(socket.id);
+        socket.data.hostRole = 'screen';
+        const state = room.attachHost(socket.id, 'screen');
         reply({ ok: true, code: room.code, hostKey: room.hostKey, state });
+      });
+    });
+
+    // The owner's phone. Nothing about the request (the password above all) is ever logged or echoed.
+    socket.on('remote:attach', (req: unknown, ack: unknown) => {
+      const reply = safeAck<RemoteAttachAck>(ack);
+      try {
+        const body = isRecord(req) ? req : {};
+        const addr = clientAddress(socket.handshake.address, socket.handshake.headers['x-forwarded-for']);
+        const keys = [`socket:${socket.id}`, `ip:${addr}`];
+        const t = now();
+        const gate = throttle.check(keys, t);
+        if (!gate.ok) return reply(remoteFail('THROTTLED', waitText(gate.retryMs), [], gate.retryMs));
+        if (!checkPassword(body.password, remote.password)) {
+          const lock = throttle.fail(keys, t);
+          if (!lock.ok) return reply(remoteFail('THROTTLED', waitText(lock.retryMs), [], lock.retryMs));
+          return reply(remoteFail('BAD_PASSWORD', 'סיסמה שגויה'));
+        }
+        // the IP key stays: a guest guessing on the same Wi-Fi does not get a fresh start from the owner
+        throttle.succeed([keys[0] as string]);
+        const wanted = body.code === undefined || body.code === null || body.code === '' ? null : normalizeRoomCode(body.code);
+        if (body.code !== undefined && body.code !== null && body.code !== '' && wanted === null) {
+          return reply(remoteFail('ROOM_NOT_FOUND', 'קוד חדר לא תקין', screenRooms(registry.candidates())));
+        }
+        const choice = chooseRoom(registry.candidates(), wanted);
+        if (choice.kind === 'choose') return reply(remoteFail('CHOOSE_ROOM', 'כמה מסכים פתוחים. בחרו חדר', choice.rooms));
+        const room = choice.kind === 'room' ? registry.get(choice.code) : undefined;
+        if (room === undefined) {
+          const text = wanted === null ? 'המסך לא פתוח עדיין. פתחו את עמוד הטלוויזיה' : 'החדר הזה כבר לא קיים';
+          return reply(remoteFail('ROOM_NOT_FOUND', text, choice.kind === 'none' ? choice.rooms : []));
+        }
+        leaveCurrentRoom();
+        void socket.join(room.code);
+        socket.data.roomCode = room.code;
+        socket.data.role = 'host';
+        socket.data.hostRole = 'remote';
+        const state = room.attachHost(socket.id, 'remote');
+        reply({ ok: true, code: room.code, state, rooms: screenRooms(registry.candidates()) });
+      } catch (err) {
+        console.error('[socket] remote:attach failed', err instanceof Error ? err.message : 'unknown error');
+        reply(remoteFail('BAD_REQUEST', 'internal error'));
+      }
+    });
+
+    // Between the hosts of one room (the TV's control model one way, a remote's press the other).
+    socket.on('host:relay', (req: unknown, ack: unknown) => {
+      guarded<Ack<{}>>('host:relay', ack, (reply) => {
+        const room = registry.get(socket.data.roomCode);
+        if (room === undefined || socket.data.role !== 'host' || !room.isHostConn(socket.id)) return reply(fail('NOT_HOST', 'host only'));
+        if (!relayLimit.take(now())) return reply(fail('THROTTLED', 'too many relay messages'));
+        const data = cleanRelayData(isRecord(req) ? req.data : undefined);
+        if (data === null) return reply(fail('BAD_REQUEST', 'relay data must be a small JSON object'));
+        const from: HostRole = room.hostRoleOf(socket.id) ?? 'screen';
+        for (const id of room.hostConnIds()) {
+          if (id === socket.id) continue;
+          io.sockets.sockets.get(id)?.emit('relay', { from, data });
+        }
+        reply({ ok: true });
       });
     });
 
@@ -139,6 +230,7 @@ export function attachSocketHandlers(io: PartyServer, registry: RoomRegistry): v
         }
         socket.data.roomCode = room.code;
         socket.data.role = 'player';
+        socket.data.hostRole = undefined;
         socket.data.playerId = res.playerId;
         reply(res);
       });

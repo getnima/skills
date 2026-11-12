@@ -17,6 +17,8 @@ import type { LiveStanding } from './standing';
 
 /** The HUD repaints the place at most this often (4 a second). */
 export const PLACE_MIN_MS = 250;
+/** Shown instead of a chase while this player and the one it would chase are both on 0. */
+export const IDLE_LINE = 'יאללה, לצבור נקודות!';
 /** The "moved up" sound + haptic at most once a second. */
 const CHEER_MIN_MS = 1_000;
 
@@ -124,12 +126,16 @@ export function createPlaceHud(onShown?: (s: PlaceShown) => void): PlaceHud {
       move.classList.toggle('is-up', up);
       move.classList.toggle('is-down', !up);
       if (up) {
-        animate(move, [
-          { opacity: 0, transform: 'translateY(8px) scale(0.4)' },
-          { opacity: 1, transform: 'translateY(-3px) scale(1.25)', offset: 0.25 },
-          { opacity: 1, transform: 'translateY(-5px) scale(1)', offset: 0.7 },
-          { opacity: 0, transform: 'translateY(-9px) scale(1)' },
-        ], { duration: 750, easing: 'ease-out' });
+        animate(
+          move,
+          [
+            { opacity: 0, transform: 'translateY(8px) scale(0.4)' },
+            { opacity: 1, transform: 'translateY(-3px) scale(1.25)', offset: 0.25 },
+            { opacity: 1, transform: 'translateY(-5px) scale(1)', offset: 0.7 },
+            { opacity: 0, transform: 'translateY(-9px) scale(1)' },
+          ],
+          { duration: 750, easing: 'ease-out' },
+        );
         animate(chip, [{ transform: 'scale(1.16) rotate(-3deg)' }, { transform: 'scale(1) rotate(0)' }], {
           duration: 260,
           easing: 'cubic-bezier(.2,1.6,.4,1)',
@@ -142,25 +148,36 @@ export function createPlaceHud(onShown?: (s: PlaceShown) => void): PlaceHud {
           haptic.tap();
         }
       } else {
-        animate(move, [
-          { opacity: 0, transform: 'translateY(-6px)' },
-          { opacity: 1, transform: 'translateY(2px)', offset: 0.2 },
-          { opacity: 1, transform: 'translateY(2px)', offset: 0.65 },
-          { opacity: 0, transform: 'translateY(6px)' },
-        ], { duration: 650, easing: 'ease-out' });
+        animate(
+          move,
+          [
+            { opacity: 0, transform: 'translateY(-6px)' },
+            { opacity: 1, transform: 'translateY(2px)', offset: 0.2 },
+            { opacity: 1, transform: 'translateY(2px)', offset: 0.65 },
+            { opacity: 0, transform: 'translateY(6px)' },
+          ],
+          { duration: 650, easing: 'ease-out' },
+        );
         animate(flash, [{ opacity: 0 }, { opacity: 0.9, offset: 0.2 }, { opacity: 0 }], { duration: 520, easing: 'ease-out' });
-        animate(chip, [
-          { transform: 'translateX(0)' },
-          { transform: 'translateX(-3px)', offset: 0.25 },
-          { transform: 'translateX(3px)', offset: 0.5 },
-          { transform: 'translateX(0)' },
-        ], { duration: 260 });
+        animate(
+          chip,
+          [
+            { transform: 'translateX(0)' },
+            { transform: 'translateX(-3px)', offset: 0.25 },
+            { transform: 'translateX(3px)', offset: 0.5 },
+            { transform: 'translateX(0)' },
+          ],
+          { duration: 260 },
+        );
       }
     }
 
     const chase = next?.chase ?? null;
+    // Ranked among others but nobody near has scored yet: a kick-off line instead of an empty band.
+    const idle = chase === null && place !== null && (count ?? 0) > 1;
+    line.classList.toggle('is-idle', idle);
     if (chase === null) {
-      text(cLead, '');
+      text(cLead, idle ? IDLE_LINE : '');
       text(cNum, '');
       text(cMid, '');
       text(cName, '');
@@ -176,7 +193,16 @@ export function createPlaceHud(onShown?: (s: PlaceShown) => void): PlaceHud {
       line.classList.toggle('is-lead', chase.kind === 'lead');
     }
 
-    state = { place, count, chase: plainChase(chaseText(chase)), first, ups, downs, lastMove, appliedAt: performance.now() };
+    state = {
+      place,
+      count,
+      chase: idle ? IDLE_LINE : plainChase(chaseText(chase)),
+      first,
+      ups,
+      downs,
+      lastMove,
+      appliedAt: performance.now(),
+    };
     onShown?.(state);
   }
 

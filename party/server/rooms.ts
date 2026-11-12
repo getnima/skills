@@ -6,6 +6,7 @@ import { Room } from './room';
 
 import type { CutsceneDef } from '../shared/cutscenes';
 import type { RoomTiming } from './config';
+import type { RoomCandidate } from './remote-auth';
 import type { RoomSink, Scheduler } from './room';
 
 /** Uppercase letters without the lookalikes I, O and L. */
@@ -89,6 +90,11 @@ export class RoomRegistry {
       room.destroy();
       this.rooms.delete(code);
     }
+  }
+
+  /** Every room as a remote sees it when choosing one (codes and TV presence only). */
+  candidates(): RoomCandidate[] {
+    return [...this.rooms.values()].map((room) => ({ code: room.code, screen: room.screenConnected, activeAt: room.lastScreenAt }));
   }
 
   stats(): { rooms: number; players: number } {

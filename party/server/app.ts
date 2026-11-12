@@ -6,6 +6,7 @@ import { basename, join, resolve } from 'node:path';
 import express from 'express';
 import { Server } from 'socket.io';
 
+import { remoteFromEnv } from './config';
 import { attachSocketHandlers, createRegistry } from './sockets';
 
 import type { Server as HttpServer, ServerResponse } from 'node:http';
@@ -59,6 +60,7 @@ function mountClient(app: Express, dir: string): void {
   // Pretty URLs for the QR code and the TV.
   for (const [route, file] of [
     ['/host', 'host.html'],
+    ['/remote', 'remote.html'],
     ['/show', 'show.html'],
     ['/dev', 'dev.html'],
   ] as const) {
@@ -100,7 +102,11 @@ export function createPartyApp(config: ServerConfig): PartyApp {
     serveClient: false,
   });
   const registry = createRegistry(io, { timing: config.timing });
-  attachSocketHandlers(io, registry);
+  const defaults = remoteFromEnv({});
+  attachSocketHandlers(io, registry, {
+    password: config.remotePassword ?? defaults.remotePassword,
+    throttle: config.remoteThrottle ?? defaults.remoteThrottle,
+  });
 
   const startedAt = Date.now();
   app.get('/healthz', (_req, res) => {

@@ -27,6 +27,7 @@ import type {
   CutsceneState,
   ErrorCode,
   GameId,
+  HostRole,
   Phase,
   PlayerPublic,
   ResultRow,
@@ -157,7 +158,10 @@ export class Room {
   private readonly players = new Map<string, PlayerRec>();
   /** connection id → player id. */
   private readonly playerConns = new Map<string, string>();
-  private readonly hostConns = new Set<string>();
+  /** Host connections: the TV page ('screen') and phone remotes ('remote'). */
+  private readonly hostConns = new Map<string, HostRole>();
+  /** Last time a TV page attached (which room a remote picks first). */
+  private screenAttachedAt = Number.NEGATIVE_INFINITY;
   private readonly kickedIds = new Set<string>();
   private round: RoundRec | null = null;
   private nextRoundIndex = 0;
@@ -217,6 +221,7 @@ export class Room {
       results: this.results,
       cutscene: this.cutscene,
       autoCutscenes: this.autoCutscenes,
+      remotes: this.remoteCount,
       serverNow: now,
     };
   }
@@ -231,6 +236,33 @@ export class Room {
 
   get hostConnected(): boolean {
     return this.hostConns.size > 0;
+  }
+
+  /** A TV page is attached (cutscenes play on it). */
+  get screenConnected(): boolean {
+    for (const role of this.hostConns.values()) if (role === 'screen') return true;
+    return false;
+  }
+
+  /** Phone remotes attached right now. */
+  get remoteCount(): number {
+    let n = 0;
+    for (const role of this.hostConns.values()) if (role === 'remote') n++;
+    return n;
+  }
+
+  /** Server ms of the last TV attach (-Infinity: never). */
+  get lastScreenAt(): number {
+    return this.screenAttachedAt;
+  }
+
+  hostRoleOf(connId: string): HostRole | null {
+    return this.hostConns.get(connId) ?? null;
+  }
+
+  /** Every host connection (TV pages and remotes). */
+  hostConnIds(): string[] {
+    return [...this.hostConns.keys()];
   }
 
   /** Ms since the last socket left; 0 while anyone is attached. */
@@ -248,10 +280,15 @@ export class Room {
 
   // ───────────────────────────── Connections ─────────────────────────────
 
-  attachHost(connId: string): RoomState {
+  /** role 'screen': the TV page (host:create); 'remote': the owner's phone (remote:attach). */
+  attachHost(connId: string, role: HostRole = 'screen'): RoomState {
+    const remotesBefore = this.remoteCount;
     this.detach(connId);
-    this.hostConns.add(connId);
+    this.hostConns.set(connId, role);
+    if (role === 'screen') this.screenAttachedAt = this.scheduler.now();
     this.emptySince = null;
+    // the TV hides its controls while a remote is attached: tell it
+    if (this.remoteCount !== remotesBefore) this.broadcast();
     return this.snapshot();
   }
 
@@ -309,10 +346,14 @@ export class Room {
   /** A socket went away (or moved to another room). Player and scores are kept. */
   disconnect(connId: string): void {
     const playerId = this.playerConns.get(connId);
+    const wasRemote = this.hostConns.get(connId) === 'remote';
     const wasAttached = this.detach(connId);
     if (!wasAttached) return;
     if (this.connectionCount === 0) this.emptySince = this.scheduler.now();
-    if (playerId === undefined) return;
+    if (playerId === undefined) {
+      if (wasRemote) this.broadcast();
+      return;
+    }
     const player = this.players.get(playerId);
     if (player === undefined || player.conns.size > 0) return;
     // A phone that drops for a moment (screen lock, Wi-Fi blip) must not end the round
@@ -669,7 +710,7 @@ export class Room {
   }
 
   private autoAllowed(def: CutsceneDef): boolean {
-    if (!this.autoCutscenes || def.enabled === false || !this.hostConnected) return false;
+    if (!this.autoCutscenes || def.enabled === false || !this.screenConnected) return false;
     return def.repeat === true || !this.firedCutscenes.has(def.id);
   }
 

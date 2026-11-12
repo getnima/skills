@@ -36,7 +36,7 @@
   --pa-disp: 'Motaleh', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
 }
 
-/* One block: 4 + chip row 38 + 2 + chase line 16 + 3 + border 3 = 66px (HUD_ROW_PX in stage.ts). */
+/* One block: 4 + chip row 37 + 2 + chase line 17 + 3 + border 3 = 66px (HUD_ROW_PX in stage.ts). */
 .pa-hud {
   position: absolute;
   top: 0;
@@ -57,7 +57,7 @@
 }
 .pa-hud-row {
   flex: none;
-  height: 38px;
+  height: 37px;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -156,11 +156,11 @@
 /* one-line chase text under the row: "עוד 40 ל־דנה" / "מוביל/ה! +25 על רון" */
 .pa-chase {
   flex: none;
-  height: 16px;
+  height: 17px;
   padding: 0 3px;
   font-family: var(--pa-disp);
-  font-size: 14px;
-  line-height: 16px;
+  font-size: 15px;
+  line-height: 17px;
   color: var(--pa-paper);
   white-space: nowrap;
   overflow: hidden;
@@ -181,6 +181,9 @@
 }
 .pa-chase.is-lead .pa-chase-lead {
   color: var(--pa-yel);
+}
+.pa-chase.is-idle {
+  opacity: 0.75;
 }
 
 .pa-hud-score {

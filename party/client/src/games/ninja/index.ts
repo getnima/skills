@@ -63,6 +63,9 @@ const MAX_SPLATS = 18;
 const MAX_SLASHES = 10;
 const MAX_BLADES = 5;
 const TRAIL = 16;
+/** The drawn blade trail (looks only, its own buffer): points live this many steps (~200 ms). */
+const VTRAIL = 24;
+const VTRAIL_LIFE = 12;
 /** Fruit and bombs are drawn to their hit circle (R * 1.05), not inside it. Looks only. */
 const DRAW_K = 1.05;
 const MAX_POPS = 8;
@@ -374,10 +377,52 @@ export const game: GameModule = {
     let frameEma = 16.7;
     let lastFrameAt = 0;
     let slowSteps = 0;
-    // blade ribbon scratch (normals), reused every frame
-    const ribX = new Float32Array(TRAIL);
-    const ribY = new Float32Array(TRAIL);
-    const ribW = new Float32Array(TRAIL);
+    // the drawn trail of each blade (looks only; the cutting never reads it) and ribbon scratch
+    const vt = Array.from({ length: MAX_BLADES }, () => ({ x: new Float32Array(VTRAIL), y: new Float32Array(VTRAIL), a: new Float32Array(VTRAIL), n: 0, combo: false }));
+    const ribX = new Float32Array(VTRAIL);
+    const ribY = new Float32Array(VTRAIL);
+    const ribW = new Float32Array(VTRAIL);
+    /** Follow the blades' own trails into the drawn ones (one fixed step). */
+    function updateDrawnTrails(): void {
+      for (let k = 0; k < blades.length; k++) {
+        const b = blades[k];
+        const v = vt[k];
+        if (!b || !v) continue;
+        let old = 0;
+        for (let i = 0; i < v.n; i++) {
+          const a = (v.a[i] ?? 0) + 1;
+          v.a[i] = a;
+          if (a > VTRAIL_LIFE) old = i + 1;
+        }
+        if (old > 0) {
+          v.x.copyWithin(0, old);
+          v.y.copyWithin(0, old);
+          v.a.copyWithin(0, old);
+          v.n -= old;
+        }
+        if (b.n === 0) continue;
+        if (b.n === 1 || !b.active) v.combo = false;
+        if (b.active) v.combo = b.swipe >= COMBO_MIN - 1;
+        // take every point of the blade's trail newer than our newest
+        const nx = b.tx[b.n - 1] ?? 0;
+        const ny = b.ty[b.n - 1] ?? 0;
+        if (v.n > 0 && v.x[v.n - 1] === nx && v.y[v.n - 1] === ny) continue;
+        if (v.n === 0 && b.n >= 2) push(v, b.tx[b.n - 2] ?? 0, b.ty[b.n - 2] ?? 0);
+        push(v, nx, ny);
+      }
+    }
+    function push(v: { x: Float32Array; y: Float32Array; a: Float32Array; n: number }, x: number, y: number): void {
+      if (v.n >= VTRAIL) {
+        v.x.copyWithin(0, 1);
+        v.y.copyWithin(0, 1);
+        v.a.copyWithin(0, 1);
+        v.n--;
+      }
+      v.x[v.n] = x;
+      v.y[v.n] = y;
+      v.a[v.n] = 0;
+      v.n++;
+    }
     const slashes: Slash[] = Array.from({ length: MAX_SLASHES }, () => ({
       active: false,
       x: 0,
@@ -854,6 +899,7 @@ export const game: GameModule = {
       // blades (after the throws moved, so the cut uses this step's positions)
       if (stun > 0) stun--;
       for (const b of blades) updateBlade(b, dt);
+      updateDrawnTrails();
 
       // cosmetics that still live in game time
       const g = GRAVITY * fieldH;
@@ -1010,7 +1056,7 @@ export const game: GameModule = {
       if (f.kind === 'bomb') {
         // a red warning burst that throbs behind it (flat, ink outlined)
         const pulse = 0.5 + 0.5 * Math.sin(f.age * 0.3);
-        const kb = R * (2.5 + pulse * 0.35);
+        const kb = R * (2.9 + pulse * 0.45);
         g.save();
         g.translate(x, y);
         g.rotate(f.age * 0.02);
@@ -1087,25 +1133,25 @@ export const game: GameModule = {
       g.globalAlpha = 1;
     }
 
-    /** Ribbon polygon of one blade (both sides of the path), half width `k` x ribW. */
-    function ribbon(g: CanvasRenderingContext2D, b: Blade, k: number, extra: number): void {
-      const n = b.n;
+    /** Ribbon polygon of one drawn trail (both sides of the path), half width `k` x ribW (+ `extra`). */
+    function ribbon(g: CanvasRenderingContext2D, v: { x: Float32Array; y: Float32Array; n: number }, k: number, extra: number): void {
+      const n = v.n;
       g.beginPath();
       for (let i = 0; i < n; i++) {
         const w = (ribW[i] ?? 0) * k + extra;
-        const x = (b.tx[i] ?? 0) + (ribX[i] ?? 0) * w;
-        const y = (b.ty[i] ?? 0) + (ribY[i] ?? 0) * w;
+        const x = (v.x[i] ?? 0) + (ribX[i] ?? 0) * w;
+        const y = (v.y[i] ?? 0) + (ribY[i] ?? 0) * w;
         if (i === 0) g.moveTo(x, y);
         else g.lineTo(x, y);
       }
       for (let i = n - 1; i >= 0; i--) {
         const w = (ribW[i] ?? 0) * k + extra;
-        g.lineTo((b.tx[i] ?? 0) - (ribX[i] ?? 0) * w, (b.ty[i] ?? 0) - (ribY[i] ?? 0) * w);
+        g.lineTo((v.x[i] ?? 0) - (ribX[i] ?? 0) * w, (v.y[i] ?? 0) - (ribY[i] ?? 0) * w);
       }
       g.closePath();
       // round head
-      const hx = b.tx[n - 1] ?? 0;
-      const hy = b.ty[n - 1] ?? 0;
+      const hx = v.x[n - 1] ?? 0;
+      const hy = v.y[n - 1] ?? 0;
       const hw = (ribW[n - 1] ?? 0) * k + extra;
       g.moveTo(hx + hw, hy);
       g.arc(hx, hy, hw, 0, Math.PI * 2);
@@ -1113,35 +1159,34 @@ export const game: GameModule = {
 
     function drawBlades(g: CanvasRenderingContext2D): void {
       const dull = stun > 0;
-      for (const b of blades) {
-        const n = b.n;
+      for (const v of vt) {
+        const n = v.n;
         if (n < 2) continue;
         // half width per point: younger and faster = wider (tapers to a point at the tail)
         for (let i = 0; i < n; i++) {
           const i0 = Math.max(0, i - 1);
           const i1 = Math.min(n - 1, i + 1);
-          let dx = (b.tx[i1] ?? 0) - (b.tx[i0] ?? 0);
-          let dy = (b.ty[i1] ?? 0) - (b.ty[i0] ?? 0);
+          let dx = (v.x[i1] ?? 0) - (v.x[i0] ?? 0);
+          let dy = (v.y[i1] ?? 0) - (v.y[i0] ?? 0);
           const len = Math.hypot(dx, dy) || 1;
           dx /= len;
           dy /= len;
           ribX[i] = -dy;
           ribY[i] = dx;
-          const youth = Math.max(0, 1 - (b.ta[i] ?? 0) / (TRAIL_LIFE + 1));
-          const seg = i > 0 ? Math.hypot((b.tx[i] ?? 0) - (b.tx[i - 1] ?? 0), (b.ty[i] ?? 0) - (b.ty[i - 1] ?? 0)) : 0;
-          const fast = clamp(seg / 22, 0.5, 1.35);
-          ribW[i] = youth * youth * fast * (i === 0 ? 0 : 1);
+          const youth = Math.max(0, 1 - (v.a[i] ?? 0) / (VTRAIL_LIFE + 1));
+          const seg = i > 0 ? Math.hypot((v.x[i] ?? 0) - (v.x[i - 1] ?? 0), (v.y[i] ?? 0) - (v.y[i - 1] ?? 0)) : 0;
+          const fast = clamp(seg / 20, 0.55, 1.4);
+          ribW[i] = youth * fast * (i === 0 ? 0 : 1);
         }
-        const combo = !dull && b.active && b.swipe >= COMBO_MIN - 1;
-        const edge = dull ? '#6d6878' : combo ? PAL.pink : PAL.yel;
+        const edge = dull ? '#6d6878' : v.combo ? PAL.pink : PAL.yel;
         const core = dull ? '#a9a4b4' : '#ffffff';
-        ribbon(g, b, 11, 2);
+        ribbon(g, v, 12, 2.5);
         g.fillStyle = PAL.ink;
         g.fill();
-        ribbon(g, b, 11, 0);
+        ribbon(g, v, 12, 0);
         g.fillStyle = edge;
         g.fill();
-        ribbon(g, b, 5, 0);
+        ribbon(g, v, 5.5, 0);
         g.fillStyle = core;
         g.fill();
       }

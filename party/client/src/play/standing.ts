@@ -50,7 +50,10 @@ export function shortName(raw: string, max = CHASE_NAME_MAX): string {
   if (name === '') return NO_NAME;
   const g = graphemes(name);
   if (g.length <= max) return name;
-  return `${g.slice(0, Math.max(1, max - 1)).join('').trimEnd()}…`;
+  return `${g
+    .slice(0, Math.max(1, max - 1))
+    .join('')
+    .trimEnd()}…`;
 }
 
 /**
@@ -66,7 +69,11 @@ export function liveStanding(scores: ScoresList, me: string, nameOf: (id: string
   const rival = count > 1 ? scores[rivalAt] : undefined;
   let chase: Chase | null = null;
   if (rival !== undefined && (mine > 0 || rival[1] > 0)) {
-    const r: Rival = { id: rival[0], name: shortName(nameOf(rival[0]) ?? ''), gap: Math.max(0, at === 0 ? mine - rival[1] : rival[1] - mine) };
+    const r: Rival = {
+      id: rival[0],
+      name: shortName(nameOf(rival[0]) ?? ''),
+      gap: Math.max(0, at === 0 ? mine - rival[1] : rival[1] - mine),
+    };
     chase = at === 0 ? { kind: 'lead', rival: r } : { kind: 'behind', rival: r };
   }
   return { place: at + 1, count, score: mine, chase };

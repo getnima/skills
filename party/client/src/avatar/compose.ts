@@ -493,18 +493,54 @@ function schedule(job: () => void): void {
   yieldThen(pump);
 }
 
+/** Pictures composed ahead of their own job (a smaller size needed them first). */
+const stash = new Map<string, Composed>();
+
+function composeRequest(r: Request): Composed {
+  try {
+    return composeInner(r.look, { size: r.bucket, crop: r.crop });
+  } catch {
+    return { canvas: fallbackCanvas(r.look, r.bucket), complete: false };
+  }
+}
+
+/**
+ * A small picture is a scaled copy of a bigger one of the same look when one exists or is on its
+ * way (the lobby asks for 40 px and 96 px of every guest): one drawImage instead of a full compose.
+ */
+function fromBigger(r: Request): Composed | null {
+  const base = `${lookKey(r.look)}|`;
+  for (const b of AVATAR_BUCKETS) {
+    if (b <= r.bucket || b > r.bucket * 4) continue;
+    const key = `${base}${b}|${r.crop}`;
+    let big: HTMLCanvasElement | undefined = bitmaps.get(key)?.canvas ?? stash.get(key)?.canvas;
+    if (big === undefined && bitmapPending.has(key)) {
+      const made = composeRequest({ key, look: r.look, bucket: b, crop: r.crop });
+      if (!made.complete) return null;
+      stash.set(key, made);
+      big = made.canvas;
+    }
+    if (big === undefined) continue;
+    const c = makeCanvas(r.bucket, r.bucket);
+    const g = c.getContext('2d');
+    if (g === null) return null;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(big, 0, 0, r.bucket, r.bucket);
+    return { canvas: c, complete: true };
+  }
+  return null;
+}
+
 function produceBitmap(r: Request): Promise<{ canvas: HTMLCanvasElement; complete: boolean }> {
   return Promise.all(lookFiles(r.look).map(loadPic)).then(
     () =>
       new Promise<Composed>((resolve) => {
         schedule(() => {
-          let made: Composed;
-          try {
-            made = composeInner(r.look, { size: r.bucket, crop: r.crop });
-          } catch {
-            made = { canvas: fallbackCanvas(r.look, r.bucket), complete: false };
-          }
-          handOut.push(() => resolve(made));
+          let made = stash.get(r.key);
+          if (made !== undefined) stash.delete(r.key);
+          else made = fromBigger(r) ?? composeRequest(r);
+          const result = made;
+          handOut.push(() => resolve(result));
         });
       }),
   );

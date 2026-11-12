@@ -138,23 +138,23 @@ export function Play(props: { readonly ctl: PlayerController; readonly round: Ro
 
     void mountStage(
       {
-      parent,
-      gameId,
-      seed,
-      durationMs,
-      clock,
-      onScore(score: number): void {
-        debug.stageScore = score;
-        debug.reported = ctl.sendScore(index, score);
-      },
-      onFinish(score: number): void {
-        debug.stageScore = score;
-        ctl.finishEarly(index, score);
-      },
-      onEnd(finalScore: number): void {
-        debug.stageScore = finalScore;
-        ctl.endRound(index, finalScore);
-      },
+        parent,
+        gameId,
+        seed,
+        durationMs,
+        clock,
+        onScore(score: number): void {
+          debug.stageScore = score;
+          debug.reported = ctl.sendScore(index, score);
+        },
+        onFinish(score: number): void {
+          debug.stageScore = score;
+          ctl.finishEarly(index, score);
+        },
+        onEnd(finalScore: number): void {
+          debug.stageScore = finalScore;
+          ctl.endRound(index, finalScore);
+        },
       },
       { onPlaceShown },
     ).then((s) => {

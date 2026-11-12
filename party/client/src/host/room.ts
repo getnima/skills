@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { connect, createServerClock } from '../net/connection';
 
-import type { Ack, ErrorCode, GameId, RoomState } from '../../../shared/protocol';
+import type { Ack, ErrorCode, GameId, HostRole, RelayData, RoomState } from '../../../shared/protocol';
 import type { PartySocket, ServerClock } from '../net/connection';
 
 export type ConnStatus = 'connecting' | 'online' | 'offline';
@@ -38,7 +38,23 @@ const ERROR_TEXT: Readonly<Record<ErrorCode, string>> = {
   BAD_PHASE: 'אי אפשר לעשות את זה בשלב הזה',
   BAD_REQUEST: 'הבקשה נדחתה',
   KICKED: 'הוצאת',
+  BAD_PASSWORD: 'סיסמה שגויה',
+  THROTTLED: 'יותר מדי בקשות. נסו שוב עוד רגע',
+  CHOOSE_ROOM: 'צריך לבחור חדר',
 };
+
+/** What a host action came back with: the server's answer as one Hebrew line. */
+export interface ActResult {
+  readonly ok: boolean;
+  readonly text: string;
+}
+
+export interface ActOptions {
+  /** Do not show the error as a toast on the TV (the remote shows it instead). */
+  readonly quiet?: boolean;
+}
+
+export type RelayListener = (msg: { readonly from: HostRole; readonly data: RelayData }) => void;
 
 export interface RoomNotice {
   readonly id: number;
@@ -56,16 +72,20 @@ export interface HostRoom {
   readonly lostRoom: string | null;
   readonly notice: RoomNotice | null;
   dismissLostRoom(): void;
-  start(gameId: GameId): Promise<boolean>;
-  endRound(): Promise<boolean>;
-  lobby(): Promise<boolean>;
-  final(): Promise<boolean>;
-  reset(): Promise<boolean>;
-  kick(playerId: string): Promise<boolean>;
-  cutscene(id: string): Promise<boolean>;
-  cutsceneEnd(): Promise<boolean>;
-  setAutoCutscenes(enabled: boolean): Promise<boolean>;
+  start(gameId: GameId, opts?: ActOptions): Promise<ActResult>;
+  endRound(opts?: ActOptions): Promise<ActResult>;
+  lobby(opts?: ActOptions): Promise<ActResult>;
+  final(opts?: ActOptions): Promise<ActResult>;
+  reset(opts?: ActOptions): Promise<ActResult>;
+  kick(playerId: string, opts?: ActOptions): Promise<ActResult>;
+  cutscene(id: string, opts?: ActOptions): Promise<ActResult>;
+  cutsceneEnd(opts?: ActOptions): Promise<ActResult>;
+  setAutoCutscenes(enabled: boolean, opts?: ActOptions): Promise<ActResult>;
   newRoom(): void;
+  /** To the other host sockets of this room (the phone remotes). Fire and forget. */
+  relay(data: RelayData): void;
+  /** Relays from the other host sockets. Returns the unsubscribe. */
+  onRelay(fn: RelayListener): () => void;
 }
 
 const EMPTY_SCORES: ReadonlyMap<string, number> = new Map();
@@ -80,6 +100,7 @@ export function useHostRoom(): HostRoom {
   const [notice, setNotice] = useState<RoomNotice | null>(null);
   const stateRef = useRef<RoomState | null>(null);
   const noticeSeq = useRef(0);
+  const relayListeners = useMemo(() => new Set<RelayListener>(), []);
 
   const say = (text: string, tone: RoomNotice['tone'] = 'error'): void => {
     noticeSeq.current += 1;
@@ -134,11 +155,21 @@ export function useHostRoom(): HostRoom {
       setScores(new Map(msg.scores));
     };
     const onReconnectAttempt = (): void => setStatus('connecting');
+    const onRelayMsg = (msg: { from: HostRole; data: RelayData }): void => {
+      for (const fn of relayListeners) {
+        try {
+          fn(msg);
+        } catch (err) {
+          console.error('[host] relay listener failed', err);
+        }
+      }
+    };
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('state', onState);
     socket.on('scores', onScores);
+    socket.on('relay', onRelayMsg);
     socket.io.on('reconnect_attempt', onReconnectAttempt);
     if (socket.connected) onConnect();
 
@@ -153,32 +184,35 @@ export function useHostRoom(): HostRoom {
       socket.off('disconnect', onDisconnect);
       socket.off('state', onState);
       socket.off('scores', onScores);
+      socket.off('relay', onRelayMsg);
       socket.io.off('reconnect_attempt', onReconnectAttempt);
       document.removeEventListener('visibilitychange', onVisible);
       socket.close();
     };
   }, [socket, clock]);
 
-  const act = (run: (ack: (res: Ack<{}>) => void) => void): Promise<boolean> =>
-    new Promise<boolean>((resolve) => {
+  const act = (run: (ack: (res: Ack<{}>) => void) => void, opts?: ActOptions): Promise<ActResult> =>
+    new Promise<ActResult>((resolve) => {
+      const failWith = (text: string): void => {
+        if (opts?.quiet !== true) say(text);
+        resolve({ ok: false, text });
+      };
       if (!socket.connected) {
-        say('אין חיבור לשרת כרגע. מנסים להתחבר מחדש…');
-        resolve(false);
+        failWith('אין חיבור לשרת כרגע. מנסים להתחבר מחדש…');
         return;
       }
       let done = false;
       const timer = setTimeout(() => {
         if (done) return;
         done = true;
-        say('השרת לא ענה. נסו שוב.');
-        resolve(false);
+        failWith('השרת לא ענה. נסו שוב.');
       }, 6_000);
       run((res) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
-        if (!res.ok) say(ERROR_TEXT[res.error]);
-        resolve(res.ok);
+        if (!res.ok) failWith(ERROR_TEXT[res.error] ?? 'הבקשה נדחתה');
+        else resolve({ ok: true, text: 'בוצע' });
       });
     });
 
@@ -190,15 +224,24 @@ export function useHostRoom(): HostRoom {
     lostRoom,
     notice,
     dismissLostRoom: (): void => setLostRoom(null),
-    start: (gameId) => act((ack) => socket.emit('host:start', { gameId }, ack)),
-    endRound: () => act((ack) => socket.emit('host:endRound', {}, ack)),
-    lobby: () => act((ack) => socket.emit('host:lobby', {}, ack)),
-    final: () => act((ack) => socket.emit('host:final', {}, ack)),
-    reset: () => act((ack) => socket.emit('host:reset', {}, ack)),
-    kick: (playerId) => act((ack) => socket.emit('host:kick', { playerId }, ack)),
-    cutscene: (id) => act((ack) => socket.emit('host:cutscene', { id }, ack)),
-    cutsceneEnd: () => act((ack) => socket.emit('host:cutsceneEnd', {}, ack)),
-    setAutoCutscenes: (enabled) => act((ack) => socket.emit('host:setAutoCutscenes', { enabled }, ack)),
+    start: (gameId, opts) => act((ack) => socket.emit('host:start', { gameId }, ack), opts),
+    endRound: (opts) => act((ack) => socket.emit('host:endRound', {}, ack), opts),
+    lobby: (opts) => act((ack) => socket.emit('host:lobby', {}, ack), opts),
+    final: (opts) => act((ack) => socket.emit('host:final', {}, ack), opts),
+    reset: (opts) => act((ack) => socket.emit('host:reset', {}, ack), opts),
+    kick: (playerId, opts) => act((ack) => socket.emit('host:kick', { playerId }, ack), opts),
+    cutscene: (id, opts) => act((ack) => socket.emit('host:cutscene', { id }, ack), opts),
+    cutsceneEnd: (opts) => act((ack) => socket.emit('host:cutsceneEnd', {}, ack), opts),
+    setAutoCutscenes: (enabled, opts) => act((ack) => socket.emit('host:setAutoCutscenes', { enabled }, ack), opts),
+    relay: (data: RelayData): void => {
+      if (socket.connected) socket.emit('host:relay', { data }, () => undefined);
+    },
+    onRelay: (fn: RelayListener): (() => void) => {
+      relayListeners.add(fn);
+      return () => {
+        relayListeners.delete(fn);
+      };
+    },
     newRoom: (): void => {
       if (!socket.connected) {
         say('אין חיבור לשרת כרגע.');

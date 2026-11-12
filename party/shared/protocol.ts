@@ -219,6 +219,12 @@ export interface RoomState {
   readonly cutscene: CutsceneState | null;
   /** Host switch: whether cutscenes with an automatic trigger fire. */
   readonly autoCutscenes: boolean;
+  /**
+   * How many phone remotes (`remote:attach`) are attached to this room right
+   * now. The TV hides its own controls while this is above 0. Nothing else
+   * about remotes is ever part of the state.
+   */
+  readonly remotes: number;
   /** Server epoch ms when this snapshot was made. */
   readonly serverNow: number;
 }
@@ -234,7 +240,39 @@ export type ErrorCode =
   | 'NOT_HOST'
   | 'BAD_PHASE'
   | 'BAD_REQUEST'
-  | 'KICKED';
+  | 'KICKED'
+  /** remote:attach: the password is wrong (or missing). */
+  | 'BAD_PASSWORD'
+  /** remote:attach: too many wrong passwords; `retryMs` says how long to wait. */
+  | 'THROTTLED'
+  /** remote:attach without a code: more than one room has a TV connected; pick one of `rooms`. */
+  | 'CHOOSE_ROOM';
+
+// ───────────────────────────── Remote (the host's phone) ─────────────────────────────
+
+/** Which kind of host socket: the TV page ('screen', host:create) or a phone remote ('remote', remote:attach). */
+export type HostRole = 'screen' | 'remote';
+
+export type RelayJson = string | number | boolean | null | readonly RelayJson[] | { readonly [key: string]: RelayJson };
+/** What the hosts of one room tell each other (the TV's control model, a remote's button press). A small JSON object. */
+export type RelayData = { readonly [key: string]: RelayJson };
+
+/** The server refuses a relay payload larger than this (JSON bytes). */
+export const RELAY_MAX_BYTES = 16 * 1024;
+/** ...and more than this many relays per second from one socket. */
+export const RELAY_MAX_PER_SECOND = 20;
+
+/** remote:attach failed. `rooms` lists the rooms with a TV (CHOOSE_ROOM / ROOM_NOT_FOUND after a right password, else empty). */
+export interface RemoteAttachFailure {
+  readonly ok: false;
+  readonly error: ErrorCode;
+  readonly message: string;
+  readonly rooms: readonly string[];
+  /** THROTTLED: ms until the next try is accepted; null otherwise. */
+  readonly retryMs: number | null;
+}
+
+export type RemoteAttachAck = { readonly ok: true; readonly code: string; readonly state: RoomState; readonly rooms: readonly string[] } | RemoteAttachFailure;
 
 /** Client → server. Every event except `player:score` takes an ack callback. */
 export interface C2S {
@@ -262,6 +300,19 @@ export interface C2S {
   /** The TV finished playing the current cutscene (or the host skipped it). */
   'host:cutsceneEnd': (req: {}, ack: (res: Ack<{}>) => void) => void;
   'host:setAutoCutscenes': (req: { enabled: boolean }, ack: (res: Ack<{}>) => void) => void;
+  /**
+   * Attach this socket as a HOST of a room with role 'remote' (the owner's phone).
+   * The password is checked only by the server (constant time, guesses throttled).
+   * Without `code`: the room whose TV is connected; CHOOSE_ROOM when several are,
+   * ROOM_NOT_FOUND when none is. Every host:* event then works from this socket.
+   */
+  'remote:attach': (req: { password: string; code?: string }, ack: (res: RemoteAttachAck) => void) => void;
+  /**
+   * Host sockets only: forwarded to the OTHER host sockets of the same room as
+   * S2C `relay`. `data` is a small JSON object (RELAY_MAX_BYTES), at most
+   * RELAY_MAX_PER_SECOND per socket.
+   */
+  'host:relay': (req: { data: RelayData }, ack: (res: Ack<{}>) => void) => void;
 
   /**
    * Join a room, or resume as the same player after a refresh/reconnect when
@@ -296,4 +347,6 @@ export interface S2C {
   scores: (msg: { round: number; scores: ReadonlyArray<readonly [string, number]> }) => void;
   /** This player was removed by the host. */
   kicked: () => void;
+  /** Host sockets only: what another host socket of the same room sent with `host:relay`. */
+  relay: (msg: { from: HostRole; data: RelayData }) => void;
 }

@@ -9,7 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { lookKey } from '../../../shared/avatar';
 import { plateColor } from './catalog';
-import { avatarBitmap, avatarUrl, holdAvatarUrl, peekAvatarBitmap, peekAvatarUrl } from './compose';
+import { avatarBitmap, avatarBucket, avatarUrl, holdAvatarUrl, peekAvatarBitmap, peekAvatarUrl } from './compose';
 
 import type { JSX } from 'preact';
 
@@ -103,6 +103,7 @@ export function Avatar(props: AvatarProps): JSX.Element {
   const { size, crop = 'icon', ring = false, round = false, label } = props;
   const key = keyOf(props.look);
   const ref = useRef<HTMLCanvasElement>(null);
+  const bucket = avatarBucket(size);
 
   useLayoutEffect(() => {
     let alive = true;
@@ -127,7 +128,7 @@ export function Avatar(props: AvatarProps): JSX.Element {
       aria-label={label}
       aria-hidden={label === undefined ? 'true' : undefined}
     >
-      <canvas ref={ref} width={1} height={1} />
+      <canvas ref={ref} width={bucket} height={bucket} />
     </span>
   );
 }

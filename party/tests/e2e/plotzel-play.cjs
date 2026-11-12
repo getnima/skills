@@ -187,15 +187,16 @@ async function layoutIssues(page) {
     const out = [];
     if (window.scrollY !== 0 || se.scrollHeight > innerHeight + 0.5 || se.scrollWidth > innerWidth + 0.5) out.push({ scrollY: window.scrollY, sh: se.scrollHeight, sw: se.scrollWidth });
     const pz = document.querySelector('.pz');
+    const board = document.querySelector('.pz-board');
+    const rowsEl = document.querySelector('.pz-rows');
+    // the next ladder slides in from the side for 0.3 s: rows are not judged during that
+    const sliding = !!rowsEl && rowsEl.getAnimations().some((a) => a.playState === 'running');
     if (pz && (pz.scrollHeight > pz.clientHeight + 1 || pz.scrollWidth > pz.clientWidth + 1)) out.push({ pzOverflow: [pz.scrollHeight, pz.clientHeight, pz.scrollWidth, pz.clientWidth] });
     for (const el of document.querySelectorAll(sliding ? '.pz-head, .pz-kb, .pz-key, .pz-tools, .pz-tool' : '.pz-head, .pz-kb, .pz-key, .pz-tools, .pz-tool, .pz-row:not([hidden]), .pz-toast.is-on')) {
       const r = el.getBoundingClientRect();
       if (r.width > 0 && (r.right > innerWidth + 0.5 || r.left < -0.5 || r.bottom > innerHeight + 0.5 || r.top < -0.5)) out.push({ outside: el.className, r: [r.left, r.top, r.right, r.bottom].map(Math.round) });
     }
     // rows never spill out of the board
-    const board = document.querySelector('.pz-board');
-    const rowsEl = document.querySelector('.pz-rows');
-    const sliding = rowsEl && rowsEl.getAnimations().some((a) => a.playState === 'running');
     if (board && !sliding) {
       const b = board.getBoundingClientRect();
       for (const row of document.querySelectorAll('.pz-rows > .pz-row:not([hidden]), .pz-more:not([hidden])')) {
@@ -270,7 +271,7 @@ async function clumsyBot(page, km, perKeyMs, until, rejects) {
   const seen = new Set();
   const expectReject = async (word, reason, expected) => {
     const s0 = await st(page).catch(() => null);
-    if (!s0 || s0.leftMs < 2500) return; // too close to time-up to judge
+    if (!s0 || s0.leftMs < 4500) return; // too close to time-up to judge (clearing + typing take ~3 s)
     await typeWord(page, km, word, perKeyMs);
     const t = await toast(page);
     rejects.push({ reason, ok: !!t && t.kind === 'bad' && t.text === expected, got: t && t.text, expected });

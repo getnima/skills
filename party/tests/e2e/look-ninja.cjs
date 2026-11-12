@@ -149,15 +149,17 @@ async function burst(page, name, ms, every = 150) {
 
 const targets = (page) => page.evaluate(() => (window.__ninja ? { ts: window.__ninja.targets(), stunned: window.__ninja.stunned, left: window.__party.leftMs, ended: window.__party.ended, top: window.__ninja.fieldTop } : null));
 
-/** A swipe as real touches; `shootAt` = step index at which a burst starts (mid-swipe shots). */
+/** A swipe as real touches, one move every ~16 ms like a finger (moves are queued, not awaited one by one). */
 async function swipe(page, cdp, id, ax, ay, bx, by, n = 8, onStep) {
-  await touch(cdp, 'touchStart', [{ x: ax, y: ay, id }]);
+  const pend = [touch(cdp, 'touchStart', [{ x: ax, y: ay, id }])];
   for (let i = 1; i <= n; i++) {
     await sleep(16);
-    await touch(cdp, 'touchMove', [{ x: ax + ((bx - ax) * i) / n, y: ay + ((by - ay) * i) / n, id }]);
+    pend.push(touch(cdp, 'touchMove', [{ x: ax + ((bx - ax) * i) / n, y: ay + ((by - ay) * i) / n, id }]));
     if (onStep) await onStep(i);
   }
-  await touch(cdp, 'touchEnd', []);
+  await sleep(16);
+  pend.push(touch(cdp, 'touchEnd', []));
+  await Promise.all(pend);
 }
 
 async function shotsFor(browser, w, h) {
@@ -215,7 +217,13 @@ async function shotsFor(browser, w, h) {
     }
     const multi = row.length >= 2 && !seen.multi;
     if (multi) seen.multi = true;
-    await swipe(page, cdp, id++, ax, y, bx, y - 20, 8, multi ? async (i) => (i === 5 ? page.screenshot({ path: path.join(OUT, `${tag}-2-multi-mid.png`) }) : null) : null);
+    // mid-swipe: the shot is started while the finger keeps moving (not awaited), so it catches the live trail
+    let shotP = null;
+    const midShot = async (i) => {
+      if (i === 4) shotP = page.screenshot({ path: path.join(OUT, `${tag}-2-multi-mid.png`) });
+    };
+    await swipe(page, cdp, id++, ax, y, bx, y - 20, multi ? 12 : 8, multi ? midShot : null);
+    if (shotP) await shotP;
     if (multi) await burst(page, `${tag}-2-multi`, 450, 150);
     else if (!seen.splat && (await page.evaluate(() => window.__ninja.sliced)) >= 6) {
       seen.splat = true;

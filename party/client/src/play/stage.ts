@@ -19,8 +19,8 @@ import type { PlaceShown } from './hud-place';
 import type { LiveStanding } from './standing';
 
 /**
- * Height of the HUD block in CSS px, without the safe-area inset: the chip row (38) + the chase
- * line (16) + padding. Must equal `.pa-hud`'s height in stage.css (tests/e2e/qa-hud.cjs checks it).
+ * Height of the HUD block in CSS px, without the safe-area inset: the chip row (37) + the chase
+ * line (17) + padding. Must equal `.pa-hud`'s height in stage.css (tests/e2e/qa-hud.cjs checks it).
  */
 export const HUD_ROW_PX = 66;
 

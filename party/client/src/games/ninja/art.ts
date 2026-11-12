@@ -540,28 +540,41 @@ const GOLD_PROPS = [
   { key: 'hearts', file: 'prop_09_heart_glasses.png' },
 ] as const;
 
-/** A gold star sticker (body-sized) with a party prop on it. */
+/** A gold disc (body-sized, flat, ink outlined) wearing a party prop. */
 function goldSkin(key: string, prop: Drawable): Drawable {
   return paintDrawable(
     `gold_${key}`,
     (ctx, w, h) => {
       const r = Math.min(w, h) * BODY_RADIUS;
-      const s = r * 2.18;
-      stickerShape(ctx, STAR10, w / 2 - s / 2, h / 2 - s / 2, s, s, PAL.yel, PAL.org, Math.max(3, r * 0.09));
-      // inner disc so the prop has a calm ground
+      const cx = w / 2;
+      const cy = h / 2;
       ctx.beginPath();
-      ctx.arc(w / 2, h / 2, r * 0.62, 0, Math.PI * 2);
-      ctx.fillStyle = PAL.yel2;
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = PAL.yel;
       ctx.fill();
-      ctx.lineWidth = Math.max(2, r * 0.06);
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = PAL.org;
+      ctx.beginPath();
+      ctx.ellipse(cx + r * 0.35, cy + r * 0.4, r, r * 0.95, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx - r * 0.06, cy - r * 0.06, r * 1.02, r, 0, 0, Math.PI * 2, true);
+      ctx.fill('evenodd');
+      ctx.restore();
+      ctx.lineWidth = Math.max(3, r * 0.1);
       ctx.strokeStyle = PAL.ink;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.stroke();
-      const k = Math.min((r * 1.45) / prop.width, (r * 1.2) / prop.height);
-      prop.draw(ctx, w / 2, h / 2 + r * 0.04, prop.width * k, prop.height * k, -0.12);
+      ctx.lineWidth = Math.max(2, r * 0.05);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.8, 0, Math.PI * 2);
+      ctx.stroke();
+      const k = Math.min((r * 1.75) / prop.width, (r * 1.5) / prop.height);
+      prop.draw(ctx, cx, cy + r * 0.02, prop.width * k, prop.height * k, -0.12);
       // hard highlight
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.ellipse(w / 2 - r * 0.5, h / 2 - r * 0.62, r * 0.18, r * 0.08, -0.7, 0, Math.PI * 2);
+      ctx.ellipse(cx - r * 0.5, cy - r * 0.6, r * 0.2, r * 0.09, -0.7, 0, Math.PI * 2);
       ctx.fill();
     },
     SPRITE_BOX,
@@ -633,7 +646,13 @@ export async function loadNinjaArt(): Promise<NinjaArt> {
   }
   // the warning burst behind a bomb: red kaboom with an ink outline
   const kb = makeLayer(128, 128);
-  if (kb.ctx) stickerShape(kb.ctx, KABOOM, 6, 6, 112, 112, PAL.red, PAL.ink, 3);
+  if (kb.ctx) {
+    stickerShape(kb.ctx, KABOOM, 4, 4, 116, 116, PAL.yel, PAL.ink, 3);
+    kb.ctx.translate(64, 64);
+    kb.ctx.rotate(0.3);
+    stickerShape(kb.ctx, KABOOM, -46, -46, 92, 92, PAL.red, PAL.redD, 2.5);
+    kb.ctx.setTransform(2, 0, 0, 2, 0, 0);
+  }
   // fuse spark: small yellow star
   const sp = makeLayer(48, 48);
   if (sp.ctx) {

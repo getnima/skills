@@ -94,9 +94,9 @@ async function open(browser, query, opts = {}) {
     });
     const lab = await page.evaluate(() => window.__avatarLab);
     const loaded = await page.evaluate(() => [...document.querySelectorAll(".av canvas")].filter((c) => c.dataset.ready === "1").length);
-    console.log(`     wall n=${n} (x3 sizes: 28, 40, 96 css px -> 48, 48, 96 device px), 4x CPU: ${lab.wallMs.toFixed(0)} ms (composing ${lab.wallComposeMs.toFixed(0)} ms), cache ${lab.cache.bitmaps} pictures ${(lab.cache.bitmapBytes / 1024).toFixed(0)} KB, ${loaded} avatars painted`);
+    console.log(`     wall n=${n} (x2 sizes: 40 and 96 css px -> 48 and 96 device px), 4x CPU: ${lab.wallMs.toFixed(0)} ms (composing ${lab.wallComposeMs.toFixed(0)} ms), cache ${lab.cache.bitmaps} pictures ${(lab.cache.bitmapBytes / 1024).toFixed(0)} KB, ${loaded} avatars painted`);
     check(lab.wallMs < 1500, `wall n=${n}: composed and shown in ${lab.wallMs.toFixed(0)} ms (< 1500)`);
-    check(loaded === n * 3 && errors.length === 0, `wall n=${n}: all ${n * 3} pictures shown, no errors ${JSON.stringify(errors)}`);
+    check(loaded === n * 3 && errors.length === 0, `wall n=${n}: all ${n * 3} avatars painted (40, 96, then the 28 px row), no errors ${JSON.stringify(errors)}`);
     if (n === 60) {
       // the TV lobby at 60 players: 28 px icons, magnified 4x to judge readability
       const wall = page.locator('[data-wall="28"]');

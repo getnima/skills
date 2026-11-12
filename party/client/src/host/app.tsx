@@ -2,6 +2,11 @@
  * The TV host page: the frame around the show. It renders purely from the
  * room snapshot, the live scores and the server clock, and keeps the host's
  * controls in a slim strip under the scene.
+ *
+ * Every control (the strip, the menus, the keyboard, a phone remote) goes
+ * through ONE action model (./actions.ts) and ONE dispatcher (`runAction`).
+ * While a phone remote is attached (state.remotes > 0) the TV is a display:
+ * the strip is hidden; the mouse shows it for a few seconds, keys keep working.
  */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
@@ -10,9 +15,10 @@ import { GAMES, GAME_IDS } from '../../../shared/protocol';
 import { roundTime } from '../../../shared/round-clock';
 import { isMuted, setMuted, unlockAudio } from '../kit/audio';
 import { enterFullscreen } from '../kit/mobile';
+import { buildControlModel, checkAction, confirmQuestion, findAction, isGameId, nextUnplayed, parseRelay, remoteView, toRelay } from './actions';
 import { CutsceneMenu, CutscenePlayer } from './cutscene';
 import { CountdownScreen, GoSplash, IntroScreen, ResumeOverlay } from './intro';
-import { Lobby, nextGame } from './lobby';
+import { Lobby } from './lobby';
 import { SoundCheck, useShowMusic } from './music';
 import { useHostRoom } from './room';
 import { FinalScene, isShowCalm, onShowCalmChange, PlayingScene, ResultsScene, setShowCalm, standingsAt } from './show/index';
@@ -20,10 +26,11 @@ import { Btn, ConfirmDialog, Modal, Switch, Toast } from './ui';
 import { useAudioLocked, useMuted } from './util';
 
 import type { JSX } from 'preact';
-import type { GameId, PlayerPublic, RoomState, RoundPublic } from '../../../shared/protocol';
+import type { RoomState, RoundPublic } from '../../../shared/protocol';
 import type { RoundClockSample } from '../games/types';
 import type { ServerClock } from '../net/connection';
-import type { HostRoom } from './room';
+import type { ActionId, ControlAction, ControlModel } from './actions';
+import type { ActResult, HostRoom } from './room';
 import type { ConfirmRequest } from './ui';
 
 type MenuKind = 'none' | 'cutscenes' | 'more' | 'sound';
@@ -34,20 +41,14 @@ export interface HostHooks {
   /** Server time. */
   now(): number;
   status(): string;
+  /** The current action model. */
+  model(): ControlModel;
 }
 
 declare global {
   interface Window {
     __host?: HostHooks;
   }
-}
-
-interface PrimaryAction {
-  readonly label: string;
-  readonly icon: string;
-  /** Needs a second press within ARM_MS (skipping the winner ceremony). */
-  readonly confirm?: string;
-  run(): void;
 }
 
 /** Keyboard actions are ignored this long after the phase changed (Space-Space must not skip two screens). */
@@ -168,14 +169,6 @@ function ResultsView(props: { readonly state: RoomState; readonly room: HostRoom
   );
 }
 
-/** What happens next when there is nothing to press: the host is never left guessing. */
-function nextHint(phase: string | null, cutscene: boolean): string {
-  if (cutscene) return '🎬 סרטון רץ · S לדילוג';
-  if (phase === 'intro' || phase === 'countdown') return '⏳ המשחק מתחיל לבד';
-  if (phase === 'playing') return '⏳ הסיבוב רץ · התוצאות יופיעו לבד';
-  return '';
-}
-
 function Connection(props: { readonly room: HostRoom }): JSX.Element {
   const { status, state } = props.room;
   const text = status === 'online' ? 'מחובר' : status === 'connecting' ? 'מתחבר…' : 'אין חיבור';
@@ -190,6 +183,59 @@ function Connection(props: { readonly room: HostRoom }): JSX.Element {
       ) : null}
     </div>
   );
+}
+
+/** While a remote is attached, moving the mouse on the laptop shows the strip this long. */
+const PEEK_MS = 4_000;
+/** A model change is sent to the remotes at most this often (players pouring in, the results clock). */
+const PUBLISH_MS = 120;
+
+/** TV-only looks of the strip buttons (the model says what they do, not how the TV draws them). */
+const STRIP_ORDER: readonly ActionId[] = ['podium', 'reset', 'end-round', 'replay', 'lobby'];
+const STRIP_TEST_ID: Readonly<Partial<Record<ActionId, string>>> = {
+  podium: 'btn-final',
+  reset: 'btn-reset',
+  'end-round': 'btn-end',
+  replay: 'btn-again',
+  lobby: 'btn-lobby',
+};
+
+type Source = 'click' | 'key' | 'remote';
+
+interface RunOptions {
+  readonly source: Source;
+  /** The presser already confirmed (the remote's own "sure?" sheet). */
+  readonly confirmed?: boolean;
+  /** The screen key the presser saw (remote presses on an older screen are refused). */
+  readonly key?: string;
+}
+
+const done = (text: string): ActResult => ({ ok: true, text });
+const refused = (text: string): ActResult => ({ ok: false, text });
+
+/** True while the pointer moved within PEEK_MS (only listens while `on`). */
+function usePeek(on: boolean): boolean {
+  const [peek, setPeek] = useState(false);
+  useEffect(() => {
+    if (!on) {
+      setPeek(false);
+      return undefined;
+    }
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const wake = (): void => {
+      setPeek(true);
+      if (t !== undefined) clearTimeout(t);
+      t = setTimeout(() => setPeek(false), PEEK_MS);
+    };
+    window.addEventListener('pointermove', wake, true);
+    window.addEventListener('pointerdown', wake, true);
+    return () => {
+      if (t !== undefined) clearTimeout(t);
+      window.removeEventListener('pointermove', wake, true);
+      window.removeEventListener('pointerdown', wake, true);
+    };
+  }, [on]);
+  return peek;
 }
 
 export function App(): JSX.Element {
@@ -207,16 +253,9 @@ export function App(): JSX.Element {
   const [armed, setArmed] = useState<{ readonly id: string; readonly until: number } | null>(null);
   const phaseAt = useRef(performance.now());
   const stripIdle = useIdle(STRIP_IDLE_MS);
-
-  const hookRef = useRef(room);
-  hookRef.current = room;
-  useEffect(() => {
-    window.__host = {
-      state: () => hookRef.current.state,
-      now: () => hookRef.current.clock.now(),
-      status: () => hookRef.current.status,
-    };
-  }, []);
+  const remotes = state?.remotes ?? 0;
+  const display = remotes > 0;
+  const peek = usePeek(display);
 
   const phase = state?.phase ?? null;
   const cutscene = state?.cutscene ?? null;
@@ -235,18 +274,18 @@ export function App(): JSX.Element {
     return () => clearTimeout(t);
   }, [armed]);
   /** Run `fn` now when `id` is armed, else arm it (the button then says "press again"). */
-  const twice = (id: string, fn: () => void): void => {
+  const twice = (id: string, fn: () => void): boolean => {
     const t = performance.now();
     if (armed !== null && armed.id === id && t < armed.until) {
       // a bounce / double tap is not a second decision: the host has to see "sure?" first
-      if (t - (armed.until - ARM_MS) < ARM_MIN_MS) return;
+      if (t - (armed.until - ARM_MS) < ARM_MIN_MS) return false;
       setArmed(null);
       fn();
-    } else {
-      setArmed({ id, until: t + ARM_MS });
+      return true;
     }
+    setArmed({ id, until: t + ARM_MS });
+    return false;
   };
-  const isArmed = (id: string): boolean => armed !== null && armed.id === id;
   // the results' "continue" waits for the ceremony; the label follows the clock
   useEvery(500, phase === 'results');
 
@@ -277,71 +316,177 @@ export function App(): JSX.Element {
     if (menu === 'sound' && phase !== 'lobby') setMenu('none');
   }, [menu, phase]);
 
-  const allPlayed = state !== null && GAME_IDS.every((g) => state.played.includes(g));
-  const startGame = (g: GameId): void => {
-    void room.start(g);
-  };
-  const askReset = (): void =>
-    setConfirm({
-      title: 'לאפס את התחרות?',
-      text: 'כל הנקודות מתאפסות והמשחקים חוזרים להתחלה. השחקנים נשארים בחדר.',
-      yes: 'כן, מתחילים מחדש',
-      danger: true,
-      run: () => void room.reset(),
-    });
-  const askKick = (p: PlayerPublic): void =>
-    setConfirm({
-      title: `להוציא את ${p.name}?`,
-      text: 'השחקן יוצא מהחדר ויצטרך לסרוק ולהצטרף מחדש.',
-      yes: 'להוציא',
-      danger: true,
-      run: () => void room.kick(p.id),
-    });
-  const askNewRoom = (): void =>
-    setConfirm({
-      title: 'לפתוח חדר חדש?',
-      text: 'נוצר קוד חדש ו-QR חדש. כל השחקנים יצטרכו לסרוק שוב.',
-      yes: 'חדר חדש',
-      danger: true,
-      run: () => room.newRoom(),
-    });
   const doReplay = (): void => {
     setReplay((n) => n + 1);
     if (phase === 'results') setReplayAt(room.clock.now() + 5_000);
   };
 
-  let primary: PrimaryAction | null = null;
-  if (state !== null) {
-    if (phase === 'lobby') {
-      const next = nextGame(state.played);
-      primary =
-        next !== null
-          ? { label: `המשחק הבא: ${GAMES[next].title}`, icon: GAMES[next].emoji, run: () => startGame(next) }
-          : { label: 'פודיום סופי', icon: '🏆', run: () => void room.final() };
-    } else if (phase === 'results') {
-      const res = state.results;
-      const early = res !== null && room.clock.now() < standingsAt(replayAt !== null ? { ...res, revealAt: replayAt } : res);
-      const go = allPlayed
-        ? { label: 'פודיום סופי', icon: '🏆', run: () => void room.final() }
-        : { label: 'המשך ללובי', icon: '⏩', run: () => void room.lobby() };
-      primary = early ? { ...go, label: `${go.label} (מדלג על הטקס)`, icon: '⏭', confirm: 'skip-ceremony' } : go;
-    } else if (phase === 'final') {
-      primary = { label: 'תחרות חדשה', icon: '🔄', run: askReset };
+  // ── the action model: what the host can do right now ──
+  const res = state?.results ?? null;
+  const ceremonyDone = phase !== 'results' || res === null || room.clock.now() >= standingsAt(replayAt !== null ? { ...res, revealAt: replayAt } : res);
+  const model = buildControlModel({ state, ceremonyDone, muted, calm, fullscreen });
+  const modelRef = useRef(model);
+  modelRef.current = model;
+  const action = (id: ActionId): ControlAction | undefined => findAction(model, id);
+
+  /** Carries out an action that passed its checks and confirm. `quiet`: the error goes back to the remote, not on the TV. */
+  const perform = (id: ActionId, arg: string | undefined, quiet: boolean): Promise<ActResult> | ActResult => {
+    const q = { quiet };
+    const s = state;
+    switch (id) {
+      case 'next': {
+        const g = s !== null ? nextUnplayed(s.played) : null;
+        return g !== null ? room.start(g, q) : refused('שיחקנו הכל');
+      }
+      case 'start':
+        return isGameId(arg) ? room.start(arg, q) : refused('אין משחק כזה');
+      case 'continue':
+      case 'lobby':
+        return room.lobby(q);
+      case 'podium':
+        return room.final(q);
+      case 'end-round':
+        return room.endRound(q);
+      case 'replay':
+        doReplay();
+        return done('שוב!');
+      case 'reset':
+        return room.reset(q);
+      case 'kick':
+        return arg !== undefined ? room.kick(arg, q) : refused('לא נבחר שחקן');
+      case 'cutscene':
+        return arg !== undefined ? room.cutscene(arg, q) : refused('לא נבחר סרטון');
+      case 'cutscene-skip':
+        return room.cutsceneEnd(q);
+      case 'auto-cutscenes': {
+        const want = arg === 'on' ? true : arg === 'off' ? false : !(s?.autoCutscenes ?? true);
+        return room.setAutoCutscenes(want, q);
+      }
+      case 'mute':
+        setMuted(arg === 'on' ? true : arg === 'off' ? false : !isMuted());
+        return done('בוצע');
+      case 'calm':
+        setShowCalm(arg === 'on' ? true : arg === 'off' ? false : !isShowCalm());
+        return done('בוצע');
+      case 'fullscreen':
+        toggleFullscreen();
+        return done('בוצע');
+      case 'cutscene-menu':
+        setMenu('cutscenes');
+        return done('בוצע');
+      case 'more-menu':
+        setMenu('more');
+        return done('בוצע');
+      case 'sound-check':
+        setMenu('sound');
+        return done('בוצע');
+      case 'new-room':
+        room.newRoom();
+        return done('בוצע');
+      default: {
+        const _exhaustive: never = id;
+        throw new Error(`Unhandled action: ${String(_exhaustive)}`);
+      }
     }
-  }
-  const runPrimary = (): void => {
-    // (a double click's second click never gets here: Btn drops it, so it cannot land on the next screen's button)
-    if (primary === null) return;
-    const p = primary;
-    if (p.confirm !== undefined) twice(p.confirm, p.run);
-    else p.run();
   };
-  const endRound = (): void => {
-    if (phase === 'playing') twice('end-round', () => void room.endRound());
-    else void room.endRound();
+
+  /**
+   * THE dispatcher: every button, key and remote press goes through here. It
+   * checks the action against the model, asks its confirm question the TV's way
+   * (a second press, or a dialog) unless the presser already confirmed, then runs it.
+   */
+  const runAction = async (id: ActionId, arg?: string, opts: RunOptions = { source: 'click' }): Promise<ActResult> => {
+    const m = modelRef.current;
+    const check = checkAction(m, id, arg, opts.key);
+    if (!check.ok) return refused(check.text);
+    const a = findAction(m, id);
+    if (a === undefined) return refused('אי אפשר את זה עכשיו');
+    if (opts.source === 'remote' && a.tvOnly === true) return refused('רק מהמסך');
+    const remote = opts.source === 'remote';
+    if (a.confirm !== undefined && opts.confirmed !== true) {
+      if (remote) return refused('צריך לאשר');
+      const question = confirmQuestion(a, arg) ?? '';
+      if (a.confirmStyle === 'dialog') {
+        setConfirm({
+          title: question,
+          text: a.confirmText,
+          yes: a.confirmYes ?? 'כן',
+          danger: a.kind === 'danger' || id === 'reset',
+          run: () => void perform(id, arg, false),
+        });
+        return done('ממתין לאישור');
+      }
+      let ran: Promise<ActResult> | ActResult | null = null;
+      twice(id, () => {
+        ran = perform(id, arg, false);
+      });
+      return ran ?? done('ממתין ללחיצה שנייה');
+    }
+    return perform(id, arg, remote);
   };
-  const canNext = state !== null && (phase === 'lobby' || phase === 'results') && nextGame(state.played) !== null;
-  const roundRunning = phase === 'intro' || phase === 'countdown' || phase === 'playing';
+  const runRef = useRef(runAction);
+  runRef.current = runAction;
+  const click = (id: ActionId, arg?: string): void => void runAction(id, arg, { source: 'click' });
+
+  const hookRef = useRef(room);
+  hookRef.current = room;
+  useEffect(() => {
+    window.__host = {
+      state: () => hookRef.current.state,
+      now: () => hookRef.current.clock.now(),
+      status: () => hookRef.current.status,
+      model: () => modelRef.current,
+    };
+  }, []);
+
+  // ── the remotes: the model goes out, presses come in ──
+  const publishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const publishNow = (): void => {
+    if (publishTimer.current !== null) clearTimeout(publishTimer.current);
+    publishTimer.current = null;
+    hookRef.current.relay(toRelay({ t: 'model', model: remoteView(modelRef.current) }));
+  };
+  const publishRef = useRef(publishNow);
+  publishRef.current = publishNow;
+  const remoteJson = display ? JSON.stringify(remoteView(model)) : '';
+  useEffect(() => {
+    if (!display || room.status !== 'online') return undefined;
+    if (publishTimer.current !== null) return undefined;
+    publishTimer.current = setTimeout(() => publishRef.current(), PUBLISH_MS);
+    return undefined;
+  }, [remoteJson, remotes, display, room.status]);
+  useEffect(
+    () => () => {
+      if (publishTimer.current !== null) clearTimeout(publishTimer.current);
+    },
+    [],
+  );
+  useEffect(
+    () =>
+      hookRef.current.onRelay(({ from, data }) => {
+        if (from !== 'remote') return;
+        const msg = parseRelay(data);
+        if (msg === null) return;
+        if (msg.t === 'hello') {
+          publishRef.current();
+          return;
+        }
+        if (msg.t !== 'run') return;
+        void runRef
+          .current(msg.id, msg.arg, { source: 'remote', confirmed: msg.confirmed, key: msg.key })
+          .catch((): ActResult => refused('משהו השתבש'))
+          .then((r) => {
+            hookRef.current.relay(toRelay({ t: 'result', rid: msg.rid, req: msg.req, ok: r.ok, text: r.text }));
+            // the remote sees the outcome at once, not after the next debounce
+            publishRef.current();
+          });
+      }),
+    [],
+  );
+
+  // the next step: the big button. A round's next step (ending it) is a danger action the TV keeps in its strip.
+  const primaryAction = model.primary !== null ? action(model.primary) : undefined;
+  const tvPrimary = primaryAction !== undefined && primaryAction.kind !== 'danger' ? primaryAction : undefined;
 
   // keyboard: works with any keyboard layout (physical keys)
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
@@ -349,33 +494,31 @@ export function App(): JSX.Element {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (confirm !== null || menu !== 'none') return;
     const code = e.code;
-    if (code === 'KeyF') toggleFullscreen();
-    else if (code === 'KeyM') setMuted(!isMuted());
+    const key = (id: ActionId, arg?: string): void => void runAction(id, arg, { source: 'key' });
+    /** A held key, or a second press right after the screen changed, is not a decision. */
+    const guarded = (): boolean => e.repeat || performance.now() - phaseAt.current < KEY_GUARD_MS;
+    if (code === 'KeyF') key('fullscreen');
+    else if (code === 'KeyM') key('mute');
     else if (state === null) return;
     else if (code === 'KeyS') {
-      if (cutscene !== null) void room.cutsceneEnd();
+      if (cutscene !== null) key('cutscene-skip');
     } else if (cutscene !== null) return;
     else if (code === 'Space' || code === 'Enter' || code === 'NumpadEnter') {
       e.preventDefault();
-      // a held key, or a second press right after the screen changed, is not a decision
-      if (e.repeat || performance.now() - phaseAt.current < KEY_GUARD_MS) return;
-      runPrimary();
+      if (guarded() || tvPrimary === undefined) return;
+      key(tvPrimary.id);
       return;
     } else if (code === 'KeyN') {
       e.preventDefault();
-      if (e.repeat || performance.now() - phaseAt.current < KEY_GUARD_MS) return;
-      const next = nextGame(state.played);
-      if (canNext && next !== null) {
-        if (phase === 'results' && primary?.confirm !== undefined) twice('skip-ceremony-next', () => startGame(next));
-        else startGame(next);
-      }
+      if (guarded()) return;
+      if (action('next')?.enabled === true) key('next');
       return;
     } else if (code === 'KeyE') {
       if (e.repeat) return;
-      if (roundRunning) endRound();
-    } else if (code === 'KeyC') setMenu('cutscenes');
+      if (action('end-round')?.enabled === true) key('end-round');
+    } else if (code === 'KeyC') key('cutscene-menu');
     else if (code === 'KeyR') {
-      if (phase === 'results' || phase === 'final') doReplay();
+      if (action('replay')?.enabled === true) key('replay');
     } else return;
     e.preventDefault();
   };
@@ -395,7 +538,7 @@ export function App(): JSX.Element {
       </div>
     );
   } else if (phase === 'lobby') {
-    scene = <Lobby state={state} onStart={startGame} onKick={askKick} />;
+    scene = <Lobby state={state} onStart={(g) => click('start', g)} onKick={(p) => click('kick', p.id)} />;
   } else if ((phase === 'intro' || phase === 'countdown') && state.round !== null) {
     const game = GAMES[state.round.gameId];
     scene =
@@ -418,84 +561,81 @@ export function App(): JSX.Element {
     scene = <div class="hs-wait">רגע…</div>;
   }
 
-  // ── the strip ──
-  const stripButtons: JSX.Element[] = [];
-  if (state !== null) {
-    if (phase === 'lobby' && state.played.length > 0) {
-      // ending the night before every game was played is a decision: it asks for a second press
-      if (!allPlayed)
-        stripButtons.push(
-          <Btn
-            key="final"
-            label="לפודיום"
-            icon="🏆"
-            armed={isArmed('early-final') ? 'עוד לא שיחקנו הכל. לסיים? לחצו שוב' : null}
-            testId="btn-final"
-            onClick={() => twice('early-final', () => void room.final())}
-          />,
-        );
-      stripButtons.push(<Btn key="reset" label="איפוס" icon="♻️" tone="ghost" title="איפוס התחרות" testId="btn-reset" onClick={askReset} />);
-    }
-    if (roundRunning) {
-      stripButtons.push(
-        <Btn
-          key="end"
-          label={phase !== 'playing' ? 'בטל סיבוב' : 'סיים סיבוב עכשיו'}
-          icon="⏹"
-          kbd="E"
-          tone="danger"
-          armed={isArmed('end-round') ? 'לסיים את הסיבוב? לחצו שוב (E)' : null}
-          testId="btn-end"
-          onClick={endRound}
-        />,
-      );
-    }
-    if (phase === 'results' || phase === 'final') {
-      stripButtons.push(<Btn key="again" label="שוב!" icon="🔁" kbd="R" testId="btn-again" onClick={doReplay} />);
-    }
-    if (phase === 'results' && allPlayed) {
-      stripButtons.push(<Btn key="lobby" label="המשך ללובי" icon="⏩" testId="btn-lobby" onClick={() => void room.lobby()} />);
-    }
-    if (phase === 'final') {
-      stripButtons.push(<Btn key="lobby" label="ללובי" icon="🏠" testId="btn-lobby" onClick={() => void room.lobby()} />);
-    }
-  }
+  // ── the strip: the model's featured actions, the next step, the tools ──
+  const armedText = (a: ControlAction): string => `${confirmQuestion(a) ?? ''} לחצו שוב${a.kbd !== undefined && a.kbd !== 'Space' ? ` (${a.kbd})` : ''}`;
+  const stripActions = STRIP_ORDER.map((id) => action(id)).filter(
+    (a): a is ControlAction => a !== undefined && a.featured && a.enabled && a.id !== tvPrimary?.id,
+  );
+  const stripIds = new Set<string>(stripActions.map((a) => a.id));
+  const armedAction = armed !== null ? model.actions.find((a) => a.id === armed.id) : undefined;
+  const stripButtons = stripActions.map((a) => (
+    <Btn
+      key={a.id}
+      label={a.label}
+      icon={a.icon}
+      kbd={a.kbd}
+      tone={a.id === 'end-round' ? 'danger' : a.id === 'reset' ? 'ghost' : 'plain'}
+      title={a.label}
+      armed={armed !== null && armed.id === a.id ? armedText(a) : null}
+      testId={STRIP_TEST_ID[a.id]}
+      onClick={() => click(a.id)}
+    />
+  ));
+  // the primary button also carries the "press again" of a key whose action has no button of its own (N skipping the ceremony)
+  const primaryArmed = armedAction !== undefined && tvPrimary !== undefined && !stripIds.has(armedAction.id) ? armedText(armedAction) : null;
+  const tool = (id: ActionId): ControlAction | undefined => action(id);
+  const cutsceneMenu = tool('cutscene-menu');
+  const muteAction = tool('mute');
+  const fsAction = tool('fullscreen');
+  const calmAction = tool('calm');
+  const soundAction = tool('sound-check');
+  const resetAction = tool('reset');
+  const newRoomAction = tool('new-room');
 
   const def = cutscene !== null ? findCutscene(cutscene.id) : undefined;
+  const stripClass = display ? (peek || armed !== null ? 'is-peek' : 'is-gone') : stripIdle && armed === null ? 'is-idle' : '';
 
   return (
-    <div class={`hs-root hs-phase-${phase ?? 'boot'}`} data-phase={phase ?? 'boot'}>
+    <div class={`hs-root hs-phase-${phase ?? 'boot'} ${display ? 'is-display' : ''}`} data-phase={phase ?? 'boot'}>
       <main class="hs-stage">{scene}</main>
 
-      <footer class={`hs-strip ${stripIdle && armed === null ? 'is-idle' : ''}`} data-testid="strip">
+      <footer class={`hs-strip ${stripClass}`} data-testid="strip">
         <div class="hs-strip-side">
           <span class="hs-brand">🎉 Party Arena</span>
           <Connection room={room} />
         </div>
         <div class="hs-strip-main">
           {stripButtons}
-          {primary !== null ? (
+          {tvPrimary !== undefined ? (
             <Btn
-              label={primary.label}
-              icon={primary.icon}
+              label={tvPrimary.label}
+              icon={tvPrimary.icon}
               kbd="Space"
-              tone={primary.confirm !== undefined ? 'plain' : 'primary'}
+              tone={tvPrimary.confirm !== undefined ? 'plain' : 'primary'}
               class="hs-primary"
-              armed={primary.confirm !== undefined && (isArmed(primary.confirm) || isArmed(`${primary.confirm}-next`)) ? 'לדלג על הטקס? לחצו שוב' : null}
+              armed={primaryArmed ?? (armed !== null && armed.id === tvPrimary.id ? armedText(tvPrimary) : null)}
               testId="btn-primary"
-              onClick={runPrimary}
+              onClick={() => click(tvPrimary.id)}
             />
           ) : (
             <span class="hs-next-hint" data-testid="next-hint">
-              {nextHint(phase, cutscene !== null)}
+              {model.hint}
             </span>
           )}
         </div>
         <div class="hs-strip-side hs-strip-tools">
-          <Btn label="סרטונים" icon="🎬" kbd="C" tone="ghost" testId="btn-cutscenes" disabled={state === null} onClick={() => setMenu('cutscenes')} />
-          <Btn label="" icon={muted ? '🔇' : '🔊'} kbd="M" tone="ghost" class="hs-icon-btn" title={muted ? 'הפעלת סאונד' : 'השתקה'} testId="btn-mute" onClick={() => setMuted(!muted)} />
-          <Btn label="" icon={fullscreen ? '🗗' : '⛶'} kbd="F" tone="ghost" class="hs-icon-btn" title="מסך מלא" testId="btn-fullscreen" onClick={toggleFullscreen} />
-          <Btn label="" icon="☰" tone="ghost" class="hs-icon-btn" title="עוד" testId="btn-more" onClick={() => setMenu('more')} />
+          <Btn
+            label={cutsceneMenu?.label ?? 'סרטונים'}
+            icon="🎬"
+            kbd="C"
+            tone="ghost"
+            testId="btn-cutscenes"
+            disabled={cutsceneMenu?.enabled !== true}
+            onClick={() => click('cutscene-menu')}
+          />
+          <Btn label="" icon={muteAction?.icon ?? '🔊'} kbd="M" tone="ghost" class="hs-icon-btn" title={muted ? 'הפעלת סאונד' : 'השתקה'} testId="btn-mute" onClick={() => click('mute')} />
+          <Btn label="" icon={fsAction?.icon ?? '⛶'} kbd="F" tone="ghost" class="hs-icon-btn" title="מסך מלא" testId="btn-fullscreen" onClick={() => click('fullscreen')} />
+          <Btn label="" icon="☰" tone="ghost" class="hs-icon-btn" title="עוד" testId="btn-more" onClick={() => click('more-menu')} />
         </div>
       </footer>
 
@@ -535,8 +675,8 @@ export function App(): JSX.Element {
         <CutsceneMenu
           auto={state.autoCutscenes}
           playing={cutscene?.id ?? null}
-          onAuto={(on) => void room.setAutoCutscenes(on)}
-          onPlay={(id) => void room.cutscene(id)}
+          onAuto={(on) => click('auto-cutscenes', on ? 'on' : 'off')}
+          onPlay={(id) => click('cutscene', id)}
           onClose={() => setMenu('none')}
         />
       ) : null}
@@ -544,31 +684,31 @@ export function App(): JSX.Element {
       {menu === 'more' ? (
         <Modal title="☰ עוד" onClose={() => setMenu('none')} testId="more-menu">
           <div class="hs-more">
-            <Switch on={calm} label="מצב רגוע (פחות בדיחות על המסך)" onChange={setShowCalm} />
+            <Switch on={calmAction?.on === true} label="מצב רגוע (פחות בדיחות על המסך)" onChange={(on) => click('calm', on ? 'on' : 'off')} />
             <Btn
-              label={phase === 'lobby' ? 'בדיקת סאונד' : 'בדיקת סאונד (רק בלובי)'}
+              label={soundAction?.label ?? 'בדיקת סאונד'}
               icon="🎵"
-              disabled={phase !== 'lobby'}
+              disabled={soundAction?.enabled !== true}
               testId="btn-sound-check"
-              onClick={() => setMenu('sound')}
+              onClick={() => click('sound-check')}
             />
             <Btn
               label="איפוס תחרות"
               icon="♻️"
-              disabled={state === null}
+              disabled={resetAction?.enabled !== true}
               onClick={() => {
                 setMenu('none');
-                askReset();
+                click('reset');
               }}
             />
             <Btn
-              label="חדר חדש (קוד חדש)"
+              label={newRoomAction?.label ?? 'חדר חדש'}
               icon="🆕"
               tone="danger"
               testId="btn-new-room"
               onClick={() => {
                 setMenu('none');
-                askNewRoom();
+                click('new-room');
               }}
             />
             <div class="hs-keys">
