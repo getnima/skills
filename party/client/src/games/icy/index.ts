@@ -205,7 +205,6 @@ export const game: GameModule = {
     let follow = CAM_FOLLOW_WORLD;
     /** UI scale for short play areas (landscape phones). */
     let ui = 1;
-    let zoneGrads: CanvasGradient[] = [];
     let glowL: CanvasGradient | null = null;
     let glowR: CanvasGradient | null = null;
     function layout(): void {
@@ -218,13 +217,7 @@ export const game: GameModule = {
       scale = playW / WORLD_W;
       visH = playH / scale;
       follow = Math.min(CAM_FOLLOW_WORLD, visH * CAM_FOLLOW_MAX_SHARE);
-      ui =clamp(Math.min(playW / 360, playH / 560), 0.62, 1.1);
-      zoneGrads = ZONES.map(([a, b]) => {
-        const gr = g.createLinearGradient(0, 0, 0, view.height);
-        gr.addColorStop(0, a);
-        gr.addColorStop(1, b);
-        return gr;
-      });
+      ui = clamp(Math.min(playW / 360, playH / 560), 0.62, 1.1);
       const edge = Math.min(140, view.width * 0.3);
       glowL = g.createLinearGradient(0, 0, edge, 0);
       glowL.addColorStop(0, 'rgba(45, 226, 230, 0.45)');
@@ -235,6 +228,20 @@ export const game: GameModule = {
     }
     layout();
     const offResize = view.onResize(layout);
+
+    // ── the sky: two static CSS gradient layers behind the transparent canvas (the
+    // current zone and the next one fading in), so the browser composites them
+    // instead of the canvas filling a full-screen gradient every frame ──
+    const skyA = document.createElement('div');
+    const skyB = document.createElement('div');
+    for (const el of [skyA, skyB]) el.style.cssText = 'position:absolute;inset:0;pointer-events:none';
+    ctx.root.prepend(skyA, skyB);
+    let skyZone = -1;
+    let skyMix = -1;
+    const zoneCss = (z: number): string => {
+      const zone = ZONES[Math.min(ZONES.length - 1, z)] ?? ZONES[0];
+      return zone ? `linear-gradient(to bottom, ${zone[0]}, ${zone[1]})` : '';
+    };
 
     // ── input: which half is held. Several fingers: the last one pressed wins. ──
     const sides = new Map<number, number>(); // insertion order = press order
@@ -631,18 +638,17 @@ export const game: GameModule = {
       const zf = Math.max(0, c) / ZONE_LEN;
       const z = Math.min(ZONES.length - 1, Math.floor(zf));
       const frac = zf - Math.floor(zf);
-      const base = zoneGrads[z];
-      if (base) {
-        g.fillStyle = base;
-        g.fillRect(0, 0, view.width, view.height);
+      if (z !== skyZone) {
+        skyZone = z;
+        skyA.style.background = zoneCss(z);
+        skyB.style.background = zoneCss(z + 1);
       }
-      const next = zoneGrads[z + 1];
-      if (next && frac > 0.7) {
-        g.globalAlpha = (frac - 0.7) / 0.3;
-        g.fillStyle = next;
-        g.fillRect(0, 0, view.width, view.height);
-        g.globalAlpha = 1;
+      const mix = z + 1 < ZONES.length && frac > 0.7 ? Math.round(((frac - 0.7) / 0.3) * 50) / 50 : 0;
+      if (mix !== skyMix) {
+        skyMix = mix;
+        skyB.style.opacity = String(mix);
       }
+      g.clearRect(0, 0, view.width, view.height);
       // parallax layer, tiled vertically. The placeholder is drawn as vectors (cheap);
       // a real bg.png is blitted (one more full-screen layer: fine on a phone GPU)
       const bw = view.width;
@@ -1163,6 +1169,8 @@ export const game: GameModule = {
         input.dispose();
         fx.clear();
         view.dispose();
+        skyA.remove();
+        skyB.remove();
         if (window.__icy === debug) delete window.__icy;
       },
     };

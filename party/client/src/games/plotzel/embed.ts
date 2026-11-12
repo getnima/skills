@@ -5,8 +5,10 @@
  *   1. the postMessage bridge (bridge.ts): progress / solved / failed from the
  *      iframe's own origin;
  *   2. our self-report bar under the iframe ("פתרתם? בכמה ניסיונות?"): tap a
- *      number, tap it again to confirm; a correction is allowed until time is
- *      up. Shown until the first bridge message arrives, then hidden for good.
+ *      number, tap it again to confirm; a correction is open for
+ *      SELF_REPORT_CORRECT_MS after each report (round time), then the player is
+ *      finished so the round can end early. Shown until the first bridge
+ *      message arrives, then hidden for good.
  *
  * Safety net: until the site shows a sign of life (a bridge message) the bar
  * carries a one-tap "לא נטען? לשחק כאן" link to the builtin game, from the
@@ -42,6 +44,12 @@ export const EMBED_LOAD_TIMEOUT_MS = 6_000;
 /** No sign of life (bridge) and no touch inside the frame for this long = the switch link starts to pulse. */
 export const EMBED_NUDGE_MS = 10_000;
 const FINISH_DELAY_MS = 1_400;
+/**
+ * After a confirmed self-report the bar stays open this long (round time, a
+ * freeze stops it; every correction restarts it) for a correction, then the
+ * player is finished, so the round can still end early when everyone is done.
+ */
+export const SELF_REPORT_CORRECT_MS = 8_000;
 /** The viewport shrank below this share of its tallest height while the frame has focus = an on-screen keyboard is up. */
 const KEYBOARD_RATIO = 0.8;
 /** sandbox: no allow-top-navigation, no allow-popups, no allow-modals (an alert() would freeze the phone's round). */
@@ -150,7 +158,22 @@ export async function createEmbed(ctx: GameContext, cfg: PlotzelConfig): Promise
   let tallest = 0;
 
   // game-time timers (the finish delay and the nudge stand still during a freeze)
-  const loop = createLoop({ update: (): void => undefined });
+  /** Ms left of the correction window after a self-report; 0 = no window running. */
+  let correctLeftMs = 0;
+  let shownCorrectSecs = -1;
+  const loop = createLoop({
+    update(dt: number): void {
+      // an armed correction holds the window open until it is confirmed or dropped
+      if (correctLeftMs <= 0 || armed !== null || state === 'done') return;
+      correctLeftMs -= dt * 1000;
+      if (correctLeftMs <= 0) {
+        correctLeftMs = 0;
+        finishReported();
+        return;
+      }
+      if (Math.ceil(correctLeftMs / 1000) !== shownCorrectSecs) paintBar();
+    },
+  });
   loop.start();
 
   function setState(next: EmbedState): void {
@@ -189,7 +212,9 @@ export async function createEmbed(ctx: GameContext, cfg: PlotzelConfig): Promise
     if (armed !== null) {
       label.textContent = armed === 'fail' ? 'לאישור הקישו שוב על "לא הצלחתי"' : `לאישור הקישו שוב על ${armed}`;
     } else if (report !== null) {
-      label.textContent = `✓ נרשם: ${triesText(report.which)} · אפשר לתקן`;
+      shownCorrectSecs = Math.ceil(correctLeftMs / 1000);
+      label.textContent =
+        state === 'done' ? `✓ נרשם: ${triesText(report.which)}` : `✓ נרשם: ${triesText(report.which)} · טעות? אפשר לתקן (${shownCorrectSecs})`;
     } else {
       label.textContent = LABEL_IDLE;
     }
@@ -252,6 +277,16 @@ export async function createEmbed(ctx: GameContext, cfg: PlotzelConfig): Promise
     }
   }
 
+  /** The correction window ran out: the self-report is final. */
+  function finishReported(): void {
+    if (destroyed || report === null || state === 'done' || state === 'builtin') return;
+    setState('done');
+    armed = null;
+    bar.classList.add('is-done');
+    paintBar();
+    ctx.finish();
+  }
+
   function finishSoon(): void {
     setState('done');
     disarm();
@@ -273,6 +308,7 @@ export async function createEmbed(ctx: GameContext, cfg: PlotzelConfig): Promise
       // the site reports for itself now: a self-report made before it no longer counts
       if (report !== null) {
         report = null;
+        correctLeftMs = 0;
         best = 0;
         ctx.setScore(0);
         rememberRound(ctx.seed, memAge, { report: null });
@@ -345,6 +381,7 @@ export async function createEmbed(ctx: GameContext, cfg: PlotzelConfig): Promise
       haptic.success();
     }
     if (first) wrap.classList.remove('is-nudge');
+    correctLeftMs = SELF_REPORT_CORRECT_MS;
     paintBar();
   }
 
@@ -442,6 +479,7 @@ export async function createEmbed(ctx: GameContext, cfg: PlotzelConfig): Promise
   if (memory.report !== undefined && memory.report !== null) {
     report = { ...memory.report };
     armedLeftMs = report.leftMs;
+    correctLeftMs = SELF_REPORT_CORRECT_MS;
     ctx.setScore(report.score);
   }
   paintBar();

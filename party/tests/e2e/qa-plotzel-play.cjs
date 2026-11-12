@@ -287,7 +287,7 @@ async function report(browser, device, name) {
     link: document.querySelector('.pze-link').hidden,
     btn: document.querySelector('.pze-btn[data-act="builtin"]').hidden,
   }));
-  check(`${name} reported: shows the choice and that a fix is possible`, /נרשם: 3 ניסיונות/.test(st.label) && /אפשר לתקן/.test(st.label) && st.chosen.join() === 'tries-3', st);
+  check(`${name} reported: shows the choice and that a fix is possible`, /נרשם: 3 ניסיונות/.test(st.label) && /אפשר לתקן \(\d\)/.test(st.label) && st.chosen.join() === 'tries-3', st);
   check(`${name} after a report the builtin switch is gone (no scoring twice)`, st.link && st.btn, st);
   check(`${name} no "finished" overlay: a correction stays possible`, !(await finishedOverlay(page)));
   await shot('3-reported');
@@ -324,6 +324,11 @@ async function report(browser, device, name) {
   await sleep(500);
   const back = await page.evaluate(() => ({ chosen: [...document.querySelectorAll('.pze-n.is-chosen')].map((b) => b.dataset.act), label: document.querySelector('.pze-bar-label').textContent }));
   check(`${name} a reload keeps the report`, back.chosen.join() === 'fail' && (await party(page)).score === failMin, { back, score: (await party(page)).score });
+  // the correction window (8 s of round time) runs out: the player is finished, so the round can end early
+  await page.waitForFunction(() => !!document.querySelector('.pa-overlay.is-on'), null, { timeout: 12000 }).catch(() => undefined);
+  const fin = await page.evaluate(() => ({ overlay: !!document.querySelector('.pa-overlay.is-on'), state: document.querySelector('.pze')?.dataset.state }));
+  check(`${name} 8 s after the last report: finished ("waiting for the others")`, fin.overlay && fin.state === 'done' && (await party(page)).score === failMin, fin);
+  await shot('5-finished');
   check(`${name} no console errors`, ev.errors.length === 0, ev.errors);
   await context.close();
 

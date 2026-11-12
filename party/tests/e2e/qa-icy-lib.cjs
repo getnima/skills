@@ -312,7 +312,8 @@ async function playIcy(page, touch, vp, kind, seed, opts = {}) {
     }
     await sleep(cfg.tick);
   }
-  await setHeld(0).catch(() => {});
+  // cancel, not lift: a lifted finger would tap the end screen's "again" button
+  if (held !== 0) await touch.cancel().catch(() => {});
   const parts = (lastHook || '0|0|0|0|0').split('|').map(Number);
   if (!lastState || !lastState.s || lastState.s.mode === 'run') runFloors.push(parts[1]); // the run in progress at the end
   const sorted = [...runFloors].sort((a, b) => a - b);
