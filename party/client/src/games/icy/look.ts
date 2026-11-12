@@ -29,12 +29,12 @@ export const PAL = {
 
 const FONT_URL = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/fonts/motaleh.woff2`;
 const FONT_TIMEOUT_MS = 1500;
-/** Motaleh's glyphs minus ז and the digits (same as the CSS @font-face rules). */
-const MOTALEH_RANGE = 'U+0020-002F, U+003A-0040, U+005B-0060, U+007B-007E, U+00A0-00BF, U+0590-05D5, U+05D7-05FF, U+2010-2027, U+20AA';
+/** Motaleh's glyphs minus the digits (same as the CSS @font-face rules). */
+const MOTALEH_RANGE = 'U+0020-002F, U+003A-0040, U+005B-0060, U+007B-007E, U+00A0-00BF, U+0590-05FF, U+2010-2027, U+20AA';
 const FONT_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/fonts`;
 
 /**
- * Heavy Rubik for ז and the digits only, under its own family, so canvas text keeps the heavy look.
+ * Heavy Rubik for the digits only, under its own family, so canvas text keeps the heavy look.
  * Uses the page's CSS faces when it has them (the phone page does), else adds its own. Never rejects.
  */
 function loadFill(): Promise<void> {
@@ -42,7 +42,6 @@ function loadFill(): Promise<void> {
     let faces = [...document.fonts].filter((f) => f.family.replace(/["']/g, '') === 'Motaleh Fill');
     if (faces.length === 0) {
       faces = [
-        new FontFace('Motaleh Fill', `url(${FONT_BASE}/rubik-hebrew.woff2) format('woff2')`, { weight: '800', display: 'swap', unicodeRange: 'U+05D6' }),
         new FontFace('Motaleh Fill', `url(${FONT_BASE}/rubik-latin.woff2) format('woff2')`, { weight: '800', display: 'swap', unicodeRange: 'U+0030-0039' }),
       ];
       for (const f of faces) document.fonts.add(f);
@@ -96,7 +95,7 @@ export function loadDisplayFont(): Promise<boolean> {
           return;
         }
       }
-      // not ז (it reads as ב) and not the digits (2 reads as Z): those fall through to the next font
+      // not the digits (Motaleh's 2 reads as a Z): those fall through to 'Motaleh Fill'
       const face = new FontFace('Motaleh', `url(${FONT_URL}) format('woff2')`, { display: 'swap', unicodeRange: MOTALEH_RANGE });
       face
         .load()

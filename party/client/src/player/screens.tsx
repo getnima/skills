@@ -6,7 +6,7 @@
  * the way in uses (show.css): a cobalt-dark bar with the red "live" chip, the yellow sunburst
  * stage, a cobalt tray. Motaleh is for short Hebrew headlines and stickers; names, numbers
  * and instructions are in Rubik (a digit inside a headline goes through <Num />). Motaleh's
- * ז reads as a ב ("זכית" as "בכית") and its 2 as a Z: no ז and no digit in Motaleh text.
+ * The digits come from heavy Rubik (Motaleh's 2 reads as a Z); Motaleh keeps its own ז (the owner's call).
  *
  * Words: instructions and buttons are plain. The jokes follow design/punchlines.he.md (the
  * הפשוטע register: a grand frame on a small local thing, one image, the funny word last, never

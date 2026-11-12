@@ -8,17 +8,10 @@
   font-family: "Motaleh";
   src: url("/fonts/motaleh.woff2") format("woff2");
   font-display: swap;
-  /* not ז (it reads as ב) and not the digits (2 reads as Z): those come from the next font, Rubik */
-  unicode-range: U+0020-002F, U+003A-0040, U+005B-0060, U+007B-007E, U+00A0-00BF, U+0590-05D5, U+05D7-05FF, U+2010-2027, U+20AA;
+  /* not the digits (Motaleh's 2 reads as a Z): those come from 'Motaleh Fill', heavy Rubik */
+  unicode-range: U+0020-002F, U+003A-0040, U+005B-0060, U+007B-007E, U+00A0-00BF, U+0590-05FF, U+2010-2027, U+20AA;
 }
-/* Motaleh Fill: heavy Rubik for only the glyphs Motaleh draws unreadably (ז reads as ב, 2 as Z) */
-@font-face {
-  font-family: 'Motaleh Fill';
-  src: url('/fonts/rubik-hebrew.woff2') format('woff2');
-  font-weight: 800;
-  font-display: swap;
-  unicode-range: U+05D6;
-}
+/* Motaleh Fill: heavy Rubik for only the digits (Motaleh's 2 reads as a Z) */
 @font-face {
   font-family: 'Motaleh Fill';
   src: url('/fonts/rubik-latin.woff2') format('woff2');
@@ -603,8 +596,7 @@
   border: 2.5px solid var(--ink);
   background: var(--cob-d);
   color: #fff;
-  /* Rubik, not Motaleh: Motaleh's ז reads as ב ("אוזניים"), and a tab label must read at a glance */
-  font: 800 clamp(13.5px, calc(4.3 * var(--u)), 16.5px) / 1 "Rubik", "Arial Hebrew", "Noto Sans Hebrew", system-ui, sans-serif;
+  font: 700 clamp(14px, calc(4.5 * var(--u)), 17px) / 1 var(--disp);
   white-space: nowrap;
   box-shadow: 0 3px 0 var(--ink);
   transition:

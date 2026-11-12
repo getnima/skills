@@ -46,7 +46,7 @@ frame. `tests/e2e/qa-tap-fluent.cjs` checks all of this per rendered frame.
 
 | When | What |
 | --- | --- |
-| Waiting, every 3.3 s | One of four bits, all four before any repeats (`schedule.ts`): the sneak (the hand sneaks up, caught by your stare, "לא ראית כלום." / "לא מה שחשבת. פילאטיס.", the hand drops, he whistles), the yawn ("נו? יש לי הופעה בבת ים."), the knock (fist, glass cracks, face pressed to the glass, "טוק טוק. יש פה מישהו?"), dozing off ("רק עצמתי עיניים."). Between bits a white hand taps the glass: "הקישו כדי להתחיל!" |
+| Waiting, every 3.3 s | One of four bits, all four before any repeats (`schedule.ts`): the sneak (the hand sneaks up, caught by your stare, "לא ראית כלום." / "זה לא מה שנראה. זה פילאטיס.", the hand drops, he whistles), the yawn ("נו? יש לי הופעה בבת ים."), the knock (fist, glass cracks, face pressed to the glass, "טוק טוק. יש פה מישהו?"), dozing off ("רק עצמתי עיניים."). Between bits a white hand taps the glass: "הקישו כדי להתחיל!" |
 | Last 5 s of the wait | Red star digits 5..1, faces get impatient, at 2 and 1 his hand starts up by itself, at 2 "טוב. אני מתחיל לבד."; at 0 the auto-start: the finger goes in, "התחלתי בלעדיך. נודר." |
 | First tap | Paparazzi flash, caught with the finger at the nostril, "קליק!", then "צלמו מהצד הטוב." and he carries on |
 | 8 / 18 / 28 / 40 / 54 / 68 / 84 / 120 / 150 taps | A line each, with stars from the nostril and a pop of the token: "צדיק!", "כורה ביטקוין מחולון.", "מחורחר!", "ארכיאולוג. של רשות העתיקות.", "בן פורת יוסף!", "חופר כמו בקו האדום.", "וואו!", "מנהרות הכרמל. בלי אגרה.", "אחשילי." A line stays at least 0.9 s. |

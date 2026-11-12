@@ -1132,7 +1132,7 @@
   border: 3px solid var(--ink);
   box-shadow: 4px 4px 0 var(--ink);
   color: #fff;
-  font: 900 clamp(22px, 7vw, 30px) / 1.15 var(--read);
+  font: 700 clamp(22px, 7vw, 30px) / 1.15 var(--disp);
   transform: rotate(-2deg);
   animation: ps-pop 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) 0.1s both;
 }
