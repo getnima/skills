@@ -193,6 +193,30 @@ the next game, or `final` (podium).
   (`shared/round-clock.ts`), with a clock synced to the server by ping.
 - Joining is allowed at any time; a guest who joins mid-round plays from the next
   round. A phone that reloads or reconnects resumes as the same player.
+- **Closing the browser and opening it again** lands in the same seat: the phone keeps
+  its seat (room, player id, secret, name) in localStorage and mirrors it in a small
+  first-party cookie (`pa_…`, 2 days), so it comes back even where localStorage is blocked.
+  Opening the bare address (a home-screen icon, history) resumes the last room this phone
+  still has a seat in. The server keeps a closed phone's seat and points for the room's
+  life (6 idle hours). Tested in a real Chromium profile on disk:
+  `node tests/e2e/reopen-browser.cjs` (with the link, from the bare address, mid-round,
+  storage blocked).
+
+**40 guests (and more).** Measured on 2026-11-12 with the production server bundle and
+real party timing: 40 phones played all five games (`tests/load/bots.ts --players 40
+--rounds 5 --churn 0.02 --storm`: every phone also drops at random ~2% of seconds, and in
+every round all 40 drop at once mid-round and come back 0.5-3 s later), with every row,
+point, rank and total equal to `shared/scoring.ts` and nobody ever becoming a second
+player. The server used about 2% of one core on average (5% at the peak), about 85 MB of
+memory, and answered a ping in 0.5 ms (p99 under 5 ms) throughout, including the storms.
+So the e2-small VM (2 shared vCPUs, 2 GB) has room to spare. Phones send a live score
+every 250 ms; the server merges them into one `scores` message per 250 ms for the whole
+room, and dolls into one `looks` message per 200 ms, so traffic grows gently with the
+head count. The TV shows 40: the lobby grid holds every name, the race shows the top 5 and
+rotates the rest. Re-run: start a server, then
+`npx tsx tests/load/bots.ts --url <server> --players 40 --rounds 5 --churn 0.02 --storm`
+next to `npx tsx tests/load/watch-server.ts --pid <server pid> --url <server>`
+(CPU, memory, ping); `BASE_URL=… SERVER_URL=… node tests/e2e/tv-40.cjs` checks the TV.
 
 **The way in: name, dressing room, waiting room.** A guest opens the link, types a
 name (`client/src/player/welcome.tsx`, `JoinScreen`), and lands in the dressing room
