@@ -22,7 +22,7 @@ import { haptic } from '../../kit/haptics';
 import { createInput } from '../../kit/input';
 import { createLoop } from '../../kit/loop';
 import { GAMES } from '../../../../shared/protocol';
-import { loadFlappyArt, SLOT_SIZES } from './art';
+import { loadFlappyArt, OBSTACLE_THEMES, SLOT_SIZES } from './art';
 import { pilotFlap } from './bot';
 import { createFlight, FIELD, finaleDifficulty, newBird, PASS_BEHIND, PHYS, STEP_MS, STEP_S, stepBird, survivalRaw } from './course';
 import { blit, createStickerCache, loadDisplayFont, PAL, renderChip, renderSticker } from './look';
@@ -142,6 +142,27 @@ const HEAD_OF_TOKEN = 1.12;
 /** Before GO the game waits this long at most for the dressed head, so it starts with it; later it is swapped in when ready. */
 const HEAD_WAIT_MS = 600;
 /**
+ * The flying angel (art slots angel_0..3 and angel_dead, made from the prize figurine): where its head
+ * sits in a frame, as shares of the frame. The bird's point (the hit circle) is the head's middle and the
+ * body trails behind it. `tilt` is how far the figurine's head leans in the pictures (radians, clockwise),
+ * so a guest's dressed head (the avatar doll is this same figurine) leans the same way over it.
+ */
+const ANGEL = { headX: 0.7946, headY: 0.3682, capTopY: 0.0172, chinY: 0.6412, tilt: 0.36 } as const;
+/** The angel's head (cap top to chin) on screen, in face-token diameters. */
+const ANGEL_HEAD = 0.95;
+/** One wing beat as a sprite: wings high, up, level, down, level, up (frames angel_0..3). */
+const FLAP_CYCLE = [0, 1, 2, 3, 2, 1] as const;
+/** Sprite frames per second: gliding, right after a tap (a tap starts a fresh down-stroke), and hanging after a rejoin. */
+const FLAP_FPS = 7;
+const FLAP_FPS_TAP = 12;
+const FLAP_FPS_HOVER = 5;
+/** The most the angel leans (radians), nose up when climbing and nose down when falling: a figurine never spins like a coin. */
+const LEAN_UP = -0.3;
+const LEAN_DOWN = 0.38;
+/** Music notes out of an obstacle the bird just passed (looks only). */
+const MAX_NOTES = 16;
+const NOTE_COLORS = [PAL.yel, '#ffffff', '#FF6FB5', '#5CE1FF'] as const;
+/**
  * The announcement lane: one line at the very top of the play area, under the HUD, beside the
  * "N באוויר" chip (owner's rule: announcements never cover the action). At most this high (CSS px),
  * one message at a time, the newest replaces the older, each for at most LANE_MS.
@@ -209,6 +230,9 @@ export const game: GameModule = {
     const fx = createFx(260);
     const flight = createFlight(ctx.seed);
     const sparkle = paintDrawable('fl-sparkle', starPainter(PAL.yel), 32);
+    const angelFrames = [art.angel_0, art.angel_1, art.angel_2, art.angel_3] as const;
+    /** The flying angel when all its frames are there; else the round token with wings (the older look). */
+    const angelOn = [...angelFrames, art.angel_dead].every((d) => !d.isPlaceholder);
     const stickers = createStickerCache(24);
     const spectator = createSpectator(ctx.root, ctx.hudHeight, ctx.safeBottom);
 
@@ -293,6 +317,8 @@ export const game: GameModule = {
     let tilt = 0;
     let bobT = 0;
     let wingT = 0;
+    /** The angel's sprite clock, in frames of FLAP_CYCLE (a tap restarts it). */
+    let angelT = 0;
     let flapBoost = 0;
     let flapFaceT = 0;
     let groundScroll = 0;
@@ -478,6 +504,7 @@ export const game: GameModule = {
       if (hintAlpha > 0.01) fadeHint(0, 250);
       flapBoost = 1;
       flapFaceT = 0.18;
+      angelT = 0;
       fx.tween({ ms: 260, from: 0, to: 1, ease: ease.outBack, update: (v) => { sqX = lerp(0.8, 1, v); sqY = lerp(1.24, 1, v); } });
       const bx = L.birdX;
       const by = L.top + bird.y * L.U;
@@ -499,6 +526,7 @@ export const game: GameModule = {
       const run = nextIdx + 1;
       passGlowIdx = o.i;
       passGlow = 1;
+      spawnNotes(o);
       counterPop = 1.25;
       fx.tween({ ms: 300, from: 1.25, to: 1, ease: ease.outCubic, update: (v) => (counterPop = v) });
       const gx = L.birdX;
@@ -664,6 +692,8 @@ export const game: GameModule = {
           if (bird.y >= floor) {
             bird.y = floor;
             landed = true;
+            // settle head-down by the shortest way, not by unwinding every spin of the fall
+            tilt = Math.PI / 2 + Math.atan2(Math.sin(tilt - Math.PI / 2), Math.cos(tilt - Math.PI / 2));
             bird.vy = 0;
             sfx.land(0.8);
             spawnFeathers(L.birdX + knockX * L.U, L.groundTop - 4, 5, 160);
@@ -724,11 +754,13 @@ export const game: GameModule = {
       }
       flapBoost = Math.max(0, flapBoost - dt * 3.2);
       wingT += dt * (mode === 'fly' ? 11 + flapBoost * 26 : 0);
+      angelT += dt * (mode !== 'fly' ? 0 : bird.hover ? FLAP_FPS_HOVER : FLAP_FPS + (FLAP_FPS_TAP - FLAP_FPS) * flapBoost);
       flapFaceT = Math.max(0, flapFaceT - dt);
       passGlow = Math.max(0, passGlow - dt * 2.4);
       if (bannerT > 0) bannerT = Math.max(0, bannerT - dt);
       if (laneT > 0) laneT = Math.max(0, laneT - dt);
       updateFeathers(dt);
+      updateNotes(dt, speed * L.U);
       fx.update(dt);
     }
 
@@ -764,8 +796,7 @@ export const game: GameModule = {
     }
 
     /** Pole from y0 down to y1 (y1 > y0), centered on cx, in the current transform. */
-    function drawPole(cx: number, y0: number, y1: number, w: number): void {
-      const p = art.obstacle_pole;
+    function drawPole(p: typeof art.obstacle_pole, cx: number, y0: number, y1: number, w: number): void {
       const src = p.source;
       const th = (p.height / p.width) * w;
       for (let y = y0; y < y1; y += th) {
@@ -774,10 +805,42 @@ export const game: GameModule = {
       }
     }
 
+    /** The obstacle themes' art (see OBSTACLE_THEMES): obstacle i wears theme i % length. */
+    const themes = OBSTACLE_THEMES.map((t) => ({ head: art[t.head], pole: art[t.pole], disco: t.name === 'disco' }));
+    /** Where the disco ball glints, as shares of its box; a new pair every sprite frame (8 fps). */
+    const GLINTS: ReadonlyArray<readonly [number, number]> = [
+      [0.3, 0.28],
+      [0.66, 0.2],
+      [0.5, 0.5],
+      [0.24, 0.55],
+      [0.72, 0.46],
+      [0.42, 0.14],
+    ];
+
+    /** One themed head, its widest part on the gap's edge at `edgeY` (`flip`: the top stand, pointing down). */
+    function drawHead(th: (typeof themes)[number], sx: number, edgeY: number, flip: boolean, hw: number, hh: number, glow: number): void {
+      // a passed obstacle goes "boing": wider and shorter, anchored at its neck so it never reaches into the gap
+      const k = glow * glow;
+      const w = hw * (1 + 0.14 * k);
+      const h = hh * (1 - 0.12 * k);
+      g.save();
+      g.translate(sx, edgeY);
+      if (flip) g.scale(1, -1);
+      th.head.draw(g, 0, hh - h / 2, w, h);
+      if (th.disco) {
+        const f = Math.floor(bobT * 8);
+        for (let j = 0; j < 2; j++) {
+          const p = GLINTS[(f * 2 + j * 3) % GLINTS.length] ?? [0.5, 0.3];
+          const sz = hw * (0.2 + 0.1 * ((f + j) % 2));
+          sparkle.draw(g, (p[0] - 0.5) * w, hh - h + p[1] * h * 0.85, sz, sz, f * 0.4);
+        }
+      }
+      g.restore();
+    }
+
     function drawObstacles(d: number, from: number): void {
       const U = L.U;
       const headW = PHYS.headW * U;
-      const headH = PHYS.headH * U;
       const poleW = PHYS.poleW * U;
       const minX = -L.birdX / U - PHYS.headW;
       const maxX = (L.W - L.birdX) / U + PHYS.headW;
@@ -790,31 +853,158 @@ export const game: GameModule = {
         const gapTop = L.top + (o.gapY - o.gap / 2) * U;
         const gapBot = L.top + (o.gapY + o.gap / 2) * U;
         const glow = i === passGlowIdx ? passGlow : 0;
+        const th = themes[i % themes.length] ?? themes[0];
+        if (!th) continue;
+        // every head is as wide as the head box (so it covers the hit box), at its own picture's height
+        const hh = headW * (th.head.height / th.head.width);
         // bottom stand
-        drawPole(sx, gapBot + headH * 0.9, L.groundTop + 2, poleW);
-        if (glow > 0) {
-          // pass ripple around both microphones
-          const rr = headW * (0.55 + (1 - glow) * 0.75);
-          g.globalAlpha = glow;
-          g.strokeStyle = PAL.yel;
-          g.lineWidth = 2 + glow * 5;
-          g.beginPath();
-          g.arc(sx, gapBot + headH * 0.35, rr, 0, Math.PI * 2);
-          g.stroke();
-          g.beginPath();
-          g.arc(sx, gapTop - headH * 0.35, rr, 0, Math.PI * 2);
-          g.stroke();
-          g.globalAlpha = 1;
-        }
-        art.obstacle.draw(g, sx, gapBot + headH / 2, headW, headH);
-        // top stand (flipped: the mic points down)
+        drawPole(th.pole, sx, gapBot + hh * 0.9, L.groundTop + 2, poleW);
+        drawHead(th, sx, gapBot, false, headW, hh, glow);
+        // top stand (flipped: the head points down)
         g.save();
         g.translate(sx, gapTop);
         g.scale(1, -1);
-        drawPole(0, headH * 0.9, gapTop + 2, poleW);
-        art.obstacle.draw(g, 0, headH / 2, headW, headH);
+        drawPole(th.pole, 0, hh * 0.9, gapTop + 2, poleW);
+        g.restore();
+        drawHead(th, sx, gapTop, true, headW, hh, glow);
+      }
+    }
+
+    // ── music notes out of a passed obstacle (looks only) ──
+    interface Note {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      age: number;
+      life: number;
+      color: string;
+      size: number;
+      spin: number;
+    }
+    const notes: Note[] = [];
+    let noteTurn = 0;
+    /** Two notes out of each head of a passed obstacle, away from the gap and drifting back with the course. */
+    function spawnNotes(o: Obstacle): void {
+      const U = L.U;
+      const r = PHYS.radius * U;
+      const sx = L.birdX + (o.x - dist) * U;
+      const edges = [L.top + (o.gapY - o.gap / 2) * U, L.top + (o.gapY + o.gap / 2) * U];
+      for (const [k, ey] of edges.entries()) {
+        for (let j = 0; j < 2; j++) {
+          if (notes.length >= MAX_NOTES) notes.shift();
+          const t = noteTurn++;
+          notes.push({
+            x: sx + (j === 0 ? -0.3 : 0.25) * PHYS.headW * U,
+            y: ey,
+            vx: -40 - j * 25,
+            vy: (k === 0 ? -1 : 1) * (55 + j * 30),
+            age: 0,
+            life: 0.75,
+            color: NOTE_COLORS[t % NOTE_COLORS.length] ?? PAL.yel,
+            size: r * (0.62 + 0.14 * j),
+            spin: (t % 2 === 0 ? 1 : -1) * 0.35,
+          });
+        }
+      }
+    }
+    function updateNotes(dt: number, scroll: number): void {
+      for (let i = notes.length - 1; i >= 0; i--) {
+        const n = notes[i];
+        if (!n) continue;
+        n.age += dt;
+        if (n.age >= n.life) {
+          notes.splice(i, 1);
+          continue;
+        }
+        n.x += (n.vx - scroll) * dt;
+        n.y += n.vy * dt;
+        n.vy *= 1 - 1.6 * dt;
+      }
+    }
+    /** An eighth note: an ink-outlined head on a stem with a flag. */
+    function drawNotes(): void {
+      for (const n of notes) {
+        const t = n.age / n.life;
+        const s = n.size * (t < 0.15 ? ease.outBack(t / 0.15) : 1);
+        g.save();
+        g.globalAlpha = t > 0.6 ? (1 - t) / 0.4 : 1;
+        g.translate(n.x, n.y);
+        g.rotate(n.spin + Math.sin(n.age * 9) * 0.15);
+        g.lineJoin = 'round';
+        g.lineCap = 'round';
+        for (const ink of [true, false]) {
+          g.strokeStyle = ink ? PAL.ink : n.color;
+          g.fillStyle = ink ? PAL.ink : n.color;
+          const o = ink ? s * 0.16 : 0;
+          g.lineWidth = ink ? s * 0.42 : s * 0.16;
+          g.beginPath();
+          g.ellipse(0, 0, s * 0.42 + o, s * 0.31 + o, -0.45, 0, Math.PI * 2);
+          g.fill();
+          g.beginPath();
+          g.moveTo(s * 0.36, -s * 0.05);
+          g.lineTo(s * 0.36, -s * 1.25);
+          g.quadraticCurveTo(s * 0.62, -s * 1.0, s * 0.9, -s * 0.72);
+          g.stroke();
+        }
         g.restore();
       }
+      g.globalAlpha = 1;
+    }
+
+    /**
+     * The flying angel: a sprite of the prize figurine (FLAP_CYCLE at FLAP_FPS..FLAP_FPS_TAP), leaning at most
+     * LEAN_UP..LEAN_DOWN, its head on the bird's point. A guest's dressed head sits over the figurine's own,
+     * leaning like it. The halo floats level above the head (or the hat tower) and is knocked askew in a crash;
+     * a crash shows the dizzy frame, spinning, and it lands head-first (the tilt settles at 90 degrees).
+     */
+    function drawAngel(bx: number, by: number, r: number, dead: boolean): void {
+      const hH = r * 2.18 * ANGEL_HEAD;
+      const fh = hH / (ANGEL.chinY - ANGEL.capTopY);
+      const fw = fh * (SLOT_SIZES.angel.w / SLOT_SIZES.angel.h);
+      const lean = dead ? tilt : clamp(tilt, LEAN_UP, LEAN_DOWN);
+      const frame = dead ? art.angel_dead : (angelFrames[FLAP_CYCLE[Math.floor(angelT) % FLAP_CYCLE.length] ?? 1] ?? art.angel_1);
+      const sx = sqX * birdScale;
+      const sy = sqY * birdScale;
+      g.save();
+      g.translate(bx, by);
+      g.rotate(lean);
+      g.scale(sx, sy);
+      frame.draw(g, (0.5 - ANGEL.headX) * fw, (0.5 - ANGEL.headY) * fh, fw, fh);
+      // the top of what sits on the head, in the body's frame: the cap, or the guest's hat tower
+      let topX = 0;
+      let topY = (ANGEL.capTopY - ANGEL.headY) * fh;
+      const hs = head;
+      if (hs !== null) {
+        const hcY = ((ANGEL.capTopY + ANGEL.chinY) / 2 - ANGEL.headY) * fh;
+        g.save();
+        g.translate(0, hcY);
+        g.rotate(ANGEL.tilt);
+        g.drawImage(hs.canvas, -hs.cx * hH, -hs.cy * hH, hs.w * hH, hs.h * hH);
+        g.restore();
+        const up = hs.cy * hH;
+        if (hcY - up * Math.cos(ANGEL.tilt) < topY) {
+          topX = up * Math.sin(ANGEL.tilt);
+          topY = hcY - up * Math.cos(ANGEL.tilt);
+        }
+      }
+      g.restore();
+      // the halo: level above the head (it does not lean with the body), askew after a crash
+      const hw = hH * 0.82;
+      const hh = hw * (SLOT_SIZES.halo.h / SLOT_SIZES.halo.w);
+      const c = Math.cos(lean);
+      const sn = Math.sin(lean);
+      const tx = bx + (topX * c - topY * sn) * sx;
+      const ty = by + (topX * sn + topY * c) * sy;
+      const bob = dead ? 0 : Math.sin(bobT * 5) * hH * 0.03;
+      art.halo.draw(
+        g,
+        tx + (dead ? hH * 0.3 : 0),
+        ty - hh * 0.62 + bob - (dead ? hH * 0.12 : 0),
+        hw * birdScale,
+        hh * birdScale,
+        dead ? 0.55 : lean * 0.25,
+      );
     }
 
     function drawBird(alpha: number): void {
@@ -827,43 +1017,46 @@ export const game: GameModule = {
       const by = L.top + y * U;
       // hanging untouchable after a rejoin: the bird blinks
       if (!dead && graceLeft > 0 && Math.floor(bobT * 10) % 2 === 0) g.globalAlpha = 0.45;
-      g.save();
-      g.translate(bx, by);
-      g.rotate(tilt);
-      g.scale(sqX * birdScale, sqY * birdScale);
-      const D = r * 2.18;
-      // the guest's dressed head (a cached cut-out: one blit), else the game's round token
-      const hs = head;
-      const headH = D * HEAD_OF_TOKEN;
-      // wings behind the head: their roots sit on its sides (the circle's sides for the token)
-      const wa = dead ? 0.7 : Math.sin(wingT) * (0.45 + flapBoost * 0.35) - 0.15;
-      const ww = r * 1.7;
-      const wh = ww * (SLOT_SIZES.wing.h / SLOT_SIZES.wing.w);
-      const rootX = hs !== null ? Math.max(r * 0.7, hs.halfW * headH * 0.9) : r * 0.86;
-      for (let side = -1; side <= 1; side += 2) {
+      if (angelOn) drawAngel(bx, by, r, dead);
+      else {
         g.save();
-        g.translate(side * rootX, -r * 0.05);
-        g.scale(side, 1);
-        g.rotate(-wa);
-        art.wing.draw(g, ww / 2, 0, ww, wh);
+        g.translate(bx, by);
+        g.rotate(tilt);
+        g.scale(sqX * birdScale, sqY * birdScale);
+        const D = r * 2.18;
+        // the guest's dressed head (a cached cut-out: one blit), else the game's round token
+        const hs = head;
+        const headH = D * HEAD_OF_TOKEN;
+        // wings behind the head: their roots sit on its sides (the circle's sides for the token)
+        const wa = dead ? 0.7 : Math.sin(wingT) * (0.45 + flapBoost * 0.35) - 0.15;
+        const ww = r * 1.7;
+        const wh = ww * (SLOT_SIZES.wing.h / SLOT_SIZES.wing.w);
+        const rootX = hs !== null ? Math.max(r * 0.7, hs.halfW * headH * 0.9) : r * 0.86;
+        for (let side = -1; side <= 1; side += 2) {
+          g.save();
+          g.translate(side * rootX, -r * 0.05);
+          g.scale(side, 1);
+          g.rotate(-wa);
+          art.wing.draw(g, ww / 2, 0, ww, wh);
+          g.restore();
+        }
+        if (hs !== null) {
+          // the flap and the fall read through the wings, the squash and the tilt (the whole group);
+          // a crash keeps the guest's own head, with the dizzy stars and the knocked halo
+          g.drawImage(hs.canvas, -hs.cx * headH, -hs.cy * headH, hs.w * headH, hs.h * headH);
+        } else {
+          // the face is a finished round token (paper disc + ink ring): drawn as it is
+          const face = dead ? art.face_dead : flapFaceT > 0 ? art.face_flap : art.face;
+          face.draw(g, 0, 0, D, D);
+        }
+        // halo over the top of the circle, or over the top of the hat tower (tilts off when dead)
+        const hw = r * 1.45;
+        const hh = hw * (SLOT_SIZES.halo.h / SLOT_SIZES.halo.w);
+        const top = hs !== null ? Math.min(-r * 1.3, -hs.cy * headH - hh * 0.15) : -r * 1.3;
+        const hy = top + (dead ? -r * 0.15 : Math.sin(bobT * 5) * r * 0.06);
+        art.halo.draw(g, dead ? r * 0.35 : 0, hy, hw, hh, dead ? 0.5 : 0);
         g.restore();
       }
-      if (hs !== null) {
-        // the flap and the fall read through the wings, the squash and the tilt (the whole group);
-        // a crash keeps the guest's own head, with the dizzy stars and the knocked halo
-        g.drawImage(hs.canvas, -hs.cx * headH, -hs.cy * headH, hs.w * headH, hs.h * headH);
-      } else {
-        // the face is a finished round token (paper disc + ink ring): drawn as it is
-        const face = dead ? art.face_dead : flapFaceT > 0 ? art.face_flap : art.face;
-        face.draw(g, 0, 0, D, D);
-      }
-      // halo over the top of the circle, or over the top of the hat tower (tilts off when dead)
-      const hw = r * 1.45;
-      const hh = hw * (SLOT_SIZES.halo.h / SLOT_SIZES.halo.w);
-      const top = hs !== null ? Math.min(-r * 1.3, -hs.cy * headH - hh * 0.15) : -r * 1.3;
-      const hy = top + (dead ? -r * 0.15 : Math.sin(bobT * 5) * r * 0.06);
-      art.halo.draw(g, dead ? r * 0.35 : 0, hy, hw, hh, dead ? 0.5 : 0);
-      g.restore();
       g.globalAlpha = 1;
 
       if (dead) {
@@ -1036,6 +1229,7 @@ export const game: GameModule = {
         const skyH = L.playH * 0.2;
         drawTiledX(art.skyline, L.top + L.playH * 0.06, skyH, groundScroll * L.U * 0.25);
         drawObstacles(d, from);
+        drawNotes();
         if (mode !== 'out') drawBird(alpha);
         drawTiledX(art.ground, L.groundTop, L.groundH, (mode === 'dead' ? deadDist : d) * L.U);
         if (L.H > L.groundTop + L.groundH) {
@@ -1052,8 +1246,12 @@ export const game: GameModule = {
         drawHint();
         drawCrash();
         if (flash > 0) {
-          g.fillStyle = `rgba(255,255,255,${flash})`;
-          g.fillRect(0, 0, L.W, L.H);
+          // the edges of the screen flash, the play in the middle stays clear (no full-screen veil)
+          const e = Math.max(14, L.W * 0.05);
+          g.fillStyle = `rgba(255,255,255,${Math.min(1, flash * 1.6)})`;
+          g.fillRect(0, L.top, e, L.H - L.top);
+          g.fillRect(L.W - e, L.top, e, L.H - L.top);
+          g.fillRect(0, L.top, L.W, e * 0.6);
         }
       },
     });

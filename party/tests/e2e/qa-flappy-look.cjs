@@ -176,9 +176,9 @@ async function room(browser) {
     const started = await call('host:start', { gameId: 'flappy' });
     check(started.ok === true, 'host:start flappy', started);
     await Promise.all(phones.map((ph) => waitFor(async () => (await info(ph)).f !== null, 30000, `${ph.tag} game mounted`)));
-    // the pilots: the 430 phone flies to the end, the 390 one lets go after 6 s, the 320 one never taps
+    // the pilots: the 430 phone flies to the end, the 390 one lets go after 4.7 s (room for the winner line in a 12 s FAST round), the 320 one never taps
     await A.page.evaluate(() => window.__flappy.autopilot(true));
-    await B.page.evaluate(() => window.__flappy.autopilot(true, 360));
+    await B.page.evaluate(() => window.__flappy.autopilot(true, 280));
     // made before GO (the countdown): every phone starts with its own head
     const heads = await Promise.all(phones.map(async (ph) => (await info(ph)).f.head));
     phones.forEach((ph, k) => check(heads[k].dressed === true && heads[k].look === ph.look, `${ph.tag}: the bird is this guest's own dressed head (made during the countdown)`, heads[k]));

@@ -137,25 +137,47 @@ const micHeadPainter: Painter = (ctx, w, h) => {
   ctx.restore();
 };
 
-/** Stand pole, tiles vertically: flat chrome with ink edges and one red ring per tile. */
-const polePainter: Painter = (ctx, w, h) => {
-  ctx.fillStyle = '#C9CEDA';
-  ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = PAL.white;
-  ctx.fillRect(w * 0.22, 0, w * 0.16, h);
-  ctx.fillStyle = '#8E95A8';
-  ctx.fillRect(w * 0.62, 0, w * 0.26, h);
-  const edge = Math.max(2, w * 0.12);
-  ctx.fillStyle = PAL.ink;
-  ctx.fillRect(0, 0, edge, h);
-  ctx.fillRect(w - edge, 0, edge, h);
-  // a ring in the middle of the tile (the edges of the tile stay plain, so it tiles)
-  const rh = w * 0.42;
-  ctx.fillStyle = PAL.ink;
-  ctx.fillRect(0, h * 0.5 - rh / 2, w, rh);
-  ctx.fillStyle = PAL.red;
-  ctx.fillRect(edge, h * 0.5 - rh / 2 + edge * 0.6, w - edge * 2, rh - edge * 1.2);
-};
+/** The colours of one stand pole: body, its light stripe, its shade, and the ring (its ink edge is fixed). */
+interface PoleColors {
+  readonly body: string;
+  readonly light: string;
+  readonly shade: string;
+  readonly ring: string;
+  /** A thin band across the ring (or null). */
+  readonly band: string | null;
+}
+
+/** Stand pole, tiles vertically: a flat colour with a light stripe, a shade, ink edges and one ring per tile. */
+function makePolePainter(c: PoleColors): Painter {
+  return (ctx, w, h) => {
+    ctx.fillStyle = c.body;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = c.light;
+    ctx.fillRect(w * 0.22, 0, w * 0.16, h);
+    ctx.fillStyle = c.shade;
+    ctx.fillRect(w * 0.62, 0, w * 0.26, h);
+    const edge = Math.max(2, w * 0.12);
+    ctx.fillStyle = PAL.ink;
+    ctx.fillRect(0, 0, edge, h);
+    ctx.fillRect(w - edge, 0, edge, h);
+    // a ring in the middle of the tile (the edges of the tile stay plain, so it tiles)
+    const rh = w * 0.42;
+    ctx.fillStyle = PAL.ink;
+    ctx.fillRect(0, h * 0.5 - rh / 2, w, rh);
+    ctx.fillStyle = c.ring;
+    ctx.fillRect(edge, h * 0.5 - rh / 2 + edge * 0.6, w - edge * 2, rh - edge * 1.2);
+    if (c.band !== null) {
+      ctx.fillStyle = c.band;
+      ctx.fillRect(edge, h * 0.5 - rh * 0.08, w - edge * 2, rh * 0.16);
+    }
+  };
+}
+
+/** The classic stand: chrome with a red ring. */
+const polePainter = makePolePainter({ body: '#C9CEDA', light: PAL.white, shade: '#8E95A8', ring: PAL.red, band: null });
+
+/** Nothing (the angel frames: with no file the game keeps its round token and wings). */
+const blankPainter: Painter = () => undefined;
 
 /** The stage floor, tiles horizontally: a yellow lip with an ink line over a cobalt front with footlights. */
 const groundPainter: Painter = (ctx, w, h) => {
@@ -265,14 +287,27 @@ const backgroundPainter: Painter = (ctx, w, h) => {
   ctx.fill();
 };
 
+/** The themed stands' poles (painted; a pole_<theme>.png file replaces one). */
+const POLE_GOLDMIC = makePolePainter({ body: '#F2B92C', light: '#FFE58A', shade: '#B9800F', ring: PAL.ink, band: '#F2B92C' });
+const POLE_DARBUKA = makePolePainter({ body: '#27B3AD', light: '#8FE3DD', shade: '#147C78', ring: '#E8B923', band: PAL.red });
+const POLE_DISCO = makePolePainter({ body: '#C9CEDA', light: PAL.white, shade: '#8E95A8', ring: '#FF6FB5', band: '#5CE1FF' });
+const POLE_HORN = makePolePainter({ body: PAL.red, light: '#FF8A73', shade: '#A3201A', ring: PAL.yel, band: null });
+
 // ───────────────────────────── Slots ─────────────────────────────
 
 /** Logical sizes (CSS px). Real files should be twice as large. */
 export const SLOT_SIZES = {
   face: 128,
   wing: { w: 64, h: 48 },
-  halo: { w: 64, h: 24 },
+  halo: { w: 128, h: 70 },
+  /** One frame of the flying angel (angel_0..3, angel_dead): the whole figurine, its head at ANGEL in index.ts. */
+  angel: { w: 240, h: 196 },
   head: { w: 140, h: 110 },
+  /** The themed heads: the same box width as `head`, each at its own picture's height. */
+  goldmic: { w: 140, h: 163.5 },
+  darbuka: { w: 140, h: 125 },
+  disco: { w: 140, h: 160 },
+  horn: { w: 140, h: 153.5 },
   pole: { w: 48, h: 192 },
   ground: { w: 256, h: 64 },
   skyline: { w: 512, h: 160 },
@@ -285,8 +320,21 @@ const SLOTS = [
   { key: 'face_dead', file: 'face_dead.png', size: SLOT_SIZES.face, placeholder: facePainter('dead', FACE_COLOR) },
   { key: 'wing', file: 'wing.png', size: SLOT_SIZES.wing.w, height: SLOT_SIZES.wing.h, placeholder: wingPainter },
   { key: 'halo', file: 'halo.png', size: SLOT_SIZES.halo.w, height: SLOT_SIZES.halo.h, placeholder: haloPainter },
+  { key: 'angel_0', file: 'angel_0.png', size: SLOT_SIZES.angel.w, height: SLOT_SIZES.angel.h, placeholder: blankPainter },
+  { key: 'angel_1', file: 'angel_1.png', size: SLOT_SIZES.angel.w, height: SLOT_SIZES.angel.h, placeholder: blankPainter },
+  { key: 'angel_2', file: 'angel_2.png', size: SLOT_SIZES.angel.w, height: SLOT_SIZES.angel.h, placeholder: blankPainter },
+  { key: 'angel_3', file: 'angel_3.png', size: SLOT_SIZES.angel.w, height: SLOT_SIZES.angel.h, placeholder: blankPainter },
+  { key: 'angel_dead', file: 'angel_dead.png', size: SLOT_SIZES.angel.w, height: SLOT_SIZES.angel.h, placeholder: blankPainter },
   { key: 'obstacle', file: 'obstacle.png', size: SLOT_SIZES.head.w, height: SLOT_SIZES.head.h, placeholder: micHeadPainter },
   { key: 'obstacle_pole', file: 'obstacle_pole.png', size: SLOT_SIZES.pole.w, height: SLOT_SIZES.pole.h, fit: 'cover', placeholder: polePainter },
+  { key: 'obstacle_goldmic', file: 'obstacle_goldmic.png', size: SLOT_SIZES.goldmic.w, height: SLOT_SIZES.goldmic.h, placeholder: micHeadPainter },
+  { key: 'pole_goldmic', file: 'pole_goldmic.png', size: SLOT_SIZES.pole.w, height: SLOT_SIZES.pole.h, fit: 'cover', placeholder: POLE_GOLDMIC },
+  { key: 'obstacle_darbuka', file: 'obstacle_darbuka.png', size: SLOT_SIZES.darbuka.w, height: SLOT_SIZES.darbuka.h, placeholder: micHeadPainter },
+  { key: 'pole_darbuka', file: 'pole_darbuka.png', size: SLOT_SIZES.pole.w, height: SLOT_SIZES.pole.h, fit: 'cover', placeholder: POLE_DARBUKA },
+  { key: 'obstacle_disco', file: 'obstacle_disco.png', size: SLOT_SIZES.disco.w, height: SLOT_SIZES.disco.h, placeholder: micHeadPainter },
+  { key: 'pole_disco', file: 'pole_disco.png', size: SLOT_SIZES.pole.w, height: SLOT_SIZES.pole.h, fit: 'cover', placeholder: POLE_DISCO },
+  { key: 'obstacle_horn', file: 'obstacle_horn.png', size: SLOT_SIZES.horn.w, height: SLOT_SIZES.horn.h, placeholder: micHeadPainter },
+  { key: 'pole_horn', file: 'pole_horn.png', size: SLOT_SIZES.pole.w, height: SLOT_SIZES.pole.h, fit: 'cover', placeholder: POLE_HORN },
   { key: 'ground', file: 'ground.png', size: SLOT_SIZES.ground.w, height: SLOT_SIZES.ground.h, fit: 'cover', placeholder: groundPainter },
   { key: 'skyline', file: 'skyline.png', size: SLOT_SIZES.skyline.w, height: SLOT_SIZES.skyline.h, placeholder: skylinePainter },
   {
@@ -300,6 +348,20 @@ const SLOTS = [
 ] as const satisfies readonly AssetSlot[];
 
 export type FlappyArt = Record<(typeof SLOTS)[number]['key'], Drawable>;
+
+/**
+ * The obstacle themes, taken in turn (obstacle i wears theme i % length, so two in a row never match):
+ * the party's stage gear, each a head at the gap's edge on its own pole. Looks only: every theme hits
+ * exactly like the classic microphone (course.ts hitsObstacle), and every head is drawn as wide as the
+ * head box with its widest part at the gap, so the art always covers what can hit you.
+ */
+export const OBSTACLE_THEMES = [
+  { head: 'obstacle', pole: 'obstacle_pole', name: 'mic' },
+  { head: 'obstacle_goldmic', pole: 'pole_goldmic', name: 'goldmic' },
+  { head: 'obstacle_darbuka', pole: 'pole_darbuka', name: 'darbuka' },
+  { head: 'obstacle_disco', pole: 'pole_disco', name: 'disco' },
+  { head: 'obstacle_horn', pole: 'pole_horn', name: 'horn' },
+] as const satisfies ReadonlyArray<{ head: keyof FlappyArt; pole: keyof FlappyArt; name: string }>;
 
 export function loadFlappyArt(): Promise<FlappyArt> {
   return loadAssets('flappy', SLOTS);
