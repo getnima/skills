@@ -44,7 +44,10 @@ const DISC_W = 1.08;
 const DISC_H = 0.26;
 
 /** Bounds of the worn things in doll px: top edge and the widest half-width around the centre line. */
-function contentBounds(placed: readonly PlacedItem[]): { top: number; half: number } {
+function contentBounds(placed: readonly PlacedItem[]): {
+  top: number;
+  half: number;
+} {
   let top = 0;
   let half = CX - (13 / 100) * W;
   for (const p of placed) {
@@ -89,7 +92,15 @@ export function frameStage(sw: number, sh0: number, look: AvatarLook, mode: Stag
     const floorY = sh - 6 - discH * 0.62;
     return { mode, s, x, y: floorY - FEET * H * s, floorY, discW, discH };
   }
-  return { mode, s, x, y: sh - BUST_CUT * H * s, floorY: sh, discW: 0, discH: 0 };
+  return {
+    mode,
+    s,
+    x,
+    y: sh - BUST_CUT * H * s,
+    floorY: sh,
+    discW: 0,
+    discH: 0,
+  };
 }
 
 /** An item's box (doll px) in stage px. */

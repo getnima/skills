@@ -29,11 +29,16 @@ async function waitFor(page, fn, arg, timeout = 6000) {
 
 /** Waits until nothing flies, the shuffle is over and the effects layer is empty. */
 async function settle(page, timeout = 6000) {
-  return waitFor(page, () => {
-    const p = window.__dressingRoom;
-    const fx = document.querySelector('.dr-fx');
-    return p && p.flying === 0 && fx && fx.childElementCount === 0;
-  }, null, timeout);
+  return waitFor(
+    page,
+    () => {
+      const p = window.__dressingRoom;
+      const fx = document.querySelector('.dr-fx');
+      return p && p.flying === 0 && fx && fx.childElementCount === 0;
+    },
+    null,
+    timeout,
+  );
 }
 
 async function pageState(page) {
@@ -55,13 +60,22 @@ async function pageState(page) {
 }
 
 async function touchDrag(cdp, x0, y0, x1, y1, steps = 12) {
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: x0, y: y0 }],
+  });
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t }] });
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t }],
+    });
     await sleep(16);
   }
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchEnd',
+    touchPoints: [],
+  });
 }
 
 async function boxOf(page, sel) {
@@ -102,7 +116,16 @@ async function visibleTiles(page) {
     return [...document.querySelectorAll('.dr-shelf .dr-tile')]
       .map((el) => {
         const r = el.getBoundingClientRect();
-        return { id: el.dataset.id ? Number(el.dataset.id) : undefined, bg: el.dataset.bg ? Number(el.dataset.bg) : undefined, x: r.left + r.width / 2, y: r.top + r.height / 2, l: r.left, r: r.right, w: r.width, h: r.height };
+        return {
+          id: el.dataset.id ? Number(el.dataset.id) : undefined,
+          bg: el.dataset.bg ? Number(el.dataset.bg) : undefined,
+          x: r.left + r.width / 2,
+          y: r.top + r.height / 2,
+          l: r.left,
+          r: r.right,
+          w: r.width,
+          h: r.height,
+        };
       })
       .filter((t) => t.l >= shelf.left - 1 && t.r <= shelf.right + 1);
   });
@@ -117,13 +140,21 @@ async function domMatches(page) {
     const imgs = [...document.querySelectorAll('.dr-rig .dr-it')];
     const have = imgs.map((i) => Number(i.dataset.item)).sort((a, b) => a - b);
     const hidden = imgs.filter((i) => getComputedStyle(i).visibility === 'hidden').length;
-    return { ok: JSON.stringify(want) === JSON.stringify(have) && hidden === 0, want, have, hidden };
+    return {
+      ok: JSON.stringify(want) === JSON.stringify(have) && hidden === 0,
+      want,
+      have,
+      hidden,
+    };
   });
 }
 
 async function runSize(browser, size) {
   const S = size.name;
-  const { ctx, page, errors } = await openRoom(browser, size, { look: '1.0.0.0.0.0.0', settle: 1500 });
+  const { ctx, page, errors } = await openRoom(browser, size, {
+    look: '1.0.0.0.0.0.0',
+    settle: 1500,
+  });
   const cdp = await ctx.newCDPSession(page);
   const vw = size.width;
   const vh = size.height;
@@ -133,20 +164,27 @@ async function runSize(browser, size) {
     // ── layout: fills the screen, nothing outside it ──
     const st0 = await pageState(page);
     check(S, 'room fills the container', st0.w === vw && st0.h === vh && st0.top === 0 && st0.left === 0, JSON.stringify(st0));
-    const outside = await page.evaluate(({ vw, vh }) => {
-      const bad = [];
-      for (const sel of ['.dr-bar', '.dr-tabs', '.dr-tab', '.dr-shelf', '.dr-acts', '.dr-btn', '.dr-name', '.dr-chip']) {
-        for (const el of document.querySelectorAll(sel)) {
-          const r = el.getBoundingClientRect();
-          if (r.width === 0) continue;
-          if (r.left < -0.5 || r.right > vw + 0.5 || r.top < -0.5 || r.bottom > vh + 0.5) bad.push(`${sel} ${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.right)},${Math.round(r.bottom)}`);
+    const outside = await page.evaluate(
+      ({ vw, vh }) => {
+        const bad = [];
+        for (const sel of ['.dr-bar', '.dr-tabs', '.dr-tab', '.dr-shelf', '.dr-acts', '.dr-btn', '.dr-name', '.dr-chip']) {
+          for (const el of document.querySelectorAll(sel)) {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0) continue;
+            if (r.left < -0.5 || r.right > vw + 0.5 || r.top < -0.5 || r.bottom > vh + 0.5)
+              bad.push(`${sel} ${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.right)},${Math.round(r.bottom)}`);
+          }
         }
-      }
-      return bad;
-    }, { vw, vh });
+        return bad;
+      },
+      { vw, vh },
+    );
     check(S, 'nothing outside the screen', outside.length === 0, outside.join(' | '));
-    const small = await page.evaluate(() =>
-      [...document.querySelectorAll('.dr-tab, .dr-btn, .dr-tile')].map((e) => e.getBoundingClientRect()).filter((r) => r.height < 44 || r.width < 44).length,
+    const small = await page.evaluate(
+      () =>
+        [...document.querySelectorAll('.dr-tab, .dr-btn, .dr-tile')]
+          .map((e) => e.getBoundingClientRect())
+          .filter((r) => r.height < 44 || r.width < 44).length,
     );
     check(S, 'every tab / button / tile at least 44 px', small === 0, `${small} smaller`);
     const textFits = await page.evaluate(() =>
@@ -176,7 +214,8 @@ async function runSize(browser, size) {
     await touchDrag(cdp, 20, stage.y + 100, vw - 20, stage.y + 110);
     await sleep(300);
     const st2 = await pageState(page);
-    const same = (a, b) => a.sx === b.sx && a.sy === b.sy && a.top === b.top && a.left === b.left && a.vvx === b.vvx && a.vvy === b.vvy && a.scale === b.scale;
+    const same = (a, b) =>
+      a.sx === b.sx && a.sy === b.sy && a.top === b.top && a.left === b.left && a.vvx === b.vvx && a.vvy === b.vvy && a.scale === b.scale;
     check(S, 'tray drag scrolls the tray (horizontal)', sl1 !== sl0, `scrollLeft ${sl0} -> ${sl1}`);
     check(S, 'page never moves (tray drags x/y, stage drags)', same(st0, st1) && same(st0, st2), `${JSON.stringify(st1)} ${JSON.stringify(st2)}`);
     await shot(page, `${S}-02-after-drags`);
@@ -210,7 +249,16 @@ async function runSize(browser, size) {
     await settle(page);
     const want1 = await expectedAfter(page, start1, taps1);
     const got1 = (await probe(page)).look;
-    check(S, 'one item per slot + a plate', got1 === want1 && got1.split('.').slice(2).every((v) => v !== '0'), `${got1} want ${want1}`);
+    check(
+      S,
+      'one item per slot + a plate',
+      got1 === want1 &&
+        got1
+          .split('.')
+          .slice(2)
+          .every((v) => v !== '0'),
+      `${got1} want ${want1}`,
+    );
     await page.waitForTimeout(500);
     check(S, 'onChange reached the lab (debounced)', (await labLook(page)) === got1, `${await labLook(page)}`);
     const dm1 = await domMatches(page);
@@ -283,7 +331,12 @@ async function runSize(browser, size) {
     await sleep(600);
     const rnd = await probe(page);
     const dmR = await domMatches(page);
-    check(S, 'ten randomizes: varied looks, doll matches, report sent', seen.size >= 8 && dmR.ok && (await labLook(page)) === rnd.look, `${seen.size} distinct, ${JSON.stringify(dmR)}, lab ${await labLook(page)} room ${rnd.look}`);
+    check(
+      S,
+      'ten randomizes: varied looks, doll matches, report sent',
+      seen.size >= 8 && dmR.ok && (await labLook(page)) === rnd.look,
+      `${seen.size} distinct, ${JSON.stringify(dmR)}, lab ${await labLook(page)} room ${rnd.look}`,
+    );
     await shot(page, `${S}-09-random`);
 
     // ── done ──
@@ -292,7 +345,12 @@ async function runSize(browser, size) {
     await shot(page, `${S}-10-done`);
     const done = await labDone(page);
     const p2 = await probe(page);
-    check(S, 'done: onDone got the look, onChange too', done === p2.look && (await labLook(page)) === p2.look && p2.lastDone === p2.look, `onDone ${done} room ${p2.look}`);
+    check(
+      S,
+      'done: onDone got the look, onChange too',
+      done === p2.look && (await labLook(page)) === p2.look && p2.lastDone === p2.look,
+      `onDone ${done} room ${p2.look}`,
+    );
     await settle(page);
 
     // ── flood: 40 taps in 3 s ──
@@ -301,10 +359,14 @@ async function runSize(browser, size) {
     const startF = (await probe(page)).look;
     const tilesF = (await visibleTiles(page)).slice(0, 6);
     const tapsF = [];
+    const tapsBefore = (await probe(page)).taps;
     const t0 = Date.now();
-    let k = 7;
+    let k = 0x9e3779b9 ^ size.width;
     for (let i = 0; i < 40; i++) {
-      k = (k * 1103515245 + 12345) % 2147483648;
+      k ^= k << 13;
+      k ^= k >>> 17;
+      k ^= k << 5;
+      k >>>= 0;
       const t = tilesF[k % tilesF.length];
       await tapAt(page, t.x, t.y);
       tapsF.push({ id: t.id });
@@ -319,15 +381,29 @@ async function runSize(browser, size) {
     const gotF = (await probe(page)).look;
     const dmF = await domMatches(page);
     await sleep(600);
-    check(S, `flood 40 taps in ${floodMs} ms: final look == taps`, gotF === wantF, `${gotF} want ${wantF}`);
+    const tapsGot = (await probe(page)).taps - tapsBefore;
+    check(
+      S,
+      `flood 40 taps in ${floodMs} ms: all 40 handled, final look == taps`,
+      gotF === wantF && tapsGot === 40,
+      `${tapsGot} taps, ${gotF} want ${wantF} (start ${startF})`,
+    );
     check(S, 'flood: no ghost (nothing in flight, doll == look, fx layer empty)', settled && dmF.ok, JSON.stringify(dmF));
     check(S, 'flood: report == final look', (await labLook(page)) === gotF, `${await labLook(page)}`);
 
     // ── reload restores the look from ?look= ──
     const keep = await labLook(page);
-    await page.goto(`${page.url().split('?')[0]}?view=room&look=${keep}`, { waitUntil: 'load' });
-    await page.addStyleTag({ url: page.url().split('/avatar-lab')[0] + '/src/kit/base.css' }).catch(() => undefined);
-    await page.addStyleTag({ content: require('./avatar-room-lib.cjs').phoneCss(0) });
+    await page.goto(`${page.url().split('?')[0]}?view=room&look=${keep}`, {
+      waitUntil: 'load',
+    });
+    await page
+      .addStyleTag({
+        url: page.url().split('/avatar-lab')[0] + '/src/kit/base.css',
+      })
+      .catch(() => undefined);
+    await page.addStyleTag({
+      content: require('./avatar-room-lib.cjs').phoneCss(0),
+    });
     await page.waitForSelector('.dr .dr-rig');
     await sleep(500);
     const back = await probe(page);
@@ -355,6 +431,8 @@ async function runSize(browser, size) {
     await browser.close();
   }
   const passed = results.filter((r) => r.ok).length;
-  console.log(`\n${passed}/${results.length} checks passed in ${((Date.now() - t0) / 1000).toFixed(0)} s${fails ? ` - ${fails} FAILED` : ' - ALL OK'}`);
+  console.log(
+    `\n${passed}/${results.length} checks passed in ${((Date.now() - t0) / 1000).toFixed(0)} s${fails ? ` - ${fails} FAILED` : ' - ALL OK'}`,
+  );
   process.exit(fails ? 1 : 0);
 })();

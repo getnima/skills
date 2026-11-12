@@ -88,6 +88,10 @@ export function buildLevel(seed: number, durationMs: number): TapLevel {
       if (kind === a && kind === b) continue;
       break;
     }
+    // still a repeat after the retries: the next normal character instead (deterministic)
+    if ((kind === BOOGER.Golden && boogers[i - 1] === BOOGER.Golden) || (kind === boogers[i - 1] && kind === boogers[i - 2])) {
+      kind = ((kind + 1) % BOOGER.Golden) as BoogerKind;
+    }
     boogers.push(kind);
   }
 

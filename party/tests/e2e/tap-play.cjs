@@ -1,5 +1,5 @@
-// Tap game ("שימי טאפ") check, played like a player. Needs vite on :5211
-// (PARTY_CLIENT_PORT=5211 npx vite). Usage: node tests/e2e/tap-play.cjs [full]
+// Tap game ("שימי טאפ") check, played like a player. Needs vite on TAP_BASE (default :5211;
+// PARTY_CLIENT_PORT=5211 npx vite). Usage: node tests/e2e/tap-play.cjs [full]
 const { chromium, devices } = require('playwright');
 const path = require('path');
 const fs = require('fs');
@@ -53,13 +53,17 @@ async function bot(page, ms, onTick, human = false) {
 }
 
 async function scripted(page) {
-  // as fast as Playwright taps (~12/s): 25 taps on the middle, 2 misses in the corner, 10 more: all before any pick or hop
-  const vp = page.viewportSize();
+  // slow and exact: 10 taps on the face 400 ms apart (2.5/s never fills the meter), then 2 misses
+  // in a corner: 10 x 1 - 2 = 8, whatever the frame rate or the timing jitter
   const d = await dbg(page);
-  for (let i = 0; i < 25; i++) await page.touchscreen.tap(d.x + (i % 5) * 6 - 12, d.y + (i % 3) * 6 - 6);
-  await page.touchscreen.tap(20, vp.height - 120);
-  await page.touchscreen.tap(vp.width - 20, vp.height - 120);
-  for (let i = 0; i < 10; i++) await page.touchscreen.tap(d.x, d.y);
+  for (let i = 0; i < 10; i++) {
+    await page.touchscreen.tap(d.x + (i % 5) * 6 - 12, d.y + (i % 3) * 6 - 6);
+    await sleep(400);
+  }
+  await page.touchscreen.tap(4, d.hudTop + 6);
+  await sleep(300);
+  await page.touchscreen.tap(4, d.hudTop + 8);
+  await sleep(150);
   return dbg(page);
 }
 
@@ -70,24 +74,22 @@ async function run(name, device) {
   await sleep(350);
   await shot('1-hint');
 
-  // exact score of a known sequence: 25 hits (19x1 + 6x2 = 31), 2 misses, 10 hits = 41
   const s1 = await scripted(page);
-  check(`${name} scripted score`, s1.score === 41 && s1.misses === 2 && s1.hits === 35 && !s1.picking && s1.picks === 0, s1);
+  check(`${name} scripted score (10 slow taps, 2 misses = 8)`, s1.score === 8 && s1.misses === 2 && s1.hits === 10 && s1.phase !== 'picking' && s1.picks === 0, s1);
   check(`${name} HUD score == game score`, (await party(page)).score === s1.score);
   await shot('2-after-scripted');
 
   let pickShot = false;
-  let hopShot = false;
+  let bigShot = false;
   let frozeOnce = false;
   const end = await bot(page, 40_000, async (d) => {
-    if (d.picking && !pickShot) {
+    if (d.phase === 'picking' && d.digs > 4 && !pickShot) {
       pickShot = true;
-      await sleep(250);
-      await shot('3-nosepick');
+      await shot('3-picking');
     }
-    if (d.hops > 1 && !hopShot && !d.picking) {
-      hopShot = true;
-      await shot('4-hopped');
+    if (d.bigActive && !bigShot) {
+      bigShot = true;
+      await shot('4-big');
     }
     if (!frozeOnce && d.elapsedMs > 14_000) {
       frozeOnce = true;
@@ -98,8 +100,8 @@ async function run(name, device) {
       await sleep(1200);
       const b = await dbg(page);
       await shot('5-frozen');
-      check(`${name} freeze: game time stands still`, a.elapsedMs === b.elapsedMs, [a.elapsedMs, b.elapsedMs]);
-      check(`${name} freeze: face does not move, score unchanged`, a.x === b.x && a.y === b.y && a.score === b.score && a.hits === b.hits);
+      check(`${name} freeze: game time and meter stand still`, a.elapsedMs === b.elapsedMs && a.meter === b.meter, [a.elapsedMs, b.elapsedMs, a.meter, b.meter]);
+      check(`${name} freeze: nothing scores, no booger moves`, a.score === b.score && a.hits === b.hits && a.glass === b.glass && a.pile === b.pile);
       await page.waitForFunction(() => !window.__party.frozen, null, { timeout: 6000 });
       await sleep(500);
       const c = await dbg(page);
@@ -110,8 +112,8 @@ async function run(name, device) {
   await page.waitForFunction(() => window.__party.ended, null, { timeout: 15_000 });
   const p = await party(page);
   await shot('7-end');
-  check(`${name} round ended with the game's score`, end && p.score >= end.score && p.score <= end.score + 20, { party: p.score, game: end && end.score });
-  check(`${name} saw picks + hops`, pickShot && hopShot);
+  check(`${name} round ended with the game's score`, end && p.score >= end.score && p.score <= end.score + 40, { party: p.score, game: end && end.score });
+  check(`${name} saw the picking phase and a BIG booger`, pickShot && bigShot, { pickShot, bigShot });
   check(`${name} no console errors`, errors.length === 0, errors.slice(0, 5));
   console.log(`${name} final`, JSON.stringify(end));
   await browser.close();
@@ -140,9 +142,9 @@ async function small() {
     await sleep(400);
     await page.screenshot({ path: path.join(OUT, `size-${name}-1.png`) });
     const d = await dbg(page);
-    check(`${name}: face inside the field`, d.x - d.r >= 0 && d.x + d.r <= vp.width && d.y - d.r >= 56 && d.y + d.r <= vp.height - 60, d);
+    check(`${name}: head target inside the field`, d.x - d.r >= 0 && d.x + d.r <= vp.width && d.y - d.r >= d.hudTop - 1 && d.y + d.r <= d.trayTop, d);
     await bot(page, 9_000, async (s) => {
-      if (s.picking) {
+      if (s.picking && s.digs === 5) {
         await page.screenshot({ path: path.join(OUT, `size-${name}-2-pick.png`) });
       }
     });

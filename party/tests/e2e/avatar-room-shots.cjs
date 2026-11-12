@@ -9,7 +9,10 @@ const { SIZES, openRoom, shot, tapEl } = require('./avatar-room-lib.cjs');
   const browser = await chromium.launch();
   try {
     for (const size of SIZES.filter((s) => !only || s.name === only)) {
-      const { ctx, page, errors } = await openRoom(browser, size, { look, settle: 2500 });
+      const { ctx, page, errors } = await openRoom(browser, size, {
+        look,
+        settle: 2500,
+      });
       console.log(size.name, await shot(page, `quick-${size.name}`));
       await tapEl(page, '.dr-tab[data-tab="BG"]');
       await page.waitForTimeout(1500);

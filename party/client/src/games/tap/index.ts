@@ -44,6 +44,8 @@ const OUT_FRAME_S = 0.45;
 const BORED_AFTER_MS = 1_500;
 const SIDE_PAD = 6;
 const PILE_STAMPS = 160;
+/** The pile grows up to this share of the head size (it must not bury the doll's mouth). */
+const PILE_LIFT_MAX = 0.08;
 
 // ───────────────────────────── Words (the owner's voice) ─────────────────────────────
 
@@ -93,6 +95,8 @@ export interface TapDebugState {
   readonly queued: number;
   readonly hudTop: number;
   readonly trayTop: number;
+  /** Art slots that fell back to their drawn placeholder (no file, or it failed to load). */
+  readonly placeholders: readonly string[];
 }
 
 let debugSource: (() => TapDebugState) | null = null;
@@ -178,12 +182,12 @@ export const game: GameModule = {
 
     // ── pre-rendered words (display font, once) ──
     const stHint = renderSticker(T_HINT, { size: 34, sub: T_HINT_SUB, fill: PAL.white, shadow: PAL.red });
-    const stPick = renderSticker(T_PICK, { size: 40, sub: T_PICK_SUB, fill: PAL.yel, burst: PAL.red });
-    const stFrenzy = renderSticker(T_FRENZY, { size: 38, sub: T_FRENZY_SUB, fill: PAL.yel, burst: PAL.red });
+    const stPick = renderSticker(T_PICK, { size: 32, sub: T_PICK_SUB, fill: PAL.yel, burst: PAL.red });
+    const stFrenzy = renderSticker(T_FRENZY, { size: 30, sub: T_FRENZY_SUB, fill: PAL.yel, burst: PAL.red });
     const stMore = renderSticker(T_MORE, { size: 30, fill: PAL.white, shadow: PAL.cob });
     const stGold = renderSticker(T_GOLD, { size: 30, fill: PAL.yel, shadow: PAL.org });
     const stBored = renderChip(T_BORED, 22, PAL.white, PAL.ink);
-    const stBig = BIG_LINES.map((t, i) => renderSticker(t, { size: 38, fill: i % 2 === 0 ? PAL.yel : PAL.white, burst: i % 3 === 0 ? PAL.pink : PAL.cob, shadow: PAL.red }));
+    const stBig = BIG_LINES.map((t, i) => renderSticker(t, { size: 32, fill: i % 2 === 0 ? PAL.yel : PAL.white, burst: i % 3 === 0 ? PAL.pink : PAL.cob, shadow: PAL.red }));
     const stNum = new Map<number, Sticker>();
     for (const n of NUMBERS) stNum.set(n, renderSticker(`+${n}`, { size: n >= 5 ? 30 : 24, fill: n >= 10 ? PAL.yel : PAL.white, shadow: n >= 5 ? PAL.red : PAL.cob, skew: 0.1 }));
     const stMinus = renderSticker('-1', { size: 22, fill: PAL.white, shadow: PAL.ink });
@@ -273,7 +277,7 @@ export const game: GameModule = {
     let pileKey = '';
     let pileTotal = 0;
     function pileMax(): number {
-      return geo.S * 0.2;
+      return geo.S * 0.12;
     }
     function ensurePile(): void {
       const k = `${geo.w}x${Math.round(geo.S)}@${view.dpr}`;
@@ -301,18 +305,18 @@ export const game: GameModule = {
       c.beginPath();
       c.ellipse(x, y + size * 0.2, size * 0.62, size * 0.32, 0, 0, Math.PI * 2);
       c.fill();
-      const dw = s.kind === BOOGER.Stretchy ? size * 0.3 : size;
-      const dh = s.kind === BOOGER.Stretchy ? size * 1.1 : (size * d.height) / d.width;
+      const dw = s.kind === BOOGER.Stretchy ? size * 0.36 : size;
+      const dh = s.kind === BOOGER.Stretchy ? size * 0.95 : (size * d.height) / d.width;
       d.draw(c, x, y, dw, dh, s.rot);
     }
     function mergeIntoPile(gd: Goo): void {
       const col = clamp(Math.floor((gd.x / Math.max(1, geo.w)) * PILE_COLS), 0, PILE_COLS - 1);
       const h0 = pileH[col] ?? 0;
       const k = (gd.size / geo.S) * (gd.kind === BOOGER.Boss ? 0.55 : 1);
-      const s: Stamp = { u: gd.x / Math.max(1, geo.w), lift: Math.min(h0, 0.15), kind: gd.kind, k, rot: gd.rot };
+      const s: Stamp = { u: gd.x / Math.max(1, geo.w), lift: Math.min(h0, PILE_LIFT_MAX), kind: gd.kind, k: k * 0.85, rot: gd.rot };
       for (let c = col - 1; c <= col + 1; c++) {
         if (c < 0 || c >= PILE_COLS) continue;
-        pileH[c] = Math.min(0.15, (pileH[c] ?? 0) + k * (c === col ? 0.22 : 0.1));
+        pileH[c] = Math.min(PILE_LIFT_MAX, (pileH[c] ?? 0) + k * (c === col ? 0.12 : 0.05));
       }
       stamps.push(s);
       if (stamps.length > PILE_STAMPS) stamps.shift();
@@ -389,8 +393,10 @@ export const game: GameModule = {
       gd.tx = tx;
       gd.ty = ty;
       gd.size = size;
-      gd.rot = (tr.spin - 0.5) * 0.8;
-      gd.vrot = (tr.spin - 0.5) * 14;
+      // the stretchy one hangs (it is a strand), the others tumble in flight
+      const hangs = kind === BOOGER.Stretchy;
+      gd.rot = hangs ? (tr.spin - 0.5) * 0.3 : (tr.spin - 0.5) * 0.8;
+      gd.vrot = hangs ? 0 : (tr.spin - 0.5) * 14;
       gd.vy = (28 + tr.slide * 40) * (big ? 0.45 : 1);
       gd.stretch = 1;
       gd.born = gooSerial++;
@@ -421,8 +427,8 @@ export const game: GameModule = {
         // on the glass: a moment of grip, then a slow slide that speeds up a little
         if (gd.t > 0.3) gd.y += gd.vy * (1 + (gd.t - 0.3) * 0.5) * dt;
         if (gd.kind === BOOGER.Stretchy) {
-          gd.stretch = Math.min(1.9, gd.stretch + dt * 0.35);
-          if (gd.stretch >= 1.9) gd.stretch = 0.8; // snap!
+          gd.stretch = Math.min(1.7, gd.stretch + dt * 0.4);
+          if (gd.stretch >= 1.7) gd.stretch = 0.75; // snap!
         }
         if (gd.y + gd.size * 0.3 >= pileTopAt(gd.x)) mergeIntoPile(gd);
       }
@@ -514,7 +520,7 @@ export const game: GameModule = {
         squashV += 4;
         throwBooger(kind, index, geo.noseX, geo.noseY, false);
         if (engine.state.frenzy) throwBooger(kind === BOOGER.Golden ? BOOGER.Round : kind, index + 7919, geo.noseX, geo.noseY, false);
-        floatNum(points, geo.noseX + (digSign > 0 ? 1 : -1) * geo.S * 0.16, geo.noseY - geo.S * 0.08);
+        floatNum(points, geo.noseX + (digSign > 0 ? 1 : -1) * geo.S * 0.3, geo.noseY + geo.S * 0.06);
         if (kind === BOOGER.Golden) {
           callout(stGold, 0.8, geo.hy + geo.S * 0.25);
           fx.burst(geo.noseX, geo.noseY, { count: 10, speed: 320, size: 5, life: 0.5, gravity: 400, shape: 'star', colors: [PAL.yel, PAL.white, PAL.org] });
@@ -816,8 +822,8 @@ export const game: GameModule = {
         let w = gd.size;
         let hgt = (gd.size * d.height) / d.width;
         if (gd.kind === BOOGER.Stretchy) {
-          w = gd.size * 0.3;
-          hgt = gd.size * 1.1 * gd.stretch;
+          w = gd.size * 0.36;
+          hgt = gd.size * 0.95 * gd.stretch;
         }
         if (gd.stage === 0) {
           // flying at the camera: small -> full size
@@ -890,7 +896,7 @@ export const game: GameModule = {
       const k = calloutT / calloutLife;
       const inK = clamp(calloutT / 0.25, 0, 1);
       const sc = ease.outBack(inK) * (1 + Math.sin(t * 14) * 0.03);
-      const maxW = geo.w - 12;
+      const maxW = geo.w * 0.86;
       const fit = Math.min(1, maxW / s.w);
       g.globalAlpha = k > 0.8 ? (1 - k) / 0.2 : 1;
       blit(g, s, geo.w / 2, Math.max(geo.top + (s.h * fit) / 2, calloutY), sc * fit);
@@ -925,6 +931,7 @@ export const game: GameModule = {
       g.restore();
     }
 
+    const placeholders = [...art.faces, ...art.pick, art.hand, ...art.boogers].filter((d) => d.isPlaceholder).map((d) => d.key);
     debugSource = (): TapDebugState => {
       const s = engine.state;
       return {
@@ -955,6 +962,7 @@ export const game: GameModule = {
         queued: engine.queued,
         hudTop: ctx.hudHeight,
         trayTop: geo.trayTop,
+        placeholders,
       };
     };
     window.__tap = tapDebug;

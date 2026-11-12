@@ -6,7 +6,7 @@
 const path = require('path');
 const { chromium, check, fails, sleep, outDir, openGame, tapAt } = require('./qa-tap-lib.cjs');
 const WHICH = process.argv[2] || 'both';
-const HUD_ROW = 56; // HUD_ROW_PX in client/src/play/stage.ts
+const HUD_ROW = 66; // HUD_ROW_PX in client/src/play/stage.ts (ninja checks; tap reads its hudTop from window.__tap)
 
 const SIZES = [
   { name: '320x568', viewport: { width: 320, height: 568 } },
@@ -29,10 +29,13 @@ async function tapSize(browser, sz) {
   const OUT = outDir('qa-tap');
   const { page, cdp, context, errors } = await openGame(browser, 'tap', { viewport: sz.viewport, safe: sz.safe, query: 'seed=4&duration=16000' });
   await page.waitForFunction(() => window.__tap && window.__tap());
-  const hud = HUD_ROW + (sz.safe?.top || 0);
+  const first = await page.evaluate(() => window.__tap());
+  const hud = first.hudTop;
   const bottom = sz.viewport.height - (sz.safe?.bottom || 0);
   await sleep(700);
   await page.screenshot({ path: path.join(OUT, `size-${sz.name}-1-start.png`) });
+  const start = await page.evaluate(() => window.__tap());
+  check(`tap ${sz.name}: the doll's hand is visible at the start (fingertip between the HUD and the tray)`, start.handY !== null && start.handY > hud && start.handY < start.trayTop, [start.handY, hud, start.trayTop]);
   const samples = [];
   let pickShot = false;
   let frenzyShot = false;
@@ -41,25 +44,25 @@ async function tapSize(browser, sz) {
     const d = await page.evaluate(() => window.__tap && window.__tap());
     if (!d) break;
     samples.push(d);
-    if (d.picking && !pickShot) {
+    if (d.phase === 'picking' && d.digs > 2 && !pickShot) {
       pickShot = true;
-      await sleep(300);
-      await page.screenshot({ path: path.join(OUT, `size-${sz.name}-2-nosepick.png`) });
+      await page.screenshot({ path: path.join(OUT, `size-${sz.name}-2-picking.png`) });
     }
-    if (d.elapsedMs > 12800 && !frenzyShot) {
+    if (d.frenzy && !frenzyShot) {
       frenzyShot = true;
+      await sleep(250);
       await page.screenshot({ path: path.join(OUT, `size-${sz.name}-3-frenzy.png`) });
     }
-    await tapAt(cdp, [{ x: d.x, y: d.y }]);
-    await sleep(90);
+    tapAt(cdp, [{ x: d.x, y: d.y + d.r * 0.3 }]);
+    await sleep(85);
   }
-  const bad = samples.filter((d) => d.y - d.r < hud - 1 || d.y + d.r > bottom - 60 || d.x - d.r < 0 || d.x + d.r > sz.viewport.width);
+  const bad = samples.filter((d) => d.y - d.r < hud - 1 || d.y + d.r > d.trayTop || d.trayTop > bottom - 50 || d.x - d.r < 0 || d.x + d.r > sz.viewport.width);
   const minR = Math.min(...samples.map((d) => d.r));
-  check(`tap ${sz.name}: face always inside the play area (below the HUD ${hud}px, above the meter and home bar)`, bad.length === 0, bad.slice(0, 2).map((d) => ({ x: d.x | 0, y: d.y | 0, r: d.r | 0 })));
-  check(`tap ${sz.name}: face at least 56 px wide all round (min diameter ${Math.round(minR * 2)})`, minR * 2 >= 56);
+  check(`tap ${sz.name}: the head target is inside the play area (below the HUD ${hud}px, above the tray and the home bar)`, bad.length === 0, bad.slice(0, 2).map((d) => ({ x: d.x | 0, y: d.y | 0, r: d.r | 0, tray: d.trayTop | 0 })));
+  check(`tap ${sz.name}: head target at least 56 px wide (min diameter ${Math.round(minR * 2)})`, minR * 2 >= 56);
   const l = await noScroll(page);
   check(`tap ${sz.name}: no page scroll`, l.y === 0 && l.sw <= l.iw && l.sh <= l.ih, l);
-  check(`tap ${sz.name}: saw a nose-pick`, pickShot);
+  check(`tap ${sz.name}: reached the picking phase`, pickShot);
   check(`tap ${sz.name}: no console errors`, errors.length === 0, errors.slice(0, 3));
   await context.close();
 }

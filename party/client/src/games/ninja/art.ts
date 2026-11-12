@@ -972,14 +972,20 @@ export function buildHalves(d: Drawable, look: CutLook): readonly [HTMLCanvasEle
 }
 
 /**
- * Splat decals of one cut look, `count` shapes, 96 x 96 CSS px each, flat with an ink outline:
+ * Splat decals of one cut look, `count` shapes, `size` x `size` CSS px each at `scale` (the
+ * canvas' device pixel ratio, so the game blits them 1:1), flat with an ink outline:
  * juice = a splashy blob with drops, sauce = a thick round puddle, crumbs = scattered bits.
  */
-export function buildSplats(color: string, kind: SplashKind, count: number): HTMLCanvasElement[] {
+export function buildSplats(color: string, kind: SplashKind, count: number, size = 96, scale = 2): HTMLCanvasElement[] {
   const out: HTMLCanvasElement[] = [];
   for (let s = 0; s < count; s++) {
-    const { canvas, ctx } = makeLayer(96, 96);
+    const { canvas, ctx } = makeLayer(size, size, scale);
     if (ctx) {
+      // paint in a 96-unit box, each shape turned differently
+      ctx.scale(size / 96, size / 96);
+      ctx.translate(48, 48);
+      ctx.rotate(s * 2.1);
+      ctx.translate(-48, -48);
       if (kind === 'crumbs') {
         // irregular little chunks, a few big ones
         ctx.beginPath();

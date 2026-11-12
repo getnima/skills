@@ -343,8 +343,17 @@ export const game: GameModule = {
     const halfArt = [...art.targets.map((d, i) => buildHalves(d, art.cuts[i] ?? art.goldCut)), ...art.golds.map((d) => buildHalves(d, art.goldCut))];
     // juice decals: three blob shapes per juice colour, pre-rendered once
     const splatArt = new Map<string, HTMLCanvasElement[]>();
+    /** CSS px size the splat sprites are pre-rendered at (3 R), and the ratio: rebuilt when either changes. */
+    let splatSize = 0;
+    let splatDpr = 0;
+    function buildSplatArt(): void {
+      for (const set of splatArt.values()) for (const c of set) c.width = 0;
+      splatArt.clear();
+      splatSize = Math.round(R * 3);
+      splatDpr = view.dpr;
+      for (const c of [...art.cuts, art.goldCut]) if (!splatArt.has(splatKey(c))) splatArt.set(splatKey(c), buildSplats(c.splash, c.splashKind, 3, splatSize, splatDpr));
+    }
     const splatKey = (c: CutLook): string => `${c.splash}|${c.splashKind}`;
-    for (const c of [...art.cuts, art.goldCut]) if (!splatArt.has(splatKey(c))) splatArt.set(splatKey(c), buildSplats(c.splash, c.splashKind, 3));
     const stickers = createStickerCache(24);
     /** Which golden look a throw wears (looks only). */
     const goldLook = (id: number): number => id % art.golds.length;
@@ -973,17 +982,15 @@ export const game: GameModule = {
 
     function drawSplats(g: CanvasRenderingContext2D): void {
       for (const s of splats) {
-        if (!s.active || !s.img) continue;
-        // lands with a quick pop, stays, then fades over the last 40% of its life
+        // (a sprite released by a resize has width 0: skip it, drawImage would throw)
+        if (!s.active || !s.img || s.img.width === 0) continue;
+        // lands with a quick pop, stays, then fades over the last 40% of its life; drawn 1:1
+        // from its pre-sized sprite (scaled only while popping in, or for a big combo splash)
         const age = 1 - s.life;
         const k = age < 0.06 ? 0.6 + (age / 0.06) * 0.4 : 1;
         g.globalAlpha = Math.min(1, s.life / 0.4) * 0.9;
-        const d = s.r * 2 * k;
-        g.save();
-        g.translate(s.x, s.y);
-        g.rotate(s.rot);
-        g.drawImage(s.img, -d / 2, -d / 2, d, d);
-        g.restore();
+        const d = Math.max(splatSize, s.r * 2) * k;
+        g.drawImage(s.img, Math.round(s.x - d / 2), Math.round(s.y - d / 2), d, d);
       }
       g.globalAlpha = 1;
     }
@@ -1300,6 +1307,7 @@ export const game: GameModule = {
       if (lastFrameAt > 0) frameEma = frameEma * 0.9 + Math.min(100, now - lastFrameAt) * 0.1;
       lastFrameAt = now;
       layout();
+      if (Math.round(R * 3) !== splatSize || view.dpr !== splatDpr) buildSplatArt();
       const g = view.ctx;
       drawBackground(g); // outside the shake: the copy stays a 1:1 blit
       g.save();

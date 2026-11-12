@@ -24,6 +24,8 @@ export const PICK = {
   RATE_FULL: 5.0,
   /** While picking: below this rate the finger comes out. */
   RATE_HOLD: 4.1,
+  /** Once in, the finger stays at least this long (ms of game time), so even a clumsy tapper gets a few digs. */
+  MIN_PICK_MS: 700,
   /** After the finger came out the meter drops to this share (the hand sinks). */
   EXIT_SINK: 0.55,
   /** Every tap counts this much more for the meter in the frenzy. */
@@ -31,7 +33,7 @@ export const PICK = {
   /** Counted taps per second (all fingers together), the bucket size and the minimum gap. */
   HIT_RATE: 12,
   HIT_BURST: 2,
-  MIN_GAP_MS: 45,
+  MIN_GAP_MS: 60,
   /** Combo: x2 at 20, x3 at 40 counted taps in a row; a gap longer than this breaks it. */
   COMBO_STEP: 20,
   MAX_MULT: 3,
@@ -144,6 +146,7 @@ export function createPickEngine(level: TapLevel, maxRaw: number, on: PickListen
     lastTapMs: -1,
   };
   let tokens: number = PICK.HIT_BURST;
+  let sessionMs = 0;
   let bigIdx = 0;
 
   function addScore(n: number): void {
@@ -198,6 +201,7 @@ export function createPickEngine(level: TapLevel, maxRaw: number, on: PickListen
     if (st.rate >= PICK.RATE_FULL) {
       st.picking = true;
       st.picks++;
+      sessionMs = 0;
       on.enter?.();
     }
     refreshMeter();
@@ -259,9 +263,11 @@ export function createPickEngine(level: TapLevel, maxRaw: number, on: PickListen
       }
       if (st.picking) {
         st.pickingMs += PICK.STEP_MS;
-        if (st.bigLeftMs <= 0 && st.rate < PICK.RATE_HOLD) {
+        sessionMs += PICK.STEP_MS;
+        if (st.bigLeftMs <= 0 && sessionMs >= PICK.MIN_PICK_MS && st.rate < PICK.RATE_HOLD) {
           st.picking = false;
           st.rate = Math.min(st.rate, PICK.RATE_FULL * PICK.EXIT_SINK);
+          refreshMeter();
           on.exit?.();
         }
       }

@@ -108,7 +108,13 @@ export function peekThumb(look: AvatarLook, crop: AvatarCrop, px: number): strin
  * A cut-out picture of `look` (`px` device pixels square), or null when a picture it needs cannot
  * be loaded right now (asking again after a while retries). `files` = the pictures to check first.
  */
-export function requestThumb(look: AvatarLook, crop: AvatarCrop, px: number, files: readonly string[], kind: 'item' | 'look'): Promise<string | null> {
+export function requestThumb(
+  look: AvatarLook,
+  crop: AvatarCrop,
+  px: number,
+  files: readonly string[],
+  kind: 'item' | 'look',
+): Promise<string | null> {
   const key = thumbKey(look, crop, px);
   const have = done.get(key);
   if (have !== undefined) return Promise.resolve(have);
@@ -166,6 +172,10 @@ export function plateUrl(bg: number, px: number): string {
 }
 
 /** For tests: how many thumbnails are made / waiting. */
-export function thumbStats(): { made: number; waiting: number; running: number } {
+export function thumbStats(): {
+  made: number;
+  waiting: number;
+  running: number;
+} {
   return { made: done.size, waiting: queue.length, running: busy };
 }

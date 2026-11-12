@@ -11,12 +11,12 @@
  */
 import './dressing.css';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { memo } from 'preact/compat';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { AVATAR_BG_COUNT, AVATAR_MAX_TOWER, defaultLook, encodeLook, randomLook, shakeOff, wornIds } from '../../../shared/avatar';
 import { Avatar } from './Avatar';
 import { AVATAR_BGS, DOLL, ITEMS, ITEM_IDS, getItem, normalizeLook, tapItem } from './catalog';
-import { preloadAvatarAssets } from './compose';
 import { clearFx, confetti, flyIn, kaboom, sparks, squashFrames, tumble } from './dressing-fx';
 import { boxOnStage, frameStage, stageMode } from './dressing-stage';
 import { peekThumb, plateUrl, requestThumb, thumbStats } from './dressing-thumbs';
@@ -57,7 +57,11 @@ const SHUFFLE_STEP_MS = 80;
 const DW = DOLL.width;
 const DH = DOLL.height;
 /** The plate behind his head: a round medallion around the face, in doll px. */
-const PLATE = { x: (DOLL.centerX / 100) * DW - 0.6 * DW, y: 0.235 * DH - 0.6 * DW, d: 1.2 * DW };
+const PLATE = {
+  x: (DOLL.centerX / 100) * DW - 0.6 * DW,
+  y: 0.235 * DH - 0.6 * DW,
+  d: 1.2 * DW,
+};
 
 /** Automation hook: the room's own state, for tests (read-only by convention). */
 interface RoomProbe {
@@ -69,6 +73,8 @@ interface RoomProbe {
   changes: number;
   lastChange: string | null;
   lastDone: string | null;
+  /** Item taps handled. */
+  taps: number;
 }
 
 function slotField(slot: Exclude<AvatarSlot, 'HEAD'>): 'eyes' | 'ears' | 'face' | 'neck' {
@@ -100,13 +106,49 @@ function devicePx(css: number): number {
   return Math.max(32, Math.ceil((css * dpr) / 16) * 16);
 }
 
+/** A picture that cannot be loaded is simply not shown (never the browser's broken-image box). */
+function hideBroken(e: { currentTarget: EventTarget | null }): void {
+  const el = e.currentTarget;
+  if (el instanceof HTMLElement) el.setAttribute('data-broken', '');
+}
+
+let warmed = false;
+
+/**
+ * Fetches every accessory picture into the browser cache, a few at a time, so the shuffle and the
+ * flights never wait for the network. (Only the download: no decoding or compositor work here.)
+ */
+function warmPictures(): void {
+  if (warmed) return;
+  warmed = true;
+  const files = [DOLL.file, ...ITEMS.map((i) => i.file)];
+  let i = 0;
+  const next = (): void => {
+    const f = files[i++];
+    if (f === undefined) return;
+    try {
+      const img = new Image();
+      img.decoding = 'async';
+      img.onload = img.onerror = () => setTimeout(next, 30);
+      img.src = f;
+    } catch {
+      next();
+    }
+  };
+  for (let k = 0; k < 3; k++) next();
+}
+
 /* ───────────────────────── tiles ───────────────────────── */
 
 type Register = (el: Element, onSeen: () => void) => () => void;
 
 function useThumb(look: AvatarLook, crop: AvatarCrop, px: number, active: boolean, kind: 'item' | 'look'): { url: string | null; missing: boolean } {
   const key = `${encodeLook(look)}|${crop}|${px}`;
-  const [state, setState] = useState<{ key: string; url: string | null; missing: boolean }>(() => ({ key, url: peekThumb(look, crop, px), missing: false }));
+  const [state, setState] = useState<{
+    key: string;
+    url: string | null;
+    missing: boolean;
+  }>(() => ({ key, url: peekThumb(look, crop, px), missing: false }));
   useEffect(() => {
     if (!active) return;
     const now = peekThumb(look, crop, px);
@@ -121,7 +163,11 @@ function useThumb(look: AvatarLook, crop: AvatarCrop, px: number, active: boolea
         if (!alive) return;
         if (url !== null) setState({ key, url, missing: false });
         else {
-          setState((s) => ({ key, url: s.key === key ? s.url : null, missing: true }));
+          setState((s) => ({
+            key,
+            url: s.key === key ? s.url : null,
+            missing: true,
+          }));
           retry = setTimeout(go, 9000);
         }
       });
@@ -147,7 +193,7 @@ interface TileProps {
   onTap: (id: number, el: HTMLElement) => void;
 }
 
-function ItemTile(p: TileProps): JSX.Element {
+function ItemTileView(p: TileProps): JSX.Element {
   const ref = useRef<HTMLButtonElement>(null);
   const [seen, setSeen] = useState(false);
   useEffect(() => {
@@ -172,10 +218,20 @@ function ItemTile(p: TileProps): JSX.Element {
       onClick={(e) => p.onTap(p.item.id, e.currentTarget)}
     >
       {url !== null ? <img src={url} alt="" draggable={false} /> : <span class="dr-tile-ph" aria-hidden="true" />}
-      {p.worn && p.item.slot === 'HEAD' && p.towerSize > 1 && <span class="dr-tile-lvl" aria-hidden="true">{p.level + 1}</span>}
+      {p.worn && p.item.slot === 'HEAD' && p.towerSize > 1 && (
+        <span class="dr-tile-lvl" aria-hidden="true">
+          {p.level + 1}
+        </span>
+      )}
     </button>
   );
 }
+
+/** A tile re-renders only when what it shows changes (a tap re-renders two tiles, not the shelf). */
+const ItemTile = memo(
+  ItemTileView,
+  (a, b) => a.item === b.item && a.worn === b.worn && a.level === b.level && a.towerSize === b.towerSize && a.px === b.px,
+);
 
 interface PlateTileProps {
   bg: number;
@@ -196,7 +252,10 @@ function PlateTile(p: PlateTileProps): JSX.Element {
       aria-pressed={p.on ? 'true' : 'false'}
       aria-label={bg?.name ?? `רקע ${p.bg}`}
       title={bg?.name}
-      style={{ backgroundColor: bg?.color, backgroundImage: plate !== '' ? `url(${plate})` : undefined }}
+      style={{
+        backgroundColor: bg?.color,
+        backgroundImage: plate !== '' ? `url(${plate})` : undefined,
+      }}
       onClick={(e) => p.onTap(p.bg, e.currentTarget)}
     >
       {p.cut !== null && <img src={p.cut} alt="" draggable={false} />}
@@ -227,11 +286,24 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
   const name = (props.name ?? '').trim();
 
   const [look, setLookState] = useState<AvatarLook>(() => normalizeLook(props.look));
+  // the logo chip follows the look once tapping pauses (composing an icon per tap of a flood is wasted work)
+  const [chipLook, setChipLook] = useState<AvatarLook>(look);
+  useEffect(() => {
+    const t = setTimeout(() => setChipLook(look), 260);
+    return () => clearTimeout(t);
+  }, [encodeLook(look)]);
   const lookRef = useRef(look);
   const [tab, setTab] = useState<DressingTab>('HEAD');
   const [shuffle, setShuffle] = useState<AvatarLook | null>(null);
   const [, setFlyVer] = useState(0);
-  const [sizes, setSizes] = useState<Sizes>({ rw: 0, rh: 0, sw: 0, sh: 0, sx: 0, sy: 0 });
+  const [sizes, setSizes] = useState<Sizes>({
+    rw: 0,
+    rh: 0,
+    sw: 0,
+    sh: 0,
+    sx: 0,
+    sy: 0,
+  });
   const [speech, setSpeech] = useState<Speech>({ text: '', on: false, n: 0 });
   const [reduced, setReduced] = useState(prefersReduced);
   const [hidden, setHidden] = useState(() => typeof document !== 'undefined' && document.visibilityState === 'hidden');
@@ -246,6 +318,8 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
   const sayRef = useRef<HTMLSpanElement>(null);
 
   const flights = useRef(new Map<number, Flight>());
+  /** Items put on whose flight has not started yet (hidden on the doll like the ones in flight). */
+  const queued = useRef(new Set<number>());
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const emitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recent = useRef<string[]>([encodeLook(look)]);
@@ -262,6 +336,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     changes: 0,
     lastChange: null,
     lastDone: null,
+    taps: 0,
   });
 
   const later = (fn: () => void, ms: number): void => {
@@ -303,6 +378,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     setLookState(next);
     // a flight whose item is no longer worn goes away at once: never a ghost on the doll
     const worn = new Set(wornIds(next));
+    for (const id of queued.current) if (!worn.has(id)) queued.current.delete(id);
     for (const [id, f] of flights.current) {
       if (!worn.has(id)) {
         flights.current.delete(id);
@@ -325,6 +401,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     }
     for (const f of flights.current.values()) f.cancel();
     flights.current.clear();
+    queued.current.clear();
     setShuffle(null);
     const ext = normalizeLook(props.look);
     lookRef.current = ext;
@@ -340,8 +417,17 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     const stage = stageRef.current;
     if (root === null || stage === null) return;
     const measure = (): void => {
-      const next: Sizes = { rw: root.clientWidth, rh: root.clientHeight, sw: stage.clientWidth, sh: stage.clientHeight, sx: stage.offsetLeft, sy: stage.offsetTop };
-      setSizes((s) => (s.rw === next.rw && s.rh === next.rh && s.sw === next.sw && s.sh === next.sh && s.sx === next.sx && s.sy === next.sy ? s : next));
+      const next: Sizes = {
+        rw: root.clientWidth,
+        rh: root.clientHeight,
+        sw: stage.clientWidth,
+        sh: stage.clientHeight,
+        sx: stage.offsetLeft,
+        sy: stage.offsetTop,
+      };
+      setSizes((s) =>
+        s.rw === next.rw && s.rh === next.rh && s.sw === next.sw && s.sh === next.sh && s.sx === next.sx && s.sy === next.sy ? s : next,
+      );
     };
     measure();
     if (typeof ResizeObserver === 'undefined') {
@@ -372,6 +458,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
         // land everything now, quietly, and stop every effect; report what the guest has
         for (const f of flights.current.values()) f.finish();
         flights.current.clear();
+        queued.current.clear();
         clearFx(fxRef.current);
         stopSpring();
         setShuffle(null);
@@ -386,7 +473,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     root?.addEventListener('contextmenu', stop);
     const hello = setTimeout(() => say(LINES.hello(name)), 700);
     // the pictures for the shuffle and the thumbnails, once the room is on screen
-    const pre = setTimeout(() => void preloadAvatarAssets(), 1200);
+    const pre = setTimeout(() => warmPictures(), 1200);
     (window as unknown as { __dressingRoom?: RoomProbe }).__dressingRoom = probe.current;
     return () => {
       mq?.removeEventListener?.('change', onMq);
@@ -400,6 +487,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
       timers.current.clear();
       for (const f of flights.current.values()) f.cancel();
       flights.current.clear();
+      queued.current.clear();
       clearFx(fxRef.current);
       stopSpring();
       stopTyping();
@@ -408,7 +496,16 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
   }, []);
 
   /* ── the bobblehead springs (the source page's SP), a rAF loop that sleeps when still ── */
-  const sp = useRef({ hA: 0, hV: 0, bA: 0, bV: 0, cq: 0, cv: 0, raf: 0, last: 0 });
+  const sp = useRef({
+    hA: 0,
+    hV: 0,
+    bA: 0,
+    bV: 0,
+    cq: 0,
+    cv: 0,
+    raf: 0,
+    last: 0,
+  });
   const stopSpring = (): void => {
     const s = sp.current;
     if (s.raf !== 0) cancelAnimationFrame(s.raf);
@@ -430,7 +527,8 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     const cAcc = -240 * s.cq - 13 * s.cv;
     s.cv += cAcc * dt;
     s.cq = Math.max(-0.07, Math.min(0.1, s.cq + s.cv * dt));
-    if (springRef.current !== null) springRef.current.style.transform = `rotate(${s.bA.toFixed(4)}rad) scale(${(1 + s.cq * 0.5).toFixed(4)},${(1 - s.cq).toFixed(4)})`;
+    if (springRef.current !== null)
+      springRef.current.style.transform = `rotate(${s.bA.toFixed(4)}rad) scale(${(1 + s.cq * 0.5).toFixed(4)},${(1 - s.cq).toFixed(4)})`;
     if (headRef.current !== null) headRef.current.style.transform = `rotate(${s.hA.toFixed(4)}rad)`;
     const still = Math.abs(s.hA) + Math.abs(s.hV) + Math.abs(s.bA) + Math.abs(s.bV) + Math.abs(s.cq) + Math.abs(s.cv) < 0.002;
     if (still) {
@@ -453,7 +551,12 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
   };
 
   /* ── speech ── */
-  const sayState = useRef({ last: -1e9, pending: null as ReturnType<typeof setTimeout> | null, quiet: null as ReturnType<typeof setTimeout> | null, type: null as ReturnType<typeof setInterval> | null });
+  const sayState = useRef({
+    last: -1e9,
+    pending: null as ReturnType<typeof setTimeout> | null,
+    quiet: null as ReturnType<typeof setTimeout> | null,
+    type: null as ReturnType<typeof setInterval> | null,
+  });
   const stopTyping = (): void => {
     const s = sayState.current;
     if (s.type !== null) clearInterval(s.type);
@@ -471,10 +574,13 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     }
     if (!now && t - s.last < SAY_GAP_MS) {
       // rate limit: only the latest line waits for its turn
-      s.pending = setTimeout(() => {
-        s.pending = null;
-        say(text, true);
-      }, SAY_GAP_MS - (t - s.last));
+      s.pending = setTimeout(
+        () => {
+          s.pending = null;
+          say(text, true);
+        },
+        SAY_GAP_MS - (t - s.last),
+      );
       return;
     }
     s.last = t;
@@ -521,18 +627,37 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
   };
   const roomPt = (l: AvatarLook, xy: readonly [number, number]): Pt => {
     const f = frameStage(sizes.sw, sizes.sh, l, mode, padTop, padBottom);
-    return { x: sizes.sx + f.x + (xy[0] / 100) * DW * f.s, y: sizes.sy + f.y + (xy[1] / 100) * DH * f.s };
+    return {
+      x: sizes.sx + f.x + (xy[0] / 100) * DW * f.s,
+      y: sizes.sy + f.y + (xy[1] / 100) * DH * f.s,
+    };
   };
   const dollRect = (l: AvatarLook): Rect => {
     const f = frameStage(sizes.sw, sizes.sh, l, mode, padTop, padBottom);
     return { x: sizes.sx + f.x, y: sizes.sy + f.y, w: DW * f.s, h: DH * f.s };
+  };
+  /** Beside the head at the hairline (where a burst never covers the face). */
+  const hairline = (l: AvatarLook, side: number): Pt => {
+    const R = dollRect(l);
+    return {
+      x: side > 0 ? R.x + 0.94 * R.w : R.x + 0.08 * R.w,
+      y: R.y + 0.07 * R.h,
+    };
+  };
+  /** On his chest, under the chin (always on the stage in both framings). */
+  const chest = (l: AvatarLook, dx: number): Pt => {
+    const R = dollRect(l);
+    return { x: R.x + (0.51 + dx) * R.w, y: R.y + 0.585 * R.h };
   };
   const tileCenter = (el: HTMLElement | null): Pt | null => {
     const root = rootRef.current;
     if (el === null || root === null) return null;
     const a = el.getBoundingClientRect();
     const r = root.getBoundingClientRect();
-    return { x: a.left - r.left + a.width / 2, y: a.top - r.top + a.height / 2 };
+    return {
+      x: a.left - r.left + a.width / 2,
+      y: a.top - r.top + a.height / 2,
+    };
   };
   const live = (): boolean => !reducedRef.current && !hiddenRef.current && fxRef.current !== null;
 
@@ -544,17 +669,41 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     if (layer === null || !live()) return;
     const img = rigRef.current?.querySelector<HTMLElement>(`[data-item="${it.id}"]`);
     if (img !== null && img !== undefined && typeof img.animate === 'function') {
-      img.animate(squashFrames(it.fly), { duration: it.fly === 'lob' ? 440 : 360, easing: 'ease-out' });
+      img.animate(squashFrames(it.fly), {
+        duration: it.fly === 'lob' ? 440 : 360,
+        easing: 'ease-out',
+      });
     }
     const box = roomBox(l, it.id);
     const contact = it.contact !== undefined ? roomPt(l, it.contact) : box !== null ? { x: box.x + box.w / 2, y: box.y + box.h * 0.8 } : null;
     if (contact !== null) sparks(layer, contact, (box?.w ?? 80) * 0.7, it.colors ?? []);
     const R = dollRect(l);
     const k = Math.max(0.6, Math.min(1, R.w / 220));
-    if (stacked && box !== null) kaboom(layer, { x: box.x + box.w / 2 + (Math.random() < 0.5 ? -1 : 1) * box.w * 0.55, y: box.y + box.h * 0.2 }, { text: BURST.stack, color: '#FF7EB6', k: k * 0.9 });
+    if (stacked && box !== null)
+      kaboom(
+        layer,
+        {
+          x: box.x + box.w / 2 + (Math.random() < 0.5 ? -1 : 1) * box.w * 0.55,
+          y: box.y + box.h * 0.2,
+        },
+        { text: BURST.stack, color: '#FF7EB6', k: k * 0.9 },
+      );
     else if (box !== null) {
       const side = Math.random() < 0.5 ? -1 : 1;
-      kaboom(layer, { x: side > 0 ? box.x + box.w + 24 * k : box.x - 24 * k, y: box.y + 8 }, { text: pick(BURST.land), color: it.burst, k: k * 0.85, rot: side * (6 + Math.random() * 8) });
+      // never on his face: things worn on the face pop up by the hairline, the rest beside themselves
+      const at =
+        it.slot === 'EYES' || it.slot === 'FACE' || it.slot === 'EARS'
+          ? hairline(l, side)
+          : {
+              x: side > 0 ? box.x + box.w + 24 * k : box.x - 24 * k,
+              y: box.y + 8,
+            };
+      kaboom(layer, at, {
+        text: pick(BURST.land),
+        color: it.burst,
+        k: k * 0.85,
+        rot: side * (6 + Math.random() * 8),
+      });
     }
     wobble(it.weight ?? 0.5, (it.weight ?? 0) > 0.8);
   };
@@ -563,6 +712,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     const layer = fxRef.current;
     const to = roomBox(l, it.id);
     if (layer === null || to === null || !live()) {
+      setFlyVer((v) => v + 1);
       landFx(l, it, stacked);
       return;
     }
@@ -610,34 +760,48 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
   const onTapItem = (id: number, el: HTMLElement | null): void => {
     const it = getItem(id);
     if (it === undefined) return;
-    stopShuffle();
+    probe.current.taps++;
+    if (shuffleTimer.current !== null) stopShuffle();
     const prev = lookRef.current;
     const next = tapItem(prev, id);
     const before = new Set(wornIds(prev));
     const after = new Set(wornIds(next));
-    const removed = [...before].filter((x) => !after.has(x) && !flights.current.has(x));
-    const added = [...after].filter((x) => !before.has(x));
-    flick(prev, removed, 0);
+    const removed = [...before].filter((x) => !after.has(x) && !flights.current.has(x) && !queued.current.has(x));
+    const wearing = after.has(id) && !before.has(id);
+    // the look changes now (the tile and the doll answer within the frame); the juice follows a tick
+    // later, so a tap never waits for effects. The new item stays hidden on the doll until it lands.
+    const animate = wearing && live();
+    if (animate) queued.current.add(id);
     commit(next);
-    buzz.tap();
-    if (added.includes(id)) {
-      const stacked = it.slot === 'HEAD' && next.head.length > 1 && next.head[next.head.length - 1] === id;
-      launch(next, it, tileCenter(el), stacked);
-      const replacedTop = it.slot === 'HEAD' && prev.head.length >= AVATAR_MAX_TOWER && next.head.length === prev.head.length;
-      if (replacedTop) say(pick(LINES.towerFull));
-      else if (stacked) say(LINES.tower[next.head.length] ?? itemLine(it));
-      else say(itemLine(it));
-      if (stacked) sound.stack(next.head.length);
-    } else {
+    const from = animate ? tileCenter(el) : null;
+    setTimeout(() => {
+      buzz.tap();
+      flick(prev, removed, 0);
+      if (wearing) {
+        if (animate && !queued.current.delete(id)) return; // taken off again before it left the tile
+        const stacked = it.slot === 'HEAD' && next.head.length > 1 && next.head[next.head.length - 1] === id;
+        launch(next, it, from, stacked);
+        const replacedTop = it.slot === 'HEAD' && prev.head.length >= AVATAR_MAX_TOWER && next.head.length === prev.head.length;
+        if (replacedTop) say(pick(LINES.towerFull));
+        else if (stacked) say(LINES.tower[next.head.length] ?? itemLine(it));
+        else say(itemLine(it));
+        if (stacked) sound.stack(next.head.length);
+        return;
+      }
       sound.off();
       say(pick(id === 7 ? LINES.bowOff : LINES.flick));
       const layer = fxRef.current;
       if (layer !== null && live()) {
         const box = roomBox(prev, id);
-        if (box !== null) kaboom(layer, { x: box.x + box.w / 2, y: box.y + box.h / 2 }, { text: pick(BURST.off), color: '#4F6CFF', k: 0.75 });
+        if (box !== null)
+          kaboom(
+            layer,
+            it.slot === 'HEAD' || it.slot === 'NECK' ? { x: box.x + box.w / 2, y: box.y + box.h / 2 } : hairline(prev, Math.random() < 0.5 ? -1 : 1),
+            { text: pick(BURST.off), color: '#4F6CFF', k: 0.75 },
+          );
       }
       wobble(0.4);
-    }
+    }, 0);
   };
 
   const onTapPlate = (bg: number): void => {
@@ -667,7 +831,13 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     const layer = fxRef.current;
     if (layer !== null && live()) {
       const R = dollRect(prev);
-      kaboom(layer, { x: R.x + R.w * 0.2, y: R.y + R.h * 0.18 }, { text: BURST.shake, color: '#4F6CFF', big: true, k: Math.max(0.6, Math.min(1, R.w / 240)), rot: -12 });
+      kaboom(layer, chest(prev, -0.25), {
+        text: BURST.shake,
+        color: '#4F6CFF',
+        big: true,
+        k: Math.max(0.6, Math.min(1, R.w / 240)),
+        rot: -12,
+      });
     }
     wobble(0.8, true);
     later(() => wobble(0.6), 160);
@@ -685,6 +855,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     }
     for (const f of flights.current.values()) f.cancel();
     flights.current.clear();
+    queued.current.clear();
     commit(next);
     buzz.tap();
     const finale = (): void => {
@@ -694,11 +865,21 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
       const layer = fxRef.current;
       if (layer !== null && live()) {
         const R = dollRect(next);
-        kaboom(layer, { x: R.x + R.w * 0.5, y: R.y + R.h * 0.12 }, { text: BURST.random, color: '#FF7EB6', big: true, k: Math.max(0.6, Math.min(1, R.w / 240)), rot: -6 });
+        kaboom(layer, chest(next, 0), {
+          text: BURST.random,
+          color: '#FF7EB6',
+          big: true,
+          k: Math.max(0.6, Math.min(1, R.w / 240)),
+          rot: -6,
+        });
         for (const id of wornIds(next)) {
           const img = rigRef.current?.querySelector<HTMLElement>(`[data-item="${id}"]`);
           const it = getItem(id);
-          if (img !== null && img !== undefined && typeof img.animate === 'function' && it !== undefined) img.animate(squashFrames(it.fly), { duration: 380, easing: 'ease-out' });
+          if (img !== null && img !== undefined && typeof img.animate === 'function' && it !== undefined)
+            img.animate(squashFrames(it.fly), {
+              duration: 380,
+              easing: 'ease-out',
+            });
         }
       }
       wobble(0.9, true);
@@ -726,6 +907,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     stopShuffle();
     for (const f of flights.current.values()) f.finish();
     flights.current.clear();
+    queued.current.clear();
     emit();
     const l = normalizeLook(lookRef.current);
     probe.current.lastDone = encodeLook(l);
@@ -734,7 +916,13 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     const layer = fxRef.current;
     if (layer !== null && live()) {
       const R = dollRect(l);
-      kaboom(layer, { x: R.x + R.w * 0.5, y: R.y + R.h * 0.3 }, { text: BURST.done, color: '#F2361B', big: true, k: Math.max(0.6, Math.min(1, R.w / 240)), rot: -8 });
+      kaboom(layer, chest(l, 0), {
+        text: BURST.done,
+        color: '#F2361B',
+        big: true,
+        k: Math.max(0.6, Math.min(1, R.w / 240)),
+        rot: -8,
+      });
       confetti(layer, ['#F2361B', '#FFD21F', '#4F6CFF', '#FF7EB6', '#FFFFFF']);
     }
     wobble(1, true);
@@ -771,7 +959,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
       ioRef.current = null;
     };
   }, []);
-  const register: Register = (el, onSeen) => {
+  const registerNow: Register = (el, onSeen) => {
     if (typeof IntersectionObserver === 'undefined') {
       onSeen();
       return () => undefined;
@@ -816,9 +1004,21 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
     buzz.tap();
   };
 
+  // stable identities for the memoized tiles; they always call the latest closures
+  const latest = useRef({ tap: onTapItem, reg: registerNow });
+  latest.current = { tap: onTapItem, reg: registerNow };
+  const tapStable = useCallback((id: number, el: HTMLElement) => latest.current.tap(id, el), []);
+  const register = useCallback<Register>((el, onSeen) => latest.current.reg(el, onSeen), []);
+
   /* ── render ── */
   const itemsBySlot = useMemo(() => {
-    const m: Record<AvatarSlot, AvatarItem[]> = { HEAD: [], EYES: [], EARS: [], FACE: [], NECK: [] };
+    const m: Record<AvatarSlot, AvatarItem[]> = {
+      HEAD: [],
+      EYES: [],
+      EARS: [],
+      FACE: [],
+      NECK: [],
+    };
     for (const it of ITEMS) m[it.slot].push(it);
     return m;
   }, [ITEMS.length]);
@@ -840,13 +1040,17 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
       src={p.item.file}
       alt=""
       draggable={false}
+      onError={hideBroken}
       style={{
         left: `${p.x}px`,
         top: `${p.y}px`,
         width: `${p.w}px`,
         height: `${p.h}px`,
-        visibility: flights.current.has(p.item.id) && shuffle === null ? 'hidden' : undefined,
-        transformOrigin: p.item.contact !== undefined ? `${(((p.item.contact[0] / 100) * DW - p.x) / p.w) * 100}% ${(((p.item.contact[1] / 100) * DH - p.y) / p.h) * 100}%` : '50% 80%',
+        visibility: (flights.current.has(p.item.id) || queued.current.has(p.item.id)) && shuffle === null ? 'hidden' : undefined,
+        transformOrigin:
+          p.item.contact !== undefined
+            ? `${(((p.item.contact[0] / 100) * DW - p.x) / p.w) * 100}% ${(((p.item.contact[1] / 100) * DH - p.y) / p.h) * 100}%`
+            : '50% 80%',
       }}
     />
   );
@@ -863,7 +1067,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
   // the speech box sits under his chin, or at the top (over the hats) when the chin is too low
   const faceBottom = frame.y + 0.475 * DH * frame.s;
   const speechAtTop = mode === 'bust' && sizes.sh - faceBottom < (sizes.rw < 350 ? 54 : 60);
-  const icon = <Avatar look={look} size={compact ? 40 : 44} ring label={name !== '' ? `הלוגו של ${name}` : 'הלוגו שלך'} />;
+  const icon = <Avatar look={chipLook} size={compact ? 40 : 44} ring label={name !== '' ? `הלוגו של ${name}` : 'הלוגו שלך'} />;
 
   return (
     <div
@@ -896,7 +1100,12 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
           <div
             class="dr-disc"
             aria-hidden="true"
-            style={{ left: `${sizes.sw / 2 - frame.discW / 2}px`, top: `${frame.floorY - frame.discH * 0.32}px`, width: `${frame.discW}px`, height: `${frame.discH}px` }}
+            style={{
+              left: `${sizes.sw / 2 - frame.discW / 2}px`,
+              top: `${frame.floorY - frame.discH * 0.32}px`,
+              width: `${frame.discW}px`,
+              height: `${frame.discH}px`,
+            }}
           >
             <div class="side" />
             <div class="top" />
@@ -906,14 +1115,24 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
           <div
             class="dr-shadow"
             aria-hidden="true"
-            style={{ left: `${sizes.sw / 2 - frame.discW * 0.36}px`, top: `${frame.floorY - frame.discH * 0.18}px`, width: `${frame.discW * 0.72}px`, height: `${frame.discH * 0.36}px` }}
+            style={{
+              left: `${sizes.sw / 2 - frame.discW * 0.36}px`,
+              top: `${frame.floorY - frame.discH * 0.18}px`,
+              width: `${frame.discW * 0.72}px`,
+              height: `${frame.discH * 0.36}px`,
+            }}
           />
         )}
         {ready && (
           <div
             ref={rigRef}
             class="dr-rig"
-            style={{ width: `${DW}px`, height: `${DH}px`, transform: `translate(${frame.x.toFixed(1)}px,${frame.y.toFixed(1)}px) scale(${frame.s.toFixed(4)})`, '--inv': (1 / frame.s).toFixed(3) }}
+            style={{
+              width: `${DW}px`,
+              height: `${DH}px`,
+              transform: `translate(${frame.x.toFixed(1)}px,${frame.y.toFixed(1)}px) scale(${frame.s.toFixed(4)})`,
+              '--inv': (1 / frame.s).toFixed(3),
+            }}
             aria-hidden="true"
           >
             <div
@@ -938,6 +1157,11 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
               {neckLayers.map(itemImg)}
             </div>
           </div>
+        )}
+        {!compact && (
+          <span class="dr-star" aria-hidden="true">
+            <span>מסיבה!</span>
+          </span>
         )}
         <span class="dr-name" title={name}>
           {name !== '' ? name : 'אני'}
@@ -974,9 +1198,17 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
             </button>
           ))}
         </div>
-        <div ref={shelfRef} class={`dr-shelf${fade.s ? ' fs' : ''}${fade.e ? ' fe' : ''}`} role="tabpanel" onScroll={paintFade} style={{ '--tile': `${tilePx}px` }}>
+        <div
+          ref={shelfRef}
+          class={`dr-shelf${fade.s ? ' fs' : ''}${fade.e ? ' fe' : ''}`}
+          role="tabpanel"
+          onScroll={paintFade}
+          style={{ '--tile': `${tilePx}px` }}
+        >
           {tab === 'BG'
-            ? Array.from({ length: AVATAR_BG_COUNT }, (_, bg) => <PlateTile key={`bg${bg}`} bg={bg} on={look.bg === bg} cut={cut} px={px} onTap={onTapPlate} />)
+            ? Array.from({ length: AVATAR_BG_COUNT }, (_, bg) => (
+                <PlateTile key={`bg${bg}`} bg={bg} on={look.bg === bg} cut={cut} px={px} onTap={onTapPlate} />
+              ))
             : tabItems.map((it) => (
                 <ItemTile
                   key={it.id}
@@ -986,7 +1218,7 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
                   towerSize={look.head.length}
                   px={px}
                   register={register}
-                  onTap={onTapItem}
+                  onTap={tapStable}
                 />
               ))}
           {tab !== 'BG' && tabItems.length === 0 && <span class="dr-empty">עוד אין כאן פריטים</span>}

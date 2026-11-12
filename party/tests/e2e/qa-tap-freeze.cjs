@@ -1,8 +1,9 @@
 // Freeze + input edge cases of tap and ninja, through real CDP touches.
 //   node tests/e2e/qa-tap-freeze.cjs [tap|ninja|both]
-// tap: freeze in the first second, mid-combo, inside a nose-pick window, in the last second;
-//      taps while frozen; a finger held across a freeze; a touch made before GO; taps on the HUD;
-//      a resting palm; touchcancel.
+// tap: freeze in the first second, mid-combo, with the hand half way up, mid-dig, mid BIG booger
+//      stretch, with boogers sliding down the glass, in the last second: the state and the pixels
+//      stand still, taps do nothing, the meter does not drain, and it resumes exactly; a finger held
+//      across a freeze; a touch made before GO; taps on the HUD; a resting palm; touchcancel.
 // ninja: freeze mid-swipe, during the bomb stun, in the first and last second; touchcancel;
 //      a fast swipe that jumps over a fruit between two move events; a touch made before GO.
 const path = require('path');
@@ -29,30 +30,55 @@ async function waitTap(page, pred, timeout = 30000) {
   }
 }
 
-/** Freeze for `ms`, check that nothing moves and taps score nothing, then that it continues from the same point. */
-async function tapFreezeCheck(page, cdp, label, ms = 2500) {
+/** Tap the face every `every` ms until pred(state) holds; returns that state. */
+async function spamUntil(page, cdp, pred, every = 100, timeout = 30000) {
+  const t0 = Date.now();
+  for (;;) {
+    const d = await tapState(page);
+    if (d && pred(d)) return d;
+    if (Date.now() - t0 > timeout) throw new Error('spamUntil timeout ' + JSON.stringify(d));
+    tapAt(cdp, [{ x: d.x + 5, y: d.y + 15 }]);
+    await sleep(every);
+  }
+}
+
+const SAME_KEYS = ['elapsedMs', 'meter', 'phase', 'score', 'digs', 'bigBoogers', 'bigActive', 'hits', 'misses', 'bounces', 'combo', 'glass', 'pile', 'handY', 'frame', 'queued', 'pickingMs'];
+const diffKeys = (a, b) => SAME_KEYS.filter((k) => a[k] !== b[k]);
+
+/**
+ * Freeze for `ms`; the state (meter included) and the game's pixels must stand still and taps
+ * must do nothing; after the freeze it continues from the same point.
+ */
+async function tapFreezeCheck(page, cdp, label, ms = 2500, slug = '') {
   await page.evaluate((m) => window.__party.freeze(m), ms);
-  await sleep(120);
+  await sleep(150);
   const a = await tapState(page);
   const pa = await party(page);
+  const vp = page.viewportSize();
+  const clip = { x: 0, y: a.hudTop, width: vp.width, height: vp.height - a.hudTop };
+  const shotA = await page.screenshot({ clip });
   for (let i = 0; i < 8; i++) {
     await tapAt(cdp, [{ x: a.x, y: a.y }]);
     await sleep(60);
   }
-  await sleep(700);
+  await sleep(600);
   const b = await tapState(page);
   const pb = await party(page);
-  check(`tap ${label}: frozen: game time, face, score, combo, pick state stand still; taps dropped`, pa.frozen && a.elapsedMs === b.elapsedMs && a.x === b.x && a.y === b.y && a.score === b.score && a.combo === b.combo && a.picking === b.picking && a.hits === b.hits && a.misses === b.misses && pa.leftMs === pb.leftMs, { a: [a.elapsedMs, a.score, a.combo, a.picking, pa.leftMs], b: [b.elapsedMs, b.score, b.combo, b.picking, pb.leftMs] });
+  const shotB = await page.screenshot({ clip });
+  if (slug) await page.screenshot({ path: path.join(OUT, `freeze-${slug}.png`) });
+  const moved = diffKeys(a, b);
+  check(`tap ${label}: frozen: game time, meter, phase, digs, boogers, hand stand still; taps dropped`, pa.frozen && moved.length === 0 && pa.leftMs === pb.leftMs, { moved, a: [a.elapsedMs, a.meter, a.phase, a.score, a.glass], b: [b.elapsedMs, b.meter, b.phase, b.score, b.glass] });
+  check(`tap ${label}: frozen frame is pixel-identical (nothing moves)`, shotA.equals(shotB));
   await page.waitForFunction(() => !window.__party.frozen, null, { timeout: ms + 3000 });
-  await sleep(40);
   const c = await tapState(page);
-  check(`tap ${label}: resumes where it stopped (combo kept, clock continues)`, c.combo === b.combo && c.elapsedMs >= b.elapsedMs && c.elapsedMs - b.elapsedMs < 400, { before: [b.elapsedMs, b.combo], after: [c.elapsedMs, c.combo] });
+  check(`tap ${label}: resumes where it stopped (meter, digs, combo kept, clock continues)`, c.elapsedMs >= b.elapsedMs && c.elapsedMs - b.elapsedMs < 400 && c.digs >= b.digs && c.score >= b.score && Math.abs(c.meter - b.meter) < 0.3, { before: [b.elapsedMs, b.meter, b.digs, b.combo], after: [c.elapsedMs, c.meter, c.digs, c.combo] });
   return { a, b, c };
 }
 
 async function tapSuite(browser) {
   // freezeAt=0: frozen from the start for 2 s (like the phone during the 3-2-1)
   const { page, cdp, context, errors } = await openGame(browser, 'tap', { device: 'iPhone SE', query: 'seed=5&duration=60000&freezeAt=0&freezeMs=2000' });
+  await page.addStyleTag({ content: '.dv-freeze{display:none!important}' });
   await page.waitForFunction(() => window.__tap && window.__tap() && window.__party.frozen);
   // a touch made before GO, held through GO, then lifted: nothing
   const d0 = await tapState(page);
@@ -74,21 +100,38 @@ async function tapSuite(browser) {
   for (let i = 0; i < 3; i++) await tapAt(cdp, [{ x: d.x, y: d.y }]);
   await tapFreezeCheck(page, cdp, 'first second');
 
-  // mid-combo: 25 hits then freeze, the combo (x2) survives
-  for (let i = 0; i < 25; i++) {
-    const f = await tapState(page);
-    if (f.picking) break;
-    await tapAt(cdp, [{ x: f.x, y: f.y }]);
-    await sleep(100);
-  }
-  const mid = await tapFreezeCheck(page, cdp, 'mid-combo');
-  check('tap mid-combo: combo >= 20 (x2) kept through the freeze', mid.c.combo >= 20 && mid.c.mult >= 2, mid.c);
+  // the hand half way up: ~4 taps/s until the meter is in the middle
+  await spamUntil(page, cdp, (s) => s.phase === 'rising' && s.meter > 0.42 && s.meter < 0.75, 230);
+  const half = await tapFreezeCheck(page, cdp, 'hand half way up', 2500, '1-hand-half');
+  check('tap hand half way: the meter did not drain during the freeze', half.a.meter === half.b.meter && half.a.handY === half.b.handY, [half.a.meter, half.b.meter]);
+
+  // mid-dig: spam until the finger is in and digging, freeze right after a dig
+  await spamUntil(page, cdp, (s) => s.phase === 'picking' && s.digs >= 3 && !s.bigActive, 95);
+  const dig = await tapFreezeCheck(page, cdp, 'mid-dig', 2500, '2-mid-dig');
+  check('tap mid-dig: still picking right after the freeze (did not slip out while frozen)', dig.c.phase === 'picking', dig.c.phase);
+
+  // mid BIG booger stretch
+  await spamUntil(page, cdp, (s) => s.bigActive, 95, 40000);
+  await sleep(250);
+  const big = await tapFreezeCheck(page, cdp, 'mid BIG booger stretch', 2500, '3-big-stretch');
+  check('tap BIG booger: the stretch kept its place through the freeze', big.c.bigActive || big.c.bigBoogers === big.b.bigBoogers, big.c);
+
+  // mid-combo: the combo survives a freeze
+  const mc = await spamUntil(page, cdp, (s) => s.combo >= 22, 100);
+  const comb = await tapFreezeCheck(page, cdp, 'mid-combo');
+  check('tap mid-combo: combo >= 20 (x2) kept through the freeze', comb.c.combo >= 20 && comb.c.mult >= 2, [mc.combo, comb.c.combo]);
+
+  // boogers sliding down the glass: stop tapping, let them slide a moment, freeze
+  await sleep(700);
+  const sl = await waitTap(page, (s) => s.glass > 0, 5000);
+  const slide = await tapFreezeCheck(page, cdp, 'boogers sliding', 2500, '4-sliding');
+  check('tap sliding: boogers were on the glass during the freeze', slide.a.glass > 0, sl.glass);
 
   // a finger held across a freeze: down on the face, freeze, lift during the freeze, nothing extra
   {
     const f = await tapState(page);
     await touch(cdp, 'touchStart', [{ x: f.x, y: f.y, id: 2 }]);
-    await sleep(50);
+    await sleep(80);
     const s1 = await tapState(page);
     await page.evaluate(() => window.__party.freeze(1500));
     await sleep(300);
@@ -104,47 +147,31 @@ async function tapSuite(browser) {
     const f = await tapState(page);
     await touch(cdp, 'touchStart', [{ x: f.x, y: f.y, id: 3 }]);
     await touch(cdp, 'touchCancel', []);
-    await sleep(80);
+    await sleep(120);
     await tapAt(cdp, [{ x: f.x, y: f.y }]);
-    await sleep(80);
+    await sleep(120);
     const g = await tapState(page);
     check('tap: touchcancel leaves the game working', g.hits >= f.hits + 1 && errors.length === 0, { before: f.hits, after: g.hits });
   }
 
-  // palm: a big contact resting at the bottom, while another finger taps the face
+  // palm: a big contact resting on the tray, while another finger taps the face
   {
     const f = await tapState(page);
     const vp = page.viewportSize();
     await touch(cdp, 'touchStart', [{ x: vp.width * 0.5, y: vp.height - 30, id: 9, r: 40 }]);
+    await sleep(60);
     const p1 = await tapState(page);
     for (let i = 0; i < 10; i++) {
       const q = await tapState(page);
       // with this Chromium's CDP, touchStart presses the listed new points and touchEnd lifts the listed ones
       await touch(cdp, 'touchStart', [{ x: q.x, y: q.y, id: 20 + i }]);
       await touch(cdp, 'touchEnd', [{ x: q.x, y: q.y, id: 20 + i }]);
-      await sleep(110);
+      await sleep(130);
     }
     await touch(cdp, 'touchEnd', []);
+    await sleep(60);
     const p2 = await tapState(page);
     check('tap: a resting palm costs one miss at most; taps beside it all count', p2.misses - f.misses <= 1 && p2.hits - p1.hits === 10, { misses: p2.misses - f.misses, hits: p2.hits - p1.hits });
-  }
-
-  // inside a nose-pick window: freeze in the middle of it, the window keeps its remaining time
-  {
-    const p = await waitTap(page, (s) => s.picking, 40000);
-    await sleep(350);
-    await page.screenshot({ path: path.join(OUT, 'freeze-0-nosepick.png') });
-    const r = await tapFreezeCheck(page, cdp, 'inside a nose-pick window');
-    check('tap nose-pick: still picking right after the freeze (window did not expire while frozen)', r.c.picking === true, r.c);
-    // taps after resume in the window are +5
-    const before = await tapState(page);
-    if (before.picking) {
-      await tapAt(cdp, [{ x: before.x, y: before.y }]);
-      await sleep(60);
-      const after = await tapState(page);
-      check('tap nose-pick: a tap right after the resume is +5', !after.picking || after.score - before.score === 5, [before.score, after.score]);
-    }
-    void p;
   }
 
   // last second

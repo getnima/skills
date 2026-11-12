@@ -56,7 +56,13 @@ function makeSprite(layer: HTMLElement, src: string, box: Rect, cls: string): HT
   im.draggable = false;
   im.decoding = 'sync';
   im.className = cls;
-  Object.assign(im.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.w}px`, height: `${box.h}px` });
+  im.onerror = () => (im.style.visibility = 'hidden');
+  Object.assign(im.style, {
+    left: `${box.x}px`,
+    top: `${box.y}px`,
+    width: `${box.w}px`,
+    height: `${box.h}px`,
+  });
   layer.append(im);
   return im;
 }
@@ -99,7 +105,12 @@ const STYLES: Record<AvatarFly, Style> = {
     n: 14,
     at(u, c) {
       const apex = Math.min(c.D.y, 0) - Math.max(60, c.VH * 0.16);
-      return { x: lerp(c.D.x, 0, u), y: qb(c.D.y, apex, 0, u), r: c.spin * 360 * (1 - u), s: lerp(0.55, 1, u) + 0.28 * Math.sin(Math.PI * u) };
+      return {
+        x: lerp(c.D.x, 0, u),
+        y: qb(c.D.y, apex, 0, u),
+        r: c.spin * 360 * (1 - u),
+        s: lerp(0.55, 1, u) + 0.28 * Math.sin(Math.PI * u),
+      };
     },
   },
   frisbee: {
@@ -112,7 +123,13 @@ const STYLES: Record<AvatarFly, Style> = {
       const bend = Math.abs(c.D.x) * 0.16;
       const x = (1 - t) ** 3 * c.D.x + 3 * (1 - t) ** 2 * t * c.D.x * 0.66 + 3 * (1 - t) * t * t * c.D.x * 0.33;
       const y = (1 - t) ** 3 * c.D.y + 3 * (1 - t) ** 2 * t * (c.D.y * 0.66 - bend) + 3 * (1 - t) * t * t * (c.D.y * 0.33 + bend * 0.6);
-      return { x, y, r: 14 * Math.sin(u * Math.PI * 4) * (1 - u), s: lerp(0.75, 1, t) + 0.1 * Math.sin(Math.PI * u), sy: lerp(0.5, 1, t) };
+      return {
+        x,
+        y,
+        r: 14 * Math.sin(u * Math.PI * 4) * (1 - u),
+        s: lerp(0.75, 1, t) + 0.1 * Math.sin(Math.PI * u),
+        sy: lerp(0.5, 1, t),
+      };
     },
   },
   boomerang: {
@@ -146,7 +163,12 @@ const STYLES: Record<AvatarFly, Style> = {
     os: 0.14,
     n: 10,
     at(u, c) {
-      return { x: c.D.x * (1 - u), y: c.D.y * (1 - u) - Math.sin(Math.PI * u) * Math.abs(c.D.x) * 0.05, r: c.spin * 220 * (1 - u), s: lerp(0.82, 1, u) };
+      return {
+        x: c.D.x * (1 - u),
+        y: c.D.y * (1 - u) - Math.sin(Math.PI * u) * Math.abs(c.D.x) * 0.05,
+        r: c.spin * 220 * (1 - u),
+        s: lerp(0.82, 1, u),
+      };
     },
   },
   ninja: {
@@ -156,7 +178,12 @@ const STYLES: Record<AvatarFly, Style> = {
     n: 14,
     at(u, c) {
       const t = 1 - Math.pow(1 - u, 3.2);
-      return { x: c.D.x * (1 - t), y: c.D.y * (1 - t), r: c.spin * 1080 * (1 - t), s: lerp(0.7, 1, t) };
+      return {
+        x: c.D.x * (1 - t),
+        y: c.D.y * (1 - t),
+        r: c.spin * 1080 * (1 - t),
+        s: lerp(0.7, 1, t),
+      };
     },
   },
   snapback: {
@@ -166,7 +193,13 @@ const STYLES: Record<AvatarFly, Style> = {
     n: 14,
     at(u, c) {
       const apex = Math.min(c.D.y, 0) - Math.max(40, c.VH * 0.12);
-      return { x: lerp(c.D.x, 0, u), y: qb(c.D.y, apex, 0, u), r: c.spin * 540 * (1 - u), s: lerp(0.7, 1, u) + 0.15 * Math.sin(Math.PI * u), sy: Math.cos(u * Math.PI * 2) };
+      return {
+        x: lerp(c.D.x, 0, u),
+        y: qb(c.D.y, apex, 0, u),
+        r: c.spin * 540 * (1 - u),
+        s: lerp(0.7, 1, u) + 0.15 * Math.sin(Math.PI * u),
+        sy: Math.cos(u * Math.PI * 2),
+      };
     },
   },
   feather: {
@@ -177,7 +210,12 @@ const STYLES: Record<AvatarFly, Style> = {
     at(u, c) {
       const t = easeOut2(u);
       const sway = Math.sin(u * Math.PI * 3.5) * Math.min(70, c.VW * 0.12) * (1 - u);
-      return { x: c.D.x * (1 - t) + sway, y: c.D.y * (1 - t), r: 18 * Math.sin(u * Math.PI * 3.5 + 0.6) * (1 - u), s: lerp(0.85, 1, t) };
+      return {
+        x: c.D.x * (1 - t) + sway,
+        y: c.D.y * (1 - t),
+        r: 18 * Math.sin(u * Math.PI * 3.5 + 0.6) * (1 - u),
+        s: lerp(0.85, 1, t),
+      };
     },
   },
 };
@@ -211,17 +249,34 @@ export function flyIn(o: FlyOptions): Flight {
   else if (edge === 'bottom') S = { x: rand(0.15, 0.85) * VW, y: VH + m };
   else if (edge === 'left') S = { x: -m, y: clamp(C.y + rand(-0.1, 0.15) * VH, 30, VH * 0.7) };
   else S = { x: VW + m, y: clamp(C.y + rand(-0.1, 0.15) * VH, 30, VH * 0.7) };
-  const c: FlightCtx = { D: { x: S.x - C.x, y: S.y - C.y }, R: o.doll, VW, VH, spin: Math.random() < 0.5 ? -1 : 1 };
+  const c: FlightCtx = {
+    D: { x: S.x - C.x, y: S.y - C.y },
+    R: o.doll,
+    VW,
+    VH,
+    spin: Math.random() < 0.5 ? -1 : 1,
+  };
 
   const N = style.n;
   const frames: Frame[] = [];
   for (let i = 0; i < N; i++) frames.push(style.at(i / (N - 1), c));
   frames[N - 1] = { x: 0, y: 0 };
-  const kf: Keyframe[] = frames.map((f, i) => ({ offset: (i / (N - 1)) * 0.84, transform: T(f) }));
+  const kf: Keyframe[] = frames.map((f, i) => ({
+    offset: (i / (N - 1)) * 0.84,
+    transform: T(f),
+  }));
   const a = frames[N - 2] ?? { x: 0, y: 0 };
   const len = Math.hypot(a.x, a.y) || 1;
   const os = style.os * Math.max(o.to.w, 60);
-  kf.push({ offset: 0.92, transform: T({ x: (-a.x / len) * os, y: (-a.y / len) * os, r: -c.spin * 5, s: 1.04 }) });
+  kf.push({
+    offset: 0.92,
+    transform: T({
+      x: (-a.x / len) * os,
+      y: (-a.y / len) * os,
+      r: -c.spin * 5,
+      s: 1.04,
+    }),
+  });
   kf.push({ offset: 1, transform: T({ x: 0, y: 0 }) });
 
   const el = makeSprite(o.layer, o.src, o.to, 'drfx-flyer');
@@ -237,7 +292,11 @@ export function flyIn(o: FlyOptions): Flight {
     land();
     return { id: o.id, cancel: () => undefined, finish: () => undefined };
   }
-  const anim = el.animate(kf, { duration: style.dur, easing: 'linear', fill: 'forwards' });
+  const anim = el.animate(kf, {
+    duration: style.dur,
+    easing: 'linear',
+    fill: 'forwards',
+  });
   anim.onfinish = land;
   // never a ghost: whatever happens to the animation, the sprite is gone shortly after it should have landed
   const safety = setTimeout(land, style.dur + 1200);
@@ -258,7 +317,17 @@ export function flyIn(o: FlyOptions): Flight {
       if (base === 'none') base = '';
       el.style.transform = base;
       const ang = rand(0, Math.PI * 2);
-      play(el, [{ transform: base || 'none', opacity: 1 }, { transform: `translate(${Math.cos(ang) * 140}px,${Math.sin(ang) * 140}px) ${base}`, opacity: 0 }], { duration: 170, easing: 'ease-in' });
+      play(
+        el,
+        [
+          { transform: base || 'none', opacity: 1 },
+          {
+            transform: `translate(${Math.cos(ang) * 140}px,${Math.sin(ang) * 140}px) ${base}`,
+            opacity: 0,
+          },
+        ],
+        { duration: 170, easing: 'ease-in' },
+      );
     },
     finish(): void {
       clearTimeout(safety);
@@ -294,7 +363,15 @@ export function tumble(layer: HTMLElement, src: string, box: Rect, dir: number, 
   const kf: Keyframe[] = [];
   for (let i = 0; i < N; i++) {
     const t = (Tt * i) / (N - 1);
-    kf.push({ offset: i / (N - 1), transform: T({ x: vx * t, y: vy * t + 0.5 * g * t * t, r: (spin * t) / Tt, s: 1 + (0.15 * t) / Tt }) });
+    kf.push({
+      offset: i / (N - 1),
+      transform: T({
+        x: vx * t,
+        y: vy * t + 0.5 * g * t * t,
+        r: (spin * t) / Tt,
+        s: 1 + (0.15 * t) / Tt,
+      }),
+    });
   }
   play(el, kf, { duration: Tt * 1000, delay, easing: 'linear' });
 }
@@ -331,10 +408,17 @@ export function kaboom(layer: HTMLElement, p: Pt, o: BurstOptions): void {
     b,
     [
       { transform: `rotate(${r}deg) scale(0)`, opacity: 1 },
-      { transform: `rotate(${r}deg) scale(${1.25 * k})`, opacity: 1, offset: 0.16 },
+      {
+        transform: `rotate(${r}deg) scale(${1.25 * k})`,
+        opacity: 1,
+        offset: 0.16,
+      },
       { transform: `rotate(${r}deg) scale(${k})`, opacity: 1, offset: 0.32 },
       { transform: `rotate(${r}deg) scale(${k})`, opacity: 1, offset: 0.7 },
-      { transform: `translateY(-22px) rotate(${r * 0.5}deg) scale(${1.06 * k})`, opacity: 0 },
+      {
+        transform: `translateY(-22px) rotate(${r * 0.5}deg) scale(${1.06 * k})`,
+        opacity: 0,
+      },
     ],
     { duration: o.big === true ? 900 : 720, easing: 'ease-out' },
   );
@@ -346,9 +430,21 @@ export function sparks(layer: HTMLElement, p: Pt, size: number, colors: readonly
   const s = clamp(size, 40, 220);
   const ring = document.createElement('div');
   ring.className = 'drfx-ring';
-  Object.assign(ring.style, { left: `${p.x - s / 2}px`, top: `${p.y - s / 2}px`, width: `${s}px`, height: `${s}px` });
+  Object.assign(ring.style, {
+    left: `${p.x - s / 2}px`,
+    top: `${p.y - s / 2}px`,
+    width: `${s}px`,
+    height: `${s}px`,
+  });
   layer.append(ring);
-  play(ring, [{ transform: 'scale(.2)', opacity: 0.9 }, { transform: 'scale(1.5)', opacity: 0 }], { duration: 420, easing: 'cubic-bezier(.2,.7,.3,1)' });
+  play(
+    ring,
+    [
+      { transform: 'scale(.2)', opacity: 0.9 },
+      { transform: 'scale(1.5)', opacity: 0 },
+    ],
+    { duration: 420, easing: 'cubic-bezier(.2,.7,.3,1)' },
+  );
   const n = 8;
   const list = colors.length > 0 ? colors : ['#FFD21F', '#F2361B', '#4F6CFF'];
   for (let i = 0; i < n; i++) {
@@ -360,10 +456,20 @@ export function sparks(layer: HTMLElement, p: Pt, size: number, colors: readonly
     d.style.top = `${p.y}px`;
     d.style.background = list[i % list.length] ?? '#FFD21F';
     layer.append(d);
-    play(d, [{ transform: 'translate(0,0) scale(1)', opacity: 1 }, { transform: `translate(${Math.cos(ang) * dist}px,${Math.sin(ang) * dist - 10}px) scale(.3) rotate(120deg)`, opacity: 0 }], {
-      duration: rand(380, 560),
-      easing: 'cubic-bezier(.15,.7,.3,1)',
-    });
+    play(
+      d,
+      [
+        { transform: 'translate(0,0) scale(1)', opacity: 1 },
+        {
+          transform: `translate(${Math.cos(ang) * dist}px,${Math.sin(ang) * dist - 10}px) scale(.3) rotate(120deg)`,
+          opacity: 0,
+        },
+      ],
+      {
+        duration: rand(380, 560),
+        easing: 'cubic-bezier(.15,.7,.3,1)',
+      },
+    );
   }
 }
 
@@ -394,7 +500,10 @@ export function confetti(layer: HTMLElement, colors: readonly string[]): void {
     const kf: Keyframe[] = [];
     for (let k = 0; k < 10; k++) {
       const t = (Tt * k) / 9;
-      kf.push({ offset: k / 9, transform: `translate(${vx * t}px,${vy * t + 0.5 * g * t * t}px) rotate(${spin * t}deg)` });
+      kf.push({
+        offset: k / 9,
+        transform: `translate(${vx * t}px,${vy * t + 0.5 * g * t * t}px) rotate(${spin * t}deg)`,
+      });
     }
     play(el, kf, { duration: Tt * 1000, delay: i * 14, easing: 'linear' });
   }

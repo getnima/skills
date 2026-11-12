@@ -196,12 +196,19 @@ async function shotsFor(browser, size) {
   await burst(page, `${tag}-7-resumed`, 600, 150);
   await page.evaluate(() => window.__party.freeze(100000));
   await bot.catch(() => null);
-  // 4. zones: the look-only flag (icyLookZone) paints zone N's mood; gameplay unchanged
+  await zoneShots(page, context, vp, tag);
+  await context.close();
+  return errors;
+}
+
+/** Zones: the look-only flag (icyLookFloor) paints zone N's mood; gameplay unchanged. Waits out the opening hint. */
+async function zoneShots(page, context, vp, tag) {
   for (const z of [0, 1, 2, 3]) {
     await page.goto(`${BASE}/dev.html?game=icy&seed=4&duration=75000&icyLookFloor=${[0, 25, 50, 75][z]}`);
     await page.waitForFunction(() => !!window.__icy, null, { timeout: 15000 });
     await page.addStyleTag({ content: '.dv-tools{display:none!important}' });
     const t2 = await createTouch(context, page);
+    await sleep(2700);
     await t2.down(1, vp.width * 0.8, vp.height * 0.6);
     await sleep(500);
     await t2.up(1);
@@ -209,8 +216,6 @@ async function shotsFor(browser, size) {
     await burst(page, `${tag}-8-zone${z}`, 600, 300);
     await t2.up(1);
   }
-  await context.close();
-  return errors;
 }
 
 async function shots() {
@@ -347,6 +352,16 @@ async function lifecycle(game) {
   else if (MODE === 'proof') await proof();
   else if (MODE === 'perf') await perf();
   else if (MODE === 'shots') await shots();
+  else if (MODE === 'zones') {
+    const browser = await chromium.launch();
+    for (const size of (process.argv[3] || '320x568,390x844,430x932').split(',')) {
+      const context = await phoneContext(browser, size);
+      const page = await context.newPage();
+      await zoneShots(page, context, SIZES[size], size);
+      await context.close();
+    }
+    await browser.close();
+  }
   else if (MODE === 'sheet') {
     const files = process.argv.slice(3);
     await sheet(path.join(OUT, 'before-after.png'), files.map((f, i) => [i < files.length / 2 ? 'לפני' : 'אחרי', f]));
