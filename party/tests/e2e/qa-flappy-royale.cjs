@@ -4,7 +4,7 @@
 //   phone-2 (320x568)  plays well, is reloaded while flying, and stops tapping 7 s into the finale
 //   phone-3 (390x844)  stops tapping after 5 s (out early)
 //   phone-4 (320x568)  never taps (falls, out), and is reloaded while out
-//   8 bots             out one by one by 20 s of round time (--elim-by)
+//   8 bots             out one by one by 34 s of round time (--elim-by)
 // with a manual cutscene before the finale and another one during it.
 //
 //   PARTY_SERVER_PORT=8921 npx tsx server/index.ts            (real timing: no PARTY_TEST_* needed)
@@ -186,7 +186,7 @@ const WATCH_FINALE_TV = () => {
     const tvShot = (name) => host.screenshot({ path: path.join(OUT, `${name}-tv.png`) });
 
     // ── eight bots ──
-    bots = spawn('npx', ['tsx', 'tests/load/bots.ts', '--url', SERVER, '--code', code, '--players', '8', '--play', '--elim-by', '20000', '--quiet'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+    bots = spawn('npx', ['tsx', 'tests/load/bots.ts', '--url', SERVER, '--code', code, '--players', '8', '--play', '--elim-by', '34000', '--quiet'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
     let botLog = '';
     bots.stdout.on('data', (d) => (botLog += d));
     bots.stderr.on('data', (d) => (botLog += d));
@@ -296,6 +296,7 @@ const WATCH_FINALE_TV = () => {
     const p1same = await Promise.all([info(P1), info(P2)]);
     check(Math.abs(p1same[0].f.dist - p1same[1].f.dist) < 12, 'both flying phones are at the same distance again', p1same.map((i) => Math.round(i.f.dist)));
 
+    check((await hs()).round.finale === null, 'the reloads were over before the finale was announced (else this run measured nothing: run it again)');
     // ── the finale: 3 left ──
     const fin = await waitFor(async () => { const s = await hs(); return s.round && s.round.finale ? s : null; }, 40000, 'finale announced', 20);
     const finale = fin.round.finale;

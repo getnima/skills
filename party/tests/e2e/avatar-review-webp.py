@@ -7,7 +7,7 @@ from PIL import Image
 ROOT = os.path.dirname(os.path.abspath(__file__)) + '/../../'
 OUT = ROOT + 'client/public/assets/shimi/props/'
 Q = int(sys.argv[1]) if len(sys.argv) > 1 else 86
-MAX = 640  # long side
+MAX = 960  # long side
 # a picture never needs more pixels than 1.5x its width on the 483 px doll (sharp in the dressing room at 3x)
 CAT = ''.join(open(f, encoding='utf8').read() for f in glob.glob(ROOT + 'client/src/avatar/catalog*.ts'))
 WIDTH = {m.group(1): float(m.group(2)) for m in re.finditer(r"file: '/assets/shimi/props/([\w.]+)',\s+place: \[[-\d.]+, [-\d.]+, ([\d.]+),", CAT)}

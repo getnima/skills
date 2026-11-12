@@ -8,7 +8,8 @@
  * never touched: this file has its own little generator, seeded from the schedule.
  *
  * - An ordinary target ('fruit' in the schedule) is one of the 11 foods, dealt from a
- *   shuffled bag: any 11 food throws in a row show all 11.
+ *   shuffled bag of all 11 (then a new bag, never opening with the food just shown): no
+ *   food comes twice before every other has come once.
  * - Now and then (about one in JOKE_EVERY) it is a joke item instead: the plastic chair or
  *   the flip-flop, taking turns. Same points, same hit circle: a joke for the eyes only.
  * - Bombs take turns between the two hosts: A, B, A, B (which host opens depends on the

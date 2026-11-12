@@ -17,18 +17,25 @@ Untouched originals: `tests/e2e/out/ninja-bombs/originals/`. Contact sheets (dar
 
 Same in both files, as a fraction of the picture (0,0 = top-left):
 
-- Top of the metal cap (attach the fuse here): x = 0.505, y = 0.03
+- Top of the metal cap (the game attaches the fuse here): x = 0.505, y = 0.03
 - Metal cap spans y 0.03 - 0.16, about 0.065 wide; a black collar sits under it down to about y 0.19, where the sphere begins.
 
-Note: the cap points straight UP (not up-right like the drawn fallback in `../README.md`), so the fuse should start at the point above.
+The cap points straight UP: the game's fuse starts at the point above and curls up and to the right, with the spark on its tip.
 
 ## Body framing
 
-The black sphere is about 72-73% of the picture wide, centred below the middle (the cap, hat and bun take the top);
-it is not the 84% body circle `../README.md` describes for `bomb.png`. If the cut radius matters, use a radius of about 0.36 of the picture
-around (0.50, 0.62).
+The black sphere is about 73% of the picture wide, centred below the middle (the cap, hat and bun take the top).
+Measured on both files (a circle fitted to the sphere's outline): radius 0.365 of the picture around (0.50, 0.603); its bottom is at y 0.97.
+The game scales the picture so that this sphere is exactly the bomb's hit circle; the cap, the lemon hat and the hair bun stand out of it
+and are not part of the hit area.
 
-## Intended use
+These numbers are `BOMB_FRAME` in `client/src/games/ninja/art.ts`, one frame for both files. A replacement picture must keep the frame
+(same sphere, same cap top), or `BOMB_FRAME` must be changed with it.
 
-Alternate the two bombs (A, B, A, B ...), or pick at random without repeating twice in a row, so both hosts show up in every round.
-They replace the shared `../bomb.png` (both hosts on one bomb) only if the game code is changed to load these; `../bomb.png` is untouched.
+## How the game uses them
+
+The bombs take turns: A, B, A, B ... through the round (which host opens depends on the round), so both hosts show up in every round,
+and two bombs thrown together are one of each. Looks only: `client/src/games/ninja/skins.ts`.
+The game draws on top: the lit fuse and its spark, a throbbing warning burst behind the bomb and, on the first bomb, the "לא לחתוך!" tag.
+If a file is missing the game draws a dark bomb with a cap and a generic face instead (red ring for A, pink for B).
+The old shared `../bomb.png` (both hosts on one bomb) is retired and no longer in the folder.

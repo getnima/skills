@@ -1,5 +1,6 @@
 /**
- * נינג׳ה תבורי: swipe to slice what is tossed up, never the bomb.
+ * נינג׳ה תבורי: swipe to slice the Israeli food that is tossed up (shawarma, hummus, sabich,
+ * falafel...), never the bombs: they are the two party hosts, taking turns.
  *
  * Throws come from a seeded schedule (waves.ts) in field units, launched by
  * game time, so every phone gets the same arcs at the same moments. Input only
@@ -12,24 +13,29 @@
  * 1.2 s stun.
  *
  * Look (render-only, never read by the logic): the party sticker style. A cobalt TV stage
- * pre-rendered once per size, fruit drawn to their hit circle, a tapered white blade
- * ribbon with a yellow edge (pink while a combo lives, grey while stunned), pooled juice
- * splat decals pre-rendered per colour, pre-cut halves with a juicy inside, and every text
- * a pre-rendered sticker. A quality flag drops decals and droplets when frames are slow.
+ * pre-rendered once per size, food pictures fitted into their hit circle, a tapered white
+ * blade ribbon with a yellow edge (pink while a combo lives, grey while stunned), pooled
+ * splat decals pre-rendered per food (sauce, juice or crumbs), pre-cut halves that show the
+ * inside of their food, and every text a pre-rendered sticker. A quality flag drops decals
+ * and droplets when frames are slow.
+ *
+ * Which picture a throw wears (which food, which host's bomb) is looks only: skins.ts
+ * derives it from the finished schedule. The schedule's `variant`, the hit circle, the
+ * timing and the score never depend on it.
  */
 import { sfx } from '../../kit/audio';
-import { createGameCanvas, drawText, roundRectPath } from '../../kit/canvas';
+import { createGameCanvas } from '../../kit/canvas';
 import { clamp, createFx, ease, lerp } from '../../kit/fx';
 import { haptic } from '../../kit/haptics';
 import { createInput } from '../../kit/input';
 import { createLoop, STEP_S } from '../../kit/loop';
 import { COLORS } from '../../kit/theme';
 import { GAMES } from '../../../../shared/protocol';
-import { BODY_RADIUS, buildHalves, buildSplats, createBackdrop, loadNinjaArt } from './art';
+import { BODY_RADIUS, BOMB_CAP_X, BOMB_CAP_Y, buildHalves, buildSplats, createBackdrop, loadNinjaArt } from './art';
 import { PAL, blit, createStickerCache, loadDisplayFont, renderChip, renderSticker } from './look';
+import { BOMB_KEYS, buildSkins, TARGET_KEYS } from './skins';
 import { buildSchedule, GRAVITY, LAUNCH_Y, scheduleSignature } from './waves';
 
-import type { Drawable } from '../../kit/assets';
 import type { BurstOptions } from '../../kit/fx';
 import type { KitPointer } from '../../kit/input';
 import type { GameContext, GameInstance, GameModule } from '../types';
@@ -66,8 +72,21 @@ const TRAIL = 16;
 /** The drawn blade trail (looks only, its own buffer): points live this many steps (~200 ms). */
 const VTRAIL = 24;
 const VTRAIL_LIFE = 12;
-/** Fruit and bombs are drawn to their hit circle (R * 1.05), not inside it. Looks only. */
+/**
+ * Targets and bombs are drawn to their hit circle (R * 1.05): a food picture is fitted inside
+ * it (art.ts), a bomb's black sphere fills it. Looks only.
+ */
 const DRAW_K = 1.05;
+/** Splat decal shapes pre-rendered per food. */
+const SPLAT_SHAPES = 2;
+/**
+ * The lit fuse (looks only), in hit radii from the bomb's centre: out of the top of the metal
+ * cap (art.ts BOMB_CAP_*), a short curl up and to the right; the spark sits on its tip.
+ */
+const FUSE_BEND_X = BOMB_CAP_X - 0.03;
+const FUSE_BEND_Y = BOMB_CAP_Y - 0.46;
+const FUSE_TIP_X = BOMB_CAP_X + 0.34;
+const FUSE_TIP_Y = BOMB_CAP_Y - 0.36;
 const MAX_POPS = 8;
 /** Splat decals stay this long (s) and fade over the last part. */
 const SPLAT_LIFE = 1.8;
@@ -106,7 +125,8 @@ const PLUS_TEXT: readonly string[] = Array.from({ length: 16 }, (_, n) => `+${n 
 interface Flyer {
   active: boolean;
   kind: ThrowKind;
-  variant: number;
+  /** Which picture it wears (skins.ts): a food or joke item, or which host's bomb. Looks only. */
+  skin: number;
   /** Field units (x 0..1 across the column, y 0..1 down the field). */
   x: number;
   y: number;
@@ -145,9 +165,7 @@ interface Splat {
   x: number;
   y: number;
   r: number;
-  color: string;
   life: number;
-  rot: number;
   /** Pre-rendered blob (look only). */
   img: HTMLCanvasElement | null;
 }
@@ -228,12 +246,15 @@ interface NinjaDebug {
   readonly sharpSteps: number;
   /** With `window.__ninjaTrace = []` set before the game starts: snapshot() every 30 steps. */
   readonly traced: number;
+  /** Which pictures come from a real file, by name (false = its drawn stand-in is shown). */
+  readonly art: Readonly<Record<string, boolean>>;
   /** Positions of the throws in the air (determinism checks). */
   snapshot(): string;
-  /** Throws in the air in CSS px (bots in tests). */
+  /** Throws in the air in CSS px (bots in tests); `skin` = the picture it wears (looks only). */
   targets(): Array<{
     readonly id: number;
     readonly kind: ThrowKind;
+    readonly skin: string;
     readonly x: number;
     readonly y: number;
     readonly vx: number;
@@ -247,6 +268,8 @@ interface NinjaDebug {
     readonly x: number;
     readonly vx: number;
   }>;
+  /** The picture of each of the first n throws of the schedule (looks only). */
+  skins(n: number): string[];
 }
 
 declare global {
@@ -260,7 +283,7 @@ function makeFlyer(): Flyer {
   return {
     active: false,
     kind: 'fruit',
-    variant: 0,
+    skin: 0,
     x: 0,
     y: 0,
     px: 0,
@@ -327,9 +350,9 @@ function segDist2(ax: number, ay: number, bx: number, by: number, cx: number, cy
   return ex * ex + ey * ey;
 }
 
-function cutOf(cuts: readonly CutLook[], gold: CutLook, kind: ThrowKind, variant: number): CutLook {
+function cutOf(cuts: readonly CutLook[], gold: CutLook, kind: ThrowKind, skin: number): CutLook {
   if (kind === 'gold') return gold;
-  return cuts[variant] ?? gold;
+  return cuts[skin] ?? gold;
 }
 
 // ───────────────────────────── Game ─────────────────────────────
@@ -339,10 +362,10 @@ export const game: GameModule = {
   async create(ctx: GameContext): Promise<GameInstance> {
     const [art] = await Promise.all([loadNinjaArt(), loadDisplayFont()]);
     const backdrop = createBackdrop(art.background, 1.06);
-    // pre-cut halves: index = fruit variant, then one per golden look
+    // pre-cut halves: index = target skin, then one per golden look
     const halfArt = [...art.targets.map((d, i) => buildHalves(d, art.cuts[i] ?? art.goldCut)), ...art.golds.map((d) => buildHalves(d, art.goldCut))];
-    // juice decals: three blob shapes per juice colour, pre-rendered once
-    const splatArt = new Map<string, HTMLCanvasElement[]>();
+    // splat decals: a few shapes per cut look (sauce, juice or crumbs in the food's colours), pre-rendered once
+    const splatArt = new Map<CutLook, HTMLCanvasElement[]>();
     /** CSS px size the splat sprites are pre-rendered at (3 R), and the ratio: rebuilt when either changes. */
     let splatSize = 0;
     let splatDpr = 0;
@@ -351,9 +374,11 @@ export const game: GameModule = {
       splatArt.clear();
       splatSize = Math.round(R * 3);
       splatDpr = view.dpr;
-      for (const c of [...art.cuts, art.goldCut]) if (!splatArt.has(splatKey(c))) splatArt.set(splatKey(c), buildSplats(c.splash, c.splashKind, 3, splatSize, splatDpr));
+      for (const c of [...art.cuts, art.goldCut]) if (!splatArt.has(c)) splatArt.set(c, buildSplats(c, SPLAT_SHAPES, splatSize, splatDpr));
     }
-    const splatKey = (c: CutLook): string => `${c.splash}|${c.splashKind}`;
+    /** Droplet colours per cut look (made once: a slice allocates nothing for them). */
+    const dropColors = new Map<CutLook, readonly string[]>();
+    for (const c of [...art.cuts, art.goldCut]) dropColors.set(c, [c.splash, c.splash2 ?? c.specks ?? c.flesh, c.puddle ?? c.splash]);
     const stickers = createStickerCache(24);
     /** Which golden look a throw wears (looks only). */
     const goldLook = (id: number): number => id % art.golds.length;
@@ -363,6 +388,9 @@ export const game: GameModule = {
     const fx = createFx(420);
     const schedule = buildSchedule(ctx.seed, ctx.durationMs);
     const signature = scheduleSignature(schedule);
+    /** The picture of every throw, by its index in the schedule (looks only). */
+    const skins = buildSkins(schedule);
+    const skinName = (kind: ThrowKind, skin: number): string => (kind === 'gold' ? 'gold_falafel' : kind === 'bomb' ? (BOMB_KEYS[skin] ?? '') : (TARGET_KEYS[skin] ?? ''));
     const firstBomb = schedule.findIndex((t) => t.kind === 'bomb');
     // Round time already gone when the game starts (slow load, late mount), snapped to whole
     // steps: the schedule is in round time, so a late phone sees the same throws at the same
@@ -376,9 +404,7 @@ export const game: GameModule = {
       x: 0,
       y: 0,
       r: 0,
-      color: '#fff',
       life: 0,
-      rot: 0,
       img: null,
     }));
     const pops: Pop[] = Array.from({ length: MAX_POPS }, () => ({ active: false, sticker: null, x: 0, y: 0, age: 0, life: 1, rise: 60 }));
@@ -515,7 +541,7 @@ export const game: GameModule = {
       if (!f) return;
       f.active = true;
       f.kind = th.kind;
-      f.variant = th.variant;
+      f.skin = skins[index] ?? 0;
       f.x = f.px = th.x;
       f.y = f.py = th.y;
       f.vx = th.vx;
@@ -527,22 +553,20 @@ export const game: GameModule = {
       launched++;
     }
 
-    /** A splat decal of the cut look `key` (splatKey) at (x, y), radius r (looks only). */
-    function addSplat(x: number, y: number, key: string, r: number): void {
+    /** A splat decal of the cut look `look` at (x, y), radius r (looks only). */
+    function addSplat(x: number, y: number, look: CutLook, r: number): void {
       // slow phone: keep only every other decal slot in use
       if (lowQuality && splatCursor % 2 === 1) splatCursor = (splatCursor + 1) % MAX_SPLATS;
       const s = splats[splatCursor];
       splatCursor = (splatCursor + 1) % MAX_SPLATS;
       if (!s) return;
-      const set = splatArt.get(key);
+      const set = splatArt.get(look);
       s.img = set ? (set[(sliced + splatCursor) % set.length] ?? null) : null;
       s.active = true;
       s.x = x;
       s.y = y;
       s.r = r;
-      s.color = key;
       s.life = 1;
-      s.rot = (x * 13.7 + y * 3.1) % (Math.PI * 2);
     }
 
     function addSlash(x: number, y: number, angle: number, gold: boolean): void {
@@ -572,7 +596,7 @@ export const game: GameModule = {
     }
 
     function addHalves(f: Flyer, x: number, y: number, angle: number): void {
-      const pair = f.kind === 'gold' ? halfArt[art.targets.length + goldLook(f.id)] : halfArt[f.variant];
+      const pair = f.kind === 'gold' ? halfArt[art.targets.length + goldLook(f.id)] : halfArt[f.skin];
       const nx = -Math.sin(angle);
       const ny = Math.cos(angle);
       const bvx = f.vx * colW;
@@ -656,18 +680,19 @@ export const game: GameModule = {
       }
       hintDone = true;
       sliced++;
-      const st = cutOf(art.cuts, art.goldCut, f.kind, f.variant);
+      const st = cutOf(art.cuts, art.goldCut, f.kind, f.skin);
       addHalves(f, x, y, angle);
       const big = Math.min(blade.swipe + 1, 6);
-      addSplat(x, y, splatKey(st), R * (1.5 + (big >= COMBO_MIN ? 0.18 * big : 0)));
+      addSplat(x, y, st, R * (1.5 + (big >= COMBO_MIN ? 0.18 * big : 0)));
       addSlash(x, y, angle, f.kind === 'gold');
       // droplets fly along the cut, both ways: thin fast juice, fat slow sauce, or dry crumbs
       const kind = st.splashKind;
+      const colors = dropColors.get(st) ?? st.splash;
       const drops = Math.round(((lowQuality ? 3 : 6) + (big >= COMBO_MIN ? big * 2 : 0)) * (kind === 'sauce' ? 0.6 : kind === 'crumbs' ? 1.3 : 1));
       for (const dir of [0, Math.PI]) {
         fx.burst(x, y, {
           count: drops,
-          colors: [st.splash, st.splash2 ?? st.flesh, st.splash],
+          colors,
           speed: (kind === 'sauce' ? 300 : kind === 'crumbs' ? 420 : 480) + big * 40,
           size: kind === 'sauce' ? 7 : kind === 'crumbs' ? 3.2 : 4.5,
           life: kind === 'sauce' ? 0.85 : kind === 'crumbs' ? 0.5 : 0.6,
@@ -900,9 +925,11 @@ export const game: GameModule = {
           continue;
         }
         if (f.kind === 'bomb' && f.age % 3 === 0) {
+          // sparks off the fuse tip (the bomb leans by `wob`, the fuse with it)
           const wob = Math.sin(f.rot) * 0.4;
-          const tipX = toX(f.x) + (Math.cos(wob) * 1.02 - Math.sin(wob) * -1.24) * R;
-          const tipY = toY(f.y) + (Math.sin(wob) * 1.02 + Math.cos(wob) * -1.24) * R;
+          const r = R * DRAW_K;
+          const tipX = toX(f.x) + (Math.cos(wob) * FUSE_TIP_X - Math.sin(wob) * FUSE_TIP_Y) * r;
+          const tipY = toY(f.y) + (Math.sin(wob) * FUSE_TIP_X + Math.cos(wob) * FUSE_TIP_Y) * r;
           fx.burst(tipX, tipY, FUSE_SPARKS);
         } else if (f.kind === 'gold' && f.age % 5 === 0) {
           fx.burst(toX(f.x), toY(f.y), GOLD_SPARKLE);
@@ -1010,43 +1037,31 @@ export const game: GameModule = {
       }
     }
 
-    function drawFuse(g: CanvasRenderingContext2D, f: Flyer, x: number, y: number, wob: number): void {
-      const r = R * DRAW_K;
-      g.save();
-      g.translate(x, y);
-      g.rotate(wob);
-      // cap
-      g.save();
-      g.translate(r * 0.5, -r * 0.9);
-      g.rotate(0.55);
-      g.fillStyle = '#4b4560';
-      g.strokeStyle = PAL.ink;
-      g.lineWidth = 2.5;
-      roundRectPath(g, -r * 0.24, -r * 0.15, r * 0.48, r * 0.3, r * 0.07);
-      g.fill();
-      g.stroke();
-      g.restore();
-      // fuse
+    /**
+     * The lit fuse of a bomb, in the bomb's own turned space ((0, 0) = its centre, r = hit
+     * radius): a short rope out of the top of the metal cap and the flickering spark on its tip.
+     */
+    function drawFuse(g: CanvasRenderingContext2D, f: Flyer, r: number): void {
       g.lineCap = 'round';
       g.strokeStyle = PAL.ink;
-      g.lineWidth = r * 0.18;
+      g.lineWidth = r * 0.17;
       g.beginPath();
-      g.moveTo(r * 0.6, -r * 1.02);
-      g.quadraticCurveTo(r * 0.72, -r * 1.5, r * 1.02, -r * 1.24);
+      // starts a little inside the cap, so the rope never floats over it
+      g.moveTo(BOMB_CAP_X * r, (BOMB_CAP_Y + 0.05) * r);
+      g.quadraticCurveTo(FUSE_BEND_X * r, FUSE_BEND_Y * r, FUSE_TIP_X * r, FUSE_TIP_Y * r);
       g.stroke();
       g.strokeStyle = '#d9b27a';
-      g.lineWidth = r * 0.09;
+      g.lineWidth = r * 0.085;
       g.stroke();
       // spark at the tip: flickers in game steps
       const flick = ((f.age * 7 + f.id * 13) % 10) / 10;
       const sr = r * (0.62 + flick * 0.3);
-      g.translate(r * 1.02, -r * 1.24);
+      g.translate(FUSE_TIP_X * r, FUSE_TIP_Y * r);
       g.rotate(flick * 2);
       g.drawImage(art.spark, -sr / 2, -sr / 2, sr, sr);
-      g.restore();
     }
 
-    /** Two passes: bombs last, so a bomb is never hidden behind a fruit. */
+    /** Two passes: bombs last, so a bomb is never hidden behind a target. */
     function drawFlyers(g: CanvasRenderingContext2D, alpha: number): void {
       for (let pass = 0; pass < 2; pass++) {
         for (const f of flyers) {
@@ -1070,16 +1085,21 @@ export const game: GameModule = {
         const kb = R * (2.9 + pulse * 0.45);
         g.drawImage(art.kaboom, x - kb / 2, y - kb / 2, kb, kb);
         const wob = Math.sin(rot) * 0.4;
+        const b = art.bombs[f.skin % art.bombs.length];
+        // the picture is placed by its black sphere: the sphere is the hit circle (r), the
+        // cap, hat and hair stand out of it; the fuse is drawn in the same turned space
+        const r = R * DRAW_K;
         g.save();
         g.translate(x, y);
         g.scale(sx, sy);
-        art.bomb.draw(g, 0, 0, bx, bx, wob);
+        g.rotate(wob);
+        if (b) g.drawImage(b.source, b.left * r, b.top * r, b.size * r, b.size * r);
+        drawFuse(g, f, r);
         g.restore();
-        drawFuse(g, f, x, y, wob);
-        if (f.id === firstBomb && f.age < 150) drawTag(g, x, y - R * 2.2);
+        if (f.id === firstBomb && f.age < 150) drawTag(g, x, y);
       } else {
         const gold = f.kind === 'gold';
-        const d = gold ? (art.golds[goldLook(f.id)] ?? art.targets[0]) : art.targets[f.variant];
+        const d = gold ? (art.golds[goldLook(f.id)] ?? art.targets[0]) : art.targets[f.skin];
         if (!d) return;
         if (gold) {
           // turning sunburst behind the golden target
@@ -1102,10 +1122,13 @@ export const game: GameModule = {
       }
     }
 
+    /** The "do not slice!" tag of the first bomb at (x, y): above its spark, or under the bomb when that would be off the field. */
     function drawTag(g: CanvasRenderingContext2D, x: number, y: number): void {
       const t = stickers.get('tag', (old) => renderChip('לא לחתוך!', 19, PAL.red, '#ffffff', old));
       const tx = clamp(x, t.w / 2 + 6, W - t.w / 2 - 6);
-      blit(g, t, tx, y);
+      const r = R * DRAW_K;
+      const above = y + (FUSE_TIP_Y - 0.55) * r - t.h / 2;
+      blit(g, t, tx, above - t.h / 2 >= top + 2 ? above : y + r * 1.25 + t.h / 2);
     }
 
     function drawSlashes(g: CanvasRenderingContext2D): void {
@@ -1392,6 +1415,7 @@ export const game: GameModule = {
       get traced(): number {
         return trace ? trace.length : 0;
       },
+      art: art.real,
       get active(): number {
         let n = 0;
         for (const f of flyers) if (f.active) n++;
@@ -1409,6 +1433,7 @@ export const game: GameModule = {
             out.push({
               id: f.id,
               kind: f.kind,
+              skin: skinName(f.kind, f.skin),
               x: toX(f.x),
               y: toY(f.y),
               vx: f.vx * colW,
@@ -1420,6 +1445,9 @@ export const game: GameModule = {
       },
       schedule(n: number) {
         return schedule.slice(0, n).map((t) => ({ atMs: t.atMs, kind: t.kind, x: t.x, vx: t.vx }));
+      },
+      skins(n: number) {
+        return schedule.slice(0, n).map((t, i) => skinName(t.kind, skins[i] ?? 0));
       },
     };
     window.__ninja = debug;
@@ -1449,7 +1477,7 @@ export const game: GameModule = {
         art.kaboom.width = 0;
         art.spark.width = 0;
         // the art of this round (kit drawables made by loadNinjaArt for this round only)
-        for (const d of [...art.targets, ...art.golds, art.bomb, art.background, art.hand, art.coin]) d.source.width = 0;
+        for (const d of [...art.targets, ...art.golds, ...art.bombs, art.background, art.hand]) d.source.width = 0;
         // window.__ninja keeps the final counters for test scripts
       },
     };

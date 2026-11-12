@@ -396,7 +396,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
                 )
               ) : null}
             </span>
-            <CountUp class="sh-score" value={elimination !== null ? Math.round(r.score / 10) : r.score} ms={420} />
+            <CountUp class="sh-score" value={r.score} ms={420} />
             <div class="sh-track">
               <div
                 class="sh-fill"

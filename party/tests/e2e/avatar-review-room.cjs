@@ -24,7 +24,7 @@ async function geometry(page) {
         const r = e.getBoundingClientRect();
         if (r.left < -0.5 || r.top < -0.5 || r.right > vw + 0.5 || r.bottom > vh + 0.5) bad.push(`${sel} out of screen ${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.right)},${Math.round(r.bottom)}`);
         if ((sel === '.dr-tab' || sel === '.dr-btn') && (r.height < 43.5 || r.width < 43.5)) bad.push(`${sel} small ${Math.round(r.width)}x${Math.round(r.height)}`);
-        if (e.scrollWidth > e.clientWidth + 1 && sel !== '.dr-tabs' && sel !== '.dr-acts' && sel !== '.dr-name') bad.push(`${sel} text clipped: ${e.textContent.trim().slice(0, 30)}`);
+        if (e.scrollWidth > e.clientWidth + 1 && sel !== '.dr-tabs' && sel !== '.dr-acts' && sel !== '.dr-name' && sel !== '.dr-tab') bad.push(`${sel} text clipped: ${e.textContent.trim().slice(0, 30)}`);
       }
     }
     for (const e of document.querySelectorAll('.dr-shelf .dr-tile')) {
@@ -32,13 +32,31 @@ async function geometry(page) {
       if (r.height < 43.5 || r.width < 43.5) bad.push(`tile small ${Math.round(r.width)}x${Math.round(r.height)}`);
     }
     const se = document.scrollingElement;
+    // tab labels: the text itself (not the count badge) must fit inside the tab with 2 px to spare
+    for (const e of document.querySelectorAll('.dr-tab')) {
+      const r = e.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(e.firstChild.nodeType === 3 ? e.firstChild : e);
+      const t = range.getBoundingClientRect();
+      if (t.left < r.left + 2 || t.right > r.right - 2) bad.push(`tab label touches the edge: ${e.textContent.trim()} (${Math.round(t.width)} in ${Math.round(r.width)})`);
+    }
     return { bad, pageScroll: se.scrollHeight > vh + 1 || se.scrollWidth > vw + 1 || scrollY !== 0 || scrollX !== 0, tiles: document.querySelectorAll('.dr-shelf .dr-tile').length };
   });
 }
 const parse = (t) => { const f = String(t).split('.'); return { head: f[2] === '0' ? [] : f[2].split('-').map(Number), rest: f.slice(3).map(Number).filter((x) => x > 0) }; };
 const worn = (p) => { const l = parse(p.look); return [...l.head, ...l.rest]; };
 const onDoll = (page) => page.evaluate(() => [...document.querySelectorAll('.dr-rig [data-item]')].map((e) => Number(e.dataset.item)).sort((a, b) => a - b));
-const said = (page) => page.evaluate(() => document.querySelector('.dr-say-text')?.textContent.trim() ?? '');
+// the speech box types its line letter by letter: read it once it stopped changing
+const said = async (page) => {
+  let last = null;
+  for (let i = 0; i < 40; i++) {
+    const t = await page.evaluate(() => document.querySelector('.dr-say-text')?.textContent.trim() ?? '');
+    if (t !== '' && t === last) return t;
+    last = t;
+    await page.waitForTimeout(260);
+  }
+  return last ?? '';
+};
 async function settle(page, ms = 4000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) { const p = await probe(page); if (p && p.flying === 0) break; await page.waitForTimeout(120); }
@@ -55,12 +73,13 @@ async function tapTile(page, tab, id) {
 
 (async () => {
   const browser = await chromium.launch();
-  for (const size of SIZES) {
+  for (const size of SIZES.filter((z) => !process.env.ONLY || z.name === process.env.ONLY)) {
     console.log(size.name);
     const { ctx, page, errors } = await openRoom(browser, size, { settle: 1500 });
     const bad404 = [];
     page.on('response', (r) => { if (r.status() >= 400) bad404.push(r.url()); });
-    const shot = (n) => page.screenshot({ path: path.join(OUT, `room-${size.name}-${n}.png`) });
+    // the machine is shared: a screenshot may time out once
+    const shot = async (n) => { for (let i = 0; i < 3; i++) { try { await page.screenshot({ path: path.join(OUT, `room-${size.name}-${n}.png`), timeout: 60000 }); return; } catch (e) { if (i === 2) throw e; } } };
     await page.waitForTimeout(1200);
     await shot('0-hello');
     let g = await geometry(page);
@@ -125,6 +144,7 @@ async function tapTile(page, tab, id) {
     await shot('7-random');
     // plate, then done
     await tapEl(page, '.dr-tab[data-tab="BG"]'); await page.waitForTimeout(250);
+    await page.locator('.dr-shelf .dr-tile[data-bg="8"]').scrollIntoViewIfNeeded(); await page.waitForTimeout(300);
     await tapEl(page, '.dr-shelf .dr-tile[data-bg="8"]'); await page.waitForTimeout(500);
     await tapEl(page, '.dr-done'); await page.waitForTimeout(1500);
     p = await probe(page);

@@ -16,6 +16,10 @@ const KEY_PREFIX = 'party.player.';
 const LAST_NAME_KEY = 'party.lastName';
 const LAST_ROOM_KEY = 'party.lastRoom';
 const TIP_KEY = 'party.a2hsTipDismissed';
+const LOOK_PREFIX = 'party.look.';
+const LAST_LOOK_KEY = 'party.lastLook';
+/** Longest text accepted as a stored look (shared/avatar.ts AVATAR_ENCODED_MAX). */
+const LOOK_MAX_LEN = 48;
 
 /** Same alphabet the server uses (no I, O, L). */
 const CODE_RE = new RegExp(`^[A-HJKMNP-Z]{${ROOM_CODE_LEN}}$`);
@@ -89,6 +93,51 @@ export function saveIdentity(code: string, id: Identity): void {
 
 export function clearIdentity(code: string): void {
   write(KEY_PREFIX + code, null);
+  // the doll belongs to the seat: a new seat in this room starts over (from the last look, below)
+  write(LOOK_PREFIX + code, null);
+}
+
+/**
+ * The guest's doll in one room, kept next to the identity so a reload in the dressing room
+ * (or after it) lands exactly where the guest was.
+ */
+export interface LookMemory {
+  /** The look as the phone last had it (an encoded look, shared/avatar.ts). */
+  readonly look: string;
+  /** The server has not confirmed `look` yet: after a reload it is sent again. */
+  readonly pending: boolean;
+  /** The guest has been through the dressing room in this room (pressed "done", or a round took over). */
+  readonly dressed: boolean;
+}
+
+function isLookText(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && v.length <= LOOK_MAX_LEN && /^[0-9.-]+$/.test(v);
+}
+
+export function loadLookMemory(code: string): LookMemory | null {
+  const raw = read(LOOK_PREFIX + code);
+  if (raw === null) return null;
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown> | null;
+    if (typeof o !== 'object' || o === null || !isLookText(o.look)) return null;
+    return { look: o.look, pending: o.pending === true, dressed: o.dressed === true };
+  } catch {
+    return null;
+  }
+}
+
+export function saveLookMemory(code: string, mem: LookMemory): void {
+  write(LOOK_PREFIX + code, JSON.stringify(mem));
+}
+
+/** The doll this phone dressed last, in any room: where a new room's dressing room starts. */
+export function loadLastLook(): string | null {
+  const v = read(LAST_LOOK_KEY);
+  return isLookText(v) ? v : null;
+}
+
+export function saveLastLook(look: string): void {
+  write(LAST_LOOK_KEY, look);
 }
 
 export function loadLastName(): string {

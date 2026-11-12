@@ -111,6 +111,10 @@ export const FINALE_LATEST_MS = 60_000;
 export const SCORE_SEND_INTERVAL_MS = 250;
 /** Server broadcasts the live `scores` event at most this often. */
 export const SCORE_BROADCAST_INTERVAL_MS = 250;
+/** A phone in the dressing room sends `player:look` at most this often (always the latest look). */
+export const LOOK_SEND_INTERVAL_MS = 250;
+/** Server broadcasts the `looks` event (the looks that changed, not the room state) at most this often per room. */
+export const LOOK_BROADCAST_INTERVAL_MS = 200;
 
 export const MAX_PLAYERS = 60;
 export const NAME_MAX_LEN = 14;
@@ -133,6 +137,14 @@ export interface PlayerPublic {
   readonly name: string;
   /** Index into the client's avatar palette (stable per player). */
   readonly avatar: number;
+  /**
+   * The player's dressed Shimi doll: an encoded look (shared/avatar.ts, `encodeLook`),
+   * always valid (the server stores `encodeLook(decodeLook(text))`). Draw it with
+   * `<Avatar look={player.look} />` (client/src/avatar). A player who never dressed has
+   * a random look the server gave on the first join. A change is announced with the
+   * small `looks` event, not with a `state` broadcast.
+   */
+  readonly look: string;
   readonly connected: boolean;
   /** Cumulative competition points. */
   readonly total: number;
@@ -199,6 +211,8 @@ export interface ResultRow {
   readonly playerId: string;
   readonly name: string;
   readonly avatar: number;
+  /** The player's look (PlayerPublic.look). Kept current: a later look change updates the row too. */
+  readonly look: string;
   /** Raw in-game score of this round. */
   readonly raw: number;
   /** Competition points awarded for this round (0..~1100). */
@@ -363,11 +377,21 @@ export interface C2S {
    * Join a room, or resume as the same player after a refresh/reconnect when
    * `playerId` + `secret` match (name is then updated if provided).
    * Joining is allowed in any phase; a mid-round joiner plays from the next round.
+   * `look` (an encoded look, shared/avatar.ts) is used for a NEW player only: without it,
+   * or when it is not a look, the server gives a random doll. A resume keeps the look the
+   * server has (the phone sends a newer one with `player:look`).
    */
   'player:join': (
-    req: { code: string; name: string; playerId?: string; secret?: string },
+    req: { code: string; name: string; playerId?: string; secret?: string; look?: string },
     ack: (res: Ack<{ playerId: string; secret: string; state: RoomState }>) => void,
   ) => void;
+  /**
+   * This player's doll changed in the dressing room. Accepted in every phase. The server
+   * stores `encodeLook(decodeLook(look))` and answers with it; text that is not a look is
+   * refused (BAD_REQUEST) and the look stays. Everyone else hears it through `looks`.
+   * Phones send it at most every LOOK_SEND_INTERVAL_MS.
+   */
+  'player:look': (req: { look: string }, ack: (res: Ack<{ look: string }>) => void) => void;
   /** Live score while playing. Fire-and-forget, throttled by the client. */
   'player:score': (req: { round: number; score: number }) => void;
   /** Final score, sent once when the client's round ends. Wins over `player:score`. */
@@ -393,6 +417,13 @@ export interface S2C {
    * elimination round: who is out). Both are sent for every game.
    */
   scores: (msg: { round: number; scores: ReadonlyArray<readonly [string, number]>; active: number; out: readonly string[] }) => void;
+  /**
+   * Looks that changed, as [playerId, look] pairs, to every socket in the room: patch
+   * `PlayerPublic.look` (and `ResultRow.look`) of those players (`applyLooks` in
+   * shared/room-looks.ts). Sent at most every LOOK_BROADCAST_INTERVAL_MS per room, however
+   * many guests are dressing. Every `state` carries all looks, so a missed message heals itself.
+   */
+  looks: (msg: { looks: ReadonlyArray<readonly [string, string]> }) => void;
   /** This player was removed by the host. */
   kicked: () => void;
   /** Host sockets only: what another host socket of the same room sent with `host:relay`. */

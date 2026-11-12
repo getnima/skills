@@ -114,7 +114,7 @@ const MAX_FEATHERS = 48;
 const FEATHER_COLORS = ['#ffffff', PAL.paper, PAL.yel2, '#ffffff'] as const;
 const MAX_RAW = GAMES.flappy.maxRaw;
 /** Behind the round clock by more than this (a reload, a stalled tab): rejoin instead of catching up. */
-const REJOIN_AFTER_MS = 750;
+const REJOIN_AFTER_MS = 600;
 /** Catch-up steps per loop update (a 20 fps phone needs 3). */
 const MAX_CATCHUP = 12;
 /**

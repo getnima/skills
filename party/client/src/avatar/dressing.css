@@ -925,7 +925,8 @@
 .dr-narrow .dr-tab {
   border-radius: 9px;
   border-width: 2px;
-  padding: 0 1px;
+  padding: 0 2px;
+  font-size: 13px;
 }
 .dr-narrow .dr-name {
   font-size: 16px;

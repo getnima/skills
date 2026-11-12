@@ -15,6 +15,7 @@ import {
   FINALE_SMALL_FIELD_MS,
   GAME_IDS,
   GAMES,
+  LOOK_BROADCAST_INTERVAL_MS,
   MAX_PLAYERS,
   RESUME_COUNTDOWN_MS,
   SCORE_BROADCAST_INTERVAL_MS,
@@ -24,6 +25,7 @@ import { roundTime } from '../shared/round-clock';
 import { computeRoundScores, orderOverall, orderRound, rankOverall } from '../shared/scoring';
 
 import { DEFAULT_TIMING } from './config';
+import { cleanLook, startingLook } from './looks';
 import { cleanName, uniqueName } from './names';
 
 import type { CutsceneDef } from '../shared/cutscenes';
@@ -67,10 +69,19 @@ export interface ScoresMessage {
   readonly out: readonly string[];
 }
 
+export interface LooksMessage {
+  readonly looks: ReadonlyArray<readonly [string, string]>;
+}
+
 export interface RoomSink {
   /** The room changed: send this snapshot to everyone in it. */
   state(state: RoomState): void;
   scores(msg: ScoresMessage): void;
+  /**
+   * Looks that changed since the last message: send this small list to everyone in the room.
+   * A sink without it gets a whole `state` instead.
+   */
+  looks?(msg: LooksMessage): void;
   /** These connections belong to a player the host just removed. */
   kicked(connIds: readonly string[]): void;
 }
@@ -92,6 +103,8 @@ export interface JoinRequest {
   readonly name: unknown;
   readonly playerId?: unknown;
   readonly secret?: unknown;
+  /** An encoded look for a NEW player (ignored on a resume). */
+  readonly look?: unknown;
 }
 
 export type OkAck = Ack<{}>;
@@ -101,6 +114,8 @@ interface PlayerRec {
   readonly secret: string;
   name: string;
   readonly avatar: number;
+  /** The dressed doll: an encoded, always valid look (server/looks.ts). */
+  look: string;
   /** Position in the order of joining: the last tie-break, never random. */
   readonly joinOrder: number;
   total: number;
@@ -206,6 +221,10 @@ export class Room {
   private scoresTimer: TimerHandle | null = null;
   private scoresDirty = false;
   private lastScoresAt = Number.NEGATIVE_INFINITY;
+  /** Players whose look changed since the last `looks` / `state` message. */
+  private readonly dirtyLooks = new Set<string>();
+  private looksTimer: TimerHandle | null = null;
+  private lastLooksAt = Number.NEGATIVE_INFINITY;
   private emptySince: number | null;
   private destroyed = false;
 
@@ -233,6 +252,7 @@ export class Room {
       id: p.id,
       name: p.name,
       avatar: p.avatar,
+      look: p.look,
       connected: p.conns.size > 0,
       total: p.total,
       rank: ranks.get(p.id) ?? this.players.size,
@@ -350,11 +370,14 @@ export class Room {
     if (this.players.size >= MAX_PLAYERS) return fail('ROOM_FULL', 'החדר מלא');
 
     this.detach(connId);
+    const id = this.token();
     const player: PlayerRec = {
-      id: this.token(),
+      id,
       secret: this.token(),
       name: uniqueName(name, this.namesExcept(null)),
       avatar: this.nextAvatar++,
+      // the look the phone brought, or a doll of its own for a guest who has not dressed yet
+      look: cleanLook(req.look) ?? startingLook(id, this.looksInRoom()),
       joinOrder: this.nextJoinOrder++,
       total: 0,
       wins: 0,
@@ -616,9 +639,40 @@ export class Room {
     return OK;
   }
 
+  /**
+   * The player's doll changed (the dressing room on the phone). Allowed in every phase:
+   * a look is only a picture, it never touches a round. The text is never trusted:
+   * what is stored is `cleanLook(text)`; text that is not a look is refused and the
+   * look stays. The others hear it through the small `looks` message, sent at most
+   * every LOOK_BROADCAST_INTERVAL_MS however many guests are dressing.
+   */
+  setLook(playerId: string, look: unknown): Ack<{ look: string }> {
+    const player = this.players.get(playerId);
+    if (player === undefined) return fail('BAD_REQUEST', 'unknown player');
+    const clean = cleanLook(look);
+    if (clean === null) return fail('BAD_REQUEST', 'not a look');
+    if (clean === player.look) return { ok: true, look: clean };
+    player.look = clean;
+    const res = this.results;
+    if (res !== null && res.rows.some((row) => row.playerId === playerId)) {
+      this.results = { ...res, rows: res.rows.map((row) => (row.playerId === playerId ? { ...row, look: clean } : row)) };
+    }
+    this.dirtyLooks.add(playerId);
+    if (this.looksTimer === null) {
+      const wait = this.lastLooksAt + LOOK_BROADCAST_INTERVAL_MS - this.scheduler.now();
+      this.looksTimer = this.later(wait, () => {
+        this.looksTimer = null;
+        this.flushLooks();
+      });
+    }
+    return { ok: true, look: clean };
+  }
+
   /** Cancels every timer. The room must not be used afterwards. */
   destroy(): void {
     this.destroyed = true;
+    if (this.looksTimer !== null) this.scheduler.clearTimeout(this.looksTimer);
+    this.looksTimer = null;
     this.clearPhaseTimers();
     this.clearCutsceneTimer();
     this.clearScoresTimer();
@@ -643,7 +697,34 @@ export class Room {
 
   private broadcast(): void {
     if (this.destroyed) return;
+    // a state carries every look: nothing is left for the next `looks` message
+    this.dirtyLooks.clear();
     this.sink.state(this.snapshot());
+  }
+
+  private looksInRoom(): string[] {
+    return [...this.players.values()].map((p) => p.look);
+  }
+
+  /** Sends the looks that changed since the last message (see setLook). */
+  private flushLooks(): void {
+    if (this.destroyed || this.dirtyLooks.size === 0) return;
+    const looks: Array<readonly [string, string]> = [];
+    for (const id of this.dirtyLooks) {
+      const p = this.players.get(id);
+      if (p !== undefined) looks.push([id, p.look] as const);
+    }
+    this.lastLooksAt = this.scheduler.now();
+    if (looks.length === 0) {
+      this.dirtyLooks.clear();
+      return;
+    }
+    if (this.sink.looks === undefined) {
+      this.broadcast();
+      return;
+    }
+    this.dirtyLooks.clear();
+    this.sink.looks({ looks });
   }
 
   private namesExcept(playerId: string | null): string[] {
@@ -1080,6 +1161,7 @@ export class Room {
         playerId: p.id,
         name: p.name,
         avatar: p.avatar,
+        look: p.look,
         raw: e.raw,
         points: s?.points ?? 0,
         roundRank: s?.roundRank ?? all.length,

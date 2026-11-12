@@ -85,12 +85,12 @@ export function paintFingerprint(): Layer {
   const w = 26;
   const h = 34;
   return layer(w, h, 2, (c) => {
-    c.fillStyle = 'rgba(235, 238, 245, 0.75)';
+    c.fillStyle = 'rgba(240, 242, 248, 0.6)';
     c.beginPath();
     c.ellipse(w / 2, h / 2, w / 2 - 1, h / 2 - 1, 0, 0, Math.PI * 2);
     c.fill();
-    c.strokeStyle = 'rgba(150, 156, 170, 0.8)';
-    c.lineWidth = 1.2;
+    c.strokeStyle = 'rgba(170, 176, 190, 0.55)';
+    c.lineWidth = 1;
     c.beginPath();
     for (let i = 1; i <= 4; i++) {
       const rx = (w / 2 - 2) * (i / 4.4);

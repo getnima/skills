@@ -151,6 +151,8 @@ export interface StickerStyle {
   /** Second, smaller line under the first (same style, white). */
   readonly sub?: string;
   readonly subFill?: string;
+  /** Size of the sub line as a share of `size` (default 0.55). */
+  readonly subScale?: number;
   /** Star-burst behind the text: its fill colour. */
   readonly burst?: string;
   /** Skew (default 0.12 ≈ 7°) and tilt (default -0.035 rad). */
@@ -172,7 +174,7 @@ export function renderSticker(text: string, st: StickerStyle, reuse?: HTMLCanvas
   const canvas = reuse ?? document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   const size = st.size;
-  const subSize = Math.round(size * 0.55);
+  const subSize = Math.round(size * (st.subScale ?? 0.55));
   if (!ctx) return { canvas, w: 1, h: 1 };
   const tw = measure(ctx, text, size);
   const sw = st.sub ? measure(ctx, st.sub, subSize) : 0;

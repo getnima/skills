@@ -1,13 +1,19 @@
 # Ninja: Israeli food set
 
-Toy-style targets for the ninja (slicing) game, made to sit with `../target_*.png` and `../../shimi/doll.png`:
-each object is a glossy hand-painted vinyl toy, photographed like a product, cut out on transparency.
-All files are 384x384 transparent PNG, the object trimmed and centred with about 3% margin (the game scales them to 256).
+Toy-style targets of the ninja (slicing) game, made to sit with `../../shimi/doll.png`: these are what the game throws.
+Each object is a glossy hand-painted vinyl toy, photographed like a product, cut out on transparency.
+All files are 384x384 transparent PNG, the object trimmed and centred with about 3% margin.
 No brands, logos, text, faces or people. Untouched originals: `tests/e2e/out/ninja-food/originals/`.
 Contact sheets (dark blue, 384 px and 96 px): `tests/e2e/out/ninja-food/contact_384.png`, `contact_96.png`.
 
 Note: these are not all round. Wide shapes (shawarma, bourekas, flip-flop, shakshuka with its handle) fill the width
-and leave room top and bottom; tall ones (pickle, limonana, gold falafel) the reverse.
+and leave room top and bottom; tall ones (pickle, limonana, gold falafel) the reverse. The game copes: it fits the
+smallest circle around each object into its hit circle (see `../README.md`), so every picture is as large as it can be
+inside the same hit circle.
+
+How the game uses the roles (`client/src/games/ninja/skins.ts`): the 11 targets are dealt like a shuffled deck (+10 each);
+about one ordinary target in 16 is a joke item instead (chair and flip-flop take turns, same +10); the gold bonus is the
+rare +50 target.
 
 ## Pictures
 
@@ -31,21 +37,22 @@ and leave room top and bottom; tall ones (pickle, limonana, gold falafel) the re
 ## Slice colours
 
 Cut face = the colour to paint on the inside of each half. Splash kind: `sauce` (thick, blobby), `juice` (thin, droplets),
-`crumbs` (dry bits).
+`crumbs` (dry bits). The game's table built from this one is `CUT_LOOKS` in `client/src/games/ninja/art.ts`; the last
+column says what it draws on the cut face.
 
-| File | Cut face (inside) | Splash colour | Splash kind |
-| --- | --- | --- | --- |
-| `shawarma.png` | laffa `#F1D9A8` around meat `#7A4A2A` with salad flecks `#E83A2A` `#5DBB3F` `#F06AA8` | tahini / amba `#F2C230` | sauce |
-| `hummus.png` | hummus `#E9D2A6`, olive-oil centre `#9A9A22`, plate edge `#3EC1C9` | hummus `#E3C997` | sauce |
-| `sabich.png` | pita `#F0D3A0`, eggplant `#4A2340`, egg white `#FAFAF2` + yolk `#FFC71A` | amba `#F4A01C` | sauce |
-| `falafel.png` | pita `#F0D3A0` with falafel inside `#6CB33A` | tahini `#F4EEDD` | crumbs (brown `#6B3D1E` + green `#6CB33A`) |
-| `bourekas.png` | pale flaky layers `#F3DDB0` around white cheese `#FBF6E8` | `#E7B76A` | crumbs |
-| `shakshuka.png` | tomato sauce `#E2321F` with yolk `#FFB21A`, pan rim `#1E1E1E` | `#D62A18` | sauce |
-| `schnitzel.png` | white chicken `#F6EBD6` under a crust `#D9802A` | `#E39A3B` | crumbs |
-| `sufganiya.png` | fluffy dough `#F7E2B6`, jam core `#C8102E` | jam `#D21A3A` + sugar `#FFFFFF` | sauce |
-| `pickle.png` | pale green flesh `#C9D97A`, seeds `#E9EDB8`, skin `#556B1F` | brine `#B7C95A` | juice |
-| `limonana.png` | green slush `#8EE53F` | `#9BEA4A` (+ mint leaves `#2E8B3A`) | juice |
-| `peanut_puffs.png` | airy puff `#F2CF6A` | `#E9B740` | crumbs |
-| `gold_falafel.png` | gold `#FFD21F` with a star (like `target_gold`) | gold `#FFC21A` + sparkles | crumbs (coin burst) |
-| `garden_chair.png` | white plastic `#F4F4F2` | `#DADADA` | crumbs (plastic shards) |
-| `flip_flop.png` | blue foam `#2E9BE0`, red strap `#E0342A` | `#2E9BE0` | crumbs (foam bits) |
+| File | Cut face (inside) | Splash colour | Splash kind | In the game |
+| --- | --- | --- | --- | --- |
+| `shawarma.png` | laffa `#F1D9A8` around meat `#7A4A2A` with salad flecks `#E83A2A` `#5DBB3F` `#F06AA8` | tahini / amba `#F2C230` | sauce | laffa ring, meat shreds, salad flecks, a sauce drizzle; cut across the roll |
+| `hummus.png` | hummus `#E9D2A6`, olive-oil centre `#9A9A22`, plate edge `#3EC1C9` | hummus `#E3C997` | sauce | plate edge, hummus, the oil pool, chickpeas, paprika and parsley |
+| `sabich.png` | pita `#F0D3A0`, eggplant `#4A2340`, egg white `#FAFAF2` + yolk `#FFC71A` | amba `#F4A01C` | sauce | pita ring, eggplant, a slice of egg, an amba drip, salad |
+| `falafel.png` | pita `#F0D3A0` with falafel inside `#6CB33A` | tahini `#F4EEDD` | crumbs (brown `#6B3D1E` + green `#6CB33A`) | pita ring, tahini, three cut falafel balls (brown crust, green inside), tomato; the decal is a tahini puddle under the crumbs |
+| `bourekas.png` | pale flaky layers `#F3DDB0` around white cheese `#FBF6E8` | `#E7B76A` | crumbs | crust, thin flaky layers, cheese in the middle |
+| `shakshuka.png` | tomato sauce `#E2321F` with yolk `#FFB21A`, pan rim `#1E1E1E` | `#D62A18` | sauce | pan rim, sauce, two sunny eggs, parsley; yolk-coloured pool in the decal |
+| `schnitzel.png` | white chicken `#F6EBD6` under a crust `#D9802A` | `#E39A3B` | crumbs | crust ring, white meat with short fibres |
+| `sufganiya.png` | fluffy dough `#F7E2B6`, jam core `#C8102E` | jam `#D21A3A` + sugar `#FFFFFF` | sauce | fried ring, dough with air bubbles, jam core; sugar dots on the jam decal |
+| `pickle.png` | pale green flesh `#C9D97A`, seeds `#E9EDB8`, skin `#556B1F` | brine `#B7C95A` | juice | skin ring, pale flesh, seeds; cut across |
+| `limonana.png` | green slush `#8EE53F` | `#9BEA4A` (+ mint leaves `#2E8B3A`) | juice | glass ring, slush with mint and ice specks; mint dots on the juice decal |
+| `peanut_puffs.png` | airy puff `#F2CF6A` | `#E9B740` | crumbs | an airy puff with darker holes |
+| `gold_falafel.png` | gold `#FFD21F` with a star | gold `#FFC21A` + sparkles | crumbs (coin burst) | gold with a star; gold and white bits, plus the coin burst |
+| `garden_chair.png` | white plastic `#F4F4F2` | `#DADADA` | crumbs (plastic shards) | plain white plastic; white and grey shards |
+| `flip_flop.png` | blue foam `#2E9BE0`, red strap `#E0342A` | `#2E9BE0` | crumbs (foam bits) | blue foam with the white stripe and the red strap plug; blue and red bits |

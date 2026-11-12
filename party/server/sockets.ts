@@ -72,6 +72,9 @@ export function createRegistry(io: PartyServer, deps: Omit<RoomRegistryDeps, 'si
     scores: (msg): void => {
       io.to(code).emit('scores', msg);
     },
+    looks: (msg): void => {
+      io.to(code).emit('looks', msg);
+    },
     kicked: (connIds): void => {
       for (const id of connIds) {
         const socket = io.sockets.sockets.get(id);
@@ -223,7 +226,7 @@ export function attachSocketHandlers(io: PartyServer, registry: RoomRegistry, re
         if (socket.data.roomCode !== undefined && socket.data.roomCode !== room.code) leaveCurrentRoom();
         // Join the channel first so this socket also receives the broadcast the join triggers.
         void socket.join(room.code);
-        const res = room.join(socket.id, { name: req.name, playerId: req.playerId, secret: req.secret });
+        const res = room.join(socket.id, { name: req.name, playerId: req.playerId, secret: req.secret, look: req.look });
         if (!res.ok) {
           if (socket.data.roomCode !== room.code) void socket.leave(room.code);
           return reply(res);
@@ -253,6 +256,18 @@ export function attachSocketHandlers(io: PartyServer, registry: RoomRegistry, re
           return reply(fail('ROOM_NOT_FOUND', 'not in a room'));
         }
         reply(room.final(socket.data.playerId, req.round, req.score));
+      });
+    });
+
+    // The dressing room: any phase. The room cleans the text and tells the others (throttled).
+    socket.on('player:look', (req: unknown, ack: unknown) => {
+      guarded<Ack<{ look: string }>>('player:look', ack, (reply) => {
+        if (!isRecord(req)) return reply(fail('BAD_REQUEST', 'bad payload'));
+        const room = registry.get(socket.data.roomCode);
+        if (room === undefined || socket.data.role !== 'player' || socket.data.playerId === undefined) {
+          return reply(fail('ROOM_NOT_FOUND', 'not in a room'));
+        }
+        reply(room.setLook(socket.data.playerId, req.look));
       });
     });
 

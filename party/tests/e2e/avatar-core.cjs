@@ -123,7 +123,7 @@ async function open(browser, query, opts = {}) {
   // ── 4. a picture that 404s ──
   {
     const { ctx, page, errors } = await open(browser, 'view=slots&break=10', {
-      before: async (p) => { await p.route('**/prop_08_crown.png', (r) => r.fulfill({ status: 404, body: 'gone' })); },
+      before: async (p) => { await p.route('**/08_crown.webp', (r) => r.fulfill({ status: 404, body: 'gone' })); },
     });
     await page.screenshot({ path: path.join(OUT, 'broken-pictures.png'), fullPage: true });
     const lab = await page.evaluate(() => window.__avatarLab);

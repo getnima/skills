@@ -10,14 +10,14 @@
  *   id     a free number in the range above. Never reuse or renumber an id: looks are saved by id.
  *   slot   'HEAD'.
  *   name   short Hebrew name, shown under the picture in the dressing room.
- *   file   '/assets/shimi/props/<name>.png' (the file goes in client/public/assets/shimi/props/).
- *          Transparent PNG, cropped tight to the object, long side 300-600 px, under about 250 KB.
+ *   file   '/assets/shimi/props/<id>_<name>.webp'. The PNG source (transparent, cropped tight, long side 300-640 px)
+ *          lives in client/src/avatar/art-src/; python3 -I tests/e2e/avatar-review-webp.py builds the shipped WebP.
  *   place  [left, top, width, height] in % of the doll box (doll.png, 483 x 1200): where the picture
  *          sits on the bare doll. width / height must keep the picture's own proportions:
  *          height% = width% * (pictureHeight / pictureWidth) * 483 / 1200.
  *   tw     hats only, optional: { crown, bottom, sink, seat } in fractions of the picture height.
  *          Without it the hat can be worn and can top a tower, but nothing stacks on it.
- *   lines  optional: 1-3 funny Hebrew lines the doll says when it gets this item.
+ *   lines  2-3 funny Hebrew lines the doll says when it gets this item, in the voice of design/punchlines.he.md.
  *   colors / burst / fly / snd / contact  optional hints for the dressing room (see AvatarItem).
  *
  * For reference the bare head spans about left 13 .. 89, top 0 .. 48; the hairline is near top 8 and
