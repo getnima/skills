@@ -243,8 +243,10 @@
   background: var(--cob-d);
   border: 2.5px solid var(--ink);
   color: #fff;
-  font: 700 15px/1.1 var(--disp);
+  /* one line on every phone (320 px wide: 12 px) */
+  font: 700 clamp(11.5px, 3.75vw, 15px) / 1.1 var(--disp);
   white-space: nowrap;
+  max-width: 100%;
 }
 
 .pw-join .pp-field {
@@ -480,10 +482,12 @@
   box-shadow: 0 0 0 var(--ink);
 }
 
+/* the stage is as high as what it holds (the doll's size decides, welcome.tsx); the tray gets the rest */
 .pw-me-stage {
-  flex: 1 1 46%;
+  flex: none;
   gap: 7px;
-  border-bottom: 0;
+  padding-top: 12px;
+  padding-bottom: 14px;
 }
 /* "בפנים!": a star sticker (the dressing room's "מסיבה!") */
 .pw-burst {
@@ -590,7 +594,7 @@
 }
 
 .pw-wait-tray {
-  flex: 1 1 54%;
+  flex: 1 1 0;
   min-height: 0;
   padding-top: 10px;
   gap: 8px;
@@ -743,14 +747,10 @@
   }
 }
 
-/* between rounds the table is what matters: the stage is a strip */
+/* between rounds the table is what matters: a strip of a stage */
 .pw-wait.is-between .pw-me-stage {
-  flex: 0 1 auto;
   padding-top: 8px;
   padding-bottom: 10px;
-}
-.pw-wait.is-between .pw-wait-tray {
-  flex: 1 1 auto;
 }
 .pw-wait.is-between .pp-me-name {
   font-size: clamp(20px, 6vw, 24px);
@@ -761,10 +761,15 @@
   .pw-bar {
     height: calc(50px + var(--sat));
   }
-  .pw-me-stage {
+  .pw-me-stage,
+  .pw-wait.is-between .pw-me-stage {
     gap: 5px;
-    padding-top: 6px;
+    padding-top: 7px;
     padding-bottom: 8px;
+  }
+  /* the me bar under the screen already says the place and the points: the table gets the room */
+  .pw-wait.is-between .pp-me-stats {
+    display: none;
   }
   .pw-wait .pp-me-in {
     font-size: 13px;

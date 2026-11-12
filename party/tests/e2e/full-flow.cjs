@@ -34,6 +34,7 @@
 const { chromium, devices } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const DRESS = require('./dress-lib.cjs');
 
 const ROOT = path.resolve(__dirname, '../..');
 const BASE = (process.env.BASE_URL || 'http://localhost:5209').replace(/\/+$/, '');
@@ -312,7 +313,9 @@ function plotzelDriver(ph, keyGapMs) {
 
     // ── four phones join with Hebrew names ──
     const spec = [
-      { label: 'iphone-a', device: 'iPhone 14', name: 'דנה', q: '' },
+      // the first phone goes through the real dressing room (dress=1); the others rely on the
+      // test switch: an automated browser skips the step (tests/e2e/dress-lib.cjs)
+      { label: 'iphone-a', device: 'iPhone 14', name: 'דנה', q: '&dress=1' },
       { label: 'iphone-b', device: 'iPhone 14', name: 'יוסי המלך', q: '' },
       { label: 'pixel-c', device: 'Pixel 7', name: 'מיכל', q: '' },
       { label: 'pixel-d', device: 'Pixel 7', name: 'אבי', q: '' },
@@ -329,6 +332,18 @@ function plotzelDriver(ph, keyGapMs) {
       await page.fill('.pp-name-input', s.name);
       if (s.label === 'pixel-c') await shots('join-typed', [ph]);
       await page.locator('.pp-btn-go').tap();
+      if (s.q.includes('dress=1')) {
+        await DRESS.waitDressing(page);
+        await sleep(1000);
+        await shots('dressing', [ph]);
+        const look = await DRESS.tapItem(page, 'HEAD', 1);
+        const onTv = await waitFor(async () => {
+          const st = await host.evaluate(() => window.__host.state());
+          return st && st.players.some((p) => p.look === look);
+        }, 3000, 'the TV hears the look').catch(() => false);
+        check(onTv === true, `${s.label}: the look dressed on the phone reaches the TV (${look})`);
+        await DRESS.finishDressing(page);
+      }
       await waitScreen(ph, ['lobby'], 10000, 'joined');
       ph.id = (await pinfo(ph)).id;
       totals.set(ph.id, 0);
@@ -371,9 +386,11 @@ function plotzelDriver(ph, keyGapMs) {
       }
 
       await waitPhase('intro', 8000);
+      // read the TV's intro first: with test timing it is on screen for 1.5 s only, and three
+      // screenshots on a busy machine can take longer than that
+      const introText = await host.textContent('[data-testid=intro]', { timeout: 5000 }).catch(() => '');
       await Promise.all([A, C].map((p) => waitScreen(p, ['intro'], 5000, 'intro')));
       await shots(tag('intro'), [H, A, C]);
-      const introText = await host.textContent('[data-testid=intro]');
       check(introText.includes(game.title), `TV intro shows ${game.title}`);
 
       // countdown: the TV and a phone show the same digit from the same clock
@@ -382,12 +399,20 @@ function plotzelDriver(ph, keyGapMs) {
         host.waitForSelector('[data-testid=countdown-num]', { timeout: 4000 }),
         ...[A, C].map((p) => p.page.waitForFunction(() => { const n = document.querySelector('.pp-cd-num'); return n && /\d/.test(n.textContent); }, null, { timeout: 4000 })),
       ]);
-      const cd = await Promise.all([
-        host.evaluate(() => ({ num: document.querySelector('[data-testid=countdown-num]')?.textContent.trim(), now: window.__host.now(), startAt: window.__host.state().round.startAt })),
-        A.page.evaluate(() => ({ num: document.querySelector('.pp-cd-num')?.textContent.trim(), now: window.__player.now(), startAt: window.__player.snap.state.round.startAt })),
-      ]);
+      // Both pages are asked at the same moment; on a busy machine the two answers can still be
+      // taken far apart, so the pair is sampled a few times and one clean pair is enough.
       const digitOk = (c) => [c.now - 120, c.now, c.now + 120].some((t) => String(Math.ceil((c.startAt - t) / 1000)) === c.num);
-      check(cd[0].startAt === cd[1].startAt && digitOk(cd[0]) && digitOk(cd[1]) && Math.abs(cd[0].now - cd[1].now) < 250, 'countdown: TV and phone on the same clock and digit', cd);
+      let cd = [];
+      let cdOk = false;
+      for (let i = 0; i < 5 && !cdOk; i++) {
+        if (i > 0) await sleep(70);
+        cd = await Promise.all([
+          host.evaluate(() => ({ num: document.querySelector('[data-testid=countdown-num]')?.textContent.trim(), now: window.__host.now(), startAt: window.__host.state().round?.startAt })),
+          A.page.evaluate(() => ({ num: document.querySelector('.pp-cd-num')?.textContent.trim(), now: window.__player.now(), startAt: window.__player.snap.state.round?.startAt })),
+        ]).catch(() => []);
+        cdOk = cd.length === 2 && cd[0].startAt === cd[1].startAt && digitOk(cd[0]) && digitOk(cd[1]) && Math.abs(cd[0].now - cd[1].now) < 250;
+      }
+      check(cdOk, 'countdown: TV and phone on the same clock and digit', cd);
       await shots(tag('countdown'), [H, A, C]);
 
       // GO

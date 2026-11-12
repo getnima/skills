@@ -264,10 +264,11 @@ async function runSize(browser, size) {
   await plainShot(A, '03-dressing');
 
   // dress: a hat, glasses, a plate; after every tap the TV lobby shows the same look
+  // (a plate other than the one the doll already stands on)
   const steps = [
     ['HEAD', 3],
     ['EYES', 1],
-    ['BG', 5],
+    ['BG', (Number(a0.look.split('.')[1]) + 5) % 12],
   ];
   let look = a0.look;
   for (const [tab, n] of steps) {
@@ -429,7 +430,7 @@ async function runSize(browser, size) {
   }, 10000, 'late screen').catch(() => null);
   const e0 = await D.playerInfo(E);
   check(e0.screen === 'late' && !seenE.includes('dressing') && e0.dressed === false, `${tag}: a guest who joins mid-round gets no dressing room in the way (${seenE.join(' → ')})`);
-  const eLook = (await tvState(tv)).players.find((x) => x.id === e0.id)?.look;
+  const eLook = await D.waitFor(async () => (await tvState(tv)).players.find((x) => x.id === e0.id)?.look, 5000, 'the late guest on the TV').catch(() => undefined);
   check(typeof eLook === 'string' && eLook === e0.look && eLook !== '1.0.0.0.0.0.0', `${tag}: the late guest has a doll of their own meanwhile (${eLook})`);
   await L.shot(E, OUT, '09-late-joiner', check);
 
@@ -532,7 +533,7 @@ async function runTvLobby(browser) {
     const dolls = new Set(m.looks.map((l) => l.replace(/^\d+\.\d+\./, '')));
     check(m.out === 0 && m.sh <= m.ch + 1, `TV lobby ${n}: every chip is inside the players area (${m.out} outside, ${m.sh}/${m.ch})`);
     check(dolls.size === n, `TV lobby ${n}: no two guests start with the same doll (${dolls.size} different)`);
-    check(m.doll >= (n <= 24 ? 80 : 40) && m.font >= (n <= 24 ? 18 : 17), `TV lobby ${n}: readable from the sofa (${m.cards ? 'cards' : 'pills'}, doll ${m.doll}px, name ${m.font.toFixed(1)}px, ${m.cut} names cut)`);
+    check(m.doll >= (m.cards ? 80 : 34) && m.font >= 18 && m.cut === 0, `TV lobby ${n}: readable from the sofa (${m.cards ? 'cards' : 'pills'}, doll ${m.doll}px, name ${m.font.toFixed(1)}px, ${m.cut} names cut)`);
     await tv.screenshot({ path: path.join(OUT, `tv-lobby-${String(n).padStart(2, '0')}.png`) });
   }
   // a guest in a full room changes the look: the TV follows, by a small message

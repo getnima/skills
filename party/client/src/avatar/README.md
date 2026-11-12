@@ -218,7 +218,15 @@ pair was looked at (`tests/e2e/out/avatar-review/combos1-*.png`).
 
 ## Wiring checklist
 
-Nothing below is done yet. Every step names the file it touches.
+**Status: wired** (the steps below are kept as the map of where things are). Differences from the
+suggestions: a look change is announced with a small `looks` event (`[playerId, look]` pairs, at most one
+message per 200 ms per room; `applyLooks` in `shared/room-looks.ts`) instead of a room-state broadcast, and
+`ResultRow` carries the look too; the server code is `server/looks.ts` (`cleanLook`, `startingLook`); the phone's
+flow is name -> dressing room (full screen) -> waiting room in `client/src/player/welcome.tsx`, with the rules
+(when the room opens, reload, a round taking over, the test switch `?dress=0|1`) in `client/src/player/dressing-state.ts`
+and the send throttle in `look-sender.ts`; the TV's show avatar is `useAvatarUrl` inside the existing `sh-avatar`
+box (`host/show/common.tsx`), the lobby chips are in `host/lobby.tsx`. The games do not use looks yet
+(`FieldPlayer` in `games/types.ts` still has only the palette index). Every step names the file it touches.
 
 **Server (`shared/protocol.ts`, `server/room.ts`, `server/sockets.ts`)**
 

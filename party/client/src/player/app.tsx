@@ -3,7 +3,7 @@
  * only pace cosmetic beats (the "sending" beat, how long the winner moment
  * stays); every phase change comes from the server.
  */
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
 import { roundTime } from '../../../shared/round-clock';
 import { MeBar } from './me-bar';
@@ -92,7 +92,13 @@ declare global {
 
 function useSnapshot(ctl: PlayerController): Snapshot {
   const [snap, setSnap] = useState(ctl.snapshot());
-  useEffect(() => ctl.subscribe(setSnap), [ctl]);
+  // Subscribed in the same task as the first render (a layout effect), and synced once more:
+  // a resume that is answered before a passive effect would run (a fast link, a page that
+  // is not painting yet) must not leave the phone on the "connecting" splash.
+  useLayoutEffect(() => {
+    setSnap(ctl.snapshot());
+    return ctl.subscribe(setSnap);
+  }, [ctl]);
   return snap;
 }
 
@@ -125,7 +131,15 @@ export function App(props: { readonly ctl: PlayerController }): JSX.Element {
     snap.status === 'in' &&
     state !== null &&
     (state.phase === 'results' || (state.phase === 'playing' && snap.endedRound !== null));
-  useTick(200, timed);
+  // The 3-2-1 ends on this phone's own clock: without a tick the last render before GO (the
+  // `playing` state can arrive a few ms "early" by a clock that is a little behind) would stay
+  // 'countdown' for the whole round, with the me bar over the game.
+  const beforeGo =
+    snap.status === 'in' &&
+    state !== null &&
+    round !== null &&
+    (state.phase === 'countdown' || (state.phase === 'playing' && roundTime(round, now).elapsedMs < 0));
+  useTick(200, timed || beforeGo);
 
   let screen: ScreenName = 'boot';
   let body: JSX.Element = <BootScreen />;

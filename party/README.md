@@ -177,6 +177,35 @@ the next game, or `final` (podium).
 - Joining is allowed at any time; a guest who joins mid-round plays from the next
   round. A phone that reloads or reconnects resumes as the same player.
 
+**The way in: name, dressing room, waiting room.** A guest opens the link, types a
+name (`client/src/player/welcome.tsx`, `JoinScreen`), and lands in the dressing room
+(`DressingScreen`, the room of `client/src/avatar/`, its own lazy chunk) where they dress
+their own Shimi doll; "מוכן!" leads to the waiting room (`LobbyScreen`) with the dressed
+doll, who else is here, and a button back to the dressing room. The doll is the guest's
+icon everywhere: TV lobby, live scoreboard, results, podium, the phone's lists and its
+bottom bar, the remote.
+
+- A look is a short string on `PlayerPublic.look` / `ResultRow.look` (`shared/avatar.ts`).
+  The phone sends it with `player:join` (a new player only) and with `player:look`; the
+  server stores `encodeLook(decodeLook(text, ITEM_IDS))` (`server/looks.ts`), never the
+  text itself. A guest who has not dressed gets a random doll nobody else in the room
+  wears. A reload / reconnect keeps the server's look.
+- A change is announced with the small `looks` event (`[playerId, look]` pairs, at most
+  one message per 200 ms per room), not with a `RoomState`; clients patch their snapshot
+  with `applyLooks` (`shared/room-looks.ts`). The phone sends at most one `player:look`
+  per 250 ms (`client/src/player/look-sender.ts`).
+- The server accepts a look in every phase. The phone offers the dressing room only in
+  the `lobby` phase (before the first round and between rounds). A round that starts
+  while a guest is dressing takes over at once and the latest look is sent; that guest
+  counts as dressed. A guest who joins mid-round is not interrupted: the dressing room
+  opens for them at the next lobby. The rules are in `client/src/player/dressing-state.ts`.
+- **Test switch** (the only one): `?dress=0` in the phone's URL skips the dressing-room
+  step, `?dress=1` forces it; without the parameter it is skipped only in an automated
+  browser (`navigator.webdriver`), so end-to-end scripts that expect the waiting screen
+  right after the join keep working. Scripts that test the real flow use
+  `tests/e2e/dress-lib.cjs` (`withDressing(url)`, `passDressing(page)`); the flow itself
+  is `tests/e2e/dress-flow.cjs`.
+
 **Freeze / cutscenes.** A cutscene is a video on the TV. While it plays,
 `state.cutscene` is set and the round clock stands still at `round.frozenAt`.
 When the video ends the server shifts `startAt` / `endAt` forward by the frozen

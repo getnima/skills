@@ -360,9 +360,21 @@ function StandingsList(props: { readonly state: RoomState; readonly me: string; 
   );
 }
 
-/** The doll on the stage: as big as the stage allows, sharp on 3x screens (the avatar cache tops out at 384 px). */
+/** Between rounds the table is what matters: a small doll, by the phone's height. */
+function stripDoll(): number {
+  const h = window.innerHeight;
+  return h >= 800 ? 92 : h >= 660 ? 76 : 60;
+}
+
+/**
+ * The size of the doll on the waiting room's stage. The stage is as high as what it holds
+ * and the tray gets the rest, so the doll decides the split: before the first round a good
+ * fifth of the room under the bar (at most 148 px: sharp on 3x screens, the avatar cache
+ * tops out at 384 px), between rounds see stripDoll(). Measured on the screen itself, so the
+ * notch, the home indicator and the me bar are all counted.
+ */
 function useStageDoll(between: boolean): { ref: (el: HTMLElement | null) => void; size: number } {
-  const [size, setSize] = useState(between ? 84 : 128);
+  const [size, setSize] = useState(between ? stripDoll() : 128);
   const elRef = useRef<HTMLElement | null>(null);
   const roRef = useRef<ResizeObserver | null>(null);
   const betweenRef = useRef(between);
@@ -370,10 +382,13 @@ function useStageDoll(between: boolean): { ref: (el: HTMLElement | null) => void
   const measure = (): void => {
     const el = elRef.current;
     if (el === null) return;
-    // the stage also holds the name, the line under it and the button: the doll gets what is left
-    const room = el.clientHeight - (betweenRef.current ? 128 : 150);
-    const cap = betweenRef.current ? 92 : 148;
-    const next = Math.round(Math.max(56, Math.min(cap, room, el.clientWidth * 0.42)) / 4) * 4;
+    let next = stripDoll();
+    if (!betweenRef.current) {
+      const cs = getComputedStyle(el);
+      const inner = el.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+      const bar = el.querySelector('.pw-bar')?.getBoundingClientRect().height ?? 56;
+      next = Math.round(Math.max(56, Math.min(148, (inner - bar) * 0.22, el.clientWidth * 0.42)) / 4) * 4;
+    }
     setSize((s) => (s === next ? s : next));
   };
   const ref = useRef((el: HTMLElement | null): void => {
@@ -405,7 +420,7 @@ export function LobbyScreen(props: { readonly ctl: PlayerController; readonly sn
   // this phone's own look is ahead of the server's by a moment
   const myLook = snap.look ?? me.look;
   return (
-    <div class={`pp-screen pp-lobby pw pw-wait ${played ? 'is-between' : 'is-first'}`}>
+    <div class={`pp-screen pp-lobby pw pw-wait ${played ? 'is-between' : 'is-first'}`} ref={doll.ref}>
       <header class="pw-bar">
         <span class="pw-live">
           <i aria-hidden="true" />
@@ -414,7 +429,7 @@ export function LobbyScreen(props: { readonly ctl: PlayerController; readonly sn
         <MuteButton />
       </header>
 
-      <div class="pw-stage pw-me-stage" ref={doll.ref}>
+      <div class="pw-stage pw-me-stage">
         <div class="pw-glow" aria-hidden="true" />
         <div class="pw-dots" aria-hidden="true" />
         {played ? null : (

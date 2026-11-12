@@ -6,11 +6,15 @@
 //   node tests/e2e/phone-flow.cjs
 //
 // Screenshots: tests/e2e/out/phone/. Exit code 1 when an assertion failed.
+// The dressing-room step (tests/e2e/dress-lib.cjs): the iPhone goes through the real one
+// (its URL carries dress=1); the other phones rely on the test switch (an automated browser
+// skips the step) and land on the waiting screen right after the join.
 const { chromium, devices } = require('playwright');
 const { io } = require('socket.io-client');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const DRESS = require('./dress-lib.cjs');
 
 const SERVER = process.env.SERVER_URL || 'http://localhost:8802';
 const CLIENT = process.env.CLIENT_URL || 'http://localhost:5202';
@@ -32,6 +36,14 @@ function createHost() {
   const s = io(SERVER, { transports: ['websocket'] });
   let state = null;
   s.on('state', (st) => (state = st));
+  // a look change comes as a small `looks` message, not as a whole state
+  s.on('looks', (msg) => {
+    if (state === null) return;
+    for (const [id, look] of msg.looks) {
+      const p = state.players.find((x) => x.id === id);
+      if (p) p.look = look;
+    }
+  });
   const call = (ev, req) =>
     new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('ack timeout ' + ev)), 5000);
@@ -155,8 +167,9 @@ function spawnBots(code, players, mode, prefix) {
     const C = await openPhone(browser, 'small360', devices['Pixel 7'], { viewport: { width: 360, height: 640 }, screen: { width: 360, height: 640 } });
 
     // ── join: empty, typed, errors ──
-    await A.goto(`${CLIENT}/?room=${code}`);
+    await A.goto(DRESS.withDressing(`${CLIENT}/?room=${code}`));
     await waitScreen(A, 'join');
+    await sleep(900); // the cover dolls are composed
     await shot(A, '01-join-empty');
     check((await A.locator('.pp-code-input').count()) === 0, 'code from URL is shown, not editable');
     await A.fill('.pp-name-input', 'דנה');
@@ -164,7 +177,8 @@ function spawnBots(code, players, mode, prefix) {
     const fontSize = await A.$eval('.pp-name-input', (e) => parseFloat(getComputedStyle(e).fontSize));
     check(fontSize >= 16, `name field font ${fontSize}px >= 16`);
     const attrs = await A.$eval('.pp-name-input', (e) => [e.getAttribute('autocapitalize'), e.getAttribute('enterkeyhint'), e.getAttribute('maxlength')]);
-    check(attrs[0] === 'off' && attrs[1] === 'go' && attrs[2] === '14', `name field attrs ${attrs}`);
+    // maxlength is a loose cap in UTF-16 units (8 per visible character: a family emoji); the real cut is in graphemes
+    check(attrs[0] === 'off' && attrs[1] === 'go' && attrs[2] === '112', `name field attrs ${attrs}`);
 
     // errors on the small phone: unknown room, then empty name
     await C.goto(`${CLIENT}/?room=ZZZZ`);
@@ -194,10 +208,16 @@ function spawnBots(code, players, mode, prefix) {
     await shot(C, '03-join-keyboard');
     await C.setViewportSize({ width: 360, height: 640 });
 
-    // A joins: lobby alone
+    // A joins: first the dressing room (the real flow), then the lobby alone
     await A.click('.pp-btn-go');
-    await waitScreen(A, 'lobby');
-    await sleep(500);
+    await DRESS.waitDressing(A);
+    await sleep(1200);
+    await A.screenshot({ path: path.join(OUT, `${A.__name}-02b-dressing.png`) });
+    const dressedLook = await DRESS.tapItem(A, 'HEAD', 2);
+    await DRESS.finishDressing(A);
+    await sleep(700);
+    check((await A.evaluate(() => document.querySelector('.pw-me-doll')?.dataset.look)) === dressedLook, `the waiting room shows the doll dressed in the dressing room (${dressedLook})`);
+    await waitFor(() => host.state() && host.state().players[0] && host.state().players[0].look === dressedLook, 3000, 'the host hears the look');
     await shot(A, '03-lobby-alone');
     const idA = await A.evaluate(() => window.__player.snap.playerId);
 

@@ -21,7 +21,7 @@ const JOKES = ['garden_chair', 'flip_flop'];
 const BOMBS = ['bomb_host_a', 'bomb_host_b'];
 const ALL = [...FOODS, ...JOKES, 'gold_falafel'];
 const DURATION = 60000;
-const SEEDS = { '320x568': 3, '390x844': 11, '430x932': 2 };
+const SEEDS = { '320x568': 3, '390x844': 1, '430x932': 2 };
 
 const read = (page) =>
   page.evaluate(() => {
@@ -149,6 +149,12 @@ async function round(browser, w, h) {
       await sleep(25);
       continue;
     }
+    if (!air.has(t.skin)) {
+      // never photographed in the air (it was fast, or low): its picture first, the cut on the next look
+      air.add(t.skin);
+      await crop(`air-${t.skin}`, t.x, t.y, R * 3.6, R * 3.6);
+      continue;
+    }
     if (t.kind === 'gold') goldTries++;
     await swipe(cdp, id++, line[0], line[1], line[2], line[3]);
     if (!cut.has(t.skin)) {
@@ -181,7 +187,8 @@ async function round(browser, w, h) {
   check(`${tag}: slicing a bomb stuns and costs 50`, !!stun && stun.stunned && stun.after === Math.max(0, stun.before - 50 * stun.hit), stun);
   const expected = 10 * (end.sliced - end.golds) + 50 * end.golds + end.combo - 50 * end.bombsHit;
   check(`${tag}: the final score is what the slices add up to`, end.score === expected && end.score > 0, { score: end.score, expected, sliced: end.sliced, golds: end.golds, combo: end.combo, bombs: end.bombsHit });
-  check(`${tag}: a close-up of every target in the air and cut`, ALL.filter((k) => k !== 'gold_falafel').every((k) => air.has(k) && cut.has(k)), { noAir: ALL.filter((k) => !air.has(k)), noCut: ALL.filter((k) => !cut.has(k)) });
+  // (about the photo album of this run, not about the game)
+  check(`${tag}: pictures: a close-up of every target in the air and cut`, ALL.filter((k) => k !== 'gold_falafel').every((k) => air.has(k) && cut.has(k)), { noAir: ALL.filter((k) => !air.has(k)), noCut: ALL.filter((k) => !cut.has(k)) });
   check(`${tag}: no errors`, errors.length === 0, errors.slice(0, 3));
   return { tag, air: [...air], cut: [...cut] };
 }
