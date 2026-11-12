@@ -94,7 +94,7 @@ async function open(browser, query, opts = {}) {
     });
     const lab = await page.evaluate(() => window.__avatarLab);
     const loaded = await page.evaluate(() => [...document.querySelectorAll(".av img")].filter((i) => i.complete && i.naturalWidth >= 48).length);
-    console.log(`     wall n=${n} (x2 sizes: 40 and 96 css px -> 48 and 96 device px), 4x CPU: ${lab.wallMs.toFixed(0)} ms (composing ${lab.wallComposeMs.toFixed(0)} ms), cache ${lab.cache.bitmaps} bitmaps ${(lab.cache.bitmapBytes / 1024).toFixed(0)} KB + ${lab.cache.urls} URLs ${(lab.cache.urlBytes / 1024).toFixed(0)} KB, ${loaded} avatars painted`);
+    console.log(`     wall n=${n} (x2 sizes: 40 and 96 css px -> 48 and 96 device px), 4x CPU: ${lab.wallMs.toFixed(0)} ms (composing ${lab.wallComposeMs.toFixed(0)} ms), cache ${lab.cache.bitmaps} bitmaps ${(lab.cache.bitmapBytes / 1024).toFixed(0)} KB + ${lab.cache.urls} URLs ${(lab.cache.urlBytes / 1024).toFixed(0)} KB, of which compose ${lab.cache.composeMs.toFixed(0)} ms + BMP ${lab.cache.encodeMs.toFixed(0)} ms, ${loaded} avatars painted`);
     check(lab.wallMs < 1500, `wall n=${n}: composed and shown in ${lab.wallMs.toFixed(0)} ms (< 1500)`);
     check(loaded === n * 3 && errors.length === 0, `wall n=${n}: all ${n * 3} avatars painted (40, 96, then the 28 px row), no errors ${JSON.stringify(errors)}`);
     if (n === 60) {

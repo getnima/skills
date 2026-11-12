@@ -494,6 +494,9 @@ function schedule(job: () => void): void {
   yieldThen(pump);
 }
 
+/** Time spent so far, for the lab: composing pictures and turning them into BMP blobs. */
+const work = { composeMs: 0, encodeMs: 0 };
+
 /** Pictures composed ahead of their own job (a smaller size needed them first). */
 const stash = new Map<string, Composed>();
 
@@ -537,10 +540,12 @@ function produceBitmap(r: Request): Promise<{ canvas: HTMLCanvasElement; complet
     () =>
       new Promise<Composed>((resolve) => {
         schedule(() => {
+          const t0 = performance.now();
           let made = stash.get(r.key);
           if (made !== undefined) stash.delete(r.key);
           else made = fromBigger(r) ?? composeRequest(r);
           const result = made;
+          work.composeMs += performance.now() - t0;
           handOut.push(() => resolve(result));
         });
       }),
@@ -678,7 +683,9 @@ export function avatarUrl(look: AvatarLook | string, size: number, crop: AvatarC
     .then((canvas) => {
       // only pictures that made it into the bitmap cache are complete
       if (bitmaps.get(r.key)?.canvas !== canvas) return dataUrl(canvas);
+      const t0 = performance.now();
       const blob = canvasToBmp(canvas);
+      work.encodeMs += performance.now() - t0;
       if (blob === null) return dataUrl(canvas);
       const url = URL.createObjectURL(blob);
       urls.set(r.key, { url, bytes: blob.size, refs: earlyRefs.get(r.key) ?? 0 });
@@ -747,6 +754,9 @@ export interface AvatarCacheStats {
   pending: number;
   /** Picture files loaded. */
   pictures: number;
+  /** Main-thread time spent composing and encoding since the page loaded, in ms. */
+  composeMs: number;
+  encodeMs: number;
 }
 
 /** For the lab and for tests: what the caches hold. */
@@ -757,7 +767,7 @@ export function avatarCacheStats(): AvatarCacheStats {
     urlBytes += e.bytes;
     if (e.refs > 0) urlsHeld++;
   }
-  return { bitmaps: bitmaps.size, bitmapBytes, urls: urls.size, urlBytes, urlsHeld, pending: bitmapPending.size + urlPending.size + jobs.length, pictures: pics.size };
+  return { bitmaps: bitmaps.size, bitmapBytes, urls: urls.size, urlBytes, urlsHeld, pending: bitmapPending.size + urlPending.size + jobs.length, pictures: pics.size, composeMs: work.composeMs, encodeMs: work.encodeMs };
 }
 
 /** Drops every cached picture and every URL that nothing holds (tests; a "new party" reset). */
