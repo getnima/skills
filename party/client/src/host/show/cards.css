@@ -205,6 +205,262 @@
   filter: grayscale(1) opacity(0.6);
 }
 
+/*
+ * ───────── the live race (playing.tsx): the card as a FIXED SLOT ─────────
+ * The frame (.pc-in) never moves; who sits in it (.pc-body, keyed by the player) punches in inside
+ * the frame, clipped by it, nudged up after a climb and down after a fall. So two cards never
+ * overlap, at any moment, at any head count. The picture is a little shorter than on the tables
+ * (the progress bar sits under the points); the card's height comes from the board as --ch.
+ */
+.pc--race {
+  height: var(--ch, calc(var(--cw) * 1.42));
+  /* a slot never moves while racing: no layer of its own (two dozen of them cost a laptop frames) */
+  will-change: auto;
+}
+.pc--race .pc-pic {
+  aspect-ratio: 1 / 0.86;
+}
+.pc-body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* never from transparent: when the whole board re-orders at once it must not blink empty */
+.pc-body.is-in-up {
+  animation: pc-roll-up 320ms ease-out both;
+}
+.pc-body.is-in-down {
+  animation: pc-roll-down 320ms ease-out both;
+}
+.pc-body.is-in-fade {
+  animation: pc-roll-fade 260ms ease-out both;
+}
+.pc--race .pc-foot {
+  justify-content: center;
+  padding: calc(var(--cw) * 0.012) calc(var(--cw) * 0.07) calc(var(--cw) * 0.05);
+}
+.pc--race .pc-name {
+  font-size: calc(var(--cw) * 0.145);
+}
+/* a long name (often Latin, "מקסימיליאן כהן"): a little smaller instead of cut */
+.pc--race .pc-name.is-long {
+  font-size: calc(var(--cw) * 0.112);
+  line-height: 1.4;
+}
+.pc--race .pc-score {
+  font-size: calc(var(--cw) * 0.18);
+  line-height: 1.05;
+  contain: layout paint;
+}
+/* the bar: the guest's colour with an ink outline, growing from the right as the points do */
+.pc-bar {
+  position: relative;
+  flex: none;
+  width: 100%;
+  height: calc(var(--cw) * 0.08);
+  margin-top: calc(var(--cw) * 0.03);
+  border: calc(var(--cw) * 0.016) solid var(--ink);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--paper);
+}
+.pc-bar-fill {
+  position: absolute;
+  inset: calc(var(--cw) * -0.016);
+  border: calc(var(--cw) * 0.016) solid var(--ink);
+  border-radius: 999px;
+  transition: transform 480ms cubic-bezier(0.3, 0.8, 0.3, 1);
+  background-image: repeating-linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.26) 0 calc(var(--cw) * 0.045),
+    transparent calc(var(--cw) * 0.045) calc(var(--cw) * 0.09)
+  );
+}
+/* over the card for a moment: a shine sweeping across (a new leader, an overtake), a red flash (a bomb) */
+.pc-wash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.pc.is-glow .pc-wash {
+  background: linear-gradient(105deg, transparent 28%, rgba(255, 255, 255, 0.88) 44%, rgba(255, 255, 255, 0.88) 56%, transparent 72%);
+  animation: pc-sheen 0.75s ease-in-out 2;
+}
+.pc.is-drop .pc-wash {
+  background: var(--red);
+  animation: sh-redflash 1s ease-out;
+}
+/* the bomb: the card shakes (its entrance stays listed first, so it does not play again) */
+.pc.is-drop .pc-in {
+  animation:
+    pc-in 480ms cubic-bezier(0.2, 1.35, 0.4, 1) both,
+    pc-shake 0.6s linear;
+}
+/* the place sticker tells which way the new occupant went: green for a climb, red for a fall */
+.pc-rank-flash {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 50%;
+  opacity: 0;
+  animation: sh-rank-flash 1.4s ease-out both;
+}
+.pc-rank-flash.is-up {
+  background: var(--grn);
+}
+.pc-rank-flash.is-down {
+  background: var(--red);
+}
+/* stickers over the doll's bottom corner: the streak's flame, the last place's snail */
+.pc-art {
+  position: absolute;
+  left: calc(var(--cw) * 0.03);
+  bottom: calc(var(--cw) * 0.02);
+  display: flex;
+  align-items: flex-end;
+  gap: calc(var(--cw) * 0.02);
+  pointer-events: none;
+}
+.pc-fire {
+  display: block;
+  font-size: calc(var(--cw) * 0.22);
+  line-height: 1;
+  transform-origin: 50% 90%;
+  animation: sh-flame 0.45s ease-in-out infinite alternate;
+}
+.pc-snail {
+  display: block;
+  width: calc(var(--cw) * 0.3);
+  height: calc(var(--cw) * 0.3);
+  font-size: calc(var(--cw) * 0.24);
+  line-height: calc(var(--cw) * 0.3);
+  text-align: center;
+  object-fit: contain;
+  animation: sh-crawl 1.6s ease-in-out infinite;
+}
+/* an elimination round: the second line says who is still flying (a yellow mark) and who is out
+   (a red stamp slammed on); the game's bird flaps on the place sticker of who is still in */
+.pc-mark {
+  display: inline-block;
+  padding: 0 calc(var(--cw) * 0.07) calc(var(--cw) * 0.012);
+  border: calc(var(--cw) * 0.018) solid var(--ink);
+  border-radius: calc(var(--cw) * 0.05);
+  background: var(--yel);
+  color: var(--ink);
+  font: 900 calc(var(--cw) * 0.145) / 1.2 var(--read);
+  white-space: nowrap;
+  box-shadow: calc(var(--cw) * 0.012) calc(var(--cw) * 0.016) 0 var(--ink);
+  transform: rotate(-2deg);
+}
+.pc-mark--out {
+  background: var(--red);
+  color: #fff;
+  transform: rotate(-6deg);
+  animation: pc-stamp 0.4s cubic-bezier(0.2, 1.7, 0.4, 1) both;
+}
+.pc-rank.is-bird {
+  background: #fff;
+  font-size: calc(var(--cw) * 0.14);
+  animation: sh-flap 0.5s ease-in-out infinite alternate;
+}
+/* out: the card goes grey, the doll with it (still recognisable) */
+.pc.is-out .pc-in {
+  background: var(--off);
+  box-shadow: calc(var(--cw) * 0.016) calc(var(--cw) * 0.024) 0 var(--ink);
+}
+.pc.is-out .pc-doll {
+  background-color: #a9a493 !important;
+}
+.pc.is-out .pc-doll > img {
+  filter: grayscale(1);
+  opacity: 0.62;
+}
+.pc.is-out .pc-name {
+  color: rgba(22, 18, 14, 0.5);
+}
+.pc.is-out .pc-rank {
+  color: rgba(22, 18, 14, 0.62);
+  background: #fff;
+}
+/* a short punch-in, nudged the way they went: a card is too tall to roll a whole occupant through */
+@keyframes pc-roll-up {
+  0% {
+    opacity: 0.7;
+    transform: translate3d(0, 7%, 0) scale(0.88);
+  }
+  60% {
+    opacity: 1;
+    transform: translate3d(0, -1%, 0) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pc-roll-down {
+  0% {
+    opacity: 0.7;
+    transform: translate3d(0, -7%, 0) scale(0.88);
+  }
+  60% {
+    opacity: 1;
+    transform: translate3d(0, 1%, 0) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pc-roll-fade {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pc-sheen {
+  from {
+    opacity: 1;
+    transform: translate3d(110%, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(-110%, 0, 0);
+  }
+}
+@keyframes pc-shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  12% {
+    transform: translate3d(-7%, 0, 0) rotate(-4deg);
+  }
+  28% {
+    transform: translate3d(6%, 0, 0) rotate(3.5deg);
+  }
+  44% {
+    transform: translate3d(-5%, 0, 0) rotate(-2.5deg);
+  }
+  60% {
+    transform: translate3d(3.5%, 0, 0) rotate(1.5deg);
+  }
+  78% {
+    transform: translate3d(-1.5%, 0, 0);
+  }
+}
+@keyframes pc-stamp {
+  from {
+    opacity: 0;
+    transform: rotate(-30deg) scale(2.4);
+  }
+}
+
 @keyframes pc-in {
   from {
     opacity: 0;
@@ -237,7 +493,9 @@
   .pc,
   .pc-in,
   .pc-move,
-  .pc-ribbon {
+  .pc-ribbon,
+  .pc-body,
+  .pc-mark--out {
     transition: opacity 200ms ease;
     animation: none;
   }

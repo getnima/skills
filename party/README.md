@@ -217,8 +217,10 @@ every total right, room updates in 3.5 ms, p99 25 ms). So the e2-small VM (2 sha
 2 GB) has room to spare. Phones send a live score
 every 250 ms; the server merges them into one `scores` message per 250 ms for the whole
 room, and dolls into one `looks` message per 200 ms, so traffic grows gently with the
-head count. The TV shows 40: the lobby grid holds every name, the race shows the top 5 and
-rotates the rest. Re-run: start a server, then
+head count. The TV shows 40: the lobby grid holds every name; the race is a board of player
+cards (the dressed doll big, the name, the points and a bar), everybody at once while they fit
+at a readable size (21 at 1920x1080), else the top row stays and the rest turn in pages.
+Re-run: start a server, then
 `npx tsx tests/load/bots.ts --url <server> --players 40 --rounds 5 --churn 0.02 --storm`
 next to `npx tsx tests/load/watch-server.ts --pid <server pid> --url <server>`
 (CPU, memory, ping); `BASE_URL=… SERVER_URL=… node tests/e2e/tv-40.cjs` checks the TV.

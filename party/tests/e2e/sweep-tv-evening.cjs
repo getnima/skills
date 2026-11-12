@@ -555,11 +555,11 @@ async function remoteBig(r, expectAction) {
             check(cut, `${label}: the automatic tap_freeze cutscene fires`);
             if (cut) await handleCut('auto during tap');
           }
-          // the race: frame time with 30 rows, 1x and 4x CPU
+          // the race: frame time with 30 guests' cards, 1x and 4x CPU
           await L.sleep(1500);
           const playingNow = (await tvState(tv)).phase === 'playing';
           if (playingNow) {
-            const rows = await tv.evaluate(() => document.querySelectorAll('.sh-row').length);
+            const rows = await tv.evaluate(() => document.querySelectorAll('[data-testid=race-card]').length);
             const f1 = await L.frames(tv, 4000);
             await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
             const f4 = await L.frames(tv, 4000);

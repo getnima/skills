@@ -153,19 +153,19 @@ function overlaps(a, b, tol = 1) {
 }
 
 /**
- * Geometry of the race at this instant: for every row the part a viewer can see
- * (the row content clipped by its slot), and the "rotating places" label.
+ * Geometry of the race at this instant: for every card (a fixed slot) the part a viewer can
+ * see (its frame: the occupant rolls in clipped by it), and the "rotating places" label.
  */
 const raceGeometry = (page) =>
   page.evaluate(() => {
     const rect = (r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
-    const rows = [...document.querySelectorAll('.sh-row')].map((slot) => {
+    const rows = [...document.querySelectorAll('[data-testid=race-card]')].map((slot) => {
       const s = slot.getBoundingClientRect();
-      const inner = slot.querySelector('.sh-row-in');
+      const inner = slot.querySelector('.pc-in');
       const r = inner ? inner.getBoundingClientRect() : s;
       const vis = { left: Math.max(s.left, r.left), right: Math.min(s.right, r.right), top: Math.max(s.top, r.top), bottom: Math.min(s.bottom, r.bottom) };
       const op = Number(getComputedStyle(slot).opacity);
-      return { name: (slot.querySelector('.sh-name') || {}).textContent || '', vis, op, slot: rect(s) };
+      return { name: (slot.querySelector('.pc-name') || {}).textContent || '', vis, op, slot: rect(s) };
     });
     const div = document.querySelector('.sh-divider span');
     const label = div ? rect(div.parentElement.getBoundingClientRect()) : null;
@@ -174,8 +174,8 @@ const raceGeometry = (page) =>
 
 /**
  * Check the race geometry on EVERY animation frame for `ms` inside the page:
- * the visible part of each row (content clipped by its slot) against every other
- * row and the rotating-places label. Returns { frames, bad, examples, orders, blink }.
+ * the visible part of each card (its frame; the occupant is clipped by it) against every
+ * other card and the rotating-places label. Returns { frames, bad, examples, orders, blink }.
  */
 const raceOverlapFrames = (page, ms) =>
   page.evaluate(
@@ -193,22 +193,22 @@ const raceOverlapFrames = (page, ms) =>
         const step = () => {
           frames++;
           const vis = [];
-          for (const slot of document.querySelectorAll('.sh-row')) {
+          for (const slot of document.querySelectorAll('[data-testid=race-card]')) {
             const s = slot.getBoundingClientRect();
             if (Number(getComputedStyle(slot).opacity) < 0.05) continue;
-            const inner = slot.querySelector('.sh-row-in');
+            const inner = slot.querySelector('.pc-in');
             const r = inner ? inner.getBoundingClientRect() : s;
             const v = { left: Math.max(s.left, r.left), right: Math.min(s.right, r.right), top: Math.max(s.top, r.top), bottom: Math.min(s.bottom, r.bottom) };
-            if (v.bottom - v.top > 1) vis.push({ v, name: (slot.querySelector('.sh-name') || {}).textContent || '' });
+            if (v.bottom - v.top > 1) vis.push({ v, name: (slot.querySelector('.pc-name') || {}).textContent || '' });
           }
-          // a board that blinks: fewer than half of the rows readable (entrance animations all at once)
-          const enters = [...document.querySelectorAll('.sh-row-enter')];
+          // a board that blinks: fewer than half of the cards readable (entrance animations all at once)
+          const enters = [...document.querySelectorAll('[data-testid=race-card] .pc-body')];
           const readable = enters.filter((e) => Number(getComputedStyle(e).opacity) >= 0.5).length;
           if (enters.length > 0 && readable < enters.length / 2) blink++;
-          // the numbers agree with the places: no row shows clearly more than the row above it
-          const nums = [...document.querySelectorAll('.sh-row')]
+          // the numbers agree with the places: no card shows clearly more than the place before it
+          const nums = [...document.querySelectorAll('[data-testid=race-card]')]
             .sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot))
-            .map((r) => Number(((r.querySelector('.sh-score') || {}).textContent || '').replace(/[^0-9]/g, '')));
+            .map((r) => Number(((r.querySelector('.pc-score') || {}).textContent || '').replace(/[^0-9]/g, '')));
           if (nums.some((v, k) => k > 0 && v > nums[k - 1] * 1.02 + 1)) misorder++;
           const order = vis.map((x) => x.name).join('|');
           if (order !== prev) orders++;

@@ -37,7 +37,7 @@ const layout = (page) =>
     return { scrollY: window.scrollY, sw: de.scrollWidth, sh: de.scrollHeight, iw: innerWidth, ih: innerHeight };
   });
 const noScroll = (l) => l.scrollY === 0 && l.sw <= l.iw && l.sh <= l.ih;
-const order = (page) => page.evaluate(() => [...document.querySelectorAll('.sh-row:not(.is-hidden)')].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).map((r) => r.querySelector('.sh-name').textContent + ':' + r.querySelector('.sh-score').textContent).join(' | '));
+const order = (page) => page.evaluate(() => [...document.querySelectorAll('[data-testid=race-card]')].sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot)).map((r) => r.querySelector('.pc-name').textContent + ':' + r.querySelector('.pc-score').textContent).join(' | '));
 
 const sections = {
   async race(browser) {
@@ -53,19 +53,31 @@ const sections = {
       const l = await layout(page);
       check(`race ${n}: no scroll`, noScroll(l), l);
       const m = await page.evaluate(() => {
-        const rows = [...document.querySelectorAll('.sh-row:not(.is-hidden)')];
-        const name = rows[0].querySelector('.sh-name');
-        const long = [...document.querySelectorAll('.sh-row .sh-name')].find((el) => el.textContent.includes('מקסימיליאן'));
+        const cards = [...document.querySelectorAll('[data-testid=race-card]')].sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot));
+        const card = cards[0];
+        const name = card.querySelector('.pc-name:not(.is-long)') || card.querySelector('.pc-name');
+        const long = [...document.querySelectorAll('[data-testid=race-card] .pc-name')].find((el) => el.textContent.includes('מקסימיליאן'));
+        const box = card.getBoundingClientRect();
+        const rank = card.querySelector('.pc-rank').getBoundingClientRect();
+        const second = cards[1] ? cards[1].getBoundingClientRect() : null;
         return {
-          rows: rows.length,
+          cards: cards.length,
           namePx: parseFloat(getComputedStyle(name).fontSize),
+          scorePx: parseFloat(getComputedStyle(card.querySelector('.pc-score')).fontSize),
+          dollPx: card.querySelector('.sh-avatar').getBoundingClientRect().width,
           dir: getComputedStyle(document.querySelector('.sh-scene')).direction,
-          rankRightOfBar: rows[0].querySelector('.sh-rank').getBoundingClientRect().left > rows[0].querySelector('.sh-track').getBoundingClientRect().right,
+          // RTL: the place sticker on the card's right corner, the first place top right, the second to its left
+          rtl: rank.left > box.left + box.width / 2 && (second === null || second.right <= box.left + 1 || second.top >= box.bottom),
+          bar: !!card.querySelector('.pc-bar-fill'),
+          label: (document.querySelector('.sh-divider') || {}).textContent || null,
           longEllipsis: long ? { overflow: long.scrollWidth > long.clientWidth, css: getComputedStyle(long).textOverflow } : null,
         };
       });
-      check(`race ${n}: names >= 40px, RTL`, m.namePx >= 40 && m.dir === 'rtl' && m.rankRightOfBar, m);
-      check(`race ${n}: visible rows`, m.rows === Math.min(n, n <= 12 ? 12 : 10), m.rows);
+      // up to 12 guests: everybody on one board, the doll >= 150 px, names >= 26 px, points >= 30 px;
+      // a big room: the top row pinned, the rest in pages under a "places x–y of n" label
+      const big = n > 12;
+      check(`race ${n}: big dolls, readable names and points, RTL, a bar`, m.dollPx >= (big ? 120 : 150) && m.namePx >= (big ? 22 : 26) && m.scorePx >= (big ? 26 : 30) && m.dir === 'rtl' && m.rtl && m.bar, m);
+      check(`race ${n}: visible cards`, big ? m.cards < n && m.cards >= 14 && /מתוך 45/.test(m.label || '') : m.cards === n && m.label === null, { cards: m.cards, label: m.label });
       await done(`race ${n}`);
     }
   },
@@ -89,7 +101,7 @@ const sections = {
         const box = (e) => e.getBoundingClientRect();
         const hit = (x, y) => Math.min(x.right, y.right) - Math.max(x.left, y.left) > 2 && Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top) > 2;
         const mine = [box(b), box(document.querySelector('.sh-comm-pic'))];
-        const covers = [...document.querySelectorAll('.sh-row .sh-row-in, .sh-ring')].filter((e) => mine.some((m) => hit(m, box(e)))).length;
+        const covers = [...document.querySelectorAll('[data-testid=race-card] .pc-in, .sh-ring')].filter((e) => mine.some((m) => hit(m, box(e)))).length;
         return { on: c.classList.contains('is-on'), text: b.textContent, px: parseFloat(getComputedStyle(b).fontSize), covers, stickers: document.querySelectorAll('.sh-sticker').length };
       });
       check(`moment ${t}: commentator speaks, beside the race`, bubble.on && bubble.text.length > 5 && bubble.px >= 28 && bubble.covers === 0, bubble);

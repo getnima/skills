@@ -29,7 +29,7 @@ const check = (ok, msg, extra) => {
 /** In the TV page: every 100 ms, what is on screen (the hosts, the commentator, the cutscene) and what the hosts cover. */
 function installSampler() {
   const PROTECTED = [
-    ['.sh-row .sh-row-in', 'race row'],
+    ['[data-testid=race-card] .pc-in', 'race card'],
     ['.sh-ring', 'timer'],
     ['.sh-left', 'left in the air'],
     ['.sh-finale.is-on', 'finale 3-2-1'],

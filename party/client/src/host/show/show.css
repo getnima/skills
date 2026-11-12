@@ -203,214 +203,24 @@
   position: relative;
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
-.sh-list {
-  --rh: 0px;
+/*
+ * The race board: the player cards (cards.tsx, cards.css .pc--race) laid out by card-grid.ts in
+ * this box. The inset leaves room for what hangs over the cards' edges: the place sticker and the
+ * leader's crown above, the stickers' hard shadows below.
+ */
+.sh-race-board {
   position: absolute;
-  inset: 0;
+  inset: calc(40 * var(--u)) calc(14 * var(--u)) calc(14 * var(--u)) calc(8 * var(--u));
 }
-
-/* A row is a FIXED slot (it never moves); a new occupant rolls in inside the slot, clipped by it. */
-.sh-row {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  /* room for the sticker's hard shadow inside the slot */
-  padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(8 * var(--u)) calc(7 * var(--u));
-  overflow: hidden;
-  contain: layout paint;
-}
-.sh-row-enter {
-  height: 100%;
-}
-.sh-row-enter.is-in-up {
-  animation: sh-slot-up 320ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-.sh-row-enter.is-in-down {
-  animation: sh-slot-down 320ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-.sh-row-enter.is-in-fade {
-  animation: sh-slot-fade 260ms ease-out both;
-}
-/* the place disc tells which way they went: it pops green for a climb, red for a fall */
-.sh-row-enter.is-in-up .sh-rank::after,
-.sh-row-enter.is-in-down .sh-rank::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  opacity: 0;
-  animation: sh-rank-flash 1.4s ease-out both;
-}
-.sh-row-enter.is-in-up .sh-rank::after {
-  background: var(--grn);
-}
-.sh-row-enter.is-in-down .sh-rank::after {
-  background: var(--red);
-}
-/* A short roll that stays inside the slot (two neighbours that swap never meet at the seam).
-   Never from transparent: when the whole board re-orders at once it must not blink empty. */
-@keyframes sh-slot-up {
-  0% {
-    opacity: 0.6;
-    transform: translate3d(0, 40%, 0);
-  }
-  100% {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes sh-slot-down {
-  0% {
-    opacity: 0.6;
-    transform: translate3d(0, -40%, 0);
-  }
-  100% {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes sh-slot-fade {
-  0% {
-    opacity: 0.6;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-@keyframes sh-rank-flash {
-  0%,
-  45% {
-    opacity: 0.55;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-/* the row itself: a white sticker */
-.sh-row-in {
-  position: relative;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  gap: calc(16 * var(--u));
-  padding: 0 calc(14 * var(--u));
-  border: calc(3.5 * var(--u)) solid var(--ink);
-  border-radius: calc(24 * var(--u));
-  background: #fff;
-  box-shadow: calc(3.5 * var(--u)) calc(5 * var(--u)) 0 var(--ink);
-  overflow: hidden;
-}
-/* a colour wash over the row for a moment: the new leader, a bomb */
-.sh-row-in::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--yel);
-  opacity: 0;
-  pointer-events: none;
-}
-.sh-row.is-lead .sh-row-in {
-  background: var(--yel);
-}
-.sh-row.is-glow .sh-row-in::before {
-  background: #fff;
-  animation: sh-glow 1.5s ease-out;
-}
-.sh-row.is-drop .sh-row-in {
-  animation: sh-shake 0.6s linear;
-}
-.sh-row.is-drop .sh-row-in::before {
-  background: var(--red);
-  animation: sh-redflash 1s ease-out;
-}
-.sh-row-in > * {
-  position: relative;
-}
-.sh-row .sh-rank {
-  position: relative;
-  overflow: hidden;
-}
-.sh-row.is-lead .sh-rank {
-  color: #fff;
-  background: var(--red);
-}
-/* the doll fills the height of its row: a comic panel between two ink lines */
-.sh-row .sh-avatar {
-  width: calc(var(--rh) - 17 * var(--u));
-  height: calc(var(--rh) - 17 * var(--u));
-  border-width: 0 calc(3.5 * var(--u));
-  border-radius: 0;
-  box-shadow: none;
-  font-size: calc(var(--rh) * 0.42);
-}
-/* the name grows with the row: a small room gets big names */
-.sh-row .sh-name {
-  width: calc(330 * var(--u) + (var(--rh) - 84 * var(--u)) * 1.1);
-  min-width: calc(310 * var(--u));
-  font-size: clamp(calc(52 * var(--u)), calc(var(--rh) * 0.42), calc(76 * var(--u)));
-}
-/* a 12-14 letter (often Latin) name: a little smaller instead of cut */
-.sh-row .sh-name.is-long {
-  font-size: clamp(calc(42 * var(--u)), calc(var(--rh) * 0.35), calc(62 * var(--u)));
-}
-.sh-badges {
-  flex: none;
-  width: calc(58 * var(--u));
-  display: flex;
-  justify-content: center;
-}
-.sh-fire {
-  display: inline-block;
-  font-size: calc(48 * var(--u));
-  line-height: 1;
-  transform-origin: 50% 90%;
-  animation: sh-flame 0.45s ease-in-out infinite alternate;
-}
-.sh-score {
-  flex: none;
-  width: calc(176 * var(--u) + (var(--rh) - 84 * var(--u)) * 0.5);
-  min-width: calc(180 * var(--u));
-  text-align: left;
-  font-size: clamp(calc(52 * var(--u)), calc(var(--rh) * 0.42), calc(72 * var(--u)));
-  font-weight: 900;
-  color: var(--cob-d);
-  font-variant-numeric: tabular-nums;
-  contain: layout paint;
-}
-/* the bar: the player's colour with an ink outline, growing from the score */
-.sh-track {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  height: min(50%, calc(56 * var(--u)));
-  border: calc(3.5 * var(--u)) solid var(--ink);
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--paper);
-}
-.sh-fill {
-  position: absolute;
-  inset: calc(-3.5 * var(--u));
-  border: calc(3.5 * var(--u)) solid var(--ink);
-  border-radius: 999px;
-  will-change: transform;
-  transition: transform 480ms cubic-bezier(0.3, 0.8, 0.3, 1);
-  background-image: repeating-linear-gradient(
-    115deg,
-    rgba(255, 255, 255, 0.26) 0 calc(16 * var(--u)),
-    transparent calc(16 * var(--u)) calc(32 * var(--u))
-  );
-}
-.sh-row.is-lead .sh-fill {
-  background-color: var(--red) !important;
-}
+/* a big room: the label in its band between the pinned top row and the turning pages */
 .sh-divider {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
+  z-index: 2;
   height: calc(46 * var(--u));
   display: flex;
   align-items: center;
@@ -447,15 +257,10 @@
   font-size: calc(60 * var(--u));
   color: #fff;
 }
-/* the crown hangs on the corner of the leader's doll (slot 0); it hops over when the leader changes */
+/* the crown hangs on the corner of the leader's card (slot 0, placed by playing.tsx); it hops over when the leader changes */
 .sh-crown {
-  --cw: max(calc(70 * var(--u)), calc((var(--rh) - 17 * var(--u)) * 0.56));
   position: absolute;
   z-index: 3;
-  top: calc(var(--cw) * -0.26);
-  right: calc(96 * var(--u) + (var(--rh) - 17 * var(--u)) - var(--cw) * 0.78);
-  width: var(--cw);
-  height: var(--cw);
   rotate: -20deg;
   object-fit: contain;
   pointer-events: none;
@@ -466,16 +271,7 @@
 }
 
 /* ── elimination round (flappy): who is still in the air, who is out, how many are left, the finale ── */
-.sh-status {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-inline-end: calc(10 * var(--u));
-}
-/* two words the whole room reads twelve times over: Rubik, not the display face */
-.sh-in-mark,
+/* two words the whole room reads (the results rows: "בחוץ"): Rubik, not the display face */
 .sh-out-mark {
   display: inline-block;
   padding: 0 calc(22 * var(--u)) calc(0.06em);
@@ -485,14 +281,6 @@
   font-weight: 900;
   line-height: 1.3;
   white-space: nowrap;
-}
-.sh-in-mark {
-  color: var(--ink);
-  background: var(--yel);
-  box-shadow: calc(3 * var(--u)) calc(4 * var(--u)) 0 var(--ink);
-  transform: rotate(-2deg);
-}
-.sh-out-mark {
   color: #fff;
   background: var(--red);
   transform: rotate(-5deg);
@@ -504,33 +292,7 @@
     opacity: 0;
   }
 }
-/* still flying: the game's bird on the disc, flapping */
-.sh-rank.is-bird {
-  font-size: calc(34 * var(--u));
-  background: #fff;
-}
-.sh-row .sh-rank.is-bird {
-  animation: sh-flap 0.5s ease-in-out infinite alternate;
-}
-/* out: the row goes grey, the doll with it */
-.sh-playing .sh-row.is-out .sh-row-in {
-  background: var(--off);
-  box-shadow: calc(2 * var(--u)) calc(3 * var(--u)) 0 var(--ink);
-}
-.sh-playing .sh-row.is-out .sh-name {
-  color: rgba(22, 18, 14, 0.5);
-}
-.sh-playing .sh-row.is-out .sh-avatar {
-  background-color: #a9a493 !important;
-}
-.sh-playing .sh-row.is-out .sh-avatar > img {
-  filter: grayscale(1);
-  opacity: 0.62;
-}
-.sh-playing .sh-row.is-out .sh-rank {
-  color: rgba(22, 18, 14, 0.62);
-  background: #fff;
-}
+/* the race's cards in an elimination round (still flying, out): cards.css */
 .sh-left {
   display: flex;
   flex-direction: column;
@@ -795,7 +557,7 @@
   stroke-dasharray: 3 9;
 }
 .sh-playing.is-frozen .sh-game-emoji,
-.sh-playing.is-frozen .sh-rank.is-bird {
+.sh-playing.is-frozen .pc-rank.is-bird {
   animation-play-state: paused;
 }
 /* the last ten seconds: the face turns red */
@@ -914,49 +676,12 @@
   gap: calc(16 * var(--u));
   border-width: calc(5 * var(--u));
 }
-[data-orient='portrait'] .sh-row-in {
-  gap: calc(9 * var(--u));
-  padding: 0 calc(10 * var(--u));
-  border-radius: calc(18 * var(--u));
+[data-orient='portrait'] .sh-race-board {
+  inset: calc(30 * var(--u)) calc(10 * var(--u)) calc(10 * var(--u)) calc(6 * var(--u));
 }
-[data-orient='portrait'] .sh-row .sh-rank {
-  width: calc(46 * var(--u));
-  height: calc(42 * var(--u));
-  font-size: calc(26 * var(--u));
-}
-[data-orient='portrait'] .sh-row .sh-avatar {
-  width: min(calc(var(--rh) - 17 * var(--u)), calc(78 * var(--u)));
-  height: calc(var(--rh) - 17 * var(--u));
-}
-[data-orient='portrait'] .sh-row .sh-name,
-[data-orient='portrait'] .sh-row .sh-name.is-long {
-  width: calc(190 * var(--u));
-  min-width: 0;
-  font-size: calc(34 * var(--u));
-}
-[data-orient='portrait'] .sh-badges {
-  width: calc(38 * var(--u));
-}
-[data-orient='portrait'] .sh-fire,
-[data-orient='portrait'] .sh-row .sh-snail {
-  font-size: calc(32 * var(--u));
-  width: calc(38 * var(--u));
-  height: calc(38 * var(--u));
-  line-height: calc(38 * var(--u));
-}
-[data-orient='portrait'] .sh-score {
-  width: calc(108 * var(--u));
-  min-width: 0;
-  font-size: calc(34 * var(--u));
-}
-[data-orient='portrait'] .sh-in-mark,
 [data-orient='portrait'] .sh-out-mark {
   font-size: calc(32 * var(--u));
   padding: 0 calc(12 * var(--u)) calc(3 * var(--u));
-}
-[data-orient='portrait'] .sh-crown {
-  --cw: calc(54 * var(--u));
-  right: calc(100 * var(--u));
 }
 [data-orient='portrait'] .sh-divider {
   font-size: calc(22 * var(--u));

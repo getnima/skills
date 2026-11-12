@@ -35,7 +35,10 @@ export interface SayOptions {
   readonly valid?: () => boolean;
 }
 
-/** A band of the scene (px from the layer's left edge) where a sticker that stays put may land. */
+/**
+ * A band of the scene (px from the layer's left edge) where a sticker that stays put may land.
+ * Zero width: there is no such band, the sticker flies by instead of staying.
+ */
 export interface StickerZone {
   readonly left: number;
   readonly right: number;
@@ -114,7 +117,8 @@ const MOMENT_MOOD: Readonly<Record<MomentType, MascotMood>> = {
 
 /**
  * `stayZone`: where a 'zoom' sticker (the one that stays put for a second) may land, or null for
- * anywhere. A round's race keeps it off the numbers: "announcements never cover the play".
+ * anywhere; a zero-width zone turns it into a fly-by ('spin'). A round's race keeps it off the
+ * cards: "announcements never cover the play".
  */
 export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () => StickerZone | null = () => null): FunnyLayer {
   const rng = createRng(seed).fork('funny');
@@ -300,10 +304,14 @@ export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () =
     if (W === 0 || H === 0) return;
     const unit = Math.min(W / 1920, H / 1080) < 0.5 ? Math.min(W, H) / 640 : Math.min(W / 1920, H / 1080);
     const n = style === 'rain' ? 9 : 1;
+    // a sticker that would stay put needs a free band; with none (a zero-width zone: the race's
+    // cards fill the board) it flies by instead, so it never sits on the play
+    const zone = style === 'zoom' ? stayZone() : null;
+    const kind: StickerStyle = zone !== null && zone.right - zone.left < 1 ? 'spin' : style;
     for (let i = 0; i < n; i++) {
       if (liveStickers >= MAX_STICKERS) return;
       const a = art ?? (realStickers.length > 0 ? themed('') : stickerArt(stickerTurn++));
-      const size = (style === 'rain' ? 110 + random() * 70 : style === 'zoom' ? 300 : 200 + random() * 90) * unit;
+      const size = (kind === 'rain' ? 110 + random() * 70 : kind === 'zoom' ? 300 : 200 + random() * 90) * unit;
       let el: HTMLElement;
       if (a.kind === 'img') {
         const img = document.createElement('img');
@@ -323,7 +331,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () =
       const half = size / 2;
       let frames: Keyframe[];
       let timing: KeyframeAnimationOptions;
-      if (style === 'bounce') {
+      if (kind === 'bounce') {
         const dir = random() < 0.5 ? 1 : -1;
         const x0 = dir > 0 ? -size : W + size;
         const x1 = dir > 0 ? W + size : -size;
@@ -340,7 +348,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () =
           });
         }
         timing = { duration: 2_700 + random() * 500 };
-      } else if (style === 'spin') {
+      } else if (kind === 'spin') {
         const dir = random() < 0.5 ? 1 : -1;
         const y0 = H * (0.1 + random() * 0.5);
         const y1 = H * (0.1 + random() * 0.5);
@@ -350,10 +358,9 @@ export function createFunnyLayer(host: HTMLElement, seed: number, stayZone: () =
           { transform: `translate3d(${dir > 0 ? W : -size}px, ${y1}px, 0) rotate(${dir * 1080}deg) scale(0.7)` },
         ];
         timing = { duration: 2_100, easing: 'linear' };
-      } else if (style === 'zoom') {
+      } else if (kind === 'zoom') {
         let x = W * (0.3 + random() * 0.4) - half;
         let y = H * (0.22 + random() * 0.3) - half;
-        const zone = stayZone();
         if (zone !== null) {
           // the whole sticker stays inside the zone, its last swell (x1.6, fading) included
           const wide = zone.right - zone.left;

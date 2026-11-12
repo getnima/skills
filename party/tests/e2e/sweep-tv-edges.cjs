@@ -84,7 +84,7 @@ const errors = [];
     check(back.code === code && back.phase === 'playing', 'reload mid-round: the TV comes back to the same room, still playing', back);
     await tv.mouse.click(W / 2, 6); // a reload needs the click for sound again
     await L.sleep(2500);
-    const rows = await tv.evaluate(() => document.querySelectorAll('.sh-row').length);
+    const rows = await tv.evaluate(() => document.querySelectorAll('[data-testid=race-card]').length);
     const songAfter = await tv.evaluate(() => {
       const st = window.__host.state();
       const r = st.round;
@@ -95,7 +95,7 @@ const errors = [];
       return { info: window.__partyMusic.info('tap'), elapsed: t - r.startAt, prelude: window.__hostMusic ? window.__hostMusic.prelude() : null };
     });
     console.log(L.stamp(), 'reload mid-round: song before', JSON.stringify(songBefore), 'after', JSON.stringify(songAfter), `(${Date.now() - t0} ms)`);
-    check(rows > 0, `reload mid-round: the race is back (${rows} rows)`);
+    check(rows > 0, `reload mid-round: the race is back (${rows} cards)`);
     const pos = songAfter.info ? songAfter.info.time : null;
     const expectPos = songAfter.prelude !== null && songAfter.info && songAfter.info.duration ? ((songAfter.prelude + songAfter.elapsed) / 1000) % songAfter.info.duration : null;
     check(songAfter.info && songAfter.info.playing && songAfter.info.source === 'file', 'reload mid-round: the tap song plays again after the click', songAfter.info);

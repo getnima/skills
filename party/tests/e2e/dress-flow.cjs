@@ -434,10 +434,10 @@ async function runSize(browser, size) {
   check(typeof eLook === 'string' && eLook === e0.look && eLook !== '1.0.0.0.0.0.0', `${tag}: the late guest has a doll of their own meanwhile (${eLook})`);
   await L.shot(E, OUT, '09-late-joiner', check);
 
-  // the round on the TV: the scoreboard rows carry the dolls
+  // the round on the TV: the race's cards carry the dolls
   await D.waitFor(async () => (await tvPhase(tv)) === 'playing', 12000, 'playing');
   await sleep(2500);
-  const board = await tv.evaluate(() => [...document.querySelectorAll('.sh-row .sh-avatar')].map((el) => ({ look: el.dataset.look || null, img: !!el.querySelector('img') })));
+  const board = await tv.evaluate(() => [...document.querySelectorAll('[data-testid=race-card] .sh-avatar')].map((el) => ({ look: el.dataset.look || null, img: !!el.querySelector('img') })));
   const stPlay = await tvState(tv);
   check(board.length === 4 && board.every((r) => r.img && stPlay.players.some((p) => p.look === r.look)), `${tag}: the TV scoreboard shows the dolls of everybody in the round (${JSON.stringify(board)})`);
   await tv.screenshot({ path: path.join(OUT, `tv-${tag}-playing.png`) });

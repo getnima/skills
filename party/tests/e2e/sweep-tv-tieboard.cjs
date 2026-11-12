@@ -26,10 +26,10 @@ async function player(code, name) {
 
 const boardTop = (tv) =>
   tv.evaluate(() =>
-    [...document.querySelectorAll('.sh-row')]
+    [...document.querySelectorAll('[data-testid=race-card]')]
       .sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot))
       .slice(0, 3)
-      .map((r) => ({ rank: (r.querySelector('.sh-rank') || {}).textContent, name: ((r.querySelector('.sh-name') || {}).textContent || '').trim(), score: ((r.querySelector('.sh-score') || {}).textContent || '').trim(), lead: r.classList.contains('is-lead') })),
+      .map((r) => ({ rank: (r.querySelector('.pc-rank') || {}).textContent, name: ((r.querySelector('.pc-name') || {}).textContent || '').trim(), score: ((r.querySelector('.pc-score') || {}).textContent || '').trim(), lead: r.classList.contains('is-first') })),
   );
 
 (async () => {

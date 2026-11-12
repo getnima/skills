@@ -1,11 +1,25 @@
-/** PlayingScene: the live race the room watches during a round. */
+/**
+ * PlayingScene: the live race the room watches during a round. The side column on the left holds
+ * the game, the round and the timer (and, under the timer, the empty margin where the hosts'
+ * narrator and the commentator stand: narrator.tsx measures `.sh-playing .sh-side`). The race on
+ * the right is a board of player cards (cards.tsx): the dressed doll big, the name, the points
+ * as an odometer and a bar against the leader's points.
+ *
+ * The cards are FIXED SLOTS laid out by show/card-grid.ts: slot 0 (top right) is always the
+ * leader. When places change, a slot gets a new occupant who rolls in inside the card's frame
+ * (from below after a climb, from above after a fall), so no card ever flies across the board or
+ * overlaps another. A room too big for one page keeps its top row pinned and turns the rest in
+ * pages under a "places 7–18 of 40" label.
+ */
 import { useEffect, useMemo, useRef } from 'preact/hooks';
 
 import { roundTime } from '../../../../shared/round-clock';
 import { sfx } from '../../kit/audio';
 import { roundFeed } from '../../net/round-feed';
 import { backdropUrl, crownUrl, lastPlaceArt } from './art';
-import { Avatar, avatarColor, CountUp, GameArt, useFrame, useStage, useTicker } from './common';
+import { cardGrid } from './card-grid';
+import { PlayerCard, useBoardBox } from './cards';
+import { avatarColor, CountUp, GameArt, useFrame, useStage, useTicker } from './common';
 import { banterStillTrue, createBanterDirector } from './banter';
 import { useFunnyLayer } from './funny';
 import { createMomentEngine } from './moments';
@@ -56,13 +70,25 @@ export function injectMoment(m: Moment): boolean {
   return true;
 }
 
-const PAGE_MS = 4_500;
+/** The pages of a big room turn this often (a page is a dozen cards or more: time to find yourself). */
+const PAGE_MS = 6_000;
 /** A take of the hosts' race banter waits at most this long for its turn (the race moves on). */
 const BANTER_TTL_MS = 3_500;
-/** The rows re-order at most this often (the numbers still tick every frame). */
-const ORDER_HOLD_MS = 650;
+/**
+ * The cards re-order at most this often (the numbers still tick every frame). A little longer than
+ * the old rows' 650 ms: a board read in two directions needs a beat more to follow a swap.
+ */
+const ORDER_HOLD_MS = 800;
 /** The crown's big hop to a new leader plays at most this often. */
 const CROWN_HOP_GAP_MS = 1_800;
+/** A race card's height over its width (cards.css .pc--race: a shorter picture, the bar under the points). */
+const RACE_ASPECT = 1.42;
+/** A paged board: the band between the pinned top row and the turning pages, for the label (design units). */
+const BAND_UNITS = 58;
+/** The label's own height in that band (show.css .sh-divider). */
+const LABEL_UNITS = 46;
+/** A sticker that stays put needs a free band at least this wide (px); a narrower one makes it fly by. */
+const STAY_MIN_PX = 120;
 
 function sameOrder(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
@@ -70,30 +96,27 @@ function sameOrder(a: readonly string[], b: readonly string[]): boolean {
   return true;
 }
 /**
- * Where a sticker that stays put may land during a race (landscape): over the bars, between the side
- * column and the scores; in an elimination round, between the "in the air / out" marks and the names.
- * Never on a number or a name (the owner: announcements never cover the play). Null: anywhere.
+ * Where a sticker that stays put may land during a race: the free band between the side column and
+ * the nearest card (a small room's cards leave one). Never on a card (the owner: announcements never
+ * cover the play). When the cards fill the board there is no such band: a zero-width zone, and the
+ * funny layer makes that sticker fly by instead of staying (funny.tsx). Null (before the first
+ * card): anywhere.
  */
 function stickerZone(root: HTMLElement | null): StickerZone | null {
-  if (root === null || root.dataset.orient !== 'landscape') return null;
+  if (root === null) return null;
   const fx = root.querySelector('.sh-fx');
-  if (fx === null) return null;
+  const cards = root.querySelectorAll('[data-testid=race-card] .pc-in');
+  if (fx === null || cards.length === 0) return null;
   const base = fx.getBoundingClientRect().left;
-  const score = root.querySelector('.sh-row .sh-score');
   const side = root.querySelector('.sh-side');
-  let left = 0;
-  let right = 0;
-  if (score !== null && side !== null) {
-    left = side.getBoundingClientRect().right - base;
-    right = score.getBoundingClientRect().left - base;
-  } else {
-    const mark = root.querySelector('.sh-row .sh-in-mark, .sh-row .sh-out-mark');
-    const name = root.querySelector('.sh-row .sh-name');
-    if (mark === null || name === null) return null;
-    left = mark.getBoundingClientRect().right - base;
-    right = name.getBoundingClientRect().left - base;
-  }
-  return right - left >= 120 ? { left, right } : null;
+  // portrait: the side column is a strip above the cards; nothing is free beside them
+  if (side === null || root.dataset.orient !== 'landscape') return { left: 0, right: 0 };
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const card of Array.from(cards)) nearest = Math.min(nearest, card.getBoundingClientRect().left);
+  const pad = 14;
+  const left = side.getBoundingClientRect().right - base + pad;
+  const right = nearest - base - pad;
+  return right - left >= STAY_MIN_PX ? { left, right } : { left, right: left };
 }
 
 const RING_R = 44;
@@ -193,25 +216,40 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   // in an elimination round nobody "leads" until one is left: then the crown lands on the last one standing
   const leaderId = elimination !== null ? (leftCount === 1 && board[0]?.out !== true ? (board[0]?.id ?? null) : null) : topScore > 0 ? (board[0]?.id ?? null) : null;
 
-  // ── the visible window: everybody when they fit, else the top half pinned + a rotating page ──
-  const fitAll = size.portrait ? 10 : 12;
-  const visible = n <= fitAll ? Math.max(n, 5) : size.portrait ? 8 : 10;
-  const paged = n > visible;
-  const pinned = paged ? visible / 2 : visible;
+  // ── the board: everybody as cards when they fit at a readable size (show/card-grid.ts), else
+  //    the top row pinned + the rest turning in pages under a label, in a band of its own ──
+  const box = useBoardBox();
+  const u = size.u;
+  const gridOptions = { aspect: RACE_ASPECT, gap: (size.portrait ? 16 : 26) * u, maxW: (size.portrait ? 290 : 360) * u, minW: (size.portrait ? 150 : 190) * u };
+  let grid = cardGrid(n, box.w, box.h, gridOptions);
+  const paged = n > grid.perPage;
+  const band = paged ? BAND_UNITS * u : 0;
+  if (paged) grid = cardGrid(n, box.w, box.h - band, gridOptions);
+  const visible = paged ? grid.perPage : n;
+  // the top row stays; a board of one row (a tiny screen) turns all of it
+  const pinnedRows = paged && grid.rows >= 2 ? 1 : 0;
+  const pinned = paged ? Math.min(visible - 1, pinnedRows * grid.cols) : visible;
   const rotating = visible - pinned;
   const pages = paged ? Math.ceil((n - pinned) / rotating) : 1;
   const startedAt = useRef(performance.now());
   const page = paged ? Math.floor((performance.now() - startedAt.current) / PAGE_MS) % pages : 0;
   const pageStart = paged ? Math.min(pinned + page * rotating, n - rotating) : 0;
+  // a board narrower than the box (a dozen guests are as tall as the box allows) spreads its
+  // columns a little instead of leaving two empty margins
+  const gridW = grid.cols * grid.cw + (grid.cols - 1) * gridOptions.gap;
+  const spread = Math.max(0, Math.min((box.w - gridW) / (grid.cols + 1), gridOptions.gap * 1.6));
+  /** Where slot k sits on the board (px): the rows after the pinned one sit under the label's band. */
+  const slotAt = (k: number): { x: number; y: number } => {
+    const s = grid.slot(k);
+    const fromLeft = grid.cols - 1 - (k % grid.cols);
+    return { x: s.x + (fromLeft - (grid.cols - 1) / 2) * spread, y: s.y + (paged && Math.floor(k / grid.cols) >= pinnedRows ? band : 0) };
+  };
+  const first = slotAt(0);
+  const labelY = pinnedRows > 0 ? first.y + grid.ch + (gridOptions.gap + band - LABEL_UNITS * u) / 2 : first.y - band + (band - LABEL_UNITS * u) / 2;
 
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const listH = listRef.current?.clientHeight ?? 0;
-  const dividerH = paged ? 46 * size.u : 0;
-  const rowH = listH > 0 ? (listH - dividerH) / visible : 0;
-
-  // ── row effects ──
+  // ── card effects ──
   const fx = useRef(new Map<string, RowFx>());
-  const slotEnter = useRef(new Map<number, { readonly id: string; readonly cls: string }>());
+  const slotEnter = useRef(new Map<number, { readonly id: string; readonly dir: '' | 'up' | 'down' | 'fade' }>());
   const prevIndexRef = useRef(new Map<string, number>());
   const now = performance.now();
   const rowFx = (id: string): RowFx => {
@@ -224,31 +262,35 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   };
 
   const crownRef = useRef<HTMLImageElement | null>(null);
-  const sizeRef = useRef(size);
-  sizeRef.current = size;
-  const rowHRef = useRef(rowH);
-  rowHRef.current = rowH;
+  // the crown's way over from the old leader (now in slot 1) to slot 0, measured on the board
+  const second = slotAt(1);
+  const hopRef = useRef({ dx: 0, dy: 0, cw: 0 });
+  hopRef.current = { dx: second.x - first.x, dy: second.y - first.y, cw: grid.cw };
   const lastLeader = useRef<string | null>(null);
   const lastHop = useRef(Number.NEGATIVE_INFINITY);
   useEffect(() => {
     const t = performance.now();
     if (leaderId !== null && lastLeader.current !== null && leaderId !== lastLeader.current && t - lastHop.current >= CROWN_HOP_GAP_MS) {
       lastHop.current = t;
-      // the crown hops over to the new leader
-      // (it starts on the old leader, now one row down, and loops over the names: never over a score)
-      const u = sizeRef.current.u;
-      const dx = -230 * u;
-      const dy = Math.max(rowHRef.current, 60 * u);
-      crownRef.current?.animate(
-        [
-          { transform: `translate3d(0, ${dy}px, 0) rotate(0deg) scale(1)`, easing: 'cubic-bezier(0.2, 0.7, 0.4, 1)' },
-          { transform: `translate3d(${dx}px, ${dy * 0.35}px, 0) rotate(-200deg) scale(2.2)`, offset: 0.45, easing: 'cubic-bezier(0.6, 0, 0.8, 0.5)' },
-          { transform: 'translate3d(0, 0, 0) rotate(-360deg) scale(1)', offset: 0.86 },
-          { transform: 'translate3d(0, 6%, 0) rotate(-360deg) scale(1.25, 0.75)', offset: 0.93 },
-          { transform: 'translate3d(0, 0, 0) rotate(-360deg) scale(1)' },
-        ],
-        { duration: 1_100 },
-      );
+      const { dx, dy, cw } = hopRef.current;
+      // the crown hops over to the new leader: from the old leader's card beside it, looping over
+      // the two dolls' heads (never as low as a name or a score). The old leader in the row below
+      // (a one-column board): it spins in where it lands instead of crossing the leader's card.
+      const frames: Keyframe[] =
+        Math.abs(dy) < 1 && dx !== 0
+          ? [
+              { transform: `translate3d(${dx}px, 0, 0) rotate(0deg) scale(1)`, easing: 'cubic-bezier(0.2, 0.7, 0.4, 1)' },
+              { transform: `translate3d(${dx * 0.5}px, ${cw * 0.12}px, 0) rotate(-200deg) scale(1.8)`, offset: 0.45, easing: 'cubic-bezier(0.6, 0, 0.8, 0.5)' },
+              { transform: 'translate3d(0, 0, 0) rotate(-360deg) scale(1)', offset: 0.86 },
+              { transform: 'translate3d(0, 6%, 0) rotate(-360deg) scale(1.25, 0.75)', offset: 0.93 },
+              { transform: 'translate3d(0, 0, 0) rotate(-360deg) scale(1)' },
+            ]
+          : [
+              { transform: 'translate3d(0, 0, 0) rotate(-200deg) scale(0.2)', opacity: 0 },
+              { transform: 'translate3d(0, 0, 0) rotate(-20deg) scale(1.5)', opacity: 1, offset: 0.6 },
+              { transform: 'translate3d(0, 0, 0) rotate(0deg) scale(1)' },
+            ];
+      crownRef.current?.animate(frames, { duration: 1_100 });
       rowFx(leaderId).glowUntil = performance.now() + 1_600;
     }
     if (leaderId !== null) lastLeader.current = leaderId;
@@ -459,75 +501,69 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const bg = backdropUrl();
   const lastId = elimination === null && n >= 3 && (board[n - 2]?.score ?? 0) > (board[n - 1]?.score ?? 0) ? (board[n - 1]?.id ?? null) : null;
 
-  // Rows are FIXED SLOTS that never move: slot k always sits at the same place. When a
-  // slot gets a new occupant, the new row rolls in INSIDE its own slot (clipped), from
-  // below when that player climbed, from above when they fell. So two rows never
-  // overlap each other or the "rotating places" label, at any moment, at any head count.
+  // Cards are FIXED SLOTS that never move: slot k always sits at the same place. When a slot
+  // gets a new occupant, the new one rolls in INSIDE the card's frame (clipped by it), from
+  // below when that player climbed, from above when they fell. So two cards never overlap
+  // each other or the "rotating places" label, at any moment, at any head count.
   const indexOf = new Map(board.map((r, i) => [r.id, i]));
   const prevIndex = prevIndexRef.current;
-  // the doll fills the height of its row (show.css: --rh); this only picks a sharp enough picture
-  const rowUnits = Math.min(220, Math.round(rowH / Math.max(0.05, size.u)));
-  const rows: JSX.Element[] = [];
-  for (let k = 0; k < visible && rowH > 0; k++) {
+  const cards: JSX.Element[] = [];
+  for (let k = 0; k < visible && box.w > 0; k++) {
     const i = k < pinned ? k : pageStart + (k - pinned);
     const r = board[i];
     if (!r) continue;
     let enter = slotEnter.current.get(k);
     if (enter === undefined || enter.id !== r.id) {
       const was = prevIndex.get(r.id);
-      const cls = enter === undefined ? '' : was === undefined ? 'is-in-fade' : was > i ? 'is-in-up' : was < i ? 'is-in-down' : 'is-in-fade';
-      enter = { id: r.id, cls };
+      const dir: '' | 'up' | 'down' | 'fade' = enter === undefined ? '' : was === undefined ? 'fade' : was > i ? 'up' : was < i ? 'down' : 'fade';
+      enter = { id: r.id, dir };
       slotEnter.current.set(k, enter);
     }
-    const y = k * rowH + (k >= pinned ? dividerH : 0);
+    const at = slotAt(k);
     const f = fx.current.get(r.id);
     const fill = topScore > 0 ? Math.max(0.03, r.score / topScore) : 0.03;
     const inAir = elimination !== null && r.out !== true;
-    const cls = [
-      'sh-row',
-      r.id === leaderId ? 'is-lead' : '',
-      f && f.dropUntil > now ? 'is-drop' : '',
-      f && f.glowUntil > now ? 'is-glow' : '',
-      k % 2 === 1 ? 'is-odd' : '',
-      r.out === true ? 'is-out' : '',
-    ].join(' ');
-    rows.push(
-      <div class={cls} key={`slot${k}`} data-slot={k} style={{ transform: `translate3d(0, ${y.toFixed(1)}px, 0)`, height: `${rowH.toFixed(1)}px` }}>
-        <div class={`sh-row-enter ${enter.cls}`} key={r.id}>
-          <div class="sh-row-in">
-            {/* in an elimination round a place means something only once you are out */}
-            <span class={`sh-rank ${inAir ? 'is-bird' : ''}`}>{inAir ? props.game.emoji : i + 1}</span>
-            <Avatar avatar={r.avatar} name={r.name} look={r.look} units={rowUnits} />
-            <span class={`sh-name ${Array.from(r.name).length > 11 ? 'is-long' : ''}`} dir="auto">
-              <bdi>{r.name}</bdi>
-            </span>
-            {elimination !== null ? (
-              // the raw number of an elimination round is a distance: what the room wants to know is who is still in
-              <span class="sh-status">{r.out === true ? <span class="sh-out-mark">בחוץ</span> : <span class="sh-in-mark">באוויר</span>}</span>
-            ) : (
-              <>
-                <span class="sh-badges">
-                  {f && f.fireUntil > now ? <span class="sh-fire">🔥</span> : null}
-                  {r.id === lastId ? (
-                    lastArt.kind === 'img' ? (
-                      <img class="sh-snail" src={lastArt.url} alt="" />
-                    ) : (
-                      <span class="sh-snail">{lastArt.char}</span>
-                    )
-                  ) : null}
-                </span>
-                <CountUp class="sh-score" value={r.score} ms={420} />
-                <div class="sh-track">
-                  <div
-                    class="sh-fill"
-                    style={{ transform: `translate3d(${((1 - fill) * 100).toFixed(2)}%, 0, 0)`, backgroundColor: avatarColor(r.avatar) }}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>,
+    const lead = r.id === leaderId;
+    const fire = elimination === null && f !== undefined && f.fireUntil > now;
+    const snail = r.id === lastId;
+    const cls = ['pc--race', lead ? 'is-first' : '', f && f.dropUntil > now ? 'is-drop' : '', f && f.glowUntil > now ? 'is-glow' : '', r.out === true ? 'is-out' : ''].join(' ');
+    cards.push(
+      <PlayerCard
+        key={`slot${k}`}
+        name={r.name}
+        avatar={r.avatar}
+        look={r.look}
+        // in an elimination round a place means something only once you are out: the bird flies on the sticker
+        rank={inAir ? props.game.emoji : i + 1}
+        rankClass={inAir ? 'is-bird' : ''}
+        cw={grid.cw}
+        u={u}
+        x={at.x}
+        y={at.y}
+        aspect={RACE_ASPECT}
+        class={cls}
+        roll={{ key: r.id, dir: enter.dir }}
+        art={
+          fire || snail ? (
+            <>
+              {fire ? <span class="pc-fire">🔥</span> : null}
+              {snail ? lastArt.kind === 'img' ? <img class="pc-snail" src={lastArt.url} alt="" /> : <span class="pc-snail">{lastArt.char}</span> : null}
+            </>
+          ) : null
+        }
+        // the raw number of an elimination round is a distance: what the room wants to know is who is still in
+        bar={elimination === null ? { fill, color: lead ? 'var(--red)' : avatarColor(r.avatar) } : null}
+        testId="race-card"
+        slot={k}
+      >
+        {elimination === null ? (
+          <CountUp class="pc-num" value={r.score} ms={420} />
+        ) : inAir ? (
+          <span class="pc-mark pc-mark--in">באוויר</span>
+        ) : (
+          <span class="pc-mark pc-mark--out">בחוץ</span>
+        )}
+      </PlayerCard>,
     );
   }
   prevIndexRef.current = indexOf;
@@ -543,10 +579,10 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
       style={bg !== null ? { backgroundImage: `linear-gradient(rgba(16,35,140,.82), rgba(16,35,140,.9)), url("${bg}")` } : undefined}
     >
       <div class="sh-race">
-        <div class={`sh-list ${visible <= 6 ? 'is-roomy' : ''}`} ref={listRef} style={{ '--rh': `${rowH.toFixed(1)}px` }}>
-          {rows}
-          {paged ? (
-            <div class="sh-divider" style={{ transform: `translate3d(0, ${(pinned * rowH).toFixed(1)}px, 0)` }}>
+        <div class="sh-race-board" ref={box.ref}>
+          {cards}
+          {paged && box.w > 0 ? (
+            <div class="sh-divider" style={{ transform: `translate3d(0, ${labelY.toFixed(1)}px, 0)` }}>
               <span>
                 מקומות {pageStart + 1}–{pageStart + rotating} מתוך {n}
               </span>
@@ -559,11 +595,19 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
             </div>
           ) : null}
           {n === 0 ? <div class="sh-empty">ממתינים לניקוד הראשון…</div> : null}
+          {/* the crown hangs on the leader's card (slot 0), over the doll's corner: never on a name or a score */}
           <img
-            class={`sh-crown ${leaderId === null || rowH === 0 ? 'is-off' : ''}`}
+            class={`sh-crown ${leaderId === null || box.w === 0 ? 'is-off' : ''}`}
             ref={crownRef}
             src={crownUrl()}
             alt=""
+            // placed with left / top (they change only with the board), so the hop can animate the transform
+            style={{
+              left: `${(first.x - grid.cw * 0.06).toFixed(1)}px`,
+              top: `${(first.y - grid.cw * 0.21).toFixed(1)}px`,
+              width: `${(grid.cw * 0.42).toFixed(1)}px`,
+              height: `${(grid.cw * 0.42).toFixed(1)}px`,
+            }}
           />
         </div>
       </div>

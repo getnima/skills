@@ -260,11 +260,11 @@ async function rooms(browser, sizeName, vp, shot) {
     await sleep(2600);
     await shot(page, '15-live-3');
     const live3 = await page.evaluate(() => {
-      const row = document.querySelector('.sh-row');
-      const av = row.querySelector('.sh-avatar').getBoundingClientRect();
-      return { doll: (av.height * 1080) / innerHeight, name: (parseFloat(getComputedStyle(row.querySelector('.sh-name')).fontSize) * 1080) / innerHeight, odo: document.querySelectorAll('.sh-row .sh-score.sh-odo').length };
+      const card = document.querySelector('[data-testid=race-card]');
+      const av = card.querySelector('.sh-avatar').getBoundingClientRect();
+      return { doll: (av.width * 1080) / innerHeight, name: (parseFloat(getComputedStyle(card.querySelector('.pc-name')).fontSize) * 1080) / innerHeight, odo: document.querySelectorAll('[data-testid=race-card] .pc-score .sh-odo').length };
     });
-    check(live3.doll >= 140 && live3.name >= 60 && live3.odo === 3, `live scoreboard with 3: dolls ${Math.round(live3.doll)} px, names ${Math.round(live3.name)} px, odometer scores`, live3);
+    check(live3.doll >= 260 && live3.name >= 40 && live3.odo === 3, `live scoreboard with 3: dolls ${Math.round(live3.doll)} px, names ${Math.round(live3.name)} px, odometer scores`, live3);
     await waitPhase(page, 'results', 30000);
     stop();
     await untilReveal(page, -1500);
@@ -296,19 +296,19 @@ async function rooms(browser, sizeName, vp, shot) {
     await sleep(650);
     await shot(page, '32-intro-flappy');
     await waitPhase(page, 'playing');
-    await page.waitForFunction(() => document.querySelectorAll('.sh-row.is-out').length >= 4, null, { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid=race-card].is-out').length >= 4, null, { timeout: 15000 });
     await sleep(500);
     await shot(page, '33-live-flappy-12');
     const fl = await page.evaluate(() => ({
-      rows: document.querySelectorAll('.sh-row').length,
-      inAir: document.querySelectorAll('.sh-row .sh-in-mark').length,
-      out: document.querySelectorAll('.sh-row .sh-out-mark').length,
-      scores: document.querySelectorAll('.sh-row .sh-score').length,
-      tracks: document.querySelectorAll('.sh-row .sh-track').length,
+      rows: document.querySelectorAll('[data-testid=race-card]').length,
+      inAir: document.querySelectorAll('[data-testid=race-card] .pc-mark--in').length,
+      out: document.querySelectorAll('[data-testid=race-card] .pc-mark--out').length,
+      scores: document.querySelectorAll('[data-testid=race-card] .sh-odo').length,
+      tracks: document.querySelectorAll('[data-testid=race-card] .pc-bar').length,
       left: document.querySelector('.sh-left').getAttribute('data-left'),
-      order: [...document.querySelectorAll('.sh-row')].sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot)).map((r) => (r.classList.contains('is-out') ? 'x' : 'o')).join(''),
+      order: [...document.querySelectorAll('[data-testid=race-card]')].sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot)).map((r) => (r.classList.contains('is-out') ? 'x' : 'o')).join(''),
     }));
-    check(fl.rows === 12 && fl.inAir + fl.out === 12 && fl.out >= 4 && fl.scores === 0 && fl.tracks === 0, 'flappy live: every row says "באוויר" or "בחוץ", no distance number, no bar', fl);
+    check(fl.rows === 12 && fl.inAir + fl.out === 12 && fl.out >= 4 && fl.scores === 0 && fl.tracks === 0, 'flappy live: every card says "באוויר" or "בחוץ", no distance number, no bar', fl);
     check(Number(fl.left) === fl.inAir && /^o+x+$/.test(fl.order), 'flappy live: the counter is the number in the air; who is out sits under who is in', fl);
     await page.waitForFunction(() => {
       const f = document.querySelector('.sh-finale');
@@ -377,12 +377,13 @@ async function rooms(browser, sizeName, vp, shot) {
     await sleep(5200);
     await shot(B.page, '51-live-12');
     const live12 = await B.page.evaluate(() => {
-      const rows = [...document.querySelectorAll('.sh-row')];
+      const rows = [...document.querySelectorAll('[data-testid=race-card]')];
       const av = rows[0].querySelector('.sh-avatar').getBoundingClientRect();
-      const nums = rows.sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot)).map((r) => Number(r.querySelector('.sh-score').textContent.replace(/[^0-9]/g, '')));
-      return { rows: rows.length, doll: (av.height * 1080) / innerHeight, name: (parseFloat(getComputedStyle(document.querySelector('.sh-row .sh-name:not(.is-long)')).fontSize) * 1080) / innerHeight, score: (parseFloat(getComputedStyle(rows[0].querySelector('.sh-score')).fontSize) * 1080) / innerHeight, ordered: nums.every((v, k) => k === 0 || v <= nums[k - 1] * 1.02 + 1) };
+      const nums = rows.sort((a, b) => Number(a.dataset.slot) - Number(b.dataset.slot)).map((r) => Number(r.querySelector('.pc-score').textContent.replace(/[^0-9]/g, '')));
+      return { rows: rows.length, doll: (av.width * 1080) / innerHeight, name: (parseFloat(getComputedStyle(document.querySelector('[data-testid=race-card] .pc-name:not(.is-long)')).fontSize) * 1080) / innerHeight, score: (parseFloat(getComputedStyle(rows[0].querySelector('.pc-score')).fontSize) * 1080) / innerHeight, ordered: nums.every((v, k) => k === 0 || v <= nums[k - 1] * 1.02 + 1) };
     });
-    check(live12.rows === 12 && live12.doll >= 56 && live12.name >= 44 && live12.score >= 44 && live12.ordered, `live scoreboard with 12: dolls ${Math.round(live12.doll)} px, names ${Math.round(live12.name)} px, scores ${Math.round(live12.score)} px, in order`, live12);
+    // the race is player cards: the doll big, the name and the points readable across the room
+    check(live12.rows === 12 && live12.doll >= 150 && live12.name >= 26 && live12.score >= 30 && live12.ordered, `live scoreboard with 12: dolls ${Math.round(live12.doll)} px, names ${Math.round(live12.name)} px, scores ${Math.round(live12.score)} px, in order`, live12);
     if (REMOTE_PW !== '') {
       const remote = io(SERVER, { transports: ['websocket'], forceNew: true });
       await new Promise((res, rej) => {

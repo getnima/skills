@@ -1,5 +1,5 @@
-// qa-tv-race: the live race on the TV with many players never lets two rows overlap,
-// and never lets a row touch the "rotating places" label, at any moment.
+// qa-tv-race: the live race on the TV with many players never lets two cards overlap,
+// and never lets a card touch the "rotating places" label, at any moment.
 // Scripted phones whose places swap constantly; a burst of screenshots every ~100 ms
 // for 6 s, with a geometry check on every one.
 //
@@ -31,13 +31,15 @@ const { check, failures } = checker();
       const r = await raceOverlapFrames(page, 6000);
       const frames = stop ? await stop() : 0;
       console.log(`   ${n}: ${r.frames} animation frames checked, ${frames} screenshots, order changed ${r.orders}x`, r.examples.join('; '));
-      check(r.bad === 0, `${n} players ${VW}x${VH}: no overlapping rows / label on any of ${r.frames} frames over 6 s`, r.examples);
-      check(r.blink === 0, `${n} players: the board never blinks (frames with most rows faded: ${r.blink})`);
-      check(r.misorder <= r.frames * 0.1, `${n} players: scores agree with the places (frames where a row shows more than the one above: ${r.misorder}/${r.frames})`);
+      check(r.bad === 0, `${n} players ${VW}x${VH}: no overlapping cards / label on any of ${r.frames} frames over 6 s`, r.examples);
+      check(r.blink === 0, `${n} players: the board never blinks (frames with most cards faded: ${r.blink})`);
+      check(r.misorder <= r.frames * 0.1, `${n} players: scores agree with the places (frames where a card shows more than the place before it: ${r.misorder}/${r.frames})`);
       check(r.orders >= 3, `${n} players: the board really re-ordered during the burst (${r.orders})`);
       check(!SHOTS || frames >= 30, `${n} players: burst screenshots (${frames} in 6 s, one per compositor frame, at most every 100 ms)`);
-      const rowsShown = (await raceGeometry(page)).rows.length;
-      check(rowsShown === Math.min(n, n <= 12 ? 12 : 10), `${n} players: ${rowsShown} rows on screen`);
+      // everybody as cards while they fit at a readable size; a bigger room pages under a label
+      const geo = await raceGeometry(page);
+      const rowsShown = geo.rows.length;
+      check(n <= 12 ? rowsShown === n : rowsShown >= 12 && rowsShown <= n && (rowsShown === n) === (geo.label === null), `${n} players: ${rowsShown} cards on screen${geo.label ? ' + the pages label' : ''}`);
       const l = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight, w: innerWidth, h: innerHeight }));
       check(l.sw <= l.w && l.sh <= l.h, `${n} players: no page scroll`, l);
       check(errors.length === 0, `${n} players: no console errors`, errors);

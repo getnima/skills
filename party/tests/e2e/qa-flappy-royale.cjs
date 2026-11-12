@@ -249,8 +249,8 @@ const WATCH_FINALE_TV = () => {
     const p3out = await waitFor(async () => { const i = await info(P3); return i.f && i.f.mode === 'out' && i.outIds.includes(P3.id) ? i : null; }, 6000, 'p3 spectator');
     await sleep(400);
     await shot(P3, '04-spectator');
-    const tvOut = await host.evaluate(() => ({ marks: document.querySelectorAll('.sh-out-mark').length, outRows: document.querySelectorAll('.sh-row.is-out').length, left: document.querySelector('.sh-left')?.getAttribute('data-left') }));
-    check(tvOut.outRows >= 2 && tvOut.marks >= 2, 'the TV greys out the rows of who is out, with a "בחוץ" mark', tvOut);
+    const tvOut = await host.evaluate(() => ({ marks: document.querySelectorAll('[data-testid=race-card] .pc-mark--out').length, outRows: document.querySelectorAll('[data-testid=race-card].is-out').length, left: document.querySelector('.sh-left')?.getAttribute('data-left') }));
+    check(tvOut.outRows >= 2 && tvOut.marks >= 2, 'the TV greys out the cards of who is out, with a "בחוץ" stamp', tvOut);
     check(Number(tvOut.left) === (await info(P1)).active, 'the TV counter "נשארו N" is the active count', tvOut);
     check(p3out.place !== null, 'the HUD of an out phone shows its place', p3out.place);
     check((await info(P1)).place === null, 'the HUD of a flying phone shows no place (everybody flies side by side)');
