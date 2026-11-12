@@ -2,7 +2,7 @@
  * פלוצל (Plotzel): the owner's word ladder (original/plotzel.netlify.app.html),
  * native in our kit and party look. From a start word reach פלוץ; every step
  * changes exactly one letter and must be a dictionary word. One round = a
- * seeded sequence of ladders (round.ts) that always opens with שימי; solve one
+ * seeded sequence of ladders (round.ts) that always opens with חמוד, פוקי, נדיר, שימי; solve one
  * and the next slides in. No hints (the owner's rule); "דלג" shows the shortest
  * path for no points. A ladder's score is 80% speed and 20% steps (round.ts);
  * the tray shows what the ladder is worth right now, counting down.
