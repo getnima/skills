@@ -8,6 +8,7 @@ import { backdropUrl, crownUrl, lastPlaceArt } from './art';
 import { Avatar, avatarColor, CountUp, GameArt, useFrame, useStage, useTicker } from './common';
 import { useFunnyLayer } from './funny';
 import { createMomentEngine } from './moments';
+import { cueNarration } from './narrator-bus';
 
 import type { JSX } from 'preact';
 import type { Moment, RaceEntry } from './moments';
@@ -226,6 +227,10 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
             return m.type === 'lead' ? idx === 0 : idx >= 0 && idx < 3;
           }
         : undefined;
+    // the hosts say the last ten seconds on the TV (the commentator keeps its effects)
+    if (m.type === 'final10' && !force) {
+      cueNarration({ id: `final10:${props.game.id}:${props.roundIndex}:${sceneId.current}`, moment: 'final10', ttlMs: 3_000, valid: () => clockRef.current().leftMs > 3_500 });
+    }
     if (!(funny.layer()?.moment(m, force, valid) ?? false)) return;
     if (m.a) {
       if (m.type === 'drop') rowFx(m.a.id).dropUntil = t + 1_100;
@@ -234,6 +239,8 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
     }
   };
   const handleRef = useRef(handleMoment);
+  /** One id per mounted scene: each of its moments is narrated once. */
+  const sceneId = useRef(Math.floor(Math.random() * 1e9).toString(36));
   handleRef.current = handleMoment;
 
   useEffect(() => {
@@ -316,7 +323,15 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
       if (on !== shown.on) {
         shown.on = on;
         box.classList.toggle('is-on', on);
-        if (on) sfx.whoosh(0.8);
+        if (on) {
+          sfx.whoosh(0.8);
+          cueNarration({
+            id: `finale:${gameIdRef.current}:${roundNoRef.current}:${sceneId.current}`,
+            moment: 'finale',
+            ttlMs: 3_500,
+            valid: () => finaleShown.current.on && clockRef.current().leftMs > 3_000,
+          });
+        }
       }
       if (words !== shown.words && finaleWordsRef.current) {
         shown.words = words;

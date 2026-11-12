@@ -25,6 +25,7 @@ import { createRng } from '../../kit/rng';
 import { FinalScene, isShowCalm, PlayingScene, ResultsScene, setShowCalm, StandingsPanel } from './index';
 import { makeMoment, MOMENT_TYPES } from './moments';
 import { injectMoment } from './playing';
+import { Narrator } from '../narrator';
 
 import type { JSX } from 'preact';
 import type { GameId, PlayerPublic, ResultRow, RoundResults } from '../../../../shared/protocol';
@@ -83,6 +84,9 @@ function numParam(key: string, fallback: number, min: number, max: number): numb
 const SEED = numParam('seed', 7, 0, 1e9);
 const DURATION = numParam('dur', 60_000, 5_000, 600_000);
 const BARE = params.get('bare') === '1';
+/** &narrator=1: the hosts narrate over the scenes as on the TV (off by default: the scenes keep their own lines). */
+const NARRATOR = params.get('narrator') === '1';
+const DEMO_CLOCK = { now: (): number => Date.now(), sync: (): Promise<void> => Promise.resolve(), hint: (): void => undefined, synced: true };
 
 interface Racer {
   readonly id: string;
@@ -483,7 +487,26 @@ function Demo(): JSX.Element {
   return (
     <div class={`dm ${bare ? 'dm--bare' : ''}`} dir="rtl" onPointerDown={unlockAudio}>
       <div class="dm-stage">
-        <div class="dm-screen">{stage}</div>
+        <div class="dm-screen" style={NARRATOR ? { position: 'relative' } : undefined}>
+          {stage}
+          {NARRATOR ? (
+            <Narrator
+              state={{
+                code: 'DEMO',
+                phase: scene === 'standings' ? 'lobby' : scene,
+                players: [],
+                round: null,
+                played: ['tap'],
+                results: null,
+                cutscene: null,
+                autoCutscenes: false,
+                remotes: 0,
+                serverNow: 0,
+              }}
+              clock={DEMO_CLOCK}
+            />
+          ) : null}
+        </div>
       </div>
       {bare ? null : (
         <aside class="dm-panel kit-scroll">

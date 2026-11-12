@@ -19,12 +19,18 @@
  * inside of their food, and every text a pre-rendered sticker. A quality flag drops decals
  * and droplets when frames are slow.
  *
+ * Announcements never sit on the action: the swipe hint, combos, "10 שניות!" and the bomb's
+ * "blade down" all go into one lane, a slim ribbon just under the HUD (food is thrown up from
+ * the bottom, so the top is the least-used band). One message at a time, a newer one replaces
+ * it, each lives at most 1.4 s (the opening hint: until the first slice). Score pops stay at
+ * the cut but small and short, and a bomb flashes the edges of the screen, never the middle.
+ *
  * Which picture a throw wears (which food, which host's bomb) is looks only: skins.ts
  * derives it from the finished schedule. The schedule's `variant`, the hit circle, the
  * timing and the score never depend on it.
  */
 import { sfx } from '../../kit/audio';
-import { createGameCanvas } from '../../kit/canvas';
+import { createGameCanvas, roundRectPath } from '../../kit/canvas';
 import { clamp, createFx, ease, lerp } from '../../kit/fx';
 import { haptic } from '../../kit/haptics';
 import { createInput } from '../../kit/input';
@@ -95,6 +101,17 @@ const SLOW_FRAME_MS = 24;
 const FAST_FRAME_MS = 19;
 /** A trail point fades out after this many steps. */
 const TRAIL_LIFE = 9;
+/** The announcement lane (looks only): ribbon height in CSS px (its hard shadow included), by the field's height. */
+const LANE_MIN_H = 34;
+const LANE_MAX_H = 44;
+/** Seconds a lane message lives (never more than 1.4). */
+const LANE_COMBO_S = 1.05;
+const LANE_TEN_S = 1.4;
+/** Score pops at the cut: font px and seconds (small and short: they never hide what they mark). */
+const POP_PX = 16;
+const POP_BIG_PX = 18;
+const POP_LIFE = 0.55;
+const POP_BIG_LIFE = 0.6;
 
 /** Constant burst options of the per-step effects (no allocation in the hot path). */
 const FUSE_SPARKS: BurstOptions = {
@@ -210,13 +227,15 @@ interface Blade {
   n: number;
 }
 
-interface Callout {
+type LaneKind = 'hint' | 'combo' | 'ten' | 'stun';
+
+/** The one message in the announcement lane (looks only). */
+interface Lane {
   active: boolean;
+  kind: LaneKind;
   text: string;
   sub: string;
   color: string;
-  x: number;
-  y: number;
   age: number;
   life: number;
 }
@@ -248,6 +267,11 @@ interface NinjaDebug {
   readonly traced: number;
   /** Which pictures come from a real file, by name (false = its drawn stand-in is shown). */
   readonly art: Readonly<Record<string, boolean>>;
+  /** The announcement lane's band in CSS px (top and height; looks only). */
+  readonly laneTop: number;
+  readonly laneH: number;
+  /** The message in the lane now, or null (looks only). */
+  readonly announce: { readonly kind: LaneKind; readonly text: string; readonly sub: string } | null;
   /** Positions of the throws in the air (determinism checks). */
   snapshot(): string;
   /** Throws in the air in CSS px (bots in tests); `skin` = the picture it wears (looks only). */
@@ -468,13 +492,12 @@ export const game: GameModule = {
       gold: false,
     }));
     const blades: Blade[] = Array.from({ length: MAX_BLADES }, makeBlade);
-    const callout: Callout = {
+    const lane: Lane = {
       active: false,
+      kind: 'hint',
       text: '',
       sub: '',
       color: COLORS.yellow,
-      x: 0,
-      y: 0,
       age: 0,
       life: 0,
     };
@@ -507,6 +530,9 @@ export const game: GameModule = {
     let colW = 1;
     let R = 40; // body radius px
     let box = 100; // sprite box px
+    // the announcement lane: a band right under the HUD, above the throws' highest arcs
+    let laneTop = 0;
+    let laneH = LANE_MAX_H;
     function layout(): void {
       W = view.width;
       H = view.height;
@@ -517,6 +543,8 @@ export const game: GameModule = {
       colX = (W - colW) / 2;
       R = clamp(Math.min(colW, fieldH * 0.62) * 0.11, 30, 54);
       box = R / BODY_RADIUS;
+      laneTop = top;
+      laneH = Math.round(clamp(fieldH * 0.057, LANE_MIN_H, LANE_MAX_H));
     }
     layout();
     const toX = (x: number): number => colX + x * colW;
@@ -581,15 +609,18 @@ export const game: GameModule = {
       s.gold = gold;
     }
 
-    /** Floating sticker ("+10", "-50") at (x, y) (looks only). */
-    function addPop(x: number, y: number, text: string, color: string, px: number, life = 0.85, rise = 60): void {
+    /**
+     * A small score sticker ("+10", "-50") at the cut (looks only): never bigger than what it
+     * marks, gone within 0.6 s, and never risen into the announcement lane.
+     */
+    function addPop(x: number, y: number, text: string, color: string, px: number, life: number, rise: number): void {
       const p = pops[popCursor];
       popCursor = (popCursor + 1) % MAX_POPS;
       if (!p) return;
       p.active = true;
       p.sticker = stickers.get(`p|${text}|${color}|${px}`, (old) => renderSticker(text, { size: px, fill: color, shadow: color === PAL.red ? PAL.ink : PAL.red }, old));
-      p.x = x;
-      p.y = y;
+      p.x = clamp(x, px * 1.6, W - px * 1.6);
+      p.y = Math.max(y, laneTop + laneH + 4 + px * 0.7 + rise);
       p.age = 0;
       p.life = life;
       p.rise = rise;
@@ -624,15 +655,15 @@ export const game: GameModule = {
       }
     }
 
-    function showCallout(text: string, sub: string, color: string, x: number, y: number): void {
-      callout.active = true;
-      callout.text = text;
-      callout.sub = sub;
-      callout.color = color;
-      callout.x = clamp(x, 120, Math.max(120, W - 120));
-      callout.y = clamp(y - R * 2.3, top + 50, top + fieldH - 80);
-      callout.age = 0;
-      callout.life = 1.05;
+    /** Put a message into the announcement lane: it replaces whatever is there (looks only). */
+    function showLane(kind: LaneKind, text: string, sub: string, color: string, life: number): void {
+      lane.active = true;
+      lane.kind = kind;
+      lane.text = text;
+      lane.sub = sub;
+      lane.color = color;
+      lane.age = 0;
+      lane.life = life;
     }
 
     function hitBomb(x: number, y: number): void {
@@ -664,8 +695,9 @@ export const game: GameModule = {
         gravity: -80,
         shape: 'dot',
       });
-      // below the "blade down" pill (top + 12 .. top + 62) for its whole 80 px rise
-      addPop(clamp(x, 70, W - 70), Math.max(top + 150, y - R), `-${BOMB_PENALTY}`, PAL.red, 48, 1.2, 80);
+      addPop(x, y - R * 0.5, `-${BOMB_PENALTY}`, PAL.red, POP_BIG_PX, POP_BIG_LIFE, 26);
+      // "blade down" goes into the lane, its bar draining with the stun
+      showLane('stun', 'בום! הלהב מושבת', '', PAL.white, STUN_STEPS * STEP_S);
       sfx.explode();
       haptic.heavy();
     }
@@ -707,7 +739,7 @@ export const game: GameModule = {
       let gain = f.kind === 'gold' ? POINTS_GOLD : POINTS_FRUIT;
       if (f.kind === 'gold') {
         golds++;
-        addPop(x, y - R * 0.6, `+${POINTS_GOLD}`, PAL.yel, 46, 1.1, 90);
+        addPop(x, y - R * 0.6, `+${POINTS_GOLD}`, PAL.yel, POP_BIG_PX, POP_BIG_LIFE, 28);
         fx.burst(x, y, {
           count: 22,
           colors: [PAL.yel, '#ffffff', PAL.org],
@@ -733,7 +765,7 @@ export const game: GameModule = {
         sfx.coin(1.1);
         haptic.success();
       } else {
-        addPop(x, y - R * 0.5, `+${POINTS_FRUIT}`, '#ffffff', 30, 0.75, 55);
+        addPop(x, y - R * 0.5, `+${POINTS_FRUIT}`, '#ffffff', POP_PX, POP_LIFE, 24);
         fx.shake(3, 110);
         sfx.slice(1 + Math.min(blade.swipe, 8) * 0.07);
         haptic.tap();
@@ -743,13 +775,7 @@ export const game: GameModule = {
         gain += bonus;
         comboBonus += bonus;
         const n = Math.min(blade.swipe, COMBO_TEXT.length - 1);
-        showCallout(
-          COMBO_TEXT[n] ?? '',
-          PLUS_TEXT[Math.min(n, PLUS_TEXT.length - 1)] ?? '',
-          blade.swipe >= 5 ? PAL.pink : PAL.yel,
-          x,
-          y,
-        );
+        showLane('combo', COMBO_TEXT[n] ?? '', PLUS_TEXT[Math.min(n, PLUS_TEXT.length - 1)] ?? '', blade.swipe >= 5 ? PAL.pink : PAL.yel, LANE_COMBO_S);
         fx.shake(7 + Math.min(blade.swipe, 6), 200);
         sfx.pop(1 + Math.min(blade.swipe, 10) * 0.08);
         if (blade.swipe === COMBO_MIN) sfx.success();
@@ -975,9 +1001,10 @@ export const game: GameModule = {
         s.life -= dt * 4.5;
         if (s.life <= 0) s.active = false;
       }
-      if (callout.active) {
-        callout.age += dt;
-        if (callout.age >= callout.life) callout.active = false;
+      if (lane.active) {
+        lane.age += dt;
+        // the opening hint stays until the first slice (it fades with `hint`), the rest by their life
+        if (lane.kind === 'hint' ? hint <= 0 : lane.age >= lane.life) lane.active = false;
       }
       if (ring.active) {
         ring.age += dt;
@@ -992,8 +1019,7 @@ export const game: GameModule = {
         const left = ctx.timeLeftMs();
         if (left > 0 && left <= 10_000) {
           tenSecondsCalled = true;
-          showCallout('10 שניות!', 'תנו בראש!', PAL.white, W / 2, top + fieldH * 0.32);
-          callout.life = 1.4;
+          showLane('ten', '10 שניות!', 'תנו בראש!', PAL.white, LANE_TEN_S);
           sfx.drumroll(700);
         }
       }
@@ -1118,13 +1144,13 @@ export const game: GameModule = {
       }
     }
 
-    /** The "do not slice!" tag of the first bomb at (x, y): above its spark, or under the bomb when that would be off the field. */
+    /** The "do not slice!" tag of the first bomb at (x, y): above its spark, or under the bomb when that would reach into the lane. */
     function drawTag(g: CanvasRenderingContext2D, x: number, y: number): void {
       const t = stickers.get('tag', (old) => renderChip('לא לחתוך!', 19, PAL.red, '#ffffff', old));
       const tx = clamp(x, t.w / 2 + 6, W - t.w / 2 - 6);
       const r = R * DRAW_K;
       const above = y + (FUSE_TIP_Y - 0.55) * r - t.h / 2;
-      blit(g, t, tx, above - t.h / 2 >= top + 2 ? above : y + r * 1.25 + t.h / 2);
+      blit(g, t, tx, above - t.h / 2 >= laneTop + laneH + 2 ? above : y + r * 1.25 + t.h / 2);
     }
 
     function drawSlashes(g: CanvasRenderingContext2D): void {
@@ -1216,20 +1242,85 @@ export const game: GameModule = {
       }
     }
 
-    function drawCallout(g: CanvasRenderingContext2D): void {
-      if (!callout.active) return;
-      const t = callout.age;
-      const pop = ease.outBack(clamp(t / 0.22, 0, 1));
-      const fade = clamp((callout.life - t) / 0.25, 0, 1);
-      const size = Math.round(clamp(W * 0.1, 30, 46));
-      const c = callout;
-      const st = stickers.get(`c|${c.text}|${c.sub}|${c.color}|${size}`, (old) =>
-        renderSticker(c.text, { size, fill: c.color, shadow: PAL.red, sub: c.sub || undefined, subFill: PAL.yel2 }, old),
-      );
-      g.globalAlpha = fade;
-      const fit = Math.min(1, (W - 12) / st.w);
-      const half = (st.w * fit) / 2;
-      blit(g, st, clamp(c.x, half + 6, W - half - 6), c.y - t * 22, pop * fit);
+    /** Lane text: the party sticker (pre-rendered once per text), a little less tilted so the ribbon stays slim. */
+    function laneSticker(text: string, px: number, fill: string): Sticker {
+      return stickers.get(`l|${text}|${fill}|${px}`, (old) => renderSticker(text, { size: px, fill, shadow: PAL.red, tilt: -0.02 }, old));
+    }
+    /** Width of a sticker's ink (its canvas keeps a clear margin for the skew and the shadow). */
+    const inkW = (s: Sticker, px: number): number => Math.max(1, s.w - px * 0.52);
+
+    /**
+     * The announcement lane: one message in a slim ribbon right under the HUD (laneH tall, its
+     * hard shadow included), the main line with its sub-line beside it, fitted to the width. It
+     * unrolls from the middle and fades out; drawn outside the shake so it stays readable.
+     */
+    function drawLane(g: CanvasRenderingContext2D): void {
+      if (!lane.active) return;
+      const hintMsg = lane.kind === 'hint';
+      const alpha = hintMsg ? hint : clamp((lane.life - lane.age) / 0.22, 0, 1);
+      if (alpha <= 0.01) return;
+      const stunMsg = lane.kind === 'stun';
+      const sh = 3;
+      const rh = laneH - sh;
+      // "blade down" carries a bar along the ribbon's bottom that drains with the stun
+      const bar = stunMsg ? 7 : 0;
+      const px = Math.round((rh - bar) * 0.56);
+      const subPx = Math.round(px * 0.8);
+      const main = laneSticker(lane.text, px, lane.color);
+      const sub = lane.sub ? laneSticker(lane.sub, subPx, PAL.yel2) : null;
+      const mw = inkW(main, px);
+      const sw = sub ? inkW(sub, subPx) : 0;
+      const gap = sub ? Math.round(px * 0.4) : 0;
+      const padX = Math.round(rh * 0.42);
+      const k = Math.min(1, (Math.min(W, colW) - 16 - padX * 2) / (mw + gap + sw));
+      const cw = (mw + gap + sw) * k;
+      const rw = cw + padX * 2;
+      const rad = Math.min(rh / 2, 14);
+      const unroll = hintMsg ? 1 : ease.outBack(clamp(lane.age / 0.2, 0, 1));
+      g.save();
+      g.globalAlpha = alpha;
+      g.translate(W / 2, laneTop + rh / 2);
+      g.scale(Math.max(0.01, unroll), 1);
+      roundRectPath(g, -rw / 2 + sh, -rh / 2 + sh, rw, rh, rad);
+      g.fillStyle = PAL.ink;
+      g.fill();
+      roundRectPath(g, -rw / 2, -rh / 2, rw, rh, rad);
+      g.fillStyle = stunMsg ? PAL.ink : PAL.cobD;
+      g.fill();
+      g.lineWidth = 2.5;
+      g.strokeStyle = PAL.ink;
+      g.stroke();
+      if (stunMsg) {
+        const bw = rw - rad * 2;
+        const by = rh / 2 - bar;
+        g.fillStyle = PAL.paper;
+        g.fillRect(-bw / 2, by, bw, 4);
+        g.fillStyle = PAL.red;
+        g.fillRect(-bw / 2, by, bw * clamp(stun / STUN_STEPS, 0, 1), 4);
+      }
+      // the main line on the right (Hebrew reads from the right), the sub-line to its left
+      const ty = -bar / 2;
+      blit(g, main, cw / 2 - (mw * k) / 2, ty, k);
+      if (sub) blit(g, sub, -cw / 2 + (sw * k) / 2, ty + (px - subPx) * 0.12, k);
+      g.restore();
+    }
+
+    /** A bomb's flash: a red glow on the screen's edges in three flat steps and a hot rim; the middle stays clear. */
+    function drawFlash(g: CanvasRenderingContext2D): void {
+      if (flash <= 0) return;
+      const a = Math.min(1, flash * 1.1);
+      const depth = clamp(Math.min(W, H) * 0.1, 26, 48);
+      g.strokeStyle = PAL.red;
+      g.globalAlpha = a * 0.38;
+      for (let i = 0; i < 3; i++) {
+        // a stroke on the canvas edge shows half its width
+        g.lineWidth = depth * 2 * (1 - i / 3);
+        g.strokeRect(0, 0, W, H);
+      }
+      g.globalAlpha = a;
+      g.strokeStyle = PAL.yel;
+      g.lineWidth = 8;
+      g.strokeRect(0, 0, W, H);
       g.globalAlpha = 1;
     }
 
@@ -1280,12 +1371,7 @@ export const game: GameModule = {
       const hs = 86;
       art.hand.draw(g, hx + hs * 0.2, hy + hs * 0.42, hs, hs);
       g.restore();
-      // label
-      const px = Math.round(clamp(W * 0.07, 24, 32));
-      const st = stickers.get(`hint|${px}`, (old) => renderSticker('החליקו כדי לחתוך!', { size: px, fill: '#ffffff', shadow: PAL.red }, old));
-      g.globalAlpha = hint;
-      blit(g, st, W / 2, toY(0.68), Math.min(1, (W - 12) / st.w));
-      g.globalAlpha = 1;
+      // (its label is in the lane)
     }
 
     function drawStun(g: CanvasRenderingContext2D): void {
@@ -1300,19 +1386,7 @@ export const game: GameModule = {
       g.lineWidth = 4;
       g.strokeRect(13, 13, W - 26, H - 26);
       g.globalAlpha = 1;
-      // "blade down" sticker with a draining bar
-      const st = stickers.get('stun', (old) => renderChip('בום! הלהב מושבת', 19, PAL.ink, '#ffffff', old));
-      const cx = W / 2;
-      const y = top + 12;
-      g.drawImage(st.canvas, cx - st.w / 2, y, st.w, st.h);
-      const w = Math.min(200, st.w - 30);
-      const by = y + st.h + 4;
-      g.fillStyle = PAL.ink;
-      g.fillRect(cx - w / 2 - 2, by - 2, w + 4, 11);
-      g.fillStyle = PAL.paper;
-      g.fillRect(cx - w / 2, by, w, 7);
-      g.fillStyle = PAL.red;
-      g.fillRect(cx - w / 2, by, w * k, 7);
+      // ("בום! הלהב מושבת" and its draining bar are in the lane)
     }
 
     function render(alpha: number): void {
@@ -1345,16 +1419,11 @@ export const game: GameModule = {
       drawBlades(g);
       fx.draw(g);
       drawPops(g);
-      drawCallout(g);
       g.restore();
       drawHint(g);
       drawStun(g);
-      if (flash > 0) {
-        g.globalAlpha = Math.min(1, flash * 1.1);
-        g.fillStyle = '#ffffff';
-        g.fillRect(0, 0, W, H);
-        g.globalAlpha = 1;
-      }
+      drawFlash(g);
+      drawLane(g);
     }
 
     const loop = createLoop({ update, render });
@@ -1412,6 +1481,15 @@ export const game: GameModule = {
         return trace ? trace.length : 0;
       },
       art: art.real,
+      get laneTop(): number {
+        return laneTop;
+      },
+      get laneH(): number {
+        return laneH;
+      },
+      get announce() {
+        return lane.active ? { kind: lane.kind, text: lane.text, sub: lane.sub } : null;
+      },
       get active(): number {
         let n = 0;
         for (const f of flyers) if (f.active) n++;
@@ -1448,6 +1526,8 @@ export const game: GameModule = {
     };
     window.__ninja = debug;
 
+    // the swipe hint's label opens the lane (it stays until the first slice; any newer message replaces it)
+    showLane('hint', 'החליקו כדי לחתוך!', '', PAL.white, HINT_MAX_MS / 1000);
     // a still frame right away (the loop's first render follows on the next frame)
     render(0);
     loop.start();

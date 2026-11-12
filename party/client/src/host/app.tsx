@@ -21,6 +21,7 @@ import { CutsceneMenu, CutscenePlayer } from './cutscene';
 import { CountdownScreen, GoSplash, IntroScreen, ResumeOverlay } from './intro';
 import { Lobby } from './lobby';
 import { SoundCheck, useShowMusic } from './music';
+import { Narrator } from './narrator';
 import { useHostRoom } from './room';
 import { FinalScene, isShowCalm, onShowCalmChange, PlayingScene, ResultsScene, setShowCalm, standingsAt } from './show/index';
 import { Btn, ConfirmDialog, Modal, Switch, Toast } from './ui';
@@ -611,7 +612,10 @@ export function App(): JSX.Element {
 
   return (
     <div class={`hs-root hs-phase-${phase ?? 'boot'} ${display ? 'is-display' : ''}`} data-phase={phase ?? 'boot'}>
-      <main class="hs-stage">{scene}</main>
+      <main class="hs-stage">
+        {scene}
+        <Narrator state={state} clock={room.clock} />
+      </main>
 
       <footer class={`hs-strip ${stripClass}`} data-testid="strip">
         <div class="hs-strip-side">

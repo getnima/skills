@@ -6,6 +6,7 @@ import { GAME_IDS, GAMES, MAX_PLAYERS } from '../../../shared/protocol';
 import { peekAvatarUrl, useAvatarUrl } from '../avatar';
 import { StandingsPanel } from './show/index';
 import { designedQrUrl, hostDollUrl, introArtUrl } from './show/art';
+import { narratorSpeaking, onNarratorSpeaking } from './show/narrator-bus';
 import { GameArt, lookPlateColor, unitPx } from './show/common';
 import { PrizeRelic } from './show/prize';
 import { prettyUrl, useJoinInfo } from './util';
@@ -180,12 +181,21 @@ function chipTier(n: number): number {
   return 0.72;
 }
 
+/** True while one of the hosts is narrating on the TV (narrator.tsx). */
+function useHostsNarrating(): boolean {
+  const [on, setOn] = useState(narratorSpeaking() !== null);
+  useEffect(() => onNarratorSpeaking(() => setOn(narratorSpeaking() !== null)), []);
+  return on;
+}
+
 /** "Your hosts": the two host dolls wait on the stage until the first guest is in. */
 function WaitingHosts(): JSX.Element {
   const a = hostDollUrl('a');
   const b = hostDollUrl('b');
+  // while a host steps forward to narrate, the dolls on the stand step aside (never two of them at once)
+  const narrating = useHostsNarrating();
   return (
-    <div class="hs-chips-empty">
+    <div class={`hs-chips-empty ${narrating ? 'is-narrating' : ''}`}>
       {a !== null && b !== null ? (
         <div class="hs-hosts" data-testid="hosts">
           <span class="hs-hosts-tag">

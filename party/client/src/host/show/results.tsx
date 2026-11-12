@@ -12,6 +12,7 @@ import { WINNER_REVEAL_MS } from '../../../../shared/protocol';
 import { backdropUrl, lastPlaceArt } from './art';
 import { Avatar, CountUp, formatScore, GameArt, useFrame, useStage, useTicker } from './common';
 import { useFunnyLayer } from './funny';
+import { cueNarration, isNarratorOn, setNarrationSlot } from './narrator-bus';
 import { PrizeRelic } from './prize';
 
 import type { JSX } from 'preact';
@@ -185,6 +186,16 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
   const cueAt = useRef({ confetti: 0, landed: false, raved: false });
   /** The suspense line of a near-empty board was said (once per round). */
   const suspCue = useRef(false);
+  /** The hosts' narration (narrator-bus.ts): which of this showing's moments were cued. */
+  const narrated = useRef(new Set<string>());
+  const sceneId = useRef(Math.floor(Math.random() * 1e9).toString(36));
+  const narrate = (moment: 'timeup' | 'suspense' | 'reveal' | 'standings', ttlMs: number, valid: () => boolean, holdMs?: number): void => {
+    if (narrated.current.has(moment)) return;
+    narrated.current.add(moment);
+    cueNarration({ id: `${moment}:${props.results.roundIndex}:${sceneId.current}`, moment, ttlMs, valid, holdMs });
+  };
+  /** Show time now (ms relative to the reveal), for the narration's validity checks. */
+  const showT = (): number => clock.current.t;
 
   const stopSong = (fadeMs: number): void => {
     if (!song.current) return;
@@ -199,6 +210,7 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
     clock.current = { t: Number.NEGATIVE_INFINITY, post: -1, started: false };
     cueAt.current = { confetti: 0, landed: false, raved: false };
     suspCue.current = false;
+    narrated.current = new Set();
     stopSong(300);
   }, [props.results.roundIndex]);
 
@@ -290,8 +302,17 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
       setView(next);
       onEnter(next, prev, live, t);
     }
+    // ── the hosts' narration, at the beats of this timeline (only while it runs live) ──
+    if (live) {
+      if (next.phase === 'suspense' && t < -5_600) narrate('timeup', 2_000, () => showT() < -4_200, 2_600);
+      // the drum roll: the commentator was just hushed; the hosts hold their breath until the blackout
+      if (next.phase === 'suspense' && t >= TENSE_FROM + 100 && t < -1_400) narrate('suspense', 700, () => showT() < -1_000, 2_100);
+      if (next.phase === 'ceremony' && p.winners.length > 0 && t - NAME_AT >= 250 && t - NAME_AT < 2_500) narrate('reveal', 1_500, () => showT() - NAME_AT < 5_500);
+      if (next.phase === 'standings' && t - p.ceremonyEnd >= 300 && t - p.ceremonyEnd < 1_500) narrate('standings', 1_500, () => showT() - planRef.current.ceremonyEnd < 2_800, 2_900);
+    }
     // a small room has (almost) no rows to reveal: the commentator fills the quiet, once
-    if (next.phase === 'suspense' && live && !suspCue.current && p.reveal.length <= 2 && t >= -6_800 && t < TENSE_FROM - 1_000) {
+    // (with the hosts narrating on the TV, the drum roll is theirs)
+    if (next.phase === 'suspense' && live && !suspCue.current && !isNarratorOn() && p.reveal.length <= 2 && t >= -6_800 && t < TENSE_FROM - 1_000) {
       suspCue.current = true;
       funny.layer()?.sayLine('suspense', {}, 'shocked', { force: true, holdMs: 3_400 });
     }
@@ -324,6 +345,11 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
       }
     }
   });
+
+  // where the hosts may stand: the winner's band in the ceremony, the left column otherwise
+  useEffect(() => {
+    setNarrationSlot('results', view.phase === 'ceremony' ? 'ceremony' : 'aside');
+  }, [view.phase]);
 
   const bg = backdropUrl();
   // an elimination round (flappy): the raw number is a distance and means nothing to the room

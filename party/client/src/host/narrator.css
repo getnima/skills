@@ -1,0 +1,377 @@
+/*
+ * The hosts narrating (narrator.tsx): a toy figure in a pose pops in from the side with a white
+ * speech bubble in the party look (ink outline, hard shadow), stays a few seconds and leaves.
+ *
+ * Sizes are in --nu (px per design unit of the stage: the scenes' --u on the same box). Each screen
+ * has a slot, picked so that nothing the room is watching is covered:
+ *   lobby       first lobby: standing on the games strip, left of the QR, under the guests (measured)
+ *   top         intro and 3-2-1: the top-left corner, above the instructions and beside the title
+ *   side        a round: only the measured empty margin under the timer, inside the side column
+ *   aside       results: the left column under the round's title, bubble above the host
+ *   ceremony    the winner: the empty band at the bottom of the text column (the name is above it)
+ *   final-left  the podium rising: the left margin beside the second place, bubble above the host
+ *   final-top   the final table: the top right, above the third place, right of the champion's name
+ * The measured slots get --bx/--by/--bw/--bh (the box) and --bb (box bottom to the layer's bottom).
+ */
+.nr-layer {
+  --nu: 1px;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  pointer-events: none;
+  direction: ltr;
+}
+.nr-layer.is-portrait {
+  display: none;
+}
+
+.nr {
+  --fh: calc(400 * var(--nu));
+  --fs: calc(42 * var(--nu));
+  --bmax: calc(600 * var(--nu));
+  position: absolute;
+  display: flex;
+  align-items: flex-end;
+  gap: calc(6 * var(--nu));
+  direction: ltr;
+}
+.nr-fig {
+  position: relative;
+  flex: none;
+  width: calc(var(--fh) * 0.56);
+  height: var(--fh);
+  transform-origin: 50% 100%;
+  animation: nr-in-left 620ms cubic-bezier(0.25, 0.9, 0.35, 1) both;
+}
+.nr-pic {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: 50% 100%;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(calc(6 * var(--nu)) calc(8 * var(--nu)) 0 rgba(22, 18, 14, 0.45));
+  animation: nr-bob 0.9s ease-in-out 700ms infinite alternate;
+}
+/* no pose picture: the head, a little smaller, sitting at the bottom of the figure's box */
+.nr.is-head .nr-pic {
+  inset: auto 0 0;
+  height: 62%;
+}
+
+.nr-bubble {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: calc(200 * var(--nu));
+  max-width: var(--bmax);
+  margin-bottom: calc(var(--fh) * 0.45);
+  padding: calc(22 * var(--nu)) calc(30 * var(--nu)) calc(18 * var(--nu));
+  border: calc(5 * var(--nu)) solid var(--ink);
+  border-radius: calc(30 * var(--nu));
+  background: #fff;
+  color: var(--ink);
+  font: 800 var(--fs) / 1.18 var(--read);
+  text-align: right;
+  text-wrap: balance;
+  box-shadow: calc(7 * var(--nu)) calc(9 * var(--nu)) 0 var(--ink);
+  transform-origin: 0 100%;
+  animation: nr-pop 460ms cubic-bezier(0.2, 1.45, 0.4, 1) 200ms both;
+}
+.nr-text {
+  display: block;
+}
+/* the tail: a white corner toward the host, on the side the host stands */
+.nr-bubble::before {
+  content: '';
+  position: absolute;
+  left: calc(-19 * var(--nu));
+  bottom: calc(26 * var(--nu));
+  width: calc(32 * var(--nu));
+  height: calc(32 * var(--nu));
+  border-left: calc(5 * var(--nu)) solid var(--ink);
+  border-bottom: calc(5 * var(--nu)) solid var(--ink);
+  background: #fff;
+  transform: rotate(45deg) skew(8deg, 8deg);
+}
+/* a guest's name as a tag on the bubble (never inside the line) */
+.nr-name {
+  position: absolute;
+  top: calc(-28 * var(--nu));
+  right: calc(24 * var(--nu));
+  max-width: 90%;
+  padding: calc(1 * var(--nu)) calc(18 * var(--nu)) calc(5 * var(--nu));
+  border: calc(3.5 * var(--nu)) solid var(--ink);
+  border-radius: 999px;
+  font: 800 calc(28 * var(--nu)) / 1.25 var(--read);
+  color: #fff;
+  background: var(--cob);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: rotate(-2deg);
+}
+
+/* leaving: the host slides back out, the bubble shrinks into its tail */
+.nr.is-leaving .nr-fig {
+  animation: nr-out-left 300ms cubic-bezier(0.55, 0, 0.85, 0.4) both;
+}
+.nr.is-leaving .nr-bubble {
+  animation: nr-shrink 200ms ease-in both;
+}
+
+/* ── the slots ── */
+
+/* the first lobby: on the games strip, left of the QR; the bubble at the host's feet line */
+.nr--lobby {
+  --fh: calc(430 * var(--nu));
+  --fs: calc(42 * var(--nu));
+  --bmax: calc(var(--bw) - var(--fh) * 0.56 - 90 * var(--nu));
+  left: calc(var(--bx) + 26 * var(--nu));
+  bottom: calc(var(--bb) + 2 * var(--nu));
+}
+.nr--lobby .nr-bubble {
+  margin-bottom: calc(14 * var(--nu));
+}
+
+/* intro and countdown: the top-left corner */
+.nr--top {
+  --fh: calc(400 * var(--nu));
+  --fs: calc(36 * var(--nu));
+  --bmax: calc(470 * var(--nu));
+  left: calc(22 * var(--nu));
+  top: calc(14 * var(--nu));
+  align-items: flex-start;
+}
+.nr--top .nr-bubble {
+  margin: calc(34 * var(--nu)) 0 0;
+}
+.nr--top .nr-bubble::before {
+  bottom: auto;
+  top: calc(30 * var(--nu));
+}
+
+/* a round: the measured margin under the timer, inside the side column */
+.nr--side {
+  --fh: var(--bh);
+  --fs: calc(30 * var(--nu));
+  left: var(--bx);
+  top: var(--by);
+  width: var(--bw);
+  height: var(--bh);
+  align-items: center;
+  gap: calc(14 * var(--nu));
+}
+.nr--side .nr-fig {
+  width: calc(var(--bh) * 0.5);
+}
+.nr--side .nr-bubble {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: calc(14 * var(--nu)) calc(18 * var(--nu)) calc(12 * var(--nu));
+  border-width: calc(4 * var(--nu));
+  border-radius: calc(22 * var(--nu));
+  box-shadow: calc(5 * var(--nu)) calc(6 * var(--nu)) 0 var(--ink);
+}
+.nr--side .nr-bubble::before {
+  bottom: auto;
+  top: 50%;
+  margin-top: calc(-16 * var(--nu));
+  border-width: calc(4 * var(--nu));
+}
+
+/* results: the left column, the bubble standing on the host's head */
+.nr--aside {
+  --fh: calc(350 * var(--nu));
+  --fs: calc(38 * var(--nu));
+  --bmax: calc(440 * var(--nu));
+  left: calc(30 * var(--nu));
+  bottom: calc(6 * var(--nu));
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: calc(16 * var(--nu));
+}
+.nr--aside .nr-bubble {
+  margin: 0;
+}
+.nr--aside .nr-bubble::before {
+  left: calc(70 * var(--nu));
+  bottom: calc(-19 * var(--nu));
+  transform: rotate(-45deg) skew(8deg, 8deg);
+}
+
+/* the winner: the empty band at the bottom of the text column, right of the prize */
+.nr--ceremony {
+  --fh: calc(300 * var(--nu));
+  --fs: calc(44 * var(--nu));
+  --bmax: calc(820 * var(--nu));
+  left: calc(650 * var(--nu));
+  bottom: 0;
+}
+.nr--ceremony .nr-bubble {
+  margin-bottom: calc(46 * var(--nu));
+}
+
+/*
+ * The podium rising: the host stands in the left margin, left of the second place's column
+ * (the podium is 1380 units wide, centred, so its first column starts about 290 units in), and
+ * the bubble rests on the host's head, above the dolls of the podium (the second place's doll
+ * tops out about 515 units above the floor) and below the champion's name.
+ */
+.nr--final-left {
+  --fh: calc(520 * var(--nu));
+  --fs: calc(40 * var(--nu));
+  --bmax: calc(520 * var(--nu));
+  left: calc(10 * var(--nu));
+  bottom: 0;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: calc(18 * var(--nu));
+}
+.nr--final-left .nr-fig {
+  width: calc(var(--fh) * 0.5);
+}
+.nr--final-left .nr-bubble {
+  margin: 0;
+}
+.nr--final-left .nr-bubble::before {
+  left: calc(70 * var(--nu));
+  bottom: calc(-19 * var(--nu));
+  transform: rotate(-45deg) skew(8deg, 8deg);
+}
+
+/* the final table: top right, the host on the right edge, the bubble to the left of the host */
+.nr--final-top {
+  --fh: calc(420 * var(--nu));
+  --fs: calc(36 * var(--nu));
+  --bmax: calc(360 * var(--nu));
+  right: calc(24 * var(--nu));
+  top: calc(250 * var(--nu));
+  flex-direction: row-reverse;
+  align-items: flex-start;
+}
+.nr--final-top .nr-bubble {
+  margin: calc(80 * var(--nu)) 0 0;
+  transform-origin: 100% 0;
+}
+.nr--final-top .nr-bubble::before {
+  left: auto;
+  right: calc(-19 * var(--nu));
+  bottom: auto;
+  top: calc(40 * var(--nu));
+  transform: rotate(-135deg) skew(8deg, 8deg);
+}
+.nr--final-top .nr-fig {
+  animation-name: nr-in-right;
+}
+.nr--final-top.is-leaving .nr-fig {
+  animation-name: nr-out-right;
+}
+
+/* ── motion ── */
+@keyframes nr-in-left {
+  0% {
+    opacity: 0;
+    transform: translate3d(-150%, 8%, 0) rotate(-16deg) scale(0.92, 1.08);
+  }
+  35% {
+    opacity: 1;
+  }
+  58% {
+    transform: translate3d(8%, 0, 0) rotate(5deg) scale(1.1, 0.88);
+  }
+  78% {
+    transform: translate3d(-3%, 0, 0) rotate(-2deg) scale(0.96, 1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes nr-in-right {
+  0% {
+    opacity: 0;
+    transform: translate3d(150%, 8%, 0) rotate(16deg) scale(0.92, 1.08);
+  }
+  35% {
+    opacity: 1;
+  }
+  58% {
+    transform: translate3d(-8%, 0, 0) rotate(-5deg) scale(1.1, 0.88);
+  }
+  78% {
+    transform: translate3d(3%, 0, 0) rotate(2deg) scale(0.96, 1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes nr-out-left {
+  to {
+    opacity: 0;
+    transform: translate3d(-150%, 6%, 0) rotate(-14deg);
+  }
+}
+@keyframes nr-out-right {
+  to {
+    opacity: 0;
+    transform: translate3d(150%, 6%, 0) rotate(14deg);
+  }
+}
+@keyframes nr-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.25) rotate(-6deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.07) rotate(1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes nr-shrink {
+  to {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+@keyframes nr-bob {
+  from {
+    transform: rotate(-1.5deg) translate3d(0, 0, 0);
+  }
+  to {
+    transform: rotate(1.5deg) translate3d(0, -1.2%, 0);
+  }
+}
+@keyframes nr-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes nr-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* reduced motion: no slide, no bounce, no bob; a short fade in and out */
+@media (prefers-reduced-motion: reduce) {
+  .nr .nr-fig,
+  .nr .nr-bubble {
+    animation: nr-fade 180ms ease both !important;
+  }
+  .nr .nr-pic {
+    animation: none !important;
+  }
+  .nr.is-leaving .nr-fig,
+  .nr.is-leaving .nr-bubble {
+    animation: nr-fade-out 180ms ease both !important;
+  }
+}

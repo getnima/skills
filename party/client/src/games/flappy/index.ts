@@ -80,9 +80,16 @@ interface FlappyDebug {
   readonly grace: boolean;
   /** Times the bird was put back on the live course (reload / stall). */
   readonly rejoins: number;
-  /** The banner on the canvas right now ('' when none) and the 3-2-1 digit ('' when none). */
+  /** The announcement on the canvas right now ('' when none: the lane's words, or the big 'ניצחת!') and the finale's words + 3-2-1 digit in the lane ('' when none). */
   readonly banner: string;
   readonly countdown: string;
+  /**
+   * The announcement lane as last drawn (CSS px): its text ('' when empty), a key that changes with
+   * every new message, the digit inside it (null), its box, the top of the play area under the HUD,
+   * the "N באוויר" chip's box (null when not shown), the obstacles-passed counter's box (null when not
+   * shown) and the big banner on screen ('' or 'ניצחת!').
+   */
+  readonly lane: { text: string; key: number; digit: number | null; x: number; y: number; w: number; h: number; hudTop: number; chip: [number, number, number, number] | null; counter: [number, number, number, number] | null; big: string };
   /** The "out" view (null while flying). */
   readonly out: { verdict: string; place: string; air: string; names: string[]; finale: string; count: string; winner: string; heads: number; winnerHead: boolean } | null;
   /**
@@ -134,6 +141,13 @@ const VIEW_W = 68;
 const HEAD_OF_TOKEN = 1.12;
 /** Before GO the game waits this long at most for the dressed head, so it starts with it; later it is swapped in when ready. */
 const HEAD_WAIT_MS = 600;
+/**
+ * The announcement lane: one line at the very top of the play area, under the HUD, beside the
+ * "N באוויר" chip (owner's rule: announcements never cover the action). At most this high (CSS px),
+ * one message at a time, the newest replaces the older, each for at most LANE_MS.
+ */
+const LANE_H = 42;
+const LANE_MS = 1400;
 
 /** The head code (and the avatar compositor) is loaded only by a game that has a look to draw. */
 type HeadModule = typeof import('./head');
@@ -195,7 +209,7 @@ export const game: GameModule = {
     const fx = createFx(260);
     const flight = createFlight(ctx.seed);
     const sparkle = paintDrawable('fl-sparkle', starPainter(PAL.yel), 32);
-    const stickers = createStickerCache(18);
+    const stickers = createStickerCache(24);
     const spectator = createSpectator(ctx.root, ctx.hudHeight, ctx.safeBottom);
 
     // ── who else is flying ──
@@ -212,7 +226,7 @@ export const game: GameModule = {
     // phone the field is narrower than the screen height (see VIEW_W), so the sky
     // between them is open air: the bird may fly up to `ceil` (field units, <= 0).
     const L = { W: 0, H: 0, top: 0, hudTop: 0, ceil: 0, groundTop: 0, groundH: 0, playH: 0, U: 1, birdX: 0, sized: '' };
-    const px = { banner: 40, count: 120, chip: 20, hint: 26, big: 96 };
+    const px = { banner: 40, lane: 20, laneChip: 20, score: 28, chip: 20, hint: 26 };
     function measure(): void {
       const W = view.width;
       const H = view.height;
@@ -233,10 +247,11 @@ export const game: GameModule = {
       L.ceil = Math.min(0, (L.hudTop - L.top) / L.U);
       L.birdX = Math.round(clamp(Math.min(W * 0.3, 34 * L.U + 20), 60, W * 0.45));
       px.banner = Math.round(clamp(W * 0.115, 32, 56));
-      px.count = Math.round(clamp(W * 0.36, 96, 170));
+      px.lane = Math.round(clamp(W * 0.062, 20, 24));
+      px.laneChip = Math.round(clamp(W * 0.052, 17, 22));
       px.chip = Math.round(clamp(W * 0.052, 17, 23));
       px.hint = Math.round(clamp(W * 0.07, 22, 30));
-      px.big = Math.round(clamp(L.playH * 0.24, 70, 130));
+      px.score = Math.round(clamp(W * 0.075, 24, 30));
     }
     measure();
 
@@ -293,6 +308,16 @@ export const game: GameModule = {
     let bannerFill: string = PAL.yel;
     let bannerT = 0;
     let bannerMax = 1;
+    // the lane (see LANE_H): a word ('word') or the finale's words with the 3-2-1 digit ('count')
+    let laneKind: 'word' | 'count' = 'word';
+    let laneText = '';
+    let laneFill: string = PAL.yel;
+    let laneT = 0;
+    let laneMax = 1;
+    let laneKey = 0;
+    let laneBox: { x: number; y: number; w: number; h: number; digit: number | null } | null = null;
+    let chipBox: [number, number, number, number] | null = null;
+    let counterBox: [number, number, number, number] | null = null;
     let destroyed = false;
     let traceLeft = 0;
     const traced: Array<Array<number | string>> = [];
@@ -378,11 +403,30 @@ export const game: GameModule = {
       cancelHintFade = fx.tween({ ms, from: hintAlpha, to, update: (v) => (hintAlpha = v) });
     }
 
+    /** The big banner over the play area: only for 'ניצחת!' (the play is over). */
     function banner(text: string, fill: string = PAL.yel, ms = 1100): void {
       bannerText = text;
       bannerFill = fill;
       bannerMax = ms / 1000;
       bannerT = bannerMax;
+    }
+
+    /** A message in the lane: it replaces whatever the lane shows, for at most LANE_MS. */
+    function say(text: string, fill: string = PAL.yel, ms = 1100): void {
+      laneKind = 'word';
+      laneText = text;
+      laneFill = fill;
+      laneMax = Math.min(LANE_MS, ms) / 1000;
+      laneT = laneMax;
+      laneKey++;
+    }
+    /** The finale's words and the new 3-2-1 digit in the lane (each digit is a new message). */
+    function sayCount(): void {
+      laneKind = 'count';
+      laneText = '';
+      laneMax = LANE_MS / 1000;
+      laneT = laneMax;
+      laneKey++;
     }
 
     // ── sounds that the kit does not have ──
@@ -462,7 +506,7 @@ export const game: GameModule = {
       fx.burst(gx, gy, { count: 9, colors: [PAL.yel, '#ffffff', PAL.red], speed: 240, size: 4, life: 0.45, gravity: 120, shape: 'star' });
       sfx.coin(1 + Math.min(run, 24) * 0.025);
       if (run % 5 === 0 && bannerT <= 0) {
-        banner(streakWord(run), run % 10 === 0 ? PAL.white : PAL.yel);
+        say(streakWord(run), run % 10 === 0 ? PAL.white : PAL.yel);
         sfx.success();
         haptic.success();
       }
@@ -502,6 +546,7 @@ export const game: GameModule = {
       haptic.bump();
       flapBoost = 0;
       bannerT = 0;
+      laneT = 0;
     }
 
     /** Put the bird back on the live course: the middle of the next gap, hanging and untouchable for a moment. */
@@ -643,6 +688,7 @@ export const game: GameModule = {
             if (mode === 'fly') {
               sfx.beep();
               haptic.tap();
+              if (!won) sayCount();
             }
           }
         } else if (left <= 0) {
@@ -653,7 +699,7 @@ export const game: GameModule = {
             finaleLeft = activeNow() ?? 0;
             shownStage = stage;
             if (mode === 'fly' && !won) {
-              banner('מחורחר!', PAL.yel, 1500);
+              say('מחורחר!', PAL.yel, LANE_MS);
               flash = 0.4;
               fx.tween({ ms: 300, from: 0.4, to: 0, update: (v) => (flash = v) });
               fx.shake(6, 300);
@@ -661,7 +707,7 @@ export const game: GameModule = {
             }
           } else if (stage > shownStage) {
             shownStage = stage;
-            if (mode === 'fly' && !won && stage % 2 === 0 && bannerT <= 0) banner('עוד יותר קשה!', PAL.white, 900);
+            if (mode === 'fly' && !won && stage % 2 === 0) say('עוד יותר קשה!', PAL.white, 900);
           }
         }
       }
@@ -681,6 +727,7 @@ export const game: GameModule = {
       flapFaceT = Math.max(0, flapFaceT - dt);
       passGlow = Math.max(0, passGlow - dt * 2.4);
       if (bannerT > 0) bannerT = Math.max(0, bannerT - dt);
+      if (laneT > 0) laneT = Math.max(0, laneT - dt);
       updateFeathers(dt);
       fx.update(dt);
     }
@@ -832,24 +879,85 @@ export const game: GameModule = {
       return stickers.get(`${L.sized}|${key}`, make);
     }
 
-    /** Obstacles passed: the big number behind the action. */
+    /** Obstacles passed: a small score at the top, in the lane row. */
     function drawCounter(): void {
+      counterBox = null;
       if (mode !== 'fly' || nextIdx <= 0) return;
-      const s = sticker(`n${nextIdx}`, (old) => renderSticker(String(nextIdx), { size: px.big, fill: PAL.white, shadow: null, outline: 0.1, skew: 0, tilt: 0 }, old));
-      g.globalAlpha = 0.34;
-      blit(g, s, L.W / 2, L.top + L.playH * 0.3, counterPop);
-      g.globalAlpha = 1;
+      const n = nextIdx;
+      const s = sticker(`n${n}`, (old) => renderSticker(String(n), { size: px.score, fill: PAL.white, shadow: PAL.cobD, outline: 0.14, skew: 0, tilt: 0 }, old));
+      // small, at the left end of the lane row (like a classic score): never over the field; the
+      // pop of a pass (1.25) stays inside the lane's height
+      const k = Math.min(1, (LANE_H * 0.8) / s.h);
+      const w = s.w * k;
+      const h = s.h * k;
+      const x = 8;
+      const cy = L.hudTop + 2 + LANE_H / 2;
+      blit(g, s, x + w / 2, cy, k * counterPop);
+      counterBox = [x, cy - h / 2, w, h];
     }
 
     /** "N באוויר": how many are still flying, under the HUD. */
     function drawAirChip(): void {
+      chipBox = null;
       if (mode !== 'fly' || !hasField) return;
       const n = activeNow();
       if (n === null) return;
       const s = sticker(`air${n}`, (old) => renderChip(`${n} באוויר`, px.chip, n <= 3 ? PAL.red : PAL.yel, n <= 3 ? PAL.white : PAL.ink, old));
-      g.drawImage(s.canvas, L.W - 8 - s.w, L.hudTop + 4, s.w, s.h);
+      chipBox = [L.W - 8 - s.w, L.hudTop + 4, s.w, s.h];
+      g.drawImage(s.canvas, chipBox[0], chipBox[1], s.w, s.h);
     }
 
+    /**
+     * The lane: one slim line at the very top of the play area, under the HUD, in the room left of
+     * the "N באוויר" chip (the whole width without it). Fitted to that room and to LANE_H.
+     */
+    function drawLane(): void {
+      laneBox = null;
+      if (laneT <= 0 || mode !== 'fly') return;
+      const pieces: Sticker[] = [];
+      let digit: number | null = null;
+      if (laneKind === 'count') {
+        // the finale's words on a red chip and the digit on a yellow one, as in the "out" view
+        const c = countdownShown();
+        if (!c) return;
+        digit = c.digit;
+        pieces.push(sticker(`lw${c.text}`, (old) => renderChip(c.text, px.laneChip, PAL.red, PAL.yel, old)));
+        pieces.push(sticker(`ld${c.digit}`, (old) => renderChip(String(c.digit), px.laneChip, PAL.yel, PAL.ink, old)));
+      } else {
+        if (laneText === '') return;
+        const text = laneText;
+        const fill = laneFill;
+        pieces.push(sticker(`lt${text}${fill}`, (old) => renderSticker(text, { size: px.lane, fill }, old)));
+      }
+      const gap = 6;
+      let w = -gap;
+      let h = 0;
+      for (const p of pieces) {
+        w += p.w + gap;
+        h = Math.max(h, p.h);
+      }
+      // between the obstacles-passed counter (left) and the "N באוויר" chip (right)
+      const left = counterBox !== null ? counterBox[0] + counterBox[2] + 8 : 8;
+      const right = chipBox !== null ? chipBox[0] - 8 : L.W - 8;
+      const room = Math.max(40, right - left);
+      const age = laneMax - laneT;
+      // a small pop in (never larger than the lane) and a fade out
+      const k = Math.min(1, room / w, LANE_H / h) * (0.86 + 0.14 * ease.outCubic(clamp(age / 0.16, 0, 1)));
+      const cx = left + room / 2;
+      const cy = L.hudTop + 2 + LANE_H / 2;
+      g.globalAlpha = clamp(laneT / 0.22, 0, 1);
+      // right to left, as it reads: the words, then the digit
+      let x = cx + (w * k) / 2;
+      for (const p of pieces) {
+        const pw = p.w * k;
+        blit(g, p, x - pw / 2, cy, k);
+        x -= pw + gap * k;
+      }
+      g.globalAlpha = 1;
+      laneBox = { x: cx - (w * k) / 2, y: cy - (h * k) / 2, w: w * k, h: h * k, digit };
+    }
+
+    /** The big banner: only 'ניצחת!' uses it now (the play is over); everything else goes to the lane. */
     function drawBanner(): void {
       if (bannerT <= 0 || bannerText === '') return;
       const age = bannerMax - bannerT;
@@ -861,24 +969,12 @@ export const game: GameModule = {
       g.globalAlpha = 1;
     }
 
-    /** "!נשארו 3" and the 3-2-1 before the finale begins (the game does not stop). */
+    /** "!נשארו 3" and the 3-2-1 before the finale begins (the game does not stop): shown in the lane. */
     function countdownShown(): { text: string; digit: number } | null {
       if (finaleAtMs === null || mode !== 'fly' || won) return null;
       const left = finaleAtMs - elapsedMs();
       if (left <= 0 || left > 3_000) return null;
       return { text: finaleText(leftForBanner(), false), digit: Math.min(3, Math.ceil(left / 1000)) };
-    }
-    function drawCountdown(): void {
-      const c = countdownShown();
-      if (!c) return;
-      const words = sticker(`f${c.text}`, (old) => renderSticker(c.text, { size: px.banner, fill: PAL.yel, burst: PAL.red }, old));
-      const fit = Math.min(1, (L.W - 12) / words.w);
-      blit(g, words, L.W / 2, L.top + L.playH * 0.17, fit);
-      const digit = sticker(`d${c.digit}`, (old) => renderSticker(String(c.digit), { size: px.count, fill: PAL.white, outline: 0.1 }, old));
-      const frac = ((finaleAtMs ?? 0) - elapsedMs()) / 1000 - (c.digit - 1);
-      g.globalAlpha = 0.85;
-      blit(g, digit, L.W * 0.62, L.top + L.playH * 0.52, 0.8 + 0.35 * clamp(frac, 0, 1));
-      g.globalAlpha = 1;
     }
 
     function drawHint(): void {
@@ -939,7 +1035,6 @@ export const game: GameModule = {
         fx.applyShake(g);
         const skyH = L.playH * 0.2;
         drawTiledX(art.skyline, L.top + L.playH * 0.06, skyH, groundScroll * L.U * 0.25);
-        drawCounter();
         drawObstacles(d, from);
         if (mode !== 'out') drawBird(alpha);
         drawTiledX(art.ground, L.groundTop, L.groundH, (mode === 'dead' ? deadDist : d) * L.U);
@@ -951,8 +1046,9 @@ export const game: GameModule = {
         g.restore();
         fx.draw(g);
         drawAirChip();
+        drawCounter();
+        drawLane();
         drawBanner();
-        drawCountdown();
         drawHint();
         drawCrash();
         if (flash > 0) {
@@ -1075,11 +1171,29 @@ export const game: GameModule = {
         return rejoins;
       },
       get banner(): string {
-        return bannerT > 0 ? bannerText : '';
+        if (bannerT > 0) return bannerText;
+        return mode === 'fly' && laneT > 0 && laneKind === 'word' ? laneText : '';
       },
       get countdown(): string {
-        const c = countdownShown();
+        const c = laneT > 0 && laneKind === 'count' ? countdownShown() : null;
         return c ? `${c.text} ${c.digit}` : '';
+      },
+      get lane(): FlappyDebug['lane'] {
+        const b = laneBox;
+        const text = b === null ? '' : laneKind === 'count' ? (countdownShown()?.text ?? '') : laneText;
+        return {
+          text,
+          key: laneKey,
+          digit: b?.digit ?? null,
+          x: b?.x ?? 0,
+          y: b?.y ?? 0,
+          w: b?.w ?? 0,
+          h: b?.h ?? 0,
+          hudTop: L.hudTop,
+          chip: chipBox,
+          counter: counterBox,
+          big: bannerT > 0 && bannerText !== '' ? bannerText : '',
+        };
       },
       get out(): ReturnType<typeof spectator.shown> | null {
         return spectator.visible ? spectator.shown() : null;

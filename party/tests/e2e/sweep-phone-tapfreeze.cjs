@@ -76,6 +76,14 @@ async function startServer() {
         const pl = await S.playInfo(p);
         if (t) samples.push({ round: e === null ? null : Math.round(e), ...t, leftMs: pl && Math.round(pl.leftMs), frozen: pl && pl.frozen });
         if (t && t.phase !== 'waiting' && flip === null) flip = { round: e, ...t, leftMs: pl && pl.leftMs };
+        if (!withFreeze && e !== null && e >= 13300 && !samples.shotCd) {
+          samples.shotCd = true;
+          await S.sweepShot(p, OUT, 'plain-1-last-5s-of-window', log, { allowSmall: true });
+        }
+        if (!withFreeze && e !== null && e >= 17600 && !samples.shotAuto) {
+          samples.shotAuto = true;
+          await S.sweepShot(p, OUT, 'plain-2-autostarted', log, { allowSmall: true });
+        }
         if (withFreeze && !froze && e !== null && e >= FREEZE_AT) {
           froze = true;
           await host.call('host:cutscene', { id: 'joker_1' });

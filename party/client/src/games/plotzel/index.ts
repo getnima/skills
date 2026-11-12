@@ -10,6 +10,12 @@
  * Rules and texts: ladder.ts (the original's logic) and round.ts (sequence,
  * scoring). DOM board + on-screen keyboard; every timer is a kit loop timer and
  * every animation a CSS animation paused by setPaused, so a freeze stops all.
+ *
+ * Announcements never cover a row: toasts, the first ladder's demo and the solve
+ * celebration live in the lane, a band of its own between the ladder and the keyboard
+ * that the rows never use (the demo and the celebration may also take the free room
+ * right above it). One at a time, a newer one replaces the older one; a toast lives
+ * 1.4 s, and the celebration is over before the next ladder slides in.
  */
 import './plotzel.css';
 
@@ -38,12 +44,17 @@ const REVEAL_MS = 2500;
 const SKIP_AFTER_MS = 15_000;
 /** The confirm tap must come within this. */
 const SKIP_ARM_MS = 3000;
-const TOAST_MS = 1800;
+/** A lane message lives this long (never more than 1.4 s). */
+const TOAST_MS = 1400;
+/** The first ladder's how-to (the demo, or its toast when there is no room): until the first step, at most this long. */
 const DEMO_MS = 3400;
 const HURRY_MS = 10_000;
-const PUFF_S = 1.3;
-const MASCOT_S = 1.25;
-const MASCOT_R = 42;
+/** The solve celebration (sticker, puff, face) is over before the next ladder slides in (CELEBRATE_MS). The sticker's CSS animation is 1 s too. */
+const PUFF_S = 0.9;
+const MASCOT_S = 1;
+/** The celebration sticker's height in px, fitted between the solved row and the keyboard. */
+const STICKER_MIN = 48;
+const STICKER_MAX = 116;
 
 /** The standard Israeli layout, exactly as the original lays it out (left to right). */
 const KB_ROWS: ReadonlyArray<readonly [string, 'BACK' | 'ENTER' | null]> = [
@@ -178,11 +189,15 @@ export const game: GameModule = {
     demoEl.setAttribute('aria-hidden', 'true');
     const stickerEl = el('div', 'pz-sticker');
     const stickerWord = el('div', 'pz-sticker-word');
+    const stickerPts = el('div', 'pz-sticker-pts');
     const stickerFace = el('div', 'pz-sticker-face');
-    stickerFace.append(stickerWord);
+    stickerFace.append(stickerWord, stickerPts);
     stickerEl.append(stickerFace);
     stickerEl.setAttribute('aria-hidden', 'true');
-    board.append(rowsEl, demoEl, stickerEl, revealEl, toastEl);
+    board.append(rowsEl, revealEl);
+    // the announcement lane: its own band between the ladder and the keyboard (rows never reach it)
+    const laneEl = el('div', 'pz-lane');
+    laneEl.append(demoEl, stickerEl, toastEl);
 
     const kb = el('div', 'pz-kb');
     kb.dir = 'ltr';
@@ -225,7 +240,7 @@ export const game: GameModule = {
     tools.append(countEl, worthEl, skipBtn);
 
     const fxRoot = el('div', 'pz-fx');
-    root.append(head, board, kb, tools, fxRoot);
+    root.append(head, board, laneEl, kb, tools, fxRoot);
     ctx.root.appendChild(root);
 
     const view = createGameCanvas(fxRoot);
@@ -254,11 +269,12 @@ export const game: GameModule = {
     let wordRows: HTMLElement[] = [];
     let tile = 52;
     let rowGap = 6;
+    let laneH = 46;
     let shownSkipP = -1;
     let fxBusyUntil = 0;
     let solveCount = 0;
     const puffs: Array<{ x: number; y: number; t: number; size: number }> = [];
-    let mascot: { x: number; y: number; t: number } | null = null;
+    let mascot: { x: number; y: number; t: number; r: number } | null = null;
 
     const current = (): string => words[words.length - 1] ?? start;
     const steps = (): number => words.length - 1;
@@ -306,6 +322,10 @@ export const game: GameModule = {
       root.style.setProperty('--kb-row-gap', `${portrait ? (avail < 560 ? 5 : 7) : 4}px`);
       root.classList.toggle('is-landscape', !portrait);
       root.classList.toggle('is-short', avail < 560);
+      // the lane first (the board is what is left after it): one toast line
+      laneH = portrait ? clamp(Math.round(avail * 0.06), 36, 46) : 28;
+      root.style.setProperty('--lane-h', `${laneH}px`);
+      root.style.setProperty('--toast-fs', `${clamp(Math.round(laneH * 0.4), 13, 18)}px`);
       // the board gets what is left: tiles for about five rows, never wider than four of 64 px
       const bw = board.clientWidth;
       const bh = board.clientHeight;
@@ -319,14 +339,18 @@ export const game: GameModule = {
       fitRows();
     }
 
-    /** Show the latest rows that fit; older ones collapse into "+N". Never scrolls. */
+    /**
+     * Show the latest rows that fit; older ones collapse into "+N". Never scrolls. While a solve
+     * is celebrated the solved word takes the typing row's place and the goal row's place stays
+     * free: the celebration sits there and in the lane, never on a word.
+     */
     function fitRows(): void {
       const live = phase === 'play';
       activeRow.hidden = !live;
       ghostRow.hidden = !live;
       const bh = board.clientHeight - 8;
       const rowH = tile + rowGap;
-      const fixed = live ? 2 : 0;
+      const fixed = live ? 2 : phase === 'celebrate' ? 1 : 0;
       const slots = Math.max(0, Math.floor((bh + rowGap) / rowH) - fixed);
       let hidden = 0;
       let marker = false;
@@ -407,16 +431,45 @@ export const game: GameModule = {
       return true;
     }
 
-    // ── toast ──
+    // ── the lane: one message at a time (a toast, the demo or the celebration); a newer one replaces it ──
+    function hideToast(): void {
+      cancelToast?.();
+      cancelToast = null;
+      toastEl.classList.remove('is-on');
+    }
+    function hideDemo(): void {
+      cancelDemo?.();
+      cancelDemo = null;
+      demoEl.classList.remove('is-on');
+    }
+    function hideCelebration(): void {
+      stickerEl.classList.remove('is-on');
+      puffs.length = 0;
+      mascot = null;
+    }
+
     function toast(msg: string, kind: 'bad' | 'info' | 'hurry' = 'info', ms = TOAST_MS): void {
+      hideDemo();
+      hideCelebration();
       toastEl.textContent = msg;
       toastEl.dataset.kind = kind;
+      fitToast();
       replay(toastEl, 'is-on');
       cancelToast?.();
       cancelToast = loop.after(ms, () => {
         cancelToast = null;
         toastEl.classList.remove('is-on');
       });
+    }
+
+    /** One line, never cut: a long message on a narrow phone gets a smaller font. */
+    function fitToast(): void {
+      toastEl.style.fontSize = '';
+      for (let i = 0; i < 8 && toastEl.scrollWidth > toastEl.clientWidth + 0.5; i++) {
+        const fs = parseFloat(getComputedStyle(toastEl).fontSize) || 16;
+        if (fs <= 11) break;
+        toastEl.style.fontSize = `${Math.max(11, fs - 1)}px`;
+      }
     }
 
     function reject(msg: string): void {
@@ -495,38 +548,48 @@ export const game: GameModule = {
       const perfect = s <= par;
       const c = centerOf(row);
       const W = view.width;
-      // 💨 flies off, a fart, the face pops up, the points float
-      puffs.push({ x: c.x, y: c.y, t: 0, size: clamp(W * 0.36, 110, 170) });
-      // a star-burst sticker with the owner's words, in the room the active and goal rows just left,
-      // and Shimi's head popping up next to it
+      // the celebration replaces whatever was in the lane
+      hideToast();
+      hideDemo();
+      // a star-burst sticker with the owner's words and the points, in the band under the solved row
+      // (the goal row's free place and the lane), Shimi's head popping up on its right, the 💨 flying
+      // off on its left; all of it is over before the next ladder slides in
       const near = s === par + 1;
       stickerWord.textContent = perfect ? (PERFECT_WORDS[(solveCount - 1) % PERFECT_WORDS.length] ?? 'וואו!') : near ? 'כמעט מושלם!' : 'פלוץ!';
+      stickerPts.textContent = `+${points}`;
       stickerEl.classList.toggle('is-near', near);
       stickerEl.classList.toggle('is-plain', !perfect && !near);
-      const bw = board.clientWidth;
-      const bh = board.clientHeight;
-      const stk = Math.round(clamp(Math.min(bw * 0.44, bh * 0.62), 110, 172));
-      const rowBottom = row.offsetTop + row.offsetHeight + rowsEl.offsetTop;
-      const top = clamp(rowBottom + 4, 4, Math.max(4, bh - stk - 6));
-      stickerEl.style.setProperty('--stk', `${stk}px`);
-      stickerEl.style.top = `${top}px`;
-      replay(stickerEl, 'is-on');
-      const b = board.getBoundingClientRect();
+      const lr = laneEl.getBoundingClientRect();
       const origin = fxRoot.getBoundingClientRect();
-      const mx = b.left - origin.left + bw / 2 - stk / 2 - MASCOT_R * 0.35;
-      mascot = { x: Math.max(MASCOT_R + 4, mx), y: b.top - origin.top + top + stk * 0.68, t: 0 };
-      fx.text(c.x, c.y - tile * 0.6, `+${points}`, { color: perfect ? FX.yel : FX.white, size: 46, rise: 90, life: 1.2 });
-      fx.burst(c.x, c.y, { count: 22, shape: 'star', colors: [FX.yel, FX.red, FX.white], speed: 380, life: 0.7 });
-      if (perfect) fx.confetti({ count: 140, width: W, colors: [FX.yel, FX.red, FX.white, FX.pink, FX.org] });
+      // (12 px clear of the row: room for the sticker's pop-in overshoot)
+      const band = lr.bottom - 8 - (row.getBoundingClientRect().bottom + 12);
+      const stk = Math.round(clamp(band, STICKER_MIN, STICKER_MAX));
+      const stkW = Math.round(Math.min(stk * 1.35, lr.width * 0.5));
+      stickerEl.style.setProperty('--stk', `${stk}px`);
+      stickerEl.style.setProperty('--stk-w', `${stkW}px`);
+      replay(stickerEl, 'is-on');
+      const cx = lr.left - origin.left + lr.width / 2;
+      const stkBottom = lr.bottom - origin.top - 8;
+      const r = Math.round(clamp(stk * 0.32, 18, 36));
+      mascot = { x: Math.min(W - r - 4, cx + stkW / 2 + r * 0.25), y: stkBottom - r * 0.9, t: 0, r };
+      const puff = clamp(stk * 0.85, 52, 96);
+      puffs.push({ x: Math.max(puff * 0.6, cx - stkW / 2 - puff * 0.32), y: stkBottom - stk / 2, t: 0, size: puff });
+      // stars off the solved row (gone in half a second)
+      fx.burst(c.x, c.y, { count: 14, shape: 'star', colors: [FX.yel, FX.red, FX.white], speed: 300, life: 0.5 });
+      if (perfect) fx.confetti({ count: 70, width: W, colors: [FX.yel, FX.red, FX.white, FX.pink, FX.org] });
       sfx.fart(solveCount % 4, 0.75 + ((solveCount * 37) % 9) * 0.09);
       if (perfect) sfx.success();
       haptic.success();
-      busy(3500);
+      busy(CELEBRATE_MS + 100);
       loop.after(CELEBRATE_MS, nextPuzzle);
     }
 
     function nextPuzzle(): void {
       if (destroyed) return;
+      // nothing of the celebration (confetti included) is left over the next ladder
+      hideCelebration();
+      fx.clear();
+      fxBusyUntil = 0;
       if (idx + 1 >= seq.length) {
         phase = 'done';
         fitRows();
@@ -593,16 +656,15 @@ export const game: GameModule = {
       positionDemo(true);
     }
     /**
-     * The demo sits in the free space under the rows. With no room at first it becomes a
-     * toast; once the player has made a step (or rows grew into it) it simply goes away.
+     * The demo sits in the lane and the free space right above it, under the rows. With no room
+     * at first it becomes a toast; once the player has made a step (or rows grew into it) it
+     * simply goes away.
      */
     function positionDemo(first = false): void {
       if (!demoEl.classList.contains('is-on')) return;
-      const free = board.clientHeight - rowsEl.offsetHeight - 8;
+      const free = board.clientHeight - rowsEl.offsetHeight - 8 + laneH - 4;
       if (words.length > 1 || phase !== 'play' || free < demoEl.offsetHeight + 6) {
-        demoEl.classList.remove('is-on');
-        cancelDemo?.();
-        cancelDemo = null;
+        hideDemo();
         if (first) toast('משנים אות אחת בכל צעד, עד פלוץ', 'info', 3000);
       }
     }
@@ -690,7 +752,7 @@ export const game: GameModule = {
             root.classList.add('is-hurry');
             // never over a "why was my word rejected" toast: the blinking start chip and the beep say it too
             const rejecting = toastEl.classList.contains('is-on') && toastEl.dataset.kind === 'bad';
-            if (!rejecting) toast('10 שניות אחרונות!', 'hurry', 1600);
+            if (!rejecting) toast('10 שניות אחרונות!', 'hurry');
             sfx.beep();
           }
         }
@@ -716,13 +778,13 @@ export const game: GameModule = {
         const g = view.ctx;
         view.clear();
         for (const p of puffs) {
-          // the original's puff: pops in, then drifts up-left and grows as it fades
+          // the original's puff: pops in, then drifts off to the left and grows a little as it fades (inside the band)
           const k = p.t / PUFF_S;
-          const inK = clamp(k / 0.25, 0, 1);
-          const out = clamp((k - 0.25) / 0.75, 0, 1);
-          const s = p.size * (0.3 + 0.85 * ease.outBack(inK) + 0.65 * out);
-          g.globalAlpha = k < 0.25 ? inK : 1 - ease.inQuad(out);
-          art.puff.draw(g, p.x - 140 * ease.outQuad(out), p.y - 60 * ease.outQuad(out), s, s);
+          const inK = clamp(k / 0.22, 0, 1);
+          const out = clamp((k - 0.3) / 0.7, 0, 1);
+          const s = p.size * (0.4 + 0.6 * ease.outBack(inK) + 0.2 * out);
+          g.globalAlpha = k < 0.22 ? inK : 1 - ease.inQuad(out);
+          art.puff.draw(g, p.x - p.size * 0.35 * ease.outQuad(out), p.y - p.size * 0.08 * ease.outQuad(out), s, s);
         }
         g.globalAlpha = 1;
         if (mascot) drawMascot(g, mascot);
@@ -730,12 +792,12 @@ export const game: GameModule = {
       },
     });
 
-    function drawMascot(g: CanvasRenderingContext2D, m: { x: number; y: number; t: number }): void {
-      const inK = clamp(m.t / 0.3, 0, 1);
-      const outK = clamp((m.t - (MASCOT_S - 0.22)) / 0.22, 0, 1);
+    function drawMascot(g: CanvasRenderingContext2D, m: { x: number; y: number; t: number; r: number }): void {
+      const inK = clamp(m.t / 0.26, 0, 1);
+      const outK = clamp((m.t - (MASCOT_S - 0.2)) / 0.2, 0, 1);
       const s = ease.outBack(inK) * (1 - outK);
       if (s <= 0.01) return;
-      const r = MASCOT_R;
+      const r = m.r;
       g.save();
       g.translate(m.x, m.y);
       g.scale(s, s);

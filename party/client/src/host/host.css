@@ -940,6 +940,16 @@ body {
   align-items: center;
   gap: calc(14 * var(--hu));
 }
+/* a host is narrating (narrator.tsx): the waiting dolls and the line under them step aside */
+.hs-chips-empty > * {
+  transition:
+    opacity 220ms ease,
+    transform 260ms cubic-bezier(0.5, 0, 0.8, 0.5);
+}
+.hs-chips-empty.is-narrating > * {
+  opacity: 0;
+  transform: scale(0.6) translate3d(0, 20%, 0);
+}
 .hs-chips-empty-text {
   padding: calc(8 * var(--hu)) calc(30 * var(--hu)) calc(12 * var(--hu));
   border: calc(4.5 * var(--hu)) solid var(--ink);

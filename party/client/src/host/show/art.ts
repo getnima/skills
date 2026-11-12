@@ -144,6 +144,14 @@ export function hostHeadUrl(who: HostDoll): string | null {
 }
 
 /**
+ * A host in a narrating pose (client/public/assets/hosts/poses/<a|b>_<pose>.webp): the whole
+ * figure, transparent. Null when that file is missing (the narrator then shows the head).
+ */
+export function hostPoseUrl(who: HostDoll, pose: string): string | null {
+  return assetFileUrl('hosts/poses', `${who}_${pose}.webp`);
+}
+
+/**
  * The commentator's picture for a line. A dropped-in mascot_<mood> file wins; without one the
  * two hosts take turns at the microphone (`turn` counts the lines); with no host pictures
  * either, the painted face.

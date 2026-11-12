@@ -11,6 +11,8 @@ import { createRng } from '../../kit/rng';
 import { commentatorUrl, commentatorUrls, STICKER_COUNT, stickerArt } from './art';
 import { createConfetti } from './confetti';
 import { createLinePicker } from './lines';
+import { onMicFree, releaseMic, takeMic } from './mic';
+import { isNarratorOn } from './narrator-bus';
 import { isShowCalm } from './settings';
 
 import type { JSX } from 'preact';
@@ -62,11 +64,15 @@ interface Pending {
   readonly holdMs: number;
   readonly at: number;
   readonly valid: (() => boolean) | null;
+  /** A ceremony line (`force`): shown as soon as the mic is free, and the narrator may not cut it. */
+  readonly firm: boolean;
 }
 
 const MAX_STICKERS = 8;
 const QUEUE_MAX = 3;
 const STALE_MS = 4_500;
+/** A forced line waits at most this long for the hosts' narrator to hand the mic back. */
+const FIRM_WAIT_MS = 7_000;
 const GAP_MS = 1_400;
 const CALM_GAP_MS = 9_000;
 const PUNCH_GAP_MS = 1_100;
@@ -133,6 +139,11 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let pumpTimer: ReturnType<typeof setTimeout> | null = null;
   let liveStickers = 0;
+  /** The mic (mic.ts): the commentator and the hosts' narrator never talk at once. */
+  let micToken: number | null = null;
+  let unMic: (() => void) | null = null;
+  /** A forced line waiting for the narrator to finish. */
+  let waitingFirm: Pending | null = null;
   let lastPunch = 0;
   let lastSticker = Number.NEGATIVE_INFINITY;
   let stickerTurn = Math.floor(random() * STICKER_COUNT);
@@ -150,7 +161,40 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
     return realStickers[stickerTurn++ % realStickers.length] ?? { kind: 'emoji', char };
   }
 
+  /** The narrator took the mic: stop at once (no gap, the queue waits for the mic). */
+  function yieldMic(): void {
+    micToken = null;
+    if (hideTimer !== null) clearTimeout(hideTimer);
+    hideTimer = null;
+    speaking = false;
+    comm.classList.remove('is-on');
+    waitForMic();
+  }
+
+  function waitForMic(): void {
+    if (unMic !== null || disposed) return;
+    unMic = onMicFree(() => {
+      unMic = null;
+      const firm = waitingFirm;
+      waitingFirm = null;
+      if (firm !== null && !disposed && performance.now() - firm.at <= FIRM_WAIT_MS) {
+        show(firm);
+        return;
+      }
+      schedulePump();
+    });
+  }
+
   function show(p: Pending): void {
+    const token = takeMic('commentator', { firm: p.firm, yieldNow: yieldMic });
+    if (token === null) {
+      // the hosts are narrating: a ceremony line waits for them, an ordinary one goes back in the queue
+      if (p.firm) waitingFirm = p;
+      else queue.push(p);
+      waitForMic();
+      return;
+    }
+    micToken = token;
     speaking = true;
     pic.src = commentatorUrl(p.mood, lineTurn++);
     bubble.textContent = p.text;
@@ -166,6 +210,8 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
     hideTimer = null;
     speaking = false;
     comm.classList.remove('is-on');
+    releaseMic(micToken);
+    micToken = null;
     nextAllowed = performance.now() + (isShowCalm() ? CALM_GAP_MS : GAP_MS);
     schedulePump();
   }
@@ -209,6 +255,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
       holdMs: opts.holdMs ?? Math.min(4_400, Math.max(2_500, 1_700 + text.length * 48)),
       at: performance.now(),
       valid: opts.valid ?? null,
+      firm: opts.force === true,
     };
     if (opts.force) {
       queue.length = 0;
@@ -366,7 +413,9 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
     const args: LineArgs = { a: m.a?.name, b: m.b?.name };
     const mood = MOMENT_MOOD[m.type];
     // no line twice in one round: a pool that ran dry stays quiet (the effects still play)
-    const line = force ? picker.pick(m.type, args) : picker.fresh(m.type, args);
+    // with the hosts narrating on the TV, the last ten seconds are theirs (the effects stay)
+    const quiet = m.type === 'final10' && isNarratorOn() && !force;
+    const line = quiet ? null : force ? picker.pick(m.type, args) : picker.fresh(m.type, args);
     if (line !== null) say(line, mood, { priority: m.priority, force, valid });
     const showy = force || m.priority >= 8 || t - lastSticker >= STICKER_GAP_MS;
     if (showy) lastSticker = t;
@@ -438,6 +487,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
     sayLine,
     hush(): void {
       queue.length = 0;
+      waitingFirm = null;
       if (hideTimer !== null) {
         clearTimeout(hideTimer);
         hide();
@@ -461,6 +511,10 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
       disposed = true;
       if (hideTimer !== null) clearTimeout(hideTimer);
       if (pumpTimer !== null) clearTimeout(pumpTimer);
+      unMic?.();
+      waitingFirm = null;
+      releaseMic(micToken);
+      micToken = null;
       confetti.dispose();
       for (const a of stickers.getAnimations({ subtree: true })) a.cancel();
       canvas.remove();

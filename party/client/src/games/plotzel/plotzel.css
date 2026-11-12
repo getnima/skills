@@ -352,29 +352,40 @@
   }
 }
 
-/* ── toast: a white box with an ink border ── */
+/* ── the announcement lane: a band of its own between the ladder and the keyboard. The rows never
+   reach it, so a toast never covers a word; the demo and the solve celebration stand on its floor
+   and may reach up into the free room under the rows. One message at a time (index.ts). ── */
+.pz-lane {
+  position: relative;
+  z-index: 4;
+  flex: none;
+  height: var(--lane-h, 46px);
+  pointer-events: none;
+}
+
+/* ── toast: a white box with an ink border, one line in the lane ── */
 .pz-toast {
   position: absolute;
-  top: 6px;
+  top: 50%;
   left: 50%;
   z-index: 6;
-  max-width: calc(100% - 24px);
-  height: 44px;
-  padding: 0 16px;
+  max-width: calc(100% - 20px);
+  height: calc(var(--lane-h, 46px) - 6px);
+  padding: 0 14px;
   border: var(--pz-line) solid var(--pz-ink);
   border-radius: 12px;
   background: var(--pz-white);
   color: var(--pz-ink);
-  font-size: 18px;
+  font-size: var(--toast-fs, 18px);
   font-weight: 900;
-  line-height: 38px;
+  line-height: calc(var(--lane-h, 46px) - 12px);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 4px 4px 0 var(--pz-ink);
+  box-shadow: 3px 3px 0 var(--pz-ink);
   pointer-events: none;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   visibility: hidden;
 }
 .pz-toast.is-on {
@@ -390,42 +401,44 @@
   color: var(--pz-red);
   font-family: var(--pz-read);
   font-weight: 900;
-  font-size: 20px;
+  font-size: calc(var(--toast-fs, 18px) + 2px);
 }
 @keyframes pz-toast {
   from {
-    transform: translateX(-50%) scale(0.6) rotate(-4deg);
+    transform: translate(-50%, -50%) scale(0.6) rotate(-4deg);
   }
   to {
-    transform: translateX(-50%);
+    transform: translate(-50%, -50%);
   }
 }
 
-/* ── solve: a star-burst sticker with the owner's words ── */
+/* ── solve: a star-burst sticker with the owner's words and the points, standing on the lane's
+   floor, sized to the room under the solved row (index.ts), gone before the next ladder ── */
 .pz-sticker {
   position: absolute;
   left: 50%;
+  bottom: 8px;
   z-index: 5;
-  width: var(--stk, 150px);
-  height: var(--stk, 150px);
-  margin-left: calc(var(--stk, 150px) / -2);
+  width: var(--stk-w, 120px);
+  height: var(--stk, 90px);
+  margin-left: calc(var(--stk-w, 120px) / -2);
   display: none;
   pointer-events: none;
 }
 .pz-sticker.is-on {
   display: block;
-  animation: pz-sticker 1.2s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  animation: pz-sticker 1s cubic-bezier(0.2, 1.6, 0.4, 1) both;
 }
 .pz-sticker::before,
 .pz-sticker-face {
   position: absolute;
   clip-path: polygon(50% 0%, 58.7% 12%, 71.7% 5%, 74.3% 19.5%, 89.1% 18.8%, 85.1% 33.1%, 98.7% 38.9%, 89% 50%, 98.7% 61.1%, 85.1% 66.9%, 89.1% 81.2%, 74.3% 80.5%, 71.7% 95%, 58.7% 88%, 50% 100%, 41.3% 88%, 28.3% 95%, 25.7% 80.5%, 10.9% 81.2%, 14.9% 66.9%, 1.3% 61.1%, 11% 50%, 1.3% 38.9%, 14.9% 33.1%, 10.9% 18.8%, 25.7% 19.5%, 28.3% 5%, 41.3% 12%);
 }
-/* the ink outline + hard shadow: the same star, bigger and offset, behind */
+/* the ink outline + hard shadow: the same star, bigger and offset, behind (in step with the sticker's size) */
 .pz-sticker::before {
   content: '';
-  inset: -5px -5px -5px -5px;
-  transform: translate(5px, 6px);
+  inset: calc(max(3px, var(--stk, 90px) * 0.04) * -1);
+  transform: translate(max(3px, calc(var(--stk, 90px) * 0.04)), max(4px, calc(var(--stk, 90px) * 0.05)));
   background: var(--pz-ink);
 }
 .pz-sticker-face {
@@ -445,9 +458,9 @@
   background: var(--pz-pink);
 }
 .pz-sticker-word {
-  max-width: 78%;
+  max-width: 76%;
   font-family: var(--pz-disp);
-  font-size: calc(var(--stk, 150px) * 0.19);
+  font-size: calc(var(--stk, 90px) * 0.25);
   line-height: 1;
   color: var(--pz-red);
   text-align: center;
@@ -456,10 +469,13 @@
   paint-order: stroke fill;
   text-shadow: 0.06em 0.07em 0 var(--pz-ink);
 }
+.pz-sticker.is-near .pz-sticker-word {
+  font-size: calc(var(--stk, 90px) * 0.2);
+}
 .pz-sticker-pts {
   font-family: var(--pz-read);
   font-weight: 900;
-  font-size: calc(var(--stk, 150px) * 0.17);
+  font-size: calc(var(--stk, 90px) * 0.19);
   line-height: 1;
   color: var(--pz-ink);
   direction: ltr;
@@ -470,7 +486,7 @@
     opacity: 0;
   }
   18% {
-    transform: scale(1.12) rotate(6deg);
+    transform: scale(1.08) rotate(5deg);
     opacity: 1;
   }
   28% {
@@ -486,11 +502,11 @@
   }
 }
 
-/* ── first puzzle demo ── */
+/* ── first puzzle demo: stands on the lane's floor (index.ts drops it when it would reach a row) ── */
 .pz-demo {
   position: absolute;
   left: 50%;
-  bottom: 6px;
+  bottom: 4px;
   z-index: 3;
   display: none;
   flex-direction: column;

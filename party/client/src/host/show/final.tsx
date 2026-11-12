@@ -6,6 +6,7 @@ import { playTrack, stopTrack } from '../../kit/music';
 import { backdropUrl, crownUrl, podiumUrl } from './art';
 import { Avatar, CountUp, formatScore, useFrame, useStage } from './common';
 import { useFunnyLayer } from './funny';
+import { cueNarration, isNarratorOn, setNarrationSlot } from './narrator-bus';
 
 import type { JSX } from 'preact';
 import type { PlayerPublic } from '../../../../shared/protocol';
@@ -92,6 +93,14 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
   activeRef.current = props.active;
   const song = useRef(false);
   const lastBurst = useRef(0);
+  /** The hosts' narration: one id per showing (a replay is a new showing), each moment once. */
+  const sceneId = useRef(Math.floor(Math.random() * 1e9).toString(36));
+  const narrated = useRef(new Set<string>());
+  const narrate = (moment: 'podium' | 'champion' | 'goodbye', ttlMs: number, valid: () => boolean, name?: string, holdMs?: number): boolean => {
+    if (narrated.current.has(moment)) return true;
+    narrated.current.add(moment);
+    return cueNarration({ id: `${moment}:${sceneId.current}`, moment, ttlMs, valid, name, holdMs });
+  };
   const perPage = size.portrait ? 6 : 10;
   const pages = Math.max(1, Math.ceil(n / perPage));
   const pagesRef = useRef(pages);
@@ -122,7 +131,10 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
       setStep(next);
       if (next === 0) {
         sfx.drumroll(tlRef.current.third === NEVER ? (tlRef.current.second === NEVER ? 2_500 : 2_500) : 2_500);
-        layer?.sayLine('finalIntro', {}, 'happy', { force: true, holdMs: 2_300 });
+        // with the hosts narrating on the TV, the podium's opening line is theirs
+        if (!isNarratorOn() || !narrate('podium', 1_500, () => clock.current < tlRef.current.first - 1_500, undefined, 2_400)) {
+          layer?.sayLine('finalIntro', {}, 'happy', { force: true, holdMs: 2_300 });
+        }
       }
       if (next === 1 || next === 2) {
         sfx.land();
@@ -139,10 +151,15 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
         layer?.cannons(130);
         layer?.rain(90);
         const c = championRef.current;
-        if (c !== '') layer?.sayLine('champion', { a: c }, 'shocked', { force: true, crazy: true, holdMs: 5_200 });
+        // the hosts crown the champion (the name rides as a tag on their bubble); without them, the commentator
+        const hosts = c !== '' && isNarratorOn() && narrate('champion', 1_500, () => clock.current < tlRef.current.first + 12_000, c, 2_700);
+        if (c !== '' && !hosts) layer?.sayLine('champion', { a: c }, 'shocked', { force: true, crazy: true, holdMs: 5_200 });
       }
       if (next === 4) layer?.hush();
     }
+    // goodbye: once the final table has had a look (or, with no table, a while after the champion)
+    const byeAt = tlRef.current.table !== NEVER ? tlRef.current.table + 4_500 : tlRef.current.first + 10_000;
+    if (next >= 3 && t >= byeAt && t < byeAt + 2_000) narrate('goodbye', 4_000, () => activeRef.current);
     if (next >= 3 && t - lastBurst.current > 2_600 && t < tlRef.current.first + 16_000) {
       lastBurst.current = t;
       layer?.burst(0.15 + ((t / 2_600) % 4) * 0.23, 0.22, 40);
@@ -160,6 +177,10 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
   const offset = Math.min(page * perPage, Math.max(0, n - perPage));
   const pageRows = ranked.slice(offset, offset + perPage);
   const showTable = step >= 4 && n > 3;
+  // where the hosts may stand: the left margin while the podium rises, the top right once the table is in
+  useEffect(() => {
+    setNarrationSlot('final', showTable ? 'final-top' : 'final-left');
+  }, [showTable]);
   return (
     <section
       class={`sh-scene sh-final sh-final--s${step} ${showTable ? 'has-table' : ''} ${n < 3 ? 'is-small' : ''}`}
