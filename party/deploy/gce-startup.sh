@@ -72,6 +72,7 @@ log "names: $NAMES${IP:+, http://$IP}; node server on 127.0.0.1:$PORT; Node $NOD
 # ── Node.js: NodeSource apt repo; if that fails, the official nodejs.org tarball ──
 node_ok() { /usr/bin/node --version 2>/dev/null | grep -q "^v${NODE_MAJOR}\."; }
 install_node_tarball() {
+  # Called as `install_node_tarball || ...`, where set -e is off: every step checks itself.
   local arch base file
   case "$(uname -m)" in
     x86_64) arch=x64 ;;
@@ -79,15 +80,18 @@ install_node_tarball() {
     *) log "no Node tarball for $(uname -m)"; return 1 ;;
   esac
   base="https://nodejs.org/dist/latest-v${NODE_MAJOR}.x"
-  file="$(curl -fsSL "$base/SHASUMS256.txt" | awk -v a="linux-$arch.tar.xz" '$2 ~ a"$" { print $2; exit }')"
+  # .tar.gz, not .tar.xz: gzip is on every Debian, xz is not.
+  curl -fsSL "$base/SHASUMS256.txt" -o /tmp/node-SHASUMS256.txt || return 1
+  file="$(awk -v a="linux-$arch.tar.gz" '$2 ~ a"$" { print $2; exit }' /tmp/node-SHASUMS256.txt)"
   [[ -n "$file" ]] || return 1
-  curl -fsSL "$base/$file" -o "/tmp/$file"
-  (cd /tmp && curl -fsSL "$base/SHASUMS256.txt" | grep " $file\$" | sha256sum -c -)
-  rm -rf /usr/local/lib/nodejs
-  mkdir -p /usr/local/lib/nodejs
-  tar -xJf "/tmp/$file" -C /usr/local/lib/nodejs --strip-components=1
-  rm -f "/tmp/$file"
-  for bin in node npm npx; do ln -sfn "/usr/local/lib/nodejs/bin/$bin" "/usr/bin/$bin"; done
+  curl -fsSL "$base/$file" -o "/tmp/$file" || return 1
+  (cd /tmp && grep " $file\$" node-SHASUMS256.txt | sha256sum -c -) || return 1
+  rm -rf /usr/local/lib/nodejs.new && mkdir -p /usr/local/lib/nodejs.new || return 1
+  tar -xzf "/tmp/$file" -C /usr/local/lib/nodejs.new --strip-components=1 || return 1
+  rm -rf /usr/local/lib/nodejs && mv /usr/local/lib/nodejs.new /usr/local/lib/nodejs || return 1
+  rm -f "/tmp/$file" /tmp/node-SHASUMS256.txt
+  for bin in node npm npx; do ln -sfn "/usr/local/lib/nodejs/bin/$bin" "/usr/bin/$bin" || return 1; done
+  log "installed $file from nodejs.org"
 }
 if ! node_ok; then
   log "installing Node.js $NODE_MAJOR"
@@ -98,8 +102,7 @@ if ! node_ok; then
     log "NodeSource failed: installing the nodejs.org tarball instead"
     # A half-added NodeSource repo would make every later apt-get update fail.
     rm -f /etc/apt/sources.list.d/nodesource.* /etc/apt/sources.list.d/nodesource*.sources
-    command -v xz >/dev/null 2>&1 || { apt_update && apt-get install -y xz-utils; }
-    install_node_tarball
+    install_node_tarball || true
     node_ok || { log "Node.js $NODE_MAJOR could not be installed"; exit 1; }
   fi
 fi
