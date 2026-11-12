@@ -53,7 +53,7 @@ const NOTE_COLOR_SIZE = 34;
 /** Beats queued behind a running one cut it after max(its snap, this). */
 const MIN_SNAP_S = 0.7;
 const SOFT_GAP_S = 2.5;
-const FILLER_QUIET_S = 1.6;
+const FILLER_QUIET_S = 1.2;
 const INNOCENT_GAP_MS = 900;
 /** Final frame: one small alive gag every this many seconds. */
 const ALIVE_EVERY_S = 2;
@@ -1308,7 +1308,7 @@ export const game: GameModule = {
         if (s.phase === 'sprint') {
           if (band || cur) quietT = 0;
           else quietT += dt;
-          if (quietT >= FILLER_QUIET_S && !cur && !lastQuarter && s.rateSm < 4 && fillersUsed < level.fillers.length) {
+          if (quietT >= FILLER_QUIET_S && !cur && !lastQuarter && s.rateSm < 5 && fillersUsed < level.fillers.length) {
             const f = level.fillers[fillersUsed] ?? FILLER.Spa;
             fillersUsed++;
             quietT = 0;

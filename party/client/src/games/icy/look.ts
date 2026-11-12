@@ -29,6 +29,41 @@ export const PAL = {
 
 const FONT_URL = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/fonts/motaleh.woff2`;
 const FONT_TIMEOUT_MS = 1500;
+/** Motaleh's glyphs minus ז and the digits (same as the CSS @font-face rules). */
+const MOTALEH_RANGE = 'U+0020-002F, U+003A-0040, U+005B-0060, U+007B-007E, U+00A0-00BF, U+0590-05D5, U+05D7-05FF, U+2010-2027, U+20AA';
+const FONT_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/fonts`;
+
+/**
+ * Heavy Rubik for ז and the digits only, under its own family, so canvas text keeps the heavy look.
+ * Uses the page's CSS faces when it has them (the phone page does), else adds its own. Never rejects.
+ */
+function loadFill(): Promise<void> {
+  try {
+    let faces = [...document.fonts].filter((f) => f.family.replace(/["']/g, '') === 'Motaleh Fill');
+    if (faces.length === 0) {
+      faces = [
+        new FontFace('Motaleh Fill', `url(${FONT_BASE}/rubik-hebrew.woff2) format('woff2')`, { weight: '800', display: 'swap', unicodeRange: 'U+05D6' }),
+        new FontFace('Motaleh Fill', `url(${FONT_BASE}/rubik-latin.woff2) format('woff2')`, { weight: '800', display: 'swap', unicodeRange: 'U+0030-0039' }),
+      ];
+      for (const f of faces) document.fonts.add(f);
+    }
+    return Promise.all(faces.map((f) => f.load().catch(() => undefined))).then(() => undefined);
+  } catch {
+    return Promise.resolve(); // no FontFace API: the system font draws those glyphs
+  }
+}
+/** Motaleh is ready: wait a little for the fill glyphs too (stickers are drawn once and cached). */
+function afterFill(fill: Promise<void>, done: () => void): void {
+  let called = false;
+  const once = (): void => {
+    if (called) return;
+    called = true;
+    done();
+  };
+  void fill.then(once);
+  setTimeout(once, 700);
+}
+
 let fontPromise: Promise<boolean> | null = null;
 let fontOk = false;
 
@@ -53,20 +88,22 @@ export function loadDisplayFont(): Promise<boolean> {
         finish(false);
         return;
       }
+      const fill = loadFill();
       for (const f of document.fonts) {
         if (f.family.replace(/["']/g, '') === 'Motaleh' && f.status === 'loaded') {
           clearTimeout(timer);
-          finish(true);
+          afterFill(fill, () => finish(true));
           return;
         }
       }
-      const face = new FontFace('Motaleh', `url(${FONT_URL}) format('woff2')`, { display: 'swap' });
+      // not ז (it reads as ב) and not the digits (2 reads as Z): those fall through to the next font
+      const face = new FontFace('Motaleh', `url(${FONT_URL}) format('woff2')`, { display: 'swap', unicodeRange: MOTALEH_RANGE });
       face
         .load()
         .then((f) => {
           document.fonts.add(f);
           clearTimeout(timer);
-          finish(true);
+          afterFill(fill, () => finish(true));
         })
         .catch(() => {
           clearTimeout(timer);
@@ -82,7 +119,7 @@ export function loadDisplayFont(): Promise<boolean> {
 
 /** ctx.font for display text: Motaleh (Hebrew + digits) with the kit font behind it. */
 export function displayFont(px: number): string {
-  return fontOk ? `${px}px Motaleh, ${FONT}` : `900 ${px}px ${FONT}`;
+  return fontOk ? `${px}px Motaleh, 'Motaleh Fill', 'Party Rubik', Rubik, ${FONT}` : `900 ${px}px ${FONT}`;
 }
 
 // ───────────────────────────── Shapes ─────────────────────────────

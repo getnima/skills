@@ -11,6 +11,23 @@
   font-family: 'Motaleh';
   src: url('/fonts/motaleh.woff2') format('woff2');
   font-display: swap;
+  /* not ז (it reads as ב) and not the digits (2 reads as Z): those come from the next font, Rubik */
+  unicode-range: U+0020-002F, U+003A-0040, U+005B-0060, U+007B-007E, U+00A0-00BF, U+0590-05D5, U+05D7-05FF, U+2010-2027, U+20AA;
+}
+/* Motaleh Fill: heavy Rubik for only the glyphs Motaleh draws unreadably (ז reads as ב, 2 as Z) */
+@font-face {
+  font-family: 'Motaleh Fill';
+  src: url('/fonts/rubik-hebrew.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+05D6;
+}
+@font-face {
+  font-family: 'Motaleh Fill';
+  src: url('/fonts/rubik-latin.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+0030-0039;
 }
 /* Rubik (SIL OFL 1.1), self-hosted: the letters a player has to READ (tiles, keys, words, numbers).
    It is the font of the owner's original Plotzel page. One variable file per script, weights 300-900. */
@@ -53,7 +70,7 @@
      --pz-disp (Motaleh, Hebrew + digits only) is kept for the two shout-outs only: the solved sticker and
      the reveal title. The owner found Motaleh hard to read on the board. */
   --pz-read: 'Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
-  --pz-disp: 'Motaleh', 'Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
+  --pz-disp: 'Motaleh', 'Motaleh Fill', 'Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
   --pz-ui: var(--pz-read);
   /* lines */
   --pz-line: 3px;

@@ -595,3 +595,9 @@
     animation: none;
   }
 }
+
+/* "חזרה לחדר ההלבשה": Rubik, not Motaleh (Motaleh's ז reads as ב, the button would say "חברה") */
+.pw-btn.pw-redress {
+  font-family: 'Party Rubik', 'Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
+  font-weight: 800;
+}

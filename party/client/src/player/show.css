@@ -16,6 +16,23 @@
   font-family: 'Motaleh';
   src: url('/fonts/motaleh.woff2') format('woff2');
   font-display: swap;
+  /* not ז (it reads as ב) and not the digits (2 reads as Z): those come from the next font, Rubik */
+  unicode-range: U+0020-002F, U+003A-0040, U+005B-0060, U+007B-007E, U+00A0-00BF, U+0590-05D5, U+05D7-05FF, U+2010-2027, U+20AA;
+}
+/* Motaleh Fill: heavy Rubik for only the glyphs Motaleh draws unreadably (ז reads as ב, 2 as Z) */
+@font-face {
+  font-family: 'Motaleh Fill';
+  src: url('/fonts/rubik-hebrew.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+05D6;
+}
+@font-face {
+  font-family: 'Motaleh Fill';
+  src: url('/fonts/rubik-latin.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+0030-0039;
 }
 /* Rubik (SIL OFL 1.1), self-hosted, one variable file per script, weights 300-900 (the files and
    ranges of client/src/games/plotzel/plotzel.css). Under a family name of its own on purpose:
@@ -54,7 +71,7 @@
   --pink: #ff7eb6;
   /* "up" in a standing (the me bar, the game HUD) */
   --up: #1fbf6a;
-  --disp: 'Motaleh', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
+  --disp: 'Motaleh', 'Motaleh Fill', 'Party Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
   --read: 'Party Rubik', system-ui, -apple-system, 'Segoe UI', 'Arial Hebrew', 'Noto Sans Hebrew', Roboto, Arial, sans-serif;
   --star14: polygon(
     50% 0%, 58.7% 12%, 71.7% 5%, 74.3% 19.5%, 89.1% 18.8%, 85.1% 33.1%, 98.7% 38.9%, 89% 50%, 98.7% 61.1%, 85.1% 66.9%,

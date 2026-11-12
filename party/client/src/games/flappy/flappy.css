@@ -7,7 +7,7 @@
   --cob-d: #10238c;
   --ink: #16120e;
   --paper: #fff8e6;
-  --disp: 'Motaleh', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
+  --disp: 'Motaleh', 'Motaleh Fill', 'Party Rubik', 'Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
   position: absolute;
   inset: 0;
   z-index: 3;

@@ -7,6 +7,23 @@
   font-family: 'Motaleh';
   src: url('/fonts/motaleh.woff2') format('woff2');
   font-display: swap;
+  /* not ז (it reads as ב) and not the digits (2 reads as Z): those come from the next font, Rubik */
+  unicode-range: U+0020-002F, U+003A-0040, U+005B-0060, U+007B-007E, U+00A0-00BF, U+0590-05D5, U+05D7-05FF, U+2010-2027, U+20AA;
+}
+/* Motaleh Fill: heavy Rubik for only the glyphs Motaleh draws unreadably (ז reads as ב, 2 as Z) */
+@font-face {
+  font-family: 'Motaleh Fill';
+  src: url('/fonts/rubik-hebrew.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+05D6;
+}
+@font-face {
+  font-family: 'Motaleh Fill';
+  src: url('/fonts/rubik-latin.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+  unicode-range: U+0030-0039;
 }
 @font-face {
   font-family: 'Rubik';
@@ -38,7 +55,7 @@
   --pv-paper: #fff8e6;
   --pv-pink: #ff7eb6;
   --pv-white: #ffffff;
-  --pv-disp: 'Motaleh', 'Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
+  --pv-disp: 'Motaleh', 'Motaleh Fill', 'Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
   --pv-read: 'Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
   --pv-star: polygon(50% 0%, 58.7% 12%, 71.7% 5%, 74.3% 19.5%, 89.1% 18.8%, 85.1% 33.1%, 98.7% 38.9%, 89% 50%, 98.7% 61.1%, 85.1% 66.9%, 89.1% 81.2%, 74.3% 80.5%, 71.7% 95%, 58.7% 88%, 50% 100%, 41.3% 88%, 28.3% 95%, 25.7% 80.5%, 10.9% 81.2%, 14.9% 66.9%, 1.3% 61.1%, 11% 50%, 1.3% 38.9%, 14.9% 33.1%, 10.9% 18.8%, 25.7% 19.5%, 28.3% 5%, 41.3% 12%);
   color-scheme: dark;
