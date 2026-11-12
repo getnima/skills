@@ -84,8 +84,16 @@ and the keyboard keys below keep working as a backup.
 after step 3, run the two commands in `tools/qr/README.md` with your address, then
 `deploy/gce-deploy.sh` again. The TV shows it only when it matches its own address;
 otherwise it keeps its normal QR. Control Center → Screen Mirroring →
-the Apple TV, and set the Mac's sound output to the Apple TV. Plug in the
+the Apple TV; the sound goes to the speaker (the KEF LSX II over AirPlay). Plug in the
 charger and run `caffeinate -dis` in a terminal so the Mac never sleeps.
+
+**AirPlay sync (once, before guests).** An AirPlay speaker plays about 2 s late and the
+mirrored picture a little late, while the phones are instant. On the TV press `A` (or on the
+remote ☰ → סנכרון סאונד ותמונה): a disc flashes every second with a beep. Press "AirPlay ≈ 2
+שניות", then nudge the sound until the beep lands on the flash, and the picture until the TV
+flashes together with the remote phone held beside it. The 3-2-1 beeps and gong, the cutscenes'
+sound and the ceremony's drum roll and song follow these two numbers (`client/src/kit/av-sync.ts`).
+They are kept in that Chrome profile for that address: calibrate on the address the TV uses.
 
 **5. Run of show.** Guests scan the QR (or type the address and the 4-letter room
 code), type a name and dress their Shimi. The remote's big button (or `Space`) starts
