@@ -10,10 +10,37 @@ function isInteractive(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('button, a, input, textarea, select, label, [role="button"]') !== null;
 }
 
-/** A finger may scroll inside an element that opted in: `.kit-scroll` (a vertical list) or `.kit-scroll-x` (a horizontal strip). */
-function inScroller(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('.kit-scroll, .kit-scroll-x') !== null;
+/** The opted-in scroller a touch is in: `.kit-scroll` (a vertical list) or `.kit-scroll-x` (a horizontal strip), else null. */
+function scrollerOf(target: EventTarget | null): Element | null {
+  return target instanceof Element ? target.closest('.kit-scroll, .kit-scroll-x') : null;
 }
+
+/**
+ * Can `el` still scroll the way a finger moving by (dx, dy) pushes it? Along its own axis only: a vertical
+ * list never takes a sideways drag and a horizontal strip never an up-down one. RTL strips count from the right
+ * (their scrollLeft runs from 0 down to minus the overflow).
+ */
+export function canScrollWith(el: Element, horizontal: boolean, dx: number, dy: number): boolean {
+  if (horizontal) {
+    if (Math.abs(dy) > Math.abs(dx)) return false;
+    const max = el.scrollWidth - el.clientWidth;
+    if (max <= 1 || dx === 0) return false;
+    const rtl = getComputedStyle(el).direction === 'rtl';
+    // how far from the strip's start edge it is, 0..max
+    const pos = rtl ? -el.scrollLeft : el.scrollLeft;
+    // a finger moving right shows what is to the left: the far end of an RTL strip, the start of an LTR one
+    const toLeft = dx > 0;
+    return rtl === toLeft ? pos < max - 1 : pos > 1;
+  }
+  if (Math.abs(dx) > Math.abs(dy)) return false;
+  const max = el.scrollHeight - el.clientHeight;
+  if (max <= 1 || dy === 0) return false;
+  // a finger moving down shows what is above
+  return dy > 0 ? el.scrollTop > 1 : el.scrollTop < max - 1;
+}
+
+/** Touches that start this close to a side of the screen are claimed: there the browser's back / forward swipe lives. */
+const EDGE_PX = 22;
 
 /**
  * Idempotent. Blocks pinch zoom, double-tap zoom, the context menu,
@@ -33,14 +60,69 @@ export function initMobileViewport(): void {
   document.addEventListener('gesturechange', stop, active);
   document.addEventListener('gestureend', stop, active);
 
-  // scroll bounce, pull-to-refresh, two-finger zoom
+  // No drag ever reaches the browser: no scroll bounce, no pull-to-refresh, no URL bar sliding in, no
+  // two-finger zoom, no back / forward swipe. A finger scrolls only inside an opted-in scroller, along its
+  // axis, and only while that scroller can still move that way. The first move of a gesture decides it
+  // for the whole gesture (once a scroll has begun the browser no longer lets a page cancel it).
+  let gesture: { readonly el: Element | null; readonly x: number; readonly y: number; decided: boolean; allow: boolean } | null = null;
+  // a touch that started at a side edge (claimed, so its click is ours to send)
+  let edgeTap: { readonly target: EventTarget | null; readonly x: number; readonly y: number; moved: boolean } | null = null;
   document.addEventListener(
-    'touchmove',
+    'touchstart',
     (e: TouchEvent): void => {
-      if (e.touches.length > 1 || !inScroller(e.target)) stop(e);
+      const t = e.touches[0];
+      if (e.touches.length !== 1 || !t) {
+        gesture = null;
+        edgeTap = null;
+        return;
+      }
+      gesture = { el: scrollerOf(e.target), x: t.clientX, y: t.clientY, decided: false, allow: false };
+      edgeTap = null;
+      if ((t.clientX < EDGE_PX || t.clientX > window.innerWidth - EDGE_PX) && !isEditable(e.target) && e.cancelable) {
+        e.preventDefault();
+        edgeTap = { target: e.target, x: t.clientX, y: t.clientY, moved: false };
+      }
     },
     active,
   );
+  document.addEventListener(
+    'touchmove',
+    (e: TouchEvent): void => {
+      const t = e.touches[0];
+      const g = gesture;
+      if (edgeTap && t && Math.hypot(t.clientX - edgeTap.x, t.clientY - edgeTap.y) > 10) edgeTap.moved = true;
+      if (e.touches.length > 1 || !t || !g || g.el === null) {
+        stop(e);
+        return;
+      }
+      if (!g.decided) {
+        const dx = t.clientX - g.x;
+        const dy = t.clientY - g.y;
+        if (dx === 0 && dy === 0) return;
+        g.decided = true;
+        g.allow = canScrollWith(g.el, g.el.classList.contains('kit-scroll-x'), dx, dy);
+      }
+      if (!g.allow) stop(e);
+    },
+    active,
+  );
+  document.addEventListener(
+    'touchend',
+    (e: TouchEvent): void => {
+      // a tap that started at a side edge: the browser sends no click for it (its touchstart was claimed)
+      const tap = edgeTap;
+      edgeTap = null;
+      if (e.touches.length === 0) gesture = null;
+      if (tap === null || tap.moved || !(tap.target instanceof Element)) return;
+      const control = tap.target.closest<HTMLElement>('button, a, label, [role="button"], [role="tab"], summary');
+      if (control !== null && !(control instanceof HTMLButtonElement && control.disabled)) control.click();
+    },
+    active,
+  );
+  document.addEventListener('touchcancel', () => {
+    gesture = null;
+    edgeTap = null;
+  });
 
   // double-tap zoom (kept off real controls so their click still fires)
   let lastTouchEnd = 0;

@@ -651,7 +651,7 @@
   padding: 8px 6px 10px;
   overflow-x: auto;
   overflow-y: hidden;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   scroll-padding-inline: 6px;

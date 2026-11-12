@@ -124,11 +124,11 @@ video {
   -webkit-user-drag: none;
 }
 
-/* opt-in vertical scrolling for a long list */
+/* opt-in vertical scrolling for a long list (no bounce at its ends: a drag never reaches the page) */
 .kit-scroll {
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
 }
@@ -136,11 +136,11 @@ video {
   touch-action: pan-y;
 }
 
-/* opt-in horizontal scrolling for a strip */
+/* opt-in horizontal scrolling for a strip (no bounce at its ends either) */
 .kit-scroll-x {
   overflow-x: auto;
   overflow-y: hidden;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x;
 }
