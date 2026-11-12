@@ -12,6 +12,25 @@
   src: url('/fonts/motaleh.woff2') format('woff2');
   font-display: swap;
 }
+/* Rubik (SIL OFL 1.1), self-hosted: the letters a player has to READ (tiles, keys, words, numbers).
+   It is the font of the owner's original Plotzel page. One variable file per script, weights 300-900. */
+@font-face {
+  font-family: 'Rubik';
+  src: url('/fonts/rubik-hebrew.woff2') format('woff2');
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+@font-face {
+  font-family: 'Rubik';
+  src: url('/fonts/rubik-latin.woff2') format('woff2');
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 .pz {
   /* design system colours (README) */
@@ -30,9 +49,12 @@
   /* the hit green (not in the README): a flat leaf green that reads next to cobalt and yellow */
   --pz-green: #2ec95c;
   --pz-green-d: #158a3a;
-  /* fonts (README): Motaleh has Hebrew + digits only */
-  --pz-disp: 'Motaleh', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
-  --pz-ui: system-ui, -apple-system, 'Segoe UI', 'Arial Hebrew', 'Noto Sans Hebrew', Roboto, Arial, sans-serif;
+  /* fonts: --pz-read (Rubik) is everything the player reads and types: tiles, keys, words, numbers, text.
+     --pz-disp (Motaleh, Hebrew + digits only) is kept for the two shout-outs only: the solved sticker and
+     the reveal title. The owner found Motaleh hard to read on the board. */
+  --pz-read: 'Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --pz-disp: 'Motaleh', 'Rubik', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
+  --pz-ui: var(--pz-read);
   /* lines */
   --pz-line: 3px;
   --pz-shadow: 3px 3px 0 var(--pz-ink);
@@ -84,14 +106,15 @@
 .pz-chip {
   display: inline-block;
   height: 36px;
-  padding: 4px 12px 0;
+  padding: 0 12px;
   border: var(--pz-line) solid var(--pz-ink);
   border-radius: 10px;
   background: var(--pz-white);
   color: var(--pz-cob);
-  font-family: var(--pz-disp);
+  font-family: var(--pz-read);
+  font-weight: 800;
   font-size: 20px;
-  line-height: 26px;
+  line-height: 30px;
   white-space: nowrap;
   box-shadow: var(--pz-shadow);
 }
@@ -116,7 +139,8 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 2px;
-  font-family: var(--pz-disp);
+  font-family: var(--pz-read);
+  font-weight: 800;
   line-height: 1.05;
   text-align: left;
 }
@@ -181,8 +205,9 @@
   border-radius: 999px;
   background: var(--pz-cob-d);
   color: var(--pz-white);
-  font-family: var(--pz-disp);
-  font-size: 15px;
+  font-family: var(--pz-read);
+  font-weight: 700;
+  font-size: 13px;
   line-height: 16px;
   direction: ltr;
 }
@@ -207,11 +232,10 @@
   background: var(--pz-paper);
   box-shadow: var(--pz-shadow);
   color: var(--pz-ink);
-  font-family: var(--pz-disp);
-  font-size: calc(var(--tile) * 0.5);
+  font-family: var(--pz-read);
+  font-weight: 800;
+  font-size: calc(var(--tile) * 0.58);
   line-height: 1;
-  /* Motaleh's ascenders (ל ף ץ) are tall: sit the letters a little low */
-  padding-top: 9%;
 }
 .pz-tile.is-hit {
   background: var(--pz-green);
@@ -362,9 +386,9 @@
 .pz-toast[data-kind='hurry'] {
   background: var(--pz-yel);
   color: var(--pz-red);
-  font-family: var(--pz-disp);
-  font-weight: 400;
-  font-size: 22px;
+  font-family: var(--pz-read);
+  font-weight: 900;
+  font-size: 20px;
 }
 @keyframes pz-toast {
   from {
@@ -431,7 +455,8 @@
   text-shadow: 0.06em 0.07em 0 var(--pz-ink);
 }
 .pz-sticker-pts {
-  font-family: var(--pz-disp);
+  font-family: var(--pz-read);
+  font-weight: 900;
   font-size: calc(var(--stk, 150px) * 0.17);
   line-height: 1;
   color: var(--pz-ink);
@@ -600,6 +625,9 @@
   padding: 8px max(2px, var(--sar)) 0 max(2px, var(--sal));
   border-top: var(--pz-line) solid var(--pz-ink);
   background: var(--pz-cob-d);
+  /* above the tools tray: the last row's hard shadow falls into the tray's top padding */
+  position: relative;
+  z-index: 1;
 }
 .pz-kb-row {
   display: flex;
@@ -617,10 +645,10 @@
   background: var(--pz-white);
   box-shadow: 0 4px 0 var(--pz-ink);
   color: var(--pz-ink);
-  font-family: var(--pz-disp);
+  font-family: var(--pz-read);
+  font-weight: 700;
   font-size: var(--key-fs);
   line-height: 1;
-  padding-top: calc(var(--key-h) * 0.12);
   overflow: hidden;
   cursor: pointer;
   outline: none;
@@ -734,8 +762,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--pz-disp);
-  font-size: 17px;
+  font-family: var(--pz-read);
+  font-weight: 800;
+  font-size: 15px;
   color: var(--pz-white);
   white-space: nowrap;
 }
@@ -769,8 +798,8 @@
 .pz.is-short .pz-chip {
   height: 32px;
   font-size: 18px;
-  line-height: 23px;
-  padding: 3px 9px 0;
+  line-height: 26px;
+  padding: 0 9px;
 }
 .pz.is-short .pz-kb {
   padding-top: 6px;

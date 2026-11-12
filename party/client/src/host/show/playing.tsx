@@ -1,7 +1,9 @@
 /** PlayingScene: the live race the room watches during a round. */
 import { useEffect, useMemo, useRef } from 'preact/hooks';
 
+import { roundTime } from '../../../../shared/round-clock';
 import { sfx } from '../../kit/audio';
+import { roundFeed } from '../../net/round-feed';
 import { backdropUrl, crownUrl, lastPlaceArt } from './art';
 import { Avatar, avatarColor, CountUp, formatScore, useFrame, useStage, useTicker } from './common';
 import { useFunnyLayer } from './funny';
@@ -16,6 +18,21 @@ interface Racer {
   readonly name: string;
   readonly avatar: number;
   readonly score: number;
+  /** Elimination round: this player is out (their final is in). */
+  readonly out?: boolean;
+}
+
+/** What an elimination round adds to the scene (from the page's round feed; null for score rounds / no feed). */
+interface Elimination {
+  readonly out: ReadonlySet<string>;
+  /** Players still in (null before the first `scores` message). */
+  readonly active: number | null;
+}
+
+/** "נשארו 3!" before the finale begins and while it runs. */
+function finaleWords(left: number | null, begun: boolean): string {
+  if (left !== null && left >= 2) return begun ? `נשארו ${left} - מחורחר!` : `נשארו ${left}!`;
+  return begun ? 'מחורחר! נהיה קשה' : 'נהיה קשה!';
 }
 
 interface RowFx {
@@ -59,19 +76,44 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const tick = useTicker(300);
   const engine = useMemo(() => createMomentEngine(), [props.roundIndex, props.game.id]);
 
+  // ── elimination round (flappy): who is out and how many are left, from the round feed ──
+  // (the scene is only handed a scores map; `out`, `active` and the finale come with the same messages)
+  const feed = roundFeed();
+  const feedRound = feed.round !== null && feed.round.gameId === props.game.id && feed.round.number - 1 === props.roundIndex ? feed.round : null;
+  const eliminationOn = props.game.mode === 'elimination' && feedRound !== null;
+  const outKey = eliminationOn ? feed.out.join(',') : '';
+  const elimination = useMemo((): Elimination | null => (eliminationOn ? { out: new Set(outKey === '' ? [] : outKey.split(',')), active: feed.active } : null), [eliminationOn, outKey, feed.active]);
+
   // ── ranking: by score, ties keep their previous order so rows never flicker ──
   const prevOrder = useRef(new Map<string, number>());
   const racers = useMemo((): Racer[] => {
     const list: Racer[] = [];
     for (const p of props.players) {
       const score = props.scores.get(p.id);
-      if (score !== undefined) list.push({ id: p.id, name: p.name, avatar: p.avatar, score });
+      if (score !== undefined) list.push({ id: p.id, name: p.name, avatar: p.avatar, score, out: elimination?.out.has(p.id) ?? false });
     }
     const before = prevOrder.current;
+    if (elimination !== null) {
+      // Everybody in the air is at the same point of the same course: they share one distance
+      // (the farthest reported) and keep their rows; who is out sinks below them, the last
+      // one to fall on top.
+      let far = 0;
+      for (const r of list) if (r.out !== true) far = Math.max(far, r.score);
+      const flat = list.map((r) => (r.out === true ? r : { ...r, score: far }));
+      flat.sort(
+        (a, b) =>
+          Number(a.out === true) - Number(b.out === true) ||
+          (a.out === true ? b.score - a.score : 0) ||
+          (before.get(a.id) ?? 1e9) - (before.get(b.id) ?? 1e9) ||
+          a.name.localeCompare(b.name, 'he'),
+      );
+      prevOrder.current = new Map(flat.map((r, i) => [r.id, i]));
+      return flat;
+    }
     list.sort((a, b) => b.score - a.score || (before.get(a.id) ?? 1e9) - (before.get(b.id) ?? 1e9) || a.name.localeCompare(b.name, 'he'));
     prevOrder.current = new Map(list.map((r, i) => [r.id, i]));
     return list;
-  }, [props.players, props.scores]);
+  }, [props.players, props.scores, elimination]);
   const racersRef = useRef(racers);
   racersRef.current = racers;
 
@@ -102,7 +144,9 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
 
   const n = board.length;
   const topScore = board[0]?.score ?? 0;
-  const leaderId = topScore > 0 ? (board[0]?.id ?? null) : null;
+  const leftCount = elimination === null ? null : (elimination.active ?? board.filter((r) => r.out !== true).length);
+  // in an elimination round nobody "leads" until one is left: then the crown lands on the last one standing
+  const leaderId = elimination !== null ? (leftCount === 1 && board[0]?.out !== true ? (board[0]?.id ?? null) : null) : topScore > 0 ? (board[0]?.id ?? null) : null;
 
   // ── the visible window: everybody when they fit, else the top half pinned + a rotating page ──
   const fitAll = size.portrait ? 10 : 12;
@@ -200,7 +244,11 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   clockRef.current = props.clock;
   const durationRef = useRef(props.durationMs);
   durationRef.current = props.durationMs;
+  const eliminationRef = useRef(elimination);
+  eliminationRef.current = elimination;
   useEffect(() => {
+    // overtakes, streaks and comebacks mean nothing while everybody flies side by side
+    if (eliminationRef.current !== null) return;
     const sample = clockRef.current();
     const entries: RaceEntry[] = racersRef.current;
     const moments = engine.update({
@@ -217,6 +265,57 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   const ringRef = useRef<SVGCircleElement | null>(null);
   const numRef = useRef<HTMLDivElement | null>(null);
   const lastSecond = useRef(-1);
+  // the finale banner: "!נשארו 3" + 3-2-1, straight from the round feed every frame
+  const finaleRef = useRef<HTMLDivElement | null>(null);
+  const finaleWordsRef = useRef<HTMLSpanElement | null>(null);
+  const finaleCountRef = useRef<HTMLSpanElement | null>(null);
+  const finaleShown = useRef({ words: '', count: '', on: false, left: null as number | null });
+  const gameIdRef = useRef(props.game.id);
+  gameIdRef.current = props.game.id;
+  const roundNoRef = useRef(props.roundIndex);
+  roundNoRef.current = props.roundIndex;
+  useFrame(() => {
+    const box = finaleRef.current;
+    if (box) {
+      const f = roundFeed();
+      const r = f.round !== null && f.round.gameId === gameIdRef.current && f.round.number - 1 === roundNoRef.current ? f.round : null;
+      const shown = finaleShown.current;
+      let on = false;
+      let words = '';
+      let count = '';
+      if (r !== null && r.finale !== null && eliminationRef.current !== null) {
+        const inMs = r.finale.atElapsedMs - roundTime(r, f.now()).elapsedMs;
+        const active = f.active;
+        if (inMs <= 3_000 && (active === null || active > 1)) {
+          on = true;
+          // the number is the count in the air until the finale begins, then it stays
+          if (inMs > 0 || shown.left === null) shown.left = active;
+          words = finaleWords(shown.left, inMs <= 0);
+          count = inMs > 0 ? String(Math.min(3, Math.ceil(inMs / 1000))) : '';
+        }
+      }
+      if (r === null || r.finale === null) shown.left = null;
+      if (on !== shown.on) {
+        shown.on = on;
+        box.classList.toggle('is-on', on);
+        if (on) sfx.whoosh(0.8);
+      }
+      if (words !== shown.words && finaleWordsRef.current) {
+        shown.words = words;
+        finaleWordsRef.current.textContent = words;
+      }
+      if (count !== shown.count && finaleCountRef.current) {
+        shown.count = count;
+        const node = finaleCountRef.current;
+        node.textContent = count;
+        box.classList.toggle('is-counting', count !== '');
+        if (count !== '') {
+          sfx.tick(1.4);
+          node.animate([{ transform: 'scale(1.6)' }, { transform: 'scale(1)' }], { duration: 420, easing: 'ease-out' });
+        }
+      }
+    }
+  });
   useFrame(() => {
     const sample = clockRef.current();
     const root = rootRef.current;
@@ -245,7 +344,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
 
   const lastArt = lastPlaceArt();
   const bg = backdropUrl();
-  const lastId = n >= 3 && (board[n - 2]?.score ?? 0) > (board[n - 1]?.score ?? 0) ? (board[n - 1]?.id ?? null) : null;
+  const lastId = elimination === null && n >= 3 && (board[n - 2]?.score ?? 0) > (board[n - 1]?.score ?? 0) ? (board[n - 1]?.id ?? null) : null;
 
   // Rows are FIXED SLOTS that never move: slot k always sits at the same place. When a
   // slot gets a new occupant, the new row rolls in INSIDE its own slot (clipped), from
@@ -274,6 +373,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
       f && f.dropUntil > now ? 'is-drop' : '',
       f && f.glowUntil > now ? 'is-glow' : '',
       k % 2 === 1 ? 'is-odd' : '',
+      r.out === true ? 'is-out' : '',
     ].join(' ');
     rows.push(
       <div class={cls} key={`slot${k}`} data-slot={k} style={{ transform: `translate3d(0, ${y.toFixed(1)}px, 0)`, height: `${rowH.toFixed(1)}px` }}>
@@ -285,6 +385,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
               <bdi>{r.name}</bdi>
             </span>
             <span class="sh-badges">
+              {r.out === true ? <span class="sh-out-mark">בחוץ</span> : null}
               {f && f.fireUntil > now ? <span class="sh-fire">🔥</span> : null}
               {r.id === lastId ? (
                 lastArt.kind === 'img' ? (
@@ -294,7 +395,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
                 )
               ) : null}
             </span>
-            <CountUp class="sh-score" value={r.score} ms={420} />
+            <CountUp class="sh-score" value={elimination !== null ? Math.round(r.score / 10) : r.score} ms={420} />
             <div class="sh-track">
               <div
                 class="sh-fill"
@@ -352,6 +453,15 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
         <div class="sh-roundno">
           סיבוב {props.roundIndex + 1} · {n} במרוץ
         </div>
+        {elimination !== null && leftCount !== null ? (
+          <div class={`sh-left ${leftCount <= 3 ? 'is-few' : ''}`} data-left={leftCount}>
+            <span class="sh-left-word">{leftCount === 1 ? 'נשאר' : 'נשארו'}</span>
+            <span class="sh-left-num" key={leftCount} dir="ltr">
+              {leftCount}
+            </span>
+            <span class="sh-left-sub">באוויר</span>
+          </div>
+        ) : null}
         <div class="sh-ring">
           <svg viewBox="0 0 100 100" aria-hidden="true">
             <circle class="sh-ring-bg" cx="50" cy="50" r={RING_R} />
@@ -362,6 +472,10 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
         </div>
         <div class="sh-frozen-note">עוצרים רגע · מסתכלים על המסך</div>
       </aside>
+      <div class="sh-finale" ref={finaleRef}>
+        <span class="sh-finale-words" ref={finaleWordsRef} />
+        <span class="sh-finale-count" ref={finaleCountRef} dir="ltr" />
+      </div>
       {funny.node}
     </section>
   );

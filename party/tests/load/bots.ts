@@ -48,6 +48,7 @@
  */
 import { io } from 'socket.io-client';
 
+import { createFlight, STEP_MS, survivalRaw } from '../../client/src/games/flappy/course';
 import { GAME_IDS, GAMES, SCORE_SEND_INTERVAL_MS } from '../../shared/protocol';
 import { roundTime } from '../../shared/round-clock';
 import { computeRoundScores } from '../../shared/scoring';
@@ -221,11 +222,31 @@ interface RoundPlan {
   readonly skill: number;
   /** Plotzel-style: finishes early at this fraction of the round and sends the final then. */
   readonly finishAt: number | null;
+  /**
+   * Elimination round (flappy, one life): the round time at which this bot crashes while the
+   * course is as it began, and how long into the finale it lasts if it gets that far.
+   */
+  readonly dieAtMs: number;
+  readonly finaleLastMs: number;
   live: number;
   /** What the server must have as this bot's raw: the acked final, else the last live score sent. */
   expected: number;
   finalSent: boolean;
   done: boolean;
+}
+
+/** The round's flappy course (the game's own, pure): one per (seed, finale). */
+const flights = new Map<string, ReturnType<typeof createFlight>>();
+function flightOf(seed: number, finaleAtMs: number | null): ReturnType<typeof createFlight> {
+  const key = `${seed}:${String(finaleAtMs)}`;
+  let f = flights.get(key);
+  if (f === undefined) {
+    f = createFlight(seed);
+    f.setFinale(finaleAtMs === null ? null : Math.ceil(finaleAtMs / STEP_MS - 1e-6));
+    if (flights.size > 8) flights.clear();
+    flights.set(key, f);
+  }
+  return f;
 }
 
 const stateLatency = new Stats();
@@ -316,6 +337,9 @@ class Bot {
       plan = {
         skill,
         finishAt: early ? 0.25 + 0.6 * Math.random() : null,
+        // skill 0 never taps (down at 2.4 s); the others drop out over the first 50 s, the better the later
+        dieAtMs: skill === 0 ? 2_400 : 2_500 + skill * skill * 48_000 * (0.5 + Math.random()),
+        finaleLastMs: 2_500 + skill * 13_000 * (0.4 + 0.6 * Math.random()),
         live: 0,
         expected: 0,
         finalSent: false,
@@ -340,7 +364,26 @@ class Bot {
       const progress = Math.min(1, time.elapsedMs / duration);
       const over = time.leftMs <= 0;
       const best = Math.min(GAMES[round.gameId].maxRaw, TYPICAL_BEST[round.gameId]);
-      if (plan.finishAt !== null) {
+      if (GAMES[round.gameId].mode === 'elimination') {
+        // One life: the raw score is the distance flown on the round's real course, by round
+        // time; the bot is "dead" at its seeded time (in the finale: soon after it begins)
+        // and sends its final then. Whoever is last simply keeps reporting.
+        const finaleAt = round.finale?.atElapsedMs ?? null;
+        const dieAt = finaleAt !== null && plan.dieAtMs > finaleAt ? finaleAt + plan.finaleLastMs : plan.dieAtMs;
+        const flight = flightOf(round.seed, finaleAt);
+        const rawAt = (ms: number): number => Math.min(GAMES[round.gameId].maxRaw, survivalRaw(flight.distAt(Math.floor(ms / STEP_MS))));
+        if (time.elapsedMs >= dieAt || over) {
+          this.sendFinal(round.index, plan, rawAt(Math.min(dieAt, time.elapsedMs)));
+        } else {
+          const score = rawAt(time.elapsedMs);
+          if (score !== plan.live) {
+            plan.live = score;
+            plan.expected = score;
+            this.socket.emit('player:score', { round: round.index, score });
+            if (this.pendingEcho === null) this.pendingEcho = { value: score, sentAt: Date.now() };
+          }
+        }
+      } else if (plan.finishAt !== null) {
         // Solves the word at `finishAt`: faster = more points.
         if (progress >= plan.finishAt || over) {
           const score = over && progress < plan.finishAt ? 0 : Math.round(best * plan.skill * (1.2 - plan.finishAt));
@@ -493,6 +536,19 @@ async function selfHosted(opts: Options): Promise<number> {
     const results = (state as RoomState | null)?.results;
     if (results === null || results === undefined) throw new Error('results vanished');
     const sent = new Map<string, number>(bots.map((b) => [b.playerId, b.plans.get(i)?.expected ?? 0]));
+    if (GAMES[gameId].mode === 'elimination') {
+      // Whoever was still in the air at the end is put above every final by the server
+      // (the last one standing wins whatever its phone reported last): take the server's raw for them.
+      for (const b of bots) {
+        const row = results.rows.find((r) => r.playerId === b.playerId);
+        if (row !== undefined && b.plans.get(i)?.finalSent !== true && row.raw > (sent.get(b.playerId) ?? 0)) sent.set(b.playerId, row.raw);
+      }
+      const order = [...results.rows].sort((x, y) => x.roundRank - y.roundRank);
+      const top = bots.find((b) => b.playerId === order[0]?.playerId);
+      const flyingAtEnd = bots.filter((b) => b.plans.get(i)?.finalSent !== true).length;
+      if (flyingAtEnd === 1 && top?.plans.get(i)?.finalSent === true) failures.push(`round ${i}: the last one standing did not win`);
+      log(opts, `round ${i} (elimination): ${flyingAtEnd} in the air at the end, finale at ${String((state as RoomState | null)?.round?.finale?.atElapsedMs ?? null)} ms`);
+    }
     // The tie-break between equal raw scores is the server's clock (reachedAt, sent with the
     // rows); everything else is recomputed from what the bots sent. Join order = order in `players`.
     const joinOrder = new Map<string, number>(((state as RoomState | null)?.players ?? []).map((p, k) => [p.id, k]));

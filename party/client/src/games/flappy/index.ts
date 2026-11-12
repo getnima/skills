@@ -1,41 +1,61 @@
 /**
- * פלאפי תבורי: tap-to-flap through microphone stands.
+ * פלאפי תבורי: last one standing. Tap to fly through the microphone stands; one life.
  *
- * All gameplay is in field units (see course.ts) and advances only in the kit
- * loop's fixed steps, so a cutscene freeze stops it exactly where it is.
- * The raw score is the best run of the round (the live run counts).
+ * - The flight is locked to the ROUND CLOCK (course.ts): the distance flown is a pure
+ *   function of round time, so every phone is at the same point of the same course at the
+ *   same moment, whatever its frame rate. A cutscene freeze stops the clock, so it stops
+ *   the flight exactly where it is.
+ * - The raw score is survival: the distance flown in tenths of a unit. A crash sends the
+ *   final at once (ctx.finish()) and this phone watches the rest of the round.
+ * - The finale ("only 3 left"): the stage tells when it begins (ctx.finaleInMs); from then on
+ *   the course hardens as a pure function of (seed, time since it began).
+ * - A reload / a stall longer than REJOIN_AFTER_MS: the bird is put back at the live point
+ *   of the course, in the middle of the next gap, hanging and untouchable for
+ *   PHYS.rejoinGraceMs or until the first tap (shorter than the time between two obstacles).
+ *   A phone that was already out comes back out (ctx.field().outRaw): never a second life.
  */
 import { paintDrawable, starPainter } from '../../kit/assets';
 import { noise, sfx, tone } from '../../kit/audio';
-import { createGameCanvas, drawText, roundRectPath } from '../../kit/canvas';
+import { createGameCanvas } from '../../kit/canvas';
 import { clamp, createFx, ease, lerp } from '../../kit/fx';
 import { haptic } from '../../kit/haptics';
 import { createInput } from '../../kit/input';
 import { createLoop } from '../../kit/loop';
-import { COLORS, font } from '../../kit/theme';
 import { GAMES } from '../../../../shared/protocol';
 import { loadFlappyArt, SLOT_SIZES } from './art';
-import { createCourse, FIELD, hitsObstacle, PHYS, speedAt } from './course';
+import { pilotFlap } from './bot';
+import { createFlight, FIELD, finaleDifficulty, newBird, PASS_BEHIND, PHYS, STEP_MS, STEP_S, stepBird, survivalRaw } from './course';
+import { blit, createStickerCache, loadDisplayFont, PAL, renderChip, renderSticker } from './look';
+import { createSimField } from './sim-field';
+import { createSpectator, finaleText } from './spectator';
 
-import type { GameContext, GameInstance, GameModule } from '../types';
+import type { FieldPlayer, GameContext, GameInstance, GameModule } from '../types';
 import type { Obstacle } from './course';
+import type { Sticker } from './look';
+import type { SimField } from './sim-field';
+import type { SpectatorState } from './spectator';
 
-type Mode = 'hover' | 'fly' | 'dead' | 'over';
+/** 'fly': in the air. 'dead': the crash (a moment). 'out': watching the rest of the round. */
+type Mode = 'fly' | 'dead' | 'out';
 
 interface FlappyDebug {
   readonly mode: Mode;
+  /** Obstacles passed. */
   readonly run: number;
-  readonly best: number;
-  readonly runs: readonly number[];
+  /** Raw score (survival distance in tenths of a unit). */
+  readonly raw: number;
   readonly birdY: number;
   readonly vy: number;
   readonly dist: number;
+  /** Fixed steps of round time simulated, and the step the round clock is at. */
   readonly steps: number;
+  readonly clockStep: number;
   /** Next obstacle not yet passed. */
   readonly next: { readonly x: number; readonly gapY: number; readonly gap: number };
   /** First n obstacles of the course (for determinism checks). */
   course(n: number): Array<{ x: number; gapY: number; gap: number }>;
-  /** Physics constants (field units, seconds) and the scroll speed now. */
+  /** Distance after `step` steps of round time (pure). */
+  distAt(step: number): number;
   readonly phys: typeof PHYS;
   readonly speed: number;
   /** Screen mapping: px per field unit, bird x in px, units visible ahead of the bird. */
@@ -47,6 +67,25 @@ interface FlappyDebug {
   readonly art: Record<string, boolean>;
   /** Opacity of the "tap to fly" hint (0 = hidden). */
   readonly hint: number;
+  /** Step at which the finale begins (null: none), its stage now (-1 before it), ms until it. */
+  readonly finaleStep: number | null;
+  readonly finaleStage: number;
+  readonly finaleInMs: number | null;
+  /** Players still in the air as this phone knows it (null: unknown). */
+  readonly active: number | null;
+  readonly place: number | null;
+  readonly won: boolean;
+  /** Hanging untouchable after a rejoin. */
+  readonly grace: boolean;
+  /** Times the bird was put back on the live course (reload / stall). */
+  readonly rejoins: number;
+  /** The banner on the canvas right now ('' when none) and the 3-2-1 digit ('' when none). */
+  readonly banner: string;
+  readonly countdown: string;
+  /** The "out" view (null while flying). */
+  readonly out: { verdict: string; place: string; air: string; names: string[]; finale: string; count: string; winner: string } | null;
+  /** Let the strong pilot fly (true) / hand the bird back (false). `untilStep`: it stops tapping at that step. */
+  autopilot(on: boolean, untilStep?: number): void;
 }
 
 declare global {
@@ -69,12 +108,15 @@ interface Feather {
   phase: number;
 }
 
-const DEAD_MS = 720;
-const RESPAWN_MIN_LEFT_MS = 1300;
-const HOVER_Y = FIELD * 0.42;
+/** The crash moment before the "out" view comes up. */
+const DEAD_MS = 950;
 const MAX_FEATHERS = 48;
-const FEATHER_COLORS = ['#ffffff', '#fff3c4', '#ffd6ea', '#ffffff'] as const;
+const FEATHER_COLORS = ['#ffffff', PAL.paper, PAL.yel2, '#ffffff'] as const;
 const MAX_RAW = GAMES.flappy.maxRaw;
+/** Behind the round clock by more than this (a reload, a stalled tab): rejoin instead of catching up. */
+const REJOIN_AFTER_MS = 750;
+/** Catch-up steps per loop update (a 20 fps phone needs 3). */
+const MAX_CATCHUP = 12;
 /**
  * The screen is at most this many field units wide. Tall phones (19.5:9) would
  * otherwise get a bigger zoom from their height and see ~38 units of course
@@ -83,37 +125,59 @@ const MAX_RAW = GAMES.flappy.maxRaw;
  */
 const VIEW_W = 68;
 
+/** The owner's words, at these obstacle counts. */
 const STREAK_WORDS: ReadonlyArray<readonly [number, string]> = [
-  [5, 'יפה!'],
-  [10, 'אש!'],
-  [15, 'מטורף!'],
-  [20, 'אגדה!'],
-  [30, 'בלתי נתפס!'],
-  [40, 'מלאך אמיתי!'],
+  [5, 'וואו!'],
+  [10, 'צדיק!'],
+  [15, 'נודר!'],
+  [20, 'בן פורת יוסף!'],
+  [30, 'מחורחר!'],
 ];
 
 function streakWord(n: number): string {
-  let word = 'יפה!';
+  let word = 'וואו!';
   for (const [at, w] of STREAK_WORDS) if (n >= at) word = w;
   return word;
+}
+
+function numParam(name: string): number | null {
+  try {
+    const raw = new URLSearchParams(window.location.search).get(name);
+    if (raw === null || raw.trim() === '') return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
 }
 
 export const game: GameModule = {
   id: 'flappy',
   async create(ctx: GameContext): Promise<GameInstance> {
-    const art = await loadFlappyArt();
+    const [art] = await Promise.all([loadFlappyArt(), loadDisplayFont()]);
     const view = createGameCanvas(ctx.root);
     const input = createInput(view.canvas);
     const fx = createFx(260);
-    const course = createCourse(ctx.seed);
-    const sparkle = paintDrawable('sparkle', starPainter('#ffe680'), 32);
+    const flight = createFlight(ctx.seed);
+    const sparkle = paintDrawable('fl-sparkle', starPainter(PAL.yel), 32);
+    const stickers = createStickerCache(18);
+    const spectator = createSpectator(ctx.root, ctx.hudHeight, ctx.safeBottom);
+
+    // ── who else is flying ──
+    // In a room the stage knows (ctx.activePlayers / finaleInMs / field). In the dev harness
+    // there is no server: ?field=N simulates N opponents, ?finaleAt=ms pins the finale.
+    const inRoom = ctx.activePlayers !== undefined;
+    const simCount = inRoom ? null : numParam('field');
+    const simFinale = inRoom ? null : numParam('finaleAt');
+    const sim: SimField | null = !inRoom && (simCount !== null || simFinale !== null) ? createSimField(ctx.seed, simCount ?? 0, simFinale) : null;
+    const hasField = inRoom || (sim !== null && simCount !== null && simCount > 0);
 
     // ── layout (CSS px), recomputed from the view each step / frame ──
     // `top` = top of the FIELD (field y 0); `hudTop` = first px below the HUD. On a tall
     // phone the field is narrower than the screen height (see VIEW_W), so the sky
     // between them is open air: the bird may fly up to `ceil` (field units, <= 0).
     const L = { W: 0, H: 0, top: 0, hudTop: 0, ceil: 0, groundTop: 0, groundH: 0, playH: 0, U: 1, birdX: 0, sized: '' };
-    const fonts = { counter: '', best: '', banner: '', hint: '', card: '', cardBig: '' };
+    const px = { banner: 40, count: 120, chip: 20, hint: 26, big: 96 };
     function measure(): void {
       const W = view.width;
       const H = view.height;
@@ -133,43 +197,55 @@ export const game: GameModule = {
       L.top = L.groundTop - L.playH;
       L.ceil = Math.min(0, (L.hudTop - L.top) / L.U);
       L.birdX = Math.round(clamp(Math.min(W * 0.3, 34 * L.U + 20), 60, W * 0.45));
-      fonts.counter = font(Math.round(L.playH * 0.3), 900);
-      fonts.best = font(15, 800);
-      fonts.banner = font(Math.round(clamp(W * 0.11, 30, 56)), 900);
-      fonts.hint = font(Math.round(clamp(W * 0.062, 20, 28)), 900);
-      fonts.card = font(Math.round(clamp(W * 0.06, 18, 26)), 800);
-      fonts.cardBig = font(Math.round(clamp(W * 0.2, 56, 110)), 900);
+      px.banner = Math.round(clamp(W * 0.115, 32, 56));
+      px.count = Math.round(clamp(W * 0.36, 96, 170));
+      px.chip = Math.round(clamp(W * 0.052, 17, 23));
+      px.hint = Math.round(clamp(W * 0.07, 22, 30));
+      px.big = Math.round(clamp(L.playH * 0.24, 70, 130));
     }
     measure();
 
+    // ── round clock ──
+    function elapsedMs(): number {
+      return ctx.durationMs - ctx.timeLeftMs();
+    }
+
     // ── state (field units / seconds) ──
-    let mode: Mode = 'hover';
-    let birdY = HOVER_Y;
-    let prevY = birdY;
-    let vy = 0;
+    const bird = newBird();
+    let mode: Mode = 'fly';
+    let simStep = 0;
+    let clockStep = 0;
     let dist = 0;
-    let prevDist = 0;
-    let groundScroll = 0;
-    let prevGroundScroll = 0;
-    let tilt = 0;
-    let prevTilt = 0;
+    let nextIdx = 0;
+    let graceLeft = 0; // steps of rejoin grace left
+    let rejoins = 0;
     let knockX = 0; // units, bird pushed back on a bonk
-    let prevKnockX = 0;
     let knockVx = 0;
-    let modeT = 0; // seconds in the current mode
+    let landed = false;
+    let deadMs = 0;
+    let deadDist = 0;
+    let finalRaw = 0;
+    let passedAtEnd = 0;
+    let place: number | null = null;
+    let total: number | null = null;
+    let won = false;
+    let pilot = false;
+    let pilotUntil = Number.POSITIVE_INFINITY;
+    let flapQueued = false;
+    // finale
+    let finaleAtMs: number | null = null;
+    let finaleLeft: number | null = null; // players in the air when the finale began
+    let finaleBegun = false;
+    let shownStage = -1;
+    let lastCountDigit = 0;
+    let winnerName: string | null = null;
+    // cosmetics (frame time, never gameplay)
+    let tilt = 0;
     let bobT = 0;
     let wingT = 0;
     let flapBoost = 0;
     let flapFaceT = 0;
-    let flapQueued = false;
-    let nextIdx = 0;
-    let run = 0;
-    let best = 0;
-    let bestAtRunStart = 0;
-    let newBestShown = false;
-    const runs: number[] = [];
-    let landed = false;
-    // tweened cosmetics
+    let groundScroll = 0;
     let sqX = 1;
     let sqY = 1;
     let birdScale = 1;
@@ -179,11 +255,10 @@ export const game: GameModule = {
     let passGlow = 0;
     let passGlowIdx = -1;
     let bannerText = '';
-    let bannerColor: string = COLORS.yellow;
+    let bannerFill: string = PAL.yel;
     let bannerT = 0;
     let bannerMax = 1;
     let destroyed = false;
-    let lastTenShown = false;
     let traceLeft = 0;
     const traced: Array<Array<number | string>> = [];
 
@@ -239,36 +314,26 @@ export const game: GameModule = {
         g.beginPath();
         g.ellipse(0, 0, f.size, f.size * 0.38, 0, 0, Math.PI * 2);
         g.fill();
-        g.strokeStyle = 'rgba(120,90,180,0.6)';
-        g.lineWidth = 1.2;
-        g.beginPath();
-        g.moveTo(-f.size * 1.15, 0);
-        g.lineTo(f.size * 0.9, 0);
+        g.strokeStyle = PAL.ink;
+        g.lineWidth = 1.5;
         g.stroke();
         g.restore();
       }
       g.globalAlpha = 1;
     }
 
-    /** One hint fade at a time: a tap right after a respawn must win over the fade-in. */
+    /** One hint fade at a time. */
     let cancelHintFade: (() => void) | null = null;
     function fadeHint(to: number, ms: number): void {
       cancelHintFade?.();
       cancelHintFade = fx.tween({ ms, from: hintAlpha, to, update: (v) => (hintAlpha = v) });
     }
 
-    function banner(text: string, color: string, ms = 1100): void {
+    function banner(text: string, fill: string = PAL.yel, ms = 1100): void {
       bannerText = text;
-      bannerColor = color;
+      bannerFill = fill;
       bannerMax = ms / 1000;
       bannerT = bannerMax;
-    }
-
-    function setBest(v: number): void {
-      const next = Math.min(MAX_RAW, v);
-      if (next <= best) return;
-      best = next;
-      ctx.setScore(best);
     }
 
     // ── sounds that the kit does not have ──
@@ -281,79 +346,51 @@ export const game: GameModule = {
       tone({ freq: 760, to: 210, dur: 0.16, type: 'square', vol: 0.09, lowpass: 2200 });
     }
 
-    // ── lifecycle of runs ──
-    function startRun(): void {
-      run = 0;
-      dist = 0;
-      prevDist = 0;
-      nextIdx = 0;
-      birdY = HOVER_Y;
-      prevY = birdY;
-      vy = 0;
-      tilt = 0;
-      prevTilt = 0;
-      knockX = 0;
-      prevKnockX = 0;
-      knockVx = 0;
-      landed = false;
-      bestAtRunStart = best;
-      newBestShown = false;
-      // a new run waits, hovering, for the first tap (like the very first one): no
-      // forced fall a second after a crash, and a stray tap from the crash only starts it
-      mode = 'hover';
-      modeT = 0;
-      bobT = 0;
-      passGlowIdx = -1;
-      fadeHint(0.9, 350);
-      // cosmetic entrance
-      birdScale = 0.2;
-      fx.tween({ ms: 380, from: 0.2, to: 1, ease: ease.outBack, update: (v) => (birdScale = v) });
-      flash = 0.45;
-      fx.tween({ ms: 260, from: 0.45, to: 0, update: (v) => (flash = v) });
-      fx.burst(L.birdX, L.top + birdY * L.U, { count: 14, colors: ['#ffffff', COLORS.yellow, COLORS.cyan], speed: 220, size: 4, life: 0.45, gravity: 0, shape: 'star' });
-      sfx.whoosh(1.3);
+    // ── the field ──
+    function activeNow(): number | null {
+      if (sim) return hasField ? sim.active() : null;
+      return ctx.activePlayers?.() ?? null;
+    }
+    function fieldPlayers(): readonly FieldPlayer[] {
+      if (sim) return hasField ? sim.field().players : [];
+      return ctx.field?.()?.players ?? [];
+    }
+    function finaleIn(): number | null {
+      if (sim) return sim.finaleInMs(elapsedMs());
+      return ctx.finaleInMs?.() ?? null;
     }
 
-    function die(hitGround: boolean): void {
-      mode = 'dead';
-      modeT = 0;
-      landed = hitGround;
-      runs.push(run);
-      setBest(run);
-      const bx = L.birdX;
-      const by = L.top + birdY * L.U;
-      spawnFeathers(bx, by, 16, 360);
-      fx.burst(bx, by, { count: 10, colors: ['#ffffff', COLORS.yellow], speed: 300, size: 4, life: 0.4, shape: 'star' });
-      fx.shake(Math.max(8, L.U * 2.2), 280);
-      bonkSound();
-      if (!hitGround) {
-        vy = -38;
-        knockVx = -16;
-        loop.after(160, () => {
-          if (mode === 'dead' && !landed) sfx.fall();
-        });
-      } else {
-        vy = 0;
-        sqX = 1.35;
-        sqY = 0.65;
-        fx.tween({ ms: 320, from: 0, to: 1, ease: ease.outElastic, update: (v) => { sqX = lerp(1.35, 1, v); sqY = lerp(0.65, 1, v); } });
+    /** Reads the finale from the stage and fixes the step it begins at. */
+    function syncFinale(): void {
+      // ms until it FIRST, the clock after: an interruption between the two reads can only
+      // make the sum later than the truth, so the smallest reading is the right one
+      const inMs = finaleIn();
+      if (inMs === null) return;
+      const at = Math.round(inMs + elapsedMs());
+      if (finaleAtMs === null || at < finaleAtMs) {
+        finaleAtMs = at;
+        flight.setFinale(Math.ceil(at / STEP_MS - 1e-6));
+        if (mode === 'fly') nextIdx = flight.nextIndex(dist);
       }
-      haptic.bump();
-      flapBoost = 0;
     }
 
+    /** The number the finale banner says: how many are in the air now, fixed once the finale begins. */
+    function leftForBanner(): number | null {
+      const n = finaleLeft ?? activeNow();
+      return n !== null && n >= 2 ? n : null;
+    }
+
+    // ── flying ──
     function flap(): void {
-      if (mode === 'hover') fadeHint(0, 300);
-      mode = 'fly';
-      vy = PHYS.flapVy;
+      if (hintAlpha > 0.01) fadeHint(0, 250);
       flapBoost = 1;
       flapFaceT = 0.18;
       fx.tween({ ms: 260, from: 0, to: 1, ease: ease.outBack, update: (v) => { sqX = lerp(0.8, 1, v); sqY = lerp(1.24, 1, v); } });
       const bx = L.birdX;
-      const by = L.top + birdY * L.U;
+      const by = L.top + bird.y * L.U;
       fx.burst(bx - PHYS.radius * L.U * 0.6, by + PHYS.radius * L.U * 0.7, {
         count: 5,
-        colors: ['rgba(255,255,255,0.9)', '#ffe9f3'],
+        colors: ['#ffffff', PAL.paper],
         speed: 120,
         size: 3,
         life: 0.32,
@@ -366,149 +403,233 @@ export const game: GameModule = {
     }
 
     function pass(o: Obstacle): void {
-      run++;
-      setBest(run);
+      const run = nextIdx + 1;
       passGlowIdx = o.i;
       passGlow = 1;
       counterPop = 1.25;
       fx.tween({ ms: 300, from: 1.25, to: 1, ease: ease.outCubic, update: (v) => (counterPop = v) });
       const gx = L.birdX;
       const gy = L.top + o.gapY * L.U;
-      fx.burst(gx, gy, { count: 9, colors: [COLORS.yellow, '#ffffff', COLORS.pink], speed: 240, size: 4, life: 0.45, gravity: 120, shape: 'star' });
-      fx.text(gx + 4, L.top + birdY * L.U - PHYS.radius * L.U - 10, '+1', { color: COLORS.yellow, size: 28, rise: 50 });
+      fx.burst(gx, gy, { count: 9, colors: [PAL.yel, '#ffffff', PAL.red], speed: 240, size: 4, life: 0.45, gravity: 120, shape: 'star' });
       sfx.coin(1 + Math.min(run, 24) * 0.025);
-      if (run % 5 === 0) {
-        banner(streakWord(run), run % 10 === 0 ? COLORS.cyan : COLORS.yellow);
-        fx.confetti({ x: L.W / 2, y: L.groundTop, count: 36 });
-        sfx.success();
-        haptic.success();
-      } else if (!newBestShown && bestAtRunStart > 0 && run === bestAtRunStart + 1) {
-        newBestShown = true;
-        banner('שיא חדש!', COLORS.pink);
+      if (run % 5 === 0 && bannerT <= 0) {
+        banner(streakWord(run), run % 10 === 0 ? PAL.white : PAL.yel);
         sfx.success();
         haptic.success();
       }
     }
 
-    function collides(): boolean {
-      return hitsObstacle(course, nextIdx, dist, knockX, birdY);
+    function die(hitGround: boolean, quiet = false): void {
+      if (mode !== 'fly') return;
+      mode = 'dead';
+      deadMs = 0;
+      deadDist = dist;
+      landed = hitGround;
+      passedAtEnd = nextIdx;
+      finalRaw = Math.min(MAX_RAW, survivalRaw(dist));
+      // behind everyone who is still in the air
+      const n = activeNow();
+      const players = fieldPlayers();
+      total = players.length > 0 ? players.length : null;
+      place = won ? 1 : n !== null ? Math.max(1, n) : null;
+      ctx.setScore(finalRaw);
+      ctx.finish();
+      if (quiet) return;
+      const bx = L.birdX;
+      const by = L.top + bird.y * L.U;
+      spawnFeathers(bx, by, 16, 360);
+      fx.burst(bx, by, { count: 10, colors: ['#ffffff', PAL.yel], speed: 300, size: 4, life: 0.4, shape: 'star' });
+      fx.shake(Math.max(8, L.U * 2.2), 280);
+      bonkSound();
+      if (!hitGround) {
+        bird.vy = -38;
+        knockVx = -16;
+      } else {
+        bird.vy = 0;
+        sqX = 1.35;
+        sqY = 0.65;
+        fx.tween({ ms: 320, from: 0, to: 1, ease: ease.outElastic, update: (v) => { sqX = lerp(1.35, 1, v); sqY = lerp(0.65, 1, v); } });
+      }
+      haptic.bump();
+      flapBoost = 0;
+      bannerT = 0;
     }
 
-    // ── fixed step ──
+    /** Put the bird back on the live course: the middle of the next gap, hanging and untouchable for a moment. */
+    function rejoin(target: number): void {
+      simStep = target;
+      dist = flight.distAt(simStep);
+      nextIdx = flight.nextIndex(dist);
+      let o = flight.get(nextIdx);
+      // an obstacle the bird is already inside of is not "next": aim at the one after it
+      if (o.x - dist < PHYS.headW) o = flight.get(nextIdx + 1);
+      bird.y = o.gapY;
+      bird.vy = 0;
+      bird.hover = true;
+      graceLeft = Math.round(PHYS.rejoinGraceMs / STEP_MS);
+      rejoins++;
+      hintAlpha = 0.9;
+      birdScale = 0.2;
+      fx.tween({ ms: 380, from: 0.2, to: 1, ease: ease.outBack, update: (v) => (birdScale = v) });
+    }
+
+    /** One fixed step of round time while in the air. */
+    function flyStep(): void {
+      const wantFlap = flapQueued || (pilot && simStep < pilotUntil && pilotFlap(flight, simStep, bird, L.ceil));
+      flapQueued = false;
+      simStep++;
+      dist = flight.distAt(simStep);
+      // the bird hangs until the first tap, but only for a while: then it falls like anyone's
+      if (bird.hover && !wantFlap) {
+        if (graceLeft > 0) {
+          if (--graceLeft === 0) bird.hover = false;
+        } else if (simStep * STEP_MS >= PHYS.hoverMs) bird.hover = false;
+      }
+      if (wantFlap) {
+        graceLeft = 0;
+        flap();
+      }
+      for (;;) {
+        const o = flight.get(nextIdx);
+        if (o.x - dist < -PASS_BEHIND) {
+          pass(o);
+          nextIdx++;
+        } else break;
+      }
+      const down = stepBird(bird, wantFlap, flight, nextIdx, dist, L.ceil, graceLeft === 0);
+      ctx.setScore(Math.min(MAX_RAW, survivalRaw(dist)));
+      if (traceLeft > 0) {
+        traceLeft--;
+        traced.push([simStep, down ? 'dead' : 'fly', bird.y, bird.vy, dist, nextIdx]);
+      }
+      if (down) die(bird.y + PHYS.hitRadius >= FIELD);
+    }
+
+    function spectatorState(): SpectatorState {
+      const players = fieldPlayers();
+      const flying = players.filter((p) => !p.out && !p.me);
+      const n = activeNow();
+      // once the server has this phone's final, the strict order knows its place exactly
+      const at = players.findIndex((p) => p.me);
+      if (at >= 0 && players[at]?.out === true && !won) place = at + 1;
+      if (players.length > 0) total = players.length;
+      if (winnerName === null && hasField && n !== null && n <= 1 && (total ?? 0) >= 2 && flying.length === 1) winnerName = flying[0]?.name ?? null;
+      return {
+        kind: won ? 'win' : hasField ? 'out' : 'solo',
+        place,
+        total,
+        passed: passedAtEnd,
+        active: hasField ? n : null,
+        flying,
+        finaleInMs: finaleAtMs === null ? null : finaleAtMs - elapsedMs(),
+        finaleLeft: leftForBanner(),
+        winner: winnerName,
+      };
+    }
+
+    // ── fixed step (the kit loop: frame time; the flight itself follows the round clock) ──
     function step(dt: number): void {
       measure();
-      prevY = birdY;
-      prevDist = dist;
-      prevGroundScroll = groundScroll;
-      prevTilt = tilt;
-      prevKnockX = knockX;
-      modeT += dt;
-      bobT += dt;
+      const el = elapsedMs();
+      clockStep = Math.max(0, Math.floor(el / STEP_MS + 1e-6));
+      sim?.update(el, mode === 'fly');
+      syncFinale();
 
-      const wantFlap = flapQueued;
-      flapQueued = false;
-
-      switch (mode) {
-        case 'hover': {
-          birdY = HOVER_Y + Math.sin(bobT * 4.2) * 1.6;
-          groundScroll += speedAt(0) * dt;
-          tilt += (0 - tilt) * 0.2;
-          if (wantFlap) flap();
-          break;
+      if (mode === 'fly') {
+        const behind = clockStep - simStep;
+        if (behind * STEP_MS > REJOIN_AFTER_MS) rejoin(clockStep);
+        else for (let k = Math.min(behind, MAX_CATCHUP); k > 0 && mode === 'fly'; k--) flyStep();
+        if (mode === 'fly') {
+          // the server counted this phone out (away for longer than the grace)
+          const me = inRoom ? fieldPlayers().find((p) => p.me) : undefined;
+          if (me?.out === true) die(false);
         }
-        case 'fly': {
-          if (wantFlap) flap();
-          vy = Math.min(PHYS.maxFall, vy + PHYS.gravity * dt);
-          birdY += vy * dt;
-          // the top of the visible sky (on a 16:9 phone exactly the field top);
-          // above the field there is only microphone stand, so a higher sky gives nothing
-          const ceil = L.ceil + PHYS.radius * 0.6;
-          if (birdY < ceil) {
-            birdY = ceil;
-            if (vy < 0) vy = 0;
+        if (mode === 'fly' && !won && hasField) {
+          const n = activeNow();
+          if (n === 1 && fieldPlayers().length >= 2) {
+            won = true;
+            banner('ניצחת!', PAL.yel, 4000);
+            fx.confetti({ count: 70, width: L.W });
+            sfx.success();
+            haptic.success();
           }
-          const sp = speedAt(dist);
-          dist += sp * dt;
-          groundScroll += sp * dt;
-          const target = clamp(vy / PHYS.maxFall, -0.42, 1) * (vy > 0 ? 1.15 : 1);
-          tilt += (target - tilt) * (vy > 0 ? 0.09 : 0.3);
-          // passes
-          for (;;) {
-            const o = course.get(nextIdx);
-            if (o.x - dist < -PHYS.poleW / 2 - PHYS.hitRadius) {
-              pass(o);
-              nextIdx++;
-            } else break;
-          }
-          if (birdY + PHYS.hitRadius >= FIELD) {
-            birdY = FIELD - PHYS.hitRadius;
-            die(true);
-          } else if (collides()) {
-            die(false);
-          }
-          break;
         }
-        case 'dead': {
-          knockX += knockVx * dt;
-          knockVx *= 1 - 5 * dt;
-          if (!landed) {
-            vy = Math.min(PHYS.maxFall * 1.2, vy + PHYS.gravity * 1.1 * dt);
-            birdY += vy * dt;
-            tilt += 9 * dt;
-            const floor = FIELD - PHYS.radius * 0.85;
-            if (birdY >= floor) {
-              birdY = floor;
-              landed = true;
-              vy = 0;
-              sfx.land(0.8);
-              fx.burst(L.birdX + knockX * L.U, L.groundTop, { count: 8, colors: ['#ffffff', COLORS.pink], speed: 160, size: 3, life: 0.35, angle: -Math.PI / 2, spread: 2.2 });
-              spawnFeathers(L.birdX + knockX * L.U, L.groundTop - 4, 5, 160);
-            }
-          } else {
-            tilt += (Math.PI * 0.5 - tilt) * 0.15;
+      } else if (mode === 'dead') {
+        deadMs += dt * 1000;
+        knockX += knockVx * dt;
+        knockVx *= 1 - 5 * dt;
+        if (!landed) {
+          bird.vy = Math.min(PHYS.maxFall * 1.2, bird.vy + PHYS.gravity * 1.1 * dt);
+          bird.y += bird.vy * dt;
+          tilt += 9 * dt;
+          const floor = FIELD - PHYS.radius * 0.85;
+          if (bird.y >= floor) {
+            bird.y = floor;
+            landed = true;
+            bird.vy = 0;
+            sfx.land(0.8);
+            spawnFeathers(L.birdX + knockX * L.U, L.groundTop - 4, 5, 160);
           }
-          if (modeT * 1000 >= DEAD_MS) {
-            if (ctx.timeLeftMs() > RESPAWN_MIN_LEFT_MS) startRun();
-            else {
-              mode = 'over';
-              modeT = 0;
-              bannerT = 0;
-            }
-          }
-          break;
-        }
-        case 'over': {
+        } else {
           tilt += (Math.PI * 0.5 - tilt) * 0.15;
-          break;
         }
-        default: {
-          const _exhaustive: never = mode;
-          throw new Error(`Unhandled mode: ${String(_exhaustive)}`);
+        if (deadMs >= DEAD_MS) mode = 'out';
+      }
+      if (mode !== 'fly') {
+        // the course keeps running behind the "out" view, at the live point
+        simStep = clockStep;
+      }
+
+      // the finale: 3-2-1, then every stage says so
+      if (finaleAtMs !== null) {
+        const left = finaleAtMs - el;
+        if (left > 0 && left <= 3_000) {
+          const digit = Math.ceil(left / 1000);
+          if (digit !== lastCountDigit) {
+            lastCountDigit = digit;
+            if (mode === 'fly') {
+              sfx.beep();
+              haptic.tap();
+            }
+          }
+        } else if (left <= 0) {
+          lastCountDigit = 0;
+          const stage = finaleDifficulty(-left / 1000).stage;
+          if (!finaleBegun) {
+            finaleBegun = true;
+            finaleLeft = activeNow() ?? 0;
+            shownStage = stage;
+            if (mode === 'fly' && !won) {
+              banner('מחורחר!', PAL.yel, 1500);
+              flash = 0.4;
+              fx.tween({ ms: 300, from: 0.4, to: 0, update: (v) => (flash = v) });
+              fx.shake(6, 300);
+              sfx.whoosh(0.8);
+            }
+          } else if (stage > shownStage) {
+            shownStage = stage;
+            if (mode === 'fly' && !won && stage % 2 === 0 && bannerT <= 0) banner('עוד יותר קשה!', PAL.white, 900);
+          }
         }
       }
 
-      // the last 10 seconds of the round (round time comes from the stage, so it is freeze-safe)
-      if (!lastTenShown && loop.steps > 60 && mode !== 'over') {
-        const left = ctx.timeLeftMs();
-        if (left > 0 && left <= 10_000) {
-          lastTenShown = true;
-          banner('10 שניות אחרונות!', COLORS.orange, 1600);
-          sfx.beep();
-        }
-      }
+      if (mode === 'out') spectator.show(spectatorState());
 
-      // wings
+      // cosmetics
+      bobT += dt;
+      const speed = flight.speedAt(simStep);
+      groundScroll += speed * dt;
+      if (mode === 'fly') {
+        const target = bird.hover ? 0 : clamp(bird.vy / PHYS.maxFall, -0.42, 1) * (bird.vy > 0 ? 1.15 : 1);
+        tilt += (target - tilt) * (bird.vy > 0 && !bird.hover ? 0.09 : 0.3);
+      }
       flapBoost = Math.max(0, flapBoost - dt * 3.2);
-      wingT += dt * (mode === 'dead' || mode === 'over' ? 0 : 11 + flapBoost * 26);
+      wingT += dt * (mode === 'fly' ? 11 + flapBoost * 26 : 0);
       flapFaceT = Math.max(0, flapFaceT - dt);
       passGlow = Math.max(0, passGlow - dt * 2.4);
       if (bannerT > 0) bannerT = Math.max(0, bannerT - dt);
       updateFeathers(dt);
       fx.update(dt);
-      if (traceLeft > 0) {
-        traceLeft--;
-        traced.push([loop.steps, mode, birdY, vy, dist, run]);
-      }
     }
 
     // ── drawing ──
@@ -553,15 +674,15 @@ export const game: GameModule = {
       }
     }
 
-    function drawObstacles(d: number): void {
+    function drawObstacles(d: number, from: number): void {
       const U = L.U;
       const headW = PHYS.headW * U;
       const headH = PHYS.headH * U;
       const poleW = PHYS.poleW * U;
       const minX = -L.birdX / U - PHYS.headW;
       const maxX = (L.W - L.birdX) / U + PHYS.headW;
-      for (let i = Math.max(0, nextIdx - 3); ; i++) {
-        const o = course.get(i);
+      for (let i = Math.max(0, from - 3); ; i++) {
+        const o = flight.get(i);
         const ox = o.x - d;
         if (ox > maxX) break;
         if (ox < minX) continue;
@@ -575,7 +696,7 @@ export const game: GameModule = {
           // pass ripple around both microphones
           const rr = headW * (0.55 + (1 - glow) * 0.75);
           g.globalAlpha = glow;
-          g.strokeStyle = COLORS.yellow;
+          g.strokeStyle = PAL.yel;
           g.lineWidth = 2 + glow * 5;
           g.beginPath();
           g.arc(sx, gapBot + headH * 0.35, rr, 0, Math.PI * 2);
@@ -599,228 +720,177 @@ export const game: GameModule = {
     function drawBird(alpha: number): void {
       const U = L.U;
       const r = PHYS.radius * U;
-      const bx = L.birdX + lerp(prevKnockX, knockX, alpha) * U;
-      const by = L.top + lerp(prevY, birdY, alpha) * U;
-      const rot = lerp(prevTilt, tilt, alpha);
-      const dead = mode === 'dead' || mode === 'over';
+      const dead = mode !== 'fly';
+      // between two steps the bird keeps moving at its speed (the world does the same)
+      const y = dead || bird.hover ? bird.y + (bird.hover && !dead ? Math.sin(bobT * 4.2) * 1.2 : 0) : bird.y + bird.vy * STEP_S * alpha;
+      const bx = L.birdX + knockX * U;
+      const by = L.top + y * U;
+      // hanging untouchable after a rejoin: the bird blinks
+      if (!dead && graceLeft > 0 && Math.floor(bobT * 10) % 2 === 0) g.globalAlpha = 0.45;
       g.save();
       g.translate(bx, by);
-      g.rotate(rot);
+      g.rotate(tilt);
       g.scale(sqX * birdScale, sqY * birdScale);
-      // wings behind the face
+      // wings behind the round token: their roots sit on the circle's sides
       const wa = dead ? 0.7 : Math.sin(wingT) * (0.45 + flapBoost * 0.35) - 0.15;
-      const ww = r * 1.55;
-      const wh = r * 1.16;
+      const ww = r * 1.7;
+      const wh = ww * (SLOT_SIZES.wing.h / SLOT_SIZES.wing.w);
       for (let side = -1; side <= 1; side += 2) {
         g.save();
-        g.translate(side * r * 0.72, -r * 0.1);
+        g.translate(side * r * 0.86, -r * 0.05);
         g.scale(side, 1);
         g.rotate(-wa);
         art.wing.draw(g, ww / 2, 0, ww, wh);
         g.restore();
       }
+      // the face is a finished round token (paper disc + ink ring): drawn as it is
       const face = dead ? art.face_dead : flapFaceT > 0 ? art.face_flap : art.face;
       const D = r * 2.18;
       face.draw(g, 0, 0, D, D);
-      // halo (tilts off when dead)
+      // halo over the top of the circle (tilts off when dead)
       const hw = r * 1.45;
       const hh = hw * (SLOT_SIZES.halo.h / SLOT_SIZES.halo.w);
-      const hy = -r * 1.22 + (dead ? -r * 0.15 : Math.sin(bobT * 5) * r * 0.06);
+      const hy = -r * 1.3 + (dead ? -r * 0.15 : Math.sin(bobT * 5) * r * 0.06);
       art.halo.draw(g, dead ? r * 0.35 : 0, hy, hw, hh, dead ? 0.5 : 0);
       g.restore();
+      g.globalAlpha = 1;
 
       if (dead) {
         // dizzy stars
-        const t = modeT;
         for (let i = 0; i < 3; i++) {
-          const a = t * 7 + (i * Math.PI * 2) / 3;
-          const sx = bx + Math.cos(a) * r * 1.1;
-          const sy = by - r * 1.1 + Math.sin(a) * r * 0.35;
-          sparkle.draw(g, sx, sy, r * 0.62, r * 0.62, a);
+          const a = bobT * 7 + (i * Math.PI * 2) / 3;
+          sparkle.draw(g, bx + Math.cos(a) * r * 1.1, by - r * 1.1 + Math.sin(a) * r * 0.35, r * 0.62, r * 0.62, a);
         }
       }
     }
 
-    function drawCounter(): void {
-      if (mode === 'hover') return;
-      g.save();
-      g.font = fonts.counter;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      const cx = L.W / 2;
-      const cy = L.top + L.playH * 0.34;
-      g.translate(cx, cy);
-      g.scale(counterPop, counterPop);
-      g.fillStyle = 'rgba(255,255,255,0.13)';
-      g.fillText(String(run), 0, 0);
-      g.restore();
+    function sticker(key: string, make: (old: HTMLCanvasElement | null) => Sticker): Sticker {
+      return stickers.get(`${L.sized}|${key}`, make);
     }
 
-    function drawBest(): void {
-      if (best <= 0) return;
-      const text = `שיא ${best}`;
-      g.font = fonts.best;
-      g.textBaseline = 'middle';
-      const w = g.measureText(text).width + 22;
-      const h = 26;
-      const x = L.W - 10 - w;
-      const y = L.hudTop + 4;
-      g.fillStyle = 'rgba(12, 5, 32, 0.55)';
-      roundRectPath(g, x, y, w, h, 13);
-      g.fill();
-      g.fillStyle = COLORS.yellow;
-      g.textAlign = 'center';
-      drawText(g, text, x + w / 2, y + h / 2 + 1);
+    /** Obstacles passed: the big number behind the action. */
+    function drawCounter(): void {
+      if (mode !== 'fly' || nextIdx <= 0) return;
+      const s = sticker(`n${nextIdx}`, (old) => renderSticker(String(nextIdx), { size: px.big, fill: PAL.white, shadow: null, outline: 0.1, skew: 0, tilt: 0 }, old));
+      g.globalAlpha = 0.34;
+      blit(g, s, L.W / 2, L.top + L.playH * 0.3, counterPop);
+      g.globalAlpha = 1;
+    }
+
+    /** "N באוויר": how many are still flying, under the HUD. */
+    function drawAirChip(): void {
+      if (mode !== 'fly' || !hasField) return;
+      const n = activeNow();
+      if (n === null) return;
+      const s = sticker(`air${n}`, (old) => renderChip(`${n} באוויר`, px.chip, n <= 3 ? PAL.red : PAL.yel, n <= 3 ? PAL.white : PAL.ink, old));
+      g.drawImage(s.canvas, L.W - 8 - s.w, L.hudTop + 4, s.w, s.h);
     }
 
     function drawBanner(): void {
       if (bannerT <= 0 || bannerText === '') return;
       const age = bannerMax - bannerT;
       const pop = age < 0.25 ? ease.outBack(age / 0.25) : 1;
-      const fade = clamp(bannerT / 0.3, 0, 1);
-      g.save();
-      g.globalAlpha = fade;
-      g.translate(L.W / 2, L.top + L.playH * 0.16);
-      g.font = fonts.banner;
-      const fit = Math.min(1, (L.W - 36) / Math.max(1, g.measureText(bannerText).width));
-      g.scale(pop * fit, pop * fit);
-      g.rotate(-0.06);
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.lineJoin = 'round';
-      g.lineWidth = 8;
-      g.strokeStyle = '#1b0c33';
-      g.fillStyle = bannerColor;
-      drawText(g, bannerText, 0, 0, true);
-      g.restore();
+      const s = sticker(`b${bannerText}${bannerFill}`, (old) => renderSticker(bannerText, { size: px.banner, fill: bannerFill }, old));
+      const fit = Math.min(1, (L.W - 24) / s.w);
+      g.globalAlpha = clamp(bannerT / 0.3, 0, 1);
+      blit(g, s, L.W / 2, L.top + L.playH * 0.15, pop * fit);
+      g.globalAlpha = 1;
+    }
+
+    /** "!נשארו 3" and the 3-2-1 before the finale begins (the game does not stop). */
+    function countdownShown(): { text: string; digit: number } | null {
+      if (finaleAtMs === null || mode !== 'fly' || won) return null;
+      const left = finaleAtMs - elapsedMs();
+      if (left <= 0 || left > 3_000) return null;
+      return { text: finaleText(leftForBanner(), false), digit: Math.min(3, Math.ceil(left / 1000)) };
+    }
+    function drawCountdown(): void {
+      const c = countdownShown();
+      if (!c) return;
+      const words = sticker(`f${c.text}`, (old) => renderSticker(c.text, { size: px.banner, fill: PAL.yel, burst: PAL.red }, old));
+      const fit = Math.min(1, (L.W - 12) / words.w);
+      blit(g, words, L.W / 2, L.top + L.playH * 0.17, fit);
+      const digit = sticker(`d${c.digit}`, (old) => renderSticker(String(c.digit), { size: px.count, fill: PAL.white, outline: 0.1 }, old));
+      const frac = ((finaleAtMs ?? 0) - elapsedMs()) / 1000 - (c.digit - 1);
+      g.globalAlpha = 0.85;
+      blit(g, digit, L.W * 0.62, L.top + L.playH * 0.52, 0.8 + 0.35 * clamp(frac, 0, 1));
+      g.globalAlpha = 1;
     }
 
     function drawHint(): void {
-      if (hintAlpha <= 0.01) return;
+      if (hintAlpha <= 0.01 || mode !== 'fly') return;
       const t = bobT % 1.1;
-      const press = t < 0.18 ? ease.outQuad(t / 0.18) : t < 0.4 ? 1 - ease.inOutQuad((t - 0.18) / 0.22) : 0;
       const U = L.U;
       const r = PHYS.radius * U;
       const fx0 = L.birdX + r * 2.6;
-      const fy0 = L.top + birdY * U + r * 3.2;
+      const fy0 = L.top + bird.y * U + r * 3.2;
       g.save();
       g.globalAlpha = hintAlpha;
-      // ripple
+      // tap ripple
       if (t > 0.12 && t < 0.9) {
         const k = (t - 0.12) / 0.78;
-        g.strokeStyle = `rgba(255,255,255,${(1 - k) * 0.85})`;
-        g.lineWidth = 4 * (1 - k) + 1;
+        g.globalAlpha = hintAlpha * (1 - k);
+        g.strokeStyle = PAL.white;
+        g.lineWidth = 4 * (1 - k) + 1.5;
         g.beginPath();
         g.arc(fx0, fy0, r * (0.4 + k * 1.6), 0, Math.PI * 2);
         g.stroke();
+        g.globalAlpha = hintAlpha;
       }
-      // ghost hand: pointing finger, fist, thumb
-      const fy = fy0 + press * r * 0.25 + r * 0.2;
-      const fw = r * 0.8;
-      const fh = r * 2.2;
-      g.fillStyle = 'rgba(255,255,255,0.95)';
-      g.strokeStyle = '#1b0c33';
-      g.lineWidth = 3;
-      g.lineJoin = 'round';
-      // fist behind the finger
-      const px = fx0 - fw * 0.5;
-      const py = fy + fh * 0.62;
-      const pw = fw * 2.5;
-      const ph = fh * 0.82;
-      roundRectPath(g, px, py, pw, ph, fw * 0.75);
-      g.fill();
-      g.stroke();
-      // folded fingers
-      g.strokeStyle = 'rgba(27,12,51,0.45)';
-      g.lineWidth = 2;
-      for (let k = 1; k <= 2; k++) {
-        g.beginPath();
-        g.moveTo(px + pw * (0.36 + k * 0.2), py + ph * 0.08);
-        g.lineTo(px + pw * (0.36 + k * 0.2), py + ph * 0.42);
-        g.stroke();
-      }
-      g.strokeStyle = '#1b0c33';
-      g.lineWidth = 3;
-      // thumb
-      roundRectPath(g, px - fw * 0.55, py + ph * 0.18, fw * 1.25, fw * 0.75, fw * 0.37);
-      g.fill();
-      g.stroke();
-      // the finger
-      roundRectPath(g, fx0 - fw / 2, fy, fw, fh, fw / 2);
-      g.fill();
-      g.stroke();
-      roundRectPath(g, fx0 - fw * 0.28, fy + fw * 0.16, fw * 0.56, fw * 0.5, fw * 0.24);
-      g.fillStyle = 'rgba(255, 61, 139, 0.4)';
-      g.fill();
-      // words
-      g.font = fonts.hint;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.lineJoin = 'round';
-      g.lineWidth = 6;
-      g.strokeStyle = '#1b0c33';
-      g.fillStyle = '#ffffff';
-      const ty = Math.min(L.groundTop - 30, fy + fh + ph + r * 1.4);
-      drawText(g, 'הקישו כדי לעוף', L.W / 2, ty, true);
+      const words = sticker('hint', (old) => renderSticker('הקישו כדי לעוף!', { size: px.hint, fill: PAL.white, shadow: PAL.cobD }, old));
+      const fit = Math.min(1, (L.W - 20) / words.w);
+      const pulse = 1 + Math.sin(bobT * 6) * 0.04;
+      blit(g, words, L.W / 2, Math.min(L.groundTop - words.h * 0.6, fy0 + r * 4.2), fit * pulse);
       g.restore();
     }
 
-    function drawOver(): void {
-      if (mode !== 'over') return;
-      const k = clamp(modeT / 0.35, 0, 1);
-      const s = ease.outBack(k);
-      const cw = Math.min(L.W - 48, 320);
-      const ch = cw * 0.68;
-      const cx = L.W / 2;
-      const cy = L.top + L.playH * 0.42;
-      g.save();
-      g.globalAlpha = k;
-      g.translate(cx, cy);
-      g.scale(s, s);
-      g.fillStyle = 'rgba(20, 8, 52, 0.88)';
-      g.strokeStyle = COLORS.yellow;
-      g.lineWidth = 4;
-      roundRectPath(g, -cw / 2, -ch / 2, cw, ch, 24);
-      g.fill();
-      g.stroke();
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.fillStyle = COLORS.dim;
-      g.font = fonts.card;
-      drawText(g, 'השיא שלך בסיבוב', 0, -ch * 0.27);
-      g.fillStyle = COLORS.yellow;
-      g.font = fonts.cardBig;
-      g.fillText(String(best), 0, ch * 0.1);
-      g.restore();
+    /** The crash moment: "!נפלת" and the place, before the "out" view takes over. */
+    function drawCrash(): void {
+      if (mode !== 'dead') return;
+      const k = clamp(deadMs / 220, 0, 1);
+      const sub = place !== null && hasField ? `מקום ${place}` : undefined;
+      const s = sticker(`x${sub ?? ''}`, (old) => renderSticker('נפלת!', { size: Math.round(px.banner * 1.25), fill: PAL.yel, burst: PAL.red, ...(sub !== undefined ? { sub } : {}) }, old));
+      const fit = Math.min(1, (L.W - 12) / s.w);
+      blit(g, s, L.W / 2, L.top + L.playH * 0.36, ease.outBack(k) * fit);
     }
 
     const loop = createLoop({
       update: step,
-      render(alpha: number): void {
+      render(): void {
         measure();
-        const d = lerp(prevDist, dist, alpha);
-        const gs = lerp(prevGroundScroll, groundScroll, alpha);
+        // the world between two steps: exactly where the next step will put it
+        const el = elapsedMs();
+        const viewStep = mode === 'dead' ? -1 : mode === 'fly' ? simStep : clockStep;
+        let d = deadDist;
+        let alpha = 0;
+        if (viewStep >= 0) {
+          alpha = mode === 'fly' && clockStep > simStep ? 1 : clamp(el / STEP_MS - viewStep, 0, 1);
+          const d0 = flight.distAt(viewStep);
+          d = d0 + (flight.distAt(viewStep + 1) - d0) * alpha;
+        }
+        const from = mode === 'fly' ? nextIdx : flight.nextIndex(d);
         g.clearRect(0, 0, L.W, L.H);
         paintBackdrop();
         g.save();
         fx.applyShake(g);
-        const skyH = L.playH * 0.3;
-        drawTiledX(art.skyline, L.groundTop - skyH + 2, skyH, gs * L.U * 0.25);
+        const skyH = L.playH * 0.2;
+        drawTiledX(art.skyline, L.top + L.playH * 0.06, skyH, groundScroll * L.U * 0.25);
         drawCounter();
-        drawObstacles(d);
-        drawBird(alpha);
-        drawTiledX(art.ground, L.groundTop, L.groundH, gs * L.U);
+        drawObstacles(d, from);
+        if (mode !== 'out') drawBird(alpha);
+        drawTiledX(art.ground, L.groundTop, L.groundH, (mode === 'dead' ? deadDist : d) * L.U);
         if (L.H > L.groundTop + L.groundH) {
-          g.fillStyle = '#1a0b3d';
+          g.fillStyle = PAL.cobD;
           g.fillRect(0, L.groundTop + L.groundH, L.W, L.H - L.groundTop - L.groundH);
         }
         drawFeathers(g);
         g.restore();
         fx.draw(g);
+        drawAirChip();
         drawBanner();
-        drawBest();
-        if (mode === 'hover' || hintAlpha > 0.01) drawHint();
-        drawOver();
+        drawCountdown();
+        drawHint();
+        drawCrash();
         if (flash > 0) {
           g.fillStyle = `rgba(255,255,255,${flash})`;
           g.fillRect(0, 0, L.W, L.H);
@@ -829,36 +899,51 @@ export const game: GameModule = {
     });
 
     input.onDown(() => {
-      if (mode === 'hover' || mode === 'fly') flapQueued = true;
+      if (mode === 'fly') flapQueued = true;
     });
+
+    // ── boot: already out (a reload after the crash), or mid-round (a reload while flying) ──
+    const outRaw = inRoom ? (ctx.field?.()?.outRaw ?? null) : null;
+    if (outRaw !== null) {
+      mode = 'out';
+      finalRaw = outRaw;
+      // the distance this phone had flown, back from the score
+      passedAtEnd = flight.nextIndex(outRaw / 10);
+      hintAlpha = 0;
+      ctx.setScore(finalRaw);
+      ctx.finish();
+    } else if (elapsedMs() > REJOIN_AFTER_MS) {
+      syncFinale();
+      rejoin(Math.floor(elapsedMs() / STEP_MS));
+    }
 
     window.__flappy = {
       get mode(): Mode {
         return mode;
       },
       get run(): number {
-        return run;
+        return mode === 'fly' ? nextIdx : passedAtEnd;
       },
-      get best(): number {
-        return best;
-      },
-      get runs(): readonly number[] {
-        return [...runs, ...(mode === 'dead' || mode === 'over' ? [] : [run])];
+      get raw(): number {
+        return mode === 'fly' ? Math.min(MAX_RAW, survivalRaw(dist)) : finalRaw;
       },
       get birdY(): number {
-        return birdY;
+        return bird.y;
       },
       get vy(): number {
-        return vy;
+        return bird.vy;
       },
       get dist(): number {
         return dist;
       },
       get steps(): number {
-        return loop.steps;
+        return simStep;
+      },
+      get clockStep(): number {
+        return clockStep;
       },
       get next(): { x: number; gapY: number; gap: number } {
-        const o = course.get(nextIdx);
+        const o = flight.get(nextIdx);
         return { x: o.x - dist, gapY: o.gapY, gap: o.gap };
       },
       phys: PHYS,
@@ -871,7 +956,7 @@ export const game: GameModule = {
         return out;
       },
       get speed(): number {
-        return speedAt(dist);
+        return flight.speedAt(simStep);
       },
       get layout(): { U: number; birdX: number; W: number; top: number; groundTop: number; ahead: number } {
         return { U: L.U, birdX: L.birdX, W: L.W, top: L.top, groundTop: L.groundTop, ahead: (L.W - L.birdX) / L.U };
@@ -886,10 +971,49 @@ export const game: GameModule = {
       course(n: number): Array<{ x: number; gapY: number; gap: number }> {
         const out: Array<{ x: number; gapY: number; gap: number }> = [];
         for (let i = 0; i < n; i++) {
-          const o = course.get(i);
+          const o = flight.get(i);
           out.push({ x: o.x, gapY: o.gapY, gap: o.gap });
         }
         return out;
+      },
+      distAt: (s: number): number => flight.distAt(s),
+      get finaleStep(): number | null {
+        return flight.finaleStep;
+      },
+      get finaleStage(): number {
+        return finaleAtMs === null || elapsedMs() < finaleAtMs ? -1 : finaleDifficulty((elapsedMs() - finaleAtMs) / 1000).stage;
+      },
+      get finaleInMs(): number | null {
+        return finaleAtMs === null ? null : finaleAtMs - elapsedMs();
+      },
+      get active(): number | null {
+        return activeNow();
+      },
+      get place(): number | null {
+        return place;
+      },
+      get won(): boolean {
+        return won;
+      },
+      get grace(): boolean {
+        return graceLeft > 0;
+      },
+      get rejoins(): number {
+        return rejoins;
+      },
+      get banner(): string {
+        return bannerT > 0 ? bannerText : '';
+      },
+      get countdown(): string {
+        const c = countdownShown();
+        return c ? `${c.text} ${c.digit}` : '';
+      },
+      get out(): ReturnType<typeof spectator.shown> | null {
+        return spectator.visible ? spectator.shown() : null;
+      },
+      autopilot(on: boolean, untilStep?: number): void {
+        pilot = on;
+        pilotUntil = untilStep ?? Number.POSITIVE_INFINITY;
       },
     };
 
@@ -903,6 +1027,8 @@ export const game: GameModule = {
         input.dispose();
         view.dispose();
         bgCanvas.remove();
+        spectator.destroy();
+        stickers.dispose();
         fx.clear();
         if (window.__flappy) delete window.__flappy;
       },

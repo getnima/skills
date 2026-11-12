@@ -148,6 +148,118 @@
   position: absolute;
   inset: 0;
 }
+/* ── elimination round (flappy): who is out, how many are left, the finale ── */
+.sh-playing .sh-row.is-out .sh-row-in {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+.sh-playing .sh-row.is-out .sh-fill {
+  background-color: #8f8aa3 !important;
+}
+.sh-out-mark {
+  display: inline-block;
+  padding: 0 calc(12 * var(--u));
+  border: calc(3 * var(--u)) solid #16120e;
+  border-radius: 999px;
+  background: #f2361b;
+  color: #fff;
+  font-size: calc(26 * var(--u));
+  font-weight: 900;
+  line-height: calc(40 * var(--u));
+  transform: rotate(-6deg);
+  animation: sh-out-in 0.4s cubic-bezier(0.2, 1.7, 0.4, 1) both;
+}
+@keyframes sh-out-in {
+  from {
+    transform: rotate(-30deg) scale(2.4);
+    opacity: 0;
+  }
+}
+.sh-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(10 * var(--u)) calc(34 * var(--u)) calc(14 * var(--u));
+  border: calc(5 * var(--u)) solid #16120e;
+  border-radius: calc(30 * var(--u));
+  background: #ffd21f;
+  box-shadow: calc(7 * var(--u)) calc(7 * var(--u)) 0 #16120e;
+  color: #16120e;
+  font-weight: 900;
+  line-height: 1;
+  transform: rotate(-2deg);
+}
+.sh-left.is-few {
+  background: #f2361b;
+  color: #fff;
+}
+.sh-left-word,
+.sh-left-sub {
+  font-size: calc(40 * var(--u));
+}
+.sh-left-num {
+  font-size: calc(150 * var(--u));
+  line-height: 0.95;
+  animation: sh-left-bump 0.45s cubic-bezier(0.2, 1.7, 0.4, 1) both;
+}
+@keyframes sh-left-bump {
+  from {
+    transform: scale(1.7) rotate(-8deg);
+  }
+}
+.sh-finale {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  z-index: 6;
+  display: none;
+  align-items: center;
+  gap: calc(40 * var(--u));
+  padding: calc(26 * var(--u)) calc(70 * var(--u));
+  border: calc(8 * var(--u)) solid #16120e;
+  border-radius: 999px;
+  background: #f2361b;
+  box-shadow: calc(12 * var(--u)) calc(12 * var(--u)) 0 #16120e;
+  color: #fff;
+  font-size: calc(120 * var(--u));
+  font-weight: 900;
+  line-height: 1.1;
+  white-space: nowrap;
+  transform: translate(-50%, -50%) rotate(-3deg);
+  pointer-events: none;
+}
+.sh-finale.is-on {
+  display: flex;
+  animation: sh-finale-in 0.5s cubic-bezier(0.2, 1.7, 0.4, 1) both;
+}
+/* once the 3-2-1 is over the banner steps aside: a strip at the top */
+.sh-finale.is-on:not(.is-counting) {
+  top: calc(70 * var(--u));
+  font-size: calc(56 * var(--u));
+  padding: calc(10 * var(--u)) calc(40 * var(--u));
+  border-width: calc(5 * var(--u));
+  box-shadow: calc(7 * var(--u)) calc(7 * var(--u)) 0 #16120e;
+  animation: none;
+}
+@keyframes sh-finale-in {
+  from {
+    transform: translate(-50%, -50%) rotate(-14deg) scale(0.3);
+  }
+}
+.sh-finale-count {
+  display: grid;
+  place-items: center;
+  min-width: 1.25em;
+  height: 1.25em;
+  border: calc(8 * var(--u)) solid #16120e;
+  border-radius: 50%;
+  background: #ffd21f;
+  color: #16120e;
+}
+.sh-finale-count:empty {
+  display: none;
+}
+
 /* A row is a FIXED slot (it never moves); a new occupant rolls in inside the slot, clipped by it. */
 .sh-row {
   position: absolute;

@@ -37,6 +37,10 @@ const hOf = (w: number, ar: number): number => Math.round(w * ar * (483 / 1200) 
 
 /** Picture height / width of each file (the PNG's own pixel size). */
 const AR = {
+  bunny: 640 / 313,
+  hoops: 228 / 640,
+  hibiscus: 169 / 640,
+  phone: 453 / 640,
   chain: 640 / 480,
   boa: 637 / 593,
   scarf: 640 / 369,
@@ -46,6 +50,25 @@ const AR = {
 } as const;
 
 export const items: AvatarItem[] = [
+  {
+    // the picture's lower half is transparent padding: the box reaches the ear zone, the ears stand on the hair
+    id: 301, slot: 'EARS', name: 'אוזני ארנב', file: '/assets/shimi/props/301_bunny_ears.png',
+    place: [29, -12.5, 44, hOf(44, AR.bunny)], ar: AR.bunny, contact: [51, 3],
+  },
+  {
+    id: 302, slot: 'EARS', name: 'חישוקי זהב', file: '/assets/shimi/props/302_gold_hoops.png',
+    place: [11, 33.5, 80, hOf(80, AR.hoops)], ar: AR.hoops, contact: [51, 34],
+  },
+  {
+    // one flower over the doll's left ear; the rest of the picture is transparent so the box stays centred
+    id: 303, slot: 'EARS', name: 'פרח מאחורי האוזן', file: '/assets/shimi/props/303_hibiscus.png',
+    place: [5, 20, 92, hOf(92, AR.hibiscus)], ar: AR.hibiscus, contact: [85, 24],
+  },
+  {
+    // a handset at the doll's right ear, tilted towards the mouth; padded to the right like the flower
+    id: 304, slot: 'EARS', name: 'שפופרת', file: '/assets/shimi/props/304_phone_handset.png',
+    place: [3, 22.5, 96, hOf(96, AR.phone)], ar: AR.phone, contact: [17, 30],
+  },
   {
     id: 325, slot: 'NECK', name: 'שרשרת זהב', file: '/assets/shimi/props/325_gold_chain.png',
     place: [29.5, 45, 43, hOf(43, AR.chain)], ar: AR.chain, contact: [51, 48],

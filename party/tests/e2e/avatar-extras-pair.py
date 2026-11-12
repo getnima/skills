@@ -1,7 +1,7 @@
 """Re-space the parts of a cut-out picture onto the doll (avatar-extras): earrings onto the ear lobes, a one-sided
 thing at one ear padded to the width of the head so its box stays centred on the doll.
 
-python3 -I tests/e2e/avatar-extras-pair.py <cut.png> <out.png> --centers 17,85 --width 14 --span 10,92 [--parts 2] [--max 640]
+python3 -I tests/e2e/avatar-extras-pair.py <cut.png> <out.png> --centers 17,85 --width 14 --span 10,92 [--parts 2] [--rotate deg] [--max 640]
 
 <cut.png>: an RGBA cut (avatar-extras-cut.py). Its --parts largest connected pieces (left to right) are each put
 with their centre at the matching --centers x (in % of the doll box width), scaled so the first piece is --width %
@@ -42,10 +42,25 @@ def main():
     ap.add_argument('--span', required=True)
     ap.add_argument('--parts', type=int, default=2)
     ap.add_argument('--max', type=int, default=640)
+    ap.add_argument('--rotate', type=float, default=0.0, help='degrees counter-clockwise, before placing (a phone tilted from the ear to the mouth)')
     a = ap.parse_args()
     pic = Image.open(a.src).convert('RGBA')
+    if a.rotate:
+        pic = pic.rotate(a.rotate, resample=Image.BICUBIC, expand=True)
+        pic = pic.crop(pic.getchannel('A').point(lambda v: 255 if v > 8 else 0).getbbox())
     alpha = np.asarray(pic)[:, :, 3]
     parts = components(alpha, a.parts)
+    if len(parts) < a.parts and a.parts == 2:
+        # the two pieces touch: split at the column with the least alpha in the middle part
+        w = alpha.shape[1]
+        cols = (alpha > 40).sum(axis=0)
+        mid = int(w * 0.35) + int(np.argmin(cols[int(w * 0.35):int(w * 0.65)]))
+        left, right = pic.crop((0, 0, mid, pic.size[1])), pic.crop((mid, 0, w, pic.size[1]))
+        parts = []
+        for off, half in ((0, left), (mid, right)):
+            bb = half.getchannel('A').point(lambda v: 255 if v > 40 else 0).getbbox()
+            parts.append((0, bb[0] + off, bb[1], bb[2] + off, bb[3]))
+        print(f'split at column {mid} ({cols[mid]} opaque px there)')
     centers = [float(v) for v in a.centers.split(',')]
     L, R = (float(v) for v in a.span.split(','))
     s = a.width / (parts[0][3] - parts[0][1])  # doll % per source px
