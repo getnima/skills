@@ -1,6 +1,7 @@
 import { render } from 'preact';
 
 import '../kit/base.css';
+import './look.css';
 import './host.css';
 import { preloadAvatarAssets } from '../avatar';
 import { initMobileViewport } from '../kit/mobile';

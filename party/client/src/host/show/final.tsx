@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { sfx } from '../../kit/audio';
 import { playTrack, stopTrack } from '../../kit/music';
-import { backdropUrl, crownUrl, podiumUrl, raysUrl } from './art';
+import { backdropUrl, crownUrl, podiumUrl } from './art';
 import { Avatar, CountUp, formatScore, useFrame, useStage } from './common';
 import { useFunnyLayer } from './funny';
 
@@ -165,9 +165,10 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
       class={`sh-scene sh-final sh-final--s${step} ${showTable ? 'has-table' : ''} ${n < 3 ? 'is-small' : ''}`}
       dir="rtl"
       ref={ref}
-      style={bg !== null ? { backgroundImage: `linear-gradient(rgba(21,10,51,.78), rgba(21,10,51,.86)), url("${bg}")` } : undefined}
+      style={bg !== null ? { backgroundImage: `linear-gradient(rgba(16,35,140,.82), rgba(16,35,140,.9)), url("${bg}")` } : undefined}
     >
-      <img class="sh-final-rays" src={raysUrl()} alt="" />
+      {/* the sun that rises behind the podium when the champion is named */}
+      <div class="sh-final-sun" aria-hidden="true" />
       <header class="sh-final-head">
         {step >= 3 && champion ? (
           <div class="sh-champ" key="champ">
@@ -192,6 +193,11 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
         <Column place={1} entry={ranked[0]} up={step >= 3} />
         <Column place={3} entry={ranked[2]} up={step >= 1} />
       </div>
+      {step >= 3 && champion ? (
+        <span class="sh-burst sh-burst--champ" key="cheer">
+          <span>וואו!</span>
+        </span>
+      ) : null}
       {showTable ? (
         <div class="sh-ftable">
           <div class="sh-ftable-head">

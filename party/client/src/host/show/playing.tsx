@@ -5,7 +5,7 @@ import { roundTime } from '../../../../shared/round-clock';
 import { sfx } from '../../kit/audio';
 import { roundFeed } from '../../net/round-feed';
 import { backdropUrl, crownUrl, lastPlaceArt } from './art';
-import { Avatar, avatarColor, CountUp, formatScore, useFrame, useStage, useTicker } from './common';
+import { Avatar, avatarColor, CountUp, useFrame, useStage, useTicker } from './common';
 import { useFunnyLayer } from './funny';
 import { createMomentEngine } from './moments';
 
@@ -82,9 +82,12 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   // (the scene is only handed a scores map; `out`, `active` and the finale come with the same messages)
   const feed = roundFeed();
   const feedRound = feed.round !== null && feed.round.gameId === props.game.id && feed.round.number - 1 === props.roundIndex ? feed.round : null;
-  const eliminationOn = props.game.mode === 'elimination' && feedRound !== null;
-  const outKey = eliminationOn ? feed.out.join(',') : '';
-  const elimination = useMemo((): Elimination | null => (eliminationOn ? { out: new Set(outKey === '' ? [] : outKey.split(',')), active: feed.active } : null), [eliminationOn, outKey, feed.active]);
+  // (the demo page has no socket: it hands the same facts in as a prop)
+  const preview = props.elimination;
+  const eliminationOn = props.game.mode === 'elimination' && (feedRound !== null || preview !== undefined);
+  const outKey = eliminationOn ? (preview?.out ?? feed.out).join(',') : '';
+  const activeCount = preview !== undefined ? preview.active : feed.active;
+  const elimination = useMemo((): Elimination | null => (eliminationOn ? { out: new Set(outKey === '' ? [] : outKey.split(',')), active: activeCount } : null), [eliminationOn, outKey, activeCount]);
 
   // ── ranking: by score, ties keep their previous order so rows never flicker ──
   const prevOrder = useRef(new Map<string, number>());
@@ -276,18 +279,30 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   gameIdRef.current = props.game.id;
   const roundNoRef = useRef(props.roundIndex);
   roundNoRef.current = props.roundIndex;
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
   useFrame(() => {
     const box = finaleRef.current;
     if (box) {
-      const f = roundFeed();
-      const r = f.round !== null && f.round.gameId === gameIdRef.current && f.round.number - 1 === roundNoRef.current ? f.round : null;
+      // ms until the finale begins (null: not decided yet) and how many are in the air
+      let finaleIn: number | null = null;
+      let active: number | null = null;
+      const demo = previewRef.current;
+      if (demo !== undefined) {
+        finaleIn = demo.finaleInMs?.() ?? null;
+        active = demo.active;
+      } else {
+        const f = roundFeed();
+        const r = f.round !== null && f.round.gameId === gameIdRef.current && f.round.number - 1 === roundNoRef.current ? f.round : null;
+        if (r !== null && r.finale !== null) finaleIn = r.finale.atElapsedMs - roundTime(r, f.now()).elapsedMs;
+        active = f.active;
+      }
       const shown = finaleShown.current;
       let on = false;
       let words = '';
       let count = '';
-      if (r !== null && r.finale !== null && eliminationRef.current !== null) {
-        const inMs = r.finale.atElapsedMs - roundTime(r, f.now()).elapsedMs;
-        const active = f.active;
+      if (finaleIn !== null && eliminationRef.current !== null) {
+        const inMs = finaleIn;
         if (inMs <= 3_000 && (active === null || active > 1)) {
           on = true;
           // the number is the count in the air until the finale begins, then it stays
@@ -296,7 +311,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
           count = inMs > 0 ? String(Math.min(3, Math.ceil(inMs / 1000))) : '';
         }
       }
-      if (r === null || r.finale === null) shown.left = null;
+      if (finaleIn === null) shown.left = null;
       rootRef.current?.classList.toggle('is-finale', on && count === '');
       if (on !== shown.on) {
         shown.on = on;
@@ -355,6 +370,8 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
   // overlap each other or the "rotating places" label, at any moment, at any head count.
   const indexOf = new Map(board.map((r, i) => [r.id, i]));
   const prevIndex = prevIndexRef.current;
+  // the doll fills the height of its row (show.css: --rh); this only picks a sharp enough picture
+  const rowUnits = Math.min(220, Math.round(rowH / Math.max(0.05, size.u)));
   const rows: JSX.Element[] = [];
   for (let k = 0; k < visible && rowH > 0; k++) {
     const i = k < pinned ? k : pageStart + (k - pinned);
@@ -369,7 +386,8 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
     }
     const y = k * rowH + (k >= pinned ? dividerH : 0);
     const f = fx.current.get(r.id);
-    const fill = topScore > 0 ? Math.max(0.025, r.score / topScore) : 0.025;
+    const fill = topScore > 0 ? Math.max(0.03, r.score / topScore) : 0.03;
+    const inAir = elimination !== null && r.out !== true;
     const cls = [
       'sh-row',
       r.id === leaderId ? 'is-lead' : '',
@@ -382,29 +400,36 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
       <div class={cls} key={`slot${k}`} data-slot={k} style={{ transform: `translate3d(0, ${y.toFixed(1)}px, 0)`, height: `${rowH.toFixed(1)}px` }}>
         <div class={`sh-row-enter ${enter.cls}`} key={r.id}>
           <div class="sh-row-in">
-            <span class="sh-rank">{i + 1}</span>
-            <Avatar avatar={r.avatar} name={r.name} look={r.look} />
+            {/* in an elimination round a place means something only once you are out */}
+            <span class={`sh-rank ${inAir ? 'is-bird' : ''}`}>{inAir ? props.game.emoji : i + 1}</span>
+            <Avatar avatar={r.avatar} name={r.name} look={r.look} units={rowUnits} />
             <span class={`sh-name ${Array.from(r.name).length > 11 ? 'is-long' : ''}`} dir="auto">
               <bdi>{r.name}</bdi>
             </span>
-            <span class="sh-badges">
-              {r.out === true ? <span class="sh-out-mark">בחוץ</span> : null}
-              {f && f.fireUntil > now ? <span class="sh-fire">🔥</span> : null}
-              {r.id === lastId ? (
-                lastArt.kind === 'img' ? (
-                  <img class="sh-snail" src={lastArt.url} alt="" />
-                ) : (
-                  <span class="sh-snail">{lastArt.char}</span>
-                )
-              ) : null}
-            </span>
-            <CountUp class="sh-score" value={r.score} ms={420} />
-            <div class="sh-track">
-              <div
-                class="sh-fill"
-                style={{ transform: `translate3d(${((1 - fill) * 100).toFixed(2)}%, 0, 0)`, backgroundColor: avatarColor(r.avatar) }}
-              />
-            </div>
+            {elimination !== null ? (
+              // the raw number of an elimination round is a distance: what the room wants to know is who is still in
+              <span class="sh-status">{r.out === true ? <span class="sh-out-mark">בחוץ</span> : <span class="sh-in-mark">באוויר</span>}</span>
+            ) : (
+              <>
+                <span class="sh-badges">
+                  {f && f.fireUntil > now ? <span class="sh-fire">🔥</span> : null}
+                  {r.id === lastId ? (
+                    lastArt.kind === 'img' ? (
+                      <img class="sh-snail" src={lastArt.url} alt="" />
+                    ) : (
+                      <span class="sh-snail">{lastArt.char}</span>
+                    )
+                  ) : null}
+                </span>
+                <CountUp class="sh-score" value={r.score} ms={420} />
+                <div class="sh-track">
+                  <div
+                    class="sh-fill"
+                    style={{ transform: `translate3d(${((1 - fill) * 100).toFixed(2)}%, 0, 0)`, backgroundColor: avatarColor(r.avatar) }}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>,
@@ -414,16 +439,16 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
 
   return (
     <section
-      class="sh-scene sh-playing"
+      class={`sh-scene sh-playing ${elimination !== null ? 'is-elimination' : ''}`}
       dir="rtl"
       ref={(el) => {
         rootRef.current = el;
         ref(el);
       }}
-      style={bg !== null ? { backgroundImage: `linear-gradient(rgba(21,10,51,.78), rgba(21,10,51,.86)), url("${bg}")` } : undefined}
+      style={bg !== null ? { backgroundImage: `linear-gradient(rgba(16,35,140,.82), rgba(16,35,140,.9)), url("${bg}")` } : undefined}
     >
       <div class="sh-race">
-        <div class="sh-list" ref={listRef}>
+        <div class={`sh-list ${visible <= 6 ? 'is-roomy' : ''}`} ref={listRef} style={{ '--rh': `${rowH.toFixed(1)}px` }}>
           {rows}
           {paged ? (
             <div class="sh-divider" style={{ transform: `translate3d(0, ${(pinned * rowH).toFixed(1)}px, 0)` }}>
@@ -454,7 +479,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
           <span class="sh-game-title">{props.game.title}</span>
         </div>
         <div class="sh-roundno">
-          סיבוב {props.roundIndex + 1} · {n} במרוץ
+          סיבוב <b dir="ltr">{props.roundIndex + 1}</b> · <b dir="ltr">{n}</b> {elimination !== null ? 'בתחרות' : 'במרוץ'}
         </div>
         {elimination !== null && leftCount !== null ? (
           <div class={`sh-left ${leftCount <= 3 ? 'is-few' : ''}`} data-left={leftCount}>
@@ -467,8 +492,10 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
         ) : null}
         <div class="sh-ring">
           <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="sh-ring-edge" cx="50" cy="50" r="49.4" />
             <circle class="sh-ring-bg" cx="50" cy="50" r={RING_R} />
             <circle class="sh-ring-fg" cx="50" cy="50" r={RING_R} ref={ringRef} stroke-dasharray={RING_LEN} transform="rotate(-90 50 50)" />
+            <circle class="sh-ring-in" cx="50" cy="50" r="39.2" />
           </svg>
           <div class="sh-ring-num" ref={numRef} dir="ltr" />
           <div class="sh-ring-pause">⏸</div>

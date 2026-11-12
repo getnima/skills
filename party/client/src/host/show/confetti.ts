@@ -1,5 +1,4 @@
 /** A tiny confetti system on one canvas. Draws only while something is in the air. */
-import { PARTY_COLORS } from '../../kit/theme';
 
 interface Piece {
   x: number;
@@ -27,7 +26,9 @@ export interface Confetti {
 }
 
 const MAX_PIECES = 420;
-const GOLD = ['#ffd23f', '#fff3b0', '#ffb703', '#ffffff'];
+/** The party look's colours (client/public/assets/shimi/README.md): flat paper bits. */
+const PARTY_COLORS = ['#f2361b', '#1e3fd8', '#ff7eb6', '#ffffff', '#4f6cff', '#ff9f0a', '#16120e'];
+const GOLD = ['#ffd21f', '#ffe45a', '#ff9f0a', '#ffffff'];
 
 export function createConfetti(canvas: HTMLCanvasElement, random: () => number): Confetti {
   const ctx = canvas.getContext('2d');

@@ -36,18 +36,24 @@ export function IntroScreen(props: IntroProps): JSX.Element {
   const frozen = roundTime(props.round, now).frozen;
   return (
     <div class="hs-intro" data-testid="intro">
-      <div class="hs-intro-round">סיבוב {props.round.number}</div>
-      <div class="hs-intro-emoji">{props.game.emoji}</div>
-      <h1 class="hs-intro-title">{props.game.title}</h1>
+      <div class="hs-intro-round">
+        סיבוב <b dir="ltr">{props.round.number}</b>
+      </div>
+      <div class="hs-intro-head">
+        <div class="hs-intro-emoji">{props.game.emoji}</div>
+        <h1 class="hs-intro-title">{props.game.title}</h1>
+      </div>
       <p class="hs-intro-text">{props.game.instructions}</p>
       <div class="hs-intro-foot">
         <div class="hs-intro-prize">
           <span class="hs-prize-mini hs-prize-mini--sm">
             <PrizeRelic variant="mini" />
           </span>
-          <span>על הכוונת: מלאך שימי למנצח</span>
+          <span>הפרס: מלאך שימי למנצח</span>
         </div>
-        <div class="hs-intro-players">📱 {props.players} שחקנים מוכנים</div>
+        <div class="hs-intro-players">
+          📱 <b dir="ltr">{props.players}</b> {props.players === 1 ? 'שחקן מוכן' : 'שחקנים מוכנים'}
+        </div>
       </div>
       <div class={`hs-progress ${frozen ? 'is-frozen' : ''}`}>
         <div class="hs-progress-fill" style={{ transform: `scaleX(${p})` }} />

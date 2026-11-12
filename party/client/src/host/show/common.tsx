@@ -4,25 +4,26 @@ import { plateColor, useAvatarUrl } from '../../avatar';
 
 import type { JSX } from 'preact';
 
-/** Avatar palette: PlayerPublic.avatar is an index into it (wraps around). */
+/**
+ * Player palette: PlayerPublic.avatar is an index into it (wraps around). The colours of the
+ * party look (client/public/assets/shimi/README.md), minus the yellow of the leader's row.
+ */
 export const AVATAR_COLORS: readonly string[] = [
-  '#ff3d8b',
-  '#2de2e6',
-  '#ffd23f',
-  '#3ddc84',
-  '#8b5cf6',
-  '#ff8a3d',
-  '#4d8dff',
-  '#ff6ad5',
-  '#9be15d',
-  '#f95f62',
-  '#00c2a8',
-  '#c77dff',
+  '#f2361b', // red
+  '#1e3fd8', // cobalt
+  '#ff7eb6', // pink
+  '#ff9f0a', // orange
+  '#19b5c8', // TV teal
+  '#4f6cff', // light cobalt
+  '#b5200a', // dark red
+  '#2fbf71', // green
+  '#10238c', // dark cobalt
+  '#ff5c93', // hot pink
 ];
 
 export function avatarColor(index: number): string {
   const n = AVATAR_COLORS.length;
-  return AVATAR_COLORS[((Math.floor(index) % n) + n) % n] ?? '#ff3d8b';
+  return AVATAR_COLORS[((Math.floor(index) % n) + n) % n] ?? '#f2361b';
 }
 
 export function initialOf(name: string): string {
@@ -52,11 +53,16 @@ export interface AvatarProps {
   /** 'icon' the head (default); 'bust' head and shoulders (the podium, the winner). */
   readonly crop?: 'icon' | 'bust';
   readonly class?: string;
+  /**
+   * About how big the box is drawn, in design units, when its CSS makes it bigger than its
+   * variant's --av (the race rows grow with the row): only picks a picture that is sharp enough.
+   */
+  readonly units?: number;
 }
 
 /** Design units (--av in show.css) of the avatar variants, to pick a picture that is sharp enough. */
 function avatarUnits(cls: string): number {
-  return cls.includes('sh-avatar--xl') ? 180 : cls.includes('sh-avatar--lg') ? 120 : 68;
+  return cls.includes('sh-avatar--hero') ? 330 : cls.includes('sh-avatar--xl') ? 240 : cls.includes('sh-avatar--lg') ? 170 : 76;
 }
 
 /** Roughly one design unit in CSS px (useStage's `u`, the host shell's --hu), without measuring every row. */
@@ -77,8 +83,8 @@ export function lookPlateColor(look: string): string {
  * so no scene's layout changes; the picture comes from the avatar module's cache (one picture
  * per look and size for the whole page: rows that move or re-render never compose again).
  */
-function DollAvatar(props: { readonly look: string; readonly crop: 'icon' | 'bust'; readonly class: string }): JSX.Element {
-  const px = Math.max(24, Math.round(avatarUnits(props.class) * unitPx()));
+function DollAvatar(props: { readonly look: string; readonly crop: 'icon' | 'bust'; readonly class: string; readonly units?: number }): JSX.Element {
+  const px = Math.max(24, Math.round(Math.max(avatarUnits(props.class), props.units ?? 0) * unitPx()));
   const url = useAvatarUrl(props.look, px, props.crop);
   return (
     <span class={`sh-avatar sh-avatar--doll ${props.class}`} style={{ backgroundColor: lookPlateColor(props.look) }} data-look={props.look}>
@@ -89,7 +95,7 @@ function DollAvatar(props: { readonly look: string; readonly crop: 'icon' | 'bus
 
 export function Avatar(props: AvatarProps): JSX.Element {
   const look = props.look;
-  if (typeof look === 'string' && look !== '') return <DollAvatar look={look} crop={props.crop ?? 'icon'} class={props.class ?? ''} />;
+  if (typeof look === 'string' && look !== '') return <DollAvatar look={look} crop={props.crop ?? 'icon'} class={props.class ?? ''} units={props.units} />;
   return (
     <span class={`sh-avatar ${props.class ?? ''}`} style={{ backgroundColor: avatarColor(props.avatar) }}>
       {initialOf(props.name)}

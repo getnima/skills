@@ -20,6 +20,20 @@ export interface PlayingSceneProps {
   /** Polled every frame for the big timer; `frozen` while a cutscene plays. */
   clock(): RoundClockSample;
   readonly durationMs: number;
+  /**
+   * Only for pages with no socket (the show demo): what an elimination round's `scores`
+   * messages would say. The TV page never passes it; there the scene reads the round feed.
+   */
+  readonly elimination?: EliminationPreview;
+}
+
+export interface EliminationPreview {
+  /** Player ids that are out, in the order they went out. */
+  readonly out: readonly string[];
+  /** Players still in. */
+  readonly active: number | null;
+  /** Ms until the finale begins (negative once it has begun), or null while it is not decided. */
+  finaleInMs?(): number | null;
 }
 
 /**

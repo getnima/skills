@@ -130,6 +130,37 @@ export function mascotUrl(mood: MascotMood): string {
   return assetFileUrl(GROUP, `mascot_${mood}.png`) ?? painted(`mascot_${mood}`, mascotPainter(mood), 256);
 }
 
+export type HostDoll = 'a' | 'b';
+
+/** The two party hosts as dolls (client/public/assets/hosts): the whole figure. Null when the file is missing. */
+export function hostDollUrl(who: HostDoll): string | null {
+  return assetFileUrl('hosts', `host_${who}.png`);
+}
+
+/** The host's head only (a square, cut at the chin). Null when the file is missing. */
+export function hostHeadUrl(who: HostDoll): string | null {
+  return assetFileUrl('hosts', `host_${who}_head.png`);
+}
+
+/**
+ * The commentator's picture for a line. A dropped-in mascot_<mood> file wins; without one the
+ * two hosts take turns at the microphone (`turn` counts the lines); with no host pictures
+ * either, the painted face.
+ */
+export function commentatorUrl(mood: MascotMood, turn: number): string {
+  const file = assetFileUrl(GROUP, `mascot_${mood}.png`);
+  if (file !== null) return file;
+  const head = hostHeadUrl(turn % 2 === 0 ? 'a' : 'b') ?? hostHeadUrl('a') ?? hostHeadUrl('b');
+  return head ?? mascotUrl(mood);
+}
+
+/** Every commentator picture that may be shown, to warm the cache. */
+export function commentatorUrls(): string[] {
+  const urls = new Set<string>();
+  for (const mood of MASCOT_MOODS) for (const turn of [0, 1]) urls.add(commentatorUrl(mood, turn));
+  return [...urls];
+}
+
 const STICKER_EMOJI: readonly string[] = ['🤣', '🔥', '🚀', '🐔', '💥', '🤯', '👑', '🦄'];
 
 /** sticker_1 .. sticker_8: the real picture when it exists, else a built-in emoji. */
@@ -177,28 +208,3 @@ export function backdropUrl(): string | null {
   return assetFileUrl(GROUP, 'bg_show.jpg');
 }
 
-/** God-rays with the radial fade baked in: one bitmap that only ever rotates (cheap on any compositor). */
-const raysPainter: Painter = (ctx, w, h) => {
-  const cx = w / 2;
-  const cy = h / 2;
-  const r = w / 2;
-  const count = 18;
-  const fade = ctx.createRadialGradient(cx, cy, r * 0.12, cx, cy, r);
-  fade.addColorStop(0, 'rgba(255, 224, 120, 0.5)');
-  fade.addColorStop(0.55, 'rgba(255, 224, 120, 0.22)');
-  fade.addColorStop(1, 'rgba(255, 224, 120, 0)');
-  ctx.fillStyle = fade;
-  for (let i = 0; i < count; i++) {
-    const a = (i / count) * Math.PI * 2;
-    const half = (Math.PI / count) * 0.42;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, a - half, a + half);
-    ctx.closePath();
-    ctx.fill();
-  }
-};
-
-export function raysUrl(): string {
-  return painted('rays', raysPainter, 480);
-}

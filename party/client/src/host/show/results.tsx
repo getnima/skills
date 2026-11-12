@@ -144,11 +144,7 @@ function sameView(a: View, b: View): boolean {
 /** Tiny tie-break hint next to a raw score: this player reached the same score before the next one. */
 function Earlier(props: { size: number }): JSX.Element {
   return (
-    <span
-      class="sh-earlier"
-      title="בשוויון, מי שהגיע לניקוד קודם מנצח"
-      style={{ fontSize: `calc(${props.size} * var(--u))`, fontWeight: 700, opacity: 0.8, whiteSpace: 'nowrap', marginInlineEnd: 'calc(10 * var(--u))' }}
-    >
+    <span class="sh-earlier" title="בשוויון, מי שהגיע לניקוד קודם מנצח" style={{ fontSize: `calc(${props.size} * var(--u))` }}>
       ⏱ קודם
     </span>
   );
@@ -330,19 +326,29 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
   });
 
   const bg = backdropUrl();
+  // an elimination round (flappy): the raw number is a distance and means nothing to the room
+  const elimination = props.game.mode === 'elimination';
   return (
     <section
       class={`sh-scene sh-results sh-results--${view.phase} ${view.tense ? 'is-tense' : ''}`}
       dir="rtl"
       ref={ref}
-      style={bg !== null ? { backgroundImage: `linear-gradient(rgba(21,10,51,.8), rgba(21,10,51,.88)), url("${bg}")` } : undefined}
+      style={bg !== null ? { backgroundImage: `linear-gradient(rgba(16,35,140,.82), rgba(16,35,140,.9)), url("${bg}")` } : undefined}
     >
-      {view.phase === 'suspense' || view.phase === 'blackout' ? <Suspense plan={plan} view={view} title={props.game.title} emoji={props.game.emoji} /> : null}
+      {view.phase === 'suspense' || view.phase === 'blackout' ? <Suspense plan={plan} view={view} title={props.game.title} emoji={props.game.emoji} elimination={elimination} /> : null}
       {view.phase === 'standings' ? <Standings plan={plan} view={view} size={size} clockT={() => clock.current.t - plan.ceremonyEnd} /> : null}
       {view.phase === 'blackout' ? <div class="sh-blackout" /> : null}
       {view.phase === 'ceremony' ? (
         plan.winners.length > 0 ? (
-          <Ceremony winner={plan.winners[0]} earlier={plan.winners[0] !== undefined && plan.earlier.has(plan.winners[0].playerId)} skipMs={skipMs} title={props.game.title} portrait={size.portrait} />
+          <Ceremony
+            winner={plan.winners[0]}
+            earlier={plan.winners[0] !== undefined && plan.earlier.has(plan.winners[0].playerId)}
+            skipMs={skipMs}
+            title={props.game.title}
+            portrait={size.portrait}
+            elimination={elimination}
+            round={props.results.roundIndex}
+          />
         ) : (
           <Nobody skipMs={skipMs} />
         )
@@ -354,7 +360,7 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
 
 // ───────────────────────────── suspense ─────────────────────────────
 
-function Suspense(props: { plan: Plan; view: View; title: string; emoji: string }): JSX.Element {
+function Suspense(props: { plan: Plan; view: View; title: string; emoji: string; elimination: boolean }): JSX.Element {
   const { plan, view } = props;
   const revealed = new Set(plan.reveal.slice(0, view.shown).map((r) => r.playerId));
   // display order: best first; the tail (last place) is separated by a gap
@@ -371,7 +377,7 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string 
       <div class="sh-main">
       <div class="sh-mystery">
         <span class="sh-mystery-medal">🥇</span>
-        <span class="sh-mystery-q">
+        <span class="sh-mystery-q" dir="ltr">
           <i>?</i>
           <i>?</i>
           <i>?</i>
@@ -393,8 +399,10 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string 
                     <bdi>{r.name}</bdi>
                   </span>
                   {isLast ? snail.kind === 'img' ? <img class="sh-snail" src={snail.url} alt="" /> : <span class="sh-snail">{snail.char}</span> : null}
-                  {plan.earlier.has(r.playerId) ? <Earlier size={22} /> : null}
-                  <span class="sh-raw" dir="ltr">
+                  {plan.earlier.has(r.playerId) ? <Earlier size={26} /> : null}
+                  {/* elimination: "out" instead of the distance (the number stays in the DOM for scripts, not on screen) */}
+                  {props.elimination ? <span class="sh-out-mark">{isLast ? 'ראשון בחוץ' : 'בחוץ'}</span> : null}
+                  <span class={`sh-raw ${props.elimination ? 'is-unseen' : ''}`} dir="ltr">
                     {formatScore(r.raw)}
                   </span>
                   <CountUp class="sh-points" value={r.points} from={0} prefix="+" ms={800} />
@@ -411,12 +419,22 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string 
 
 // ───────────────────────────── the winner ceremony ─────────────────────────────
 
-function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skipMs: number; title: string; portrait: boolean }): JSX.Element {
+/** The owner's exclamations, on the star stickers of the ceremony (two per round, a different pair every round). */
+const CHEERS: readonly (readonly [string, string])[] = [
+  ['וואו!', 'צדיק!'],
+  ['מחורחר!', 'בן פורת יוסף!'],
+  ['נודר!', 'וואו!'],
+  ['צדיק!', 'מחורחר!'],
+  ['בן פורת יוסף!', 'אחשילי!'],
+];
+
+function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skipMs: number; title: string; portrait: boolean; elimination: boolean; round: number }): JSX.Element {
   // One winner, always: equal raw scores are decided by who reached the score first.
   const first = props.winner;
+  const cheers = CHEERS[((props.round % CHEERS.length) + CHEERS.length) % CHEERS.length] ?? ['וואו!', 'צדיק!'];
   return (
     <div class="sh-cer" style={`--skip:${props.skipMs}ms`}>
-      <div class="sh-cer-dark" />
+      <div class="sh-cer-sun" />
       <div class="sh-cer-prize">
         <PrizeRelic />
       </div>
@@ -424,20 +442,36 @@ function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skip
         <div class="sh-cer-kicker">{`המקום הראשון · ${props.title}`}</div>
         {first ? (
           <div class="sh-cer-solo">
-            <Avatar avatar={first.avatar} name={first.name} look={first.look} crop="bust" class="sh-avatar--xl" />
-            <div class="sh-cer-name" dir="auto" style={{ fontSize: nameSize(first.name, props.portrait ? 120 : 230, props.portrait ? 590 : 1180) }}>
+            <div class="sh-cer-name" dir="auto" style={{ fontSize: nameSize(first.name, props.portrait ? 120 : 220, props.portrait ? 590 : 1130) }}>
               <bdi>{first.name}</bdi>
             </div>
           </div>
         ) : null}
-        <div class="sh-cer-line">זוכה בשימי אנג׳ל!</div>
-        {first ? (
-          <div class="sh-cer-score">
-            עם <b dir="ltr">{formatScore(first.raw)}</b> נקודות במשחק
-            {props.earlier ? <span class="sh-cer-earlier"> · ⏱ לפני כולם</span> : null}
+        <div class="sh-cer-won">
+          {first ? <Avatar avatar={first.avatar} name={first.name} look={first.look} crop="bust" class="sh-avatar--hero" /> : null}
+          <div class="sh-cer-says">
+            <div class="sh-cer-line">זוכה בשימי אנג׳ל!</div>
+            {first ? (
+              <div class="sh-cer-score">
+                {props.elimination ? (
+                  'הכי הרבה זמן באוויר!'
+                ) : (
+                  <>
+                    עם <b dir="ltr">{formatScore(first.raw)}</b> נקודות במשחק
+                  </>
+                )}
+                {props.earlier ? <span class="sh-cer-earlier"> · ⏱ לפני כולם</span> : null}
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </div>
+      <span class="sh-burst sh-burst--a">
+        <span>{cheers[0]}</span>
+      </span>
+      <span class="sh-burst sh-burst--b">
+        <span>{cheers[1]}</span>
+      </span>
     </div>
   );
 }
@@ -445,7 +479,6 @@ function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skip
 function Nobody(props: { skipMs: number }): JSX.Element {
   return (
     <div class="sh-cer sh-cer--nobody" style={`--skip:${props.skipMs}ms`}>
-      <div class="sh-cer-dark" />
       <div class="sh-nobody-prize">
         <PrizeRelic />
       </div>
@@ -496,7 +529,10 @@ function Standings(props: { plan: Plan; view: View; size: StageSize; clockT(): n
             'אף אחד לא זכה בסיבוב הזה. המלאך נשאר בבית'
           ) : (
             <>
-              <b>{winners[0]?.name}</b> זוכה בשימי אנג׳ל!
+              <b>
+                <bdi>{winners[0]?.name}</bdi>
+              </b>{' '}
+              זוכה בשימי אנג׳ל!
             </>
           )}
         </span>

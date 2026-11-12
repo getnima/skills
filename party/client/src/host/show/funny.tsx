@@ -8,7 +8,7 @@ import { useEffect, useRef } from 'preact/hooks';
 
 import { sfx } from '../../kit/audio';
 import { createRng } from '../../kit/rng';
-import { mascotUrl, STICKER_COUNT, stickerArt } from './art';
+import { commentatorUrl, commentatorUrls, STICKER_COUNT, stickerArt } from './art';
 import { createConfetti } from './confetti';
 import { createLinePicker } from './lines';
 import { isShowCalm } from './settings';
@@ -116,14 +116,14 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
   pic.className = 'sh-comm-pic';
   pic.alt = '';
   pic.decoding = 'async';
-  pic.src = mascotUrl('normal');
+  pic.src = commentatorUrl('normal', 0);
   const bubble = document.createElement('div');
   bubble.className = 'sh-comm-bubble';
   bubble.dir = 'rtl';
   comm.append(pic, bubble);
   host.append(canvas, stickers, flashEl, comm);
-  // warm the other moods so the first swap does not blink
-  for (const mood of ['happy', 'shocked', 'laugh', 'angry'] as const) new Image().src = mascotUrl(mood);
+  // warm the other pictures (the moods, or the second host) so the first swap does not blink
+  for (const url of commentatorUrls()) new Image().src = url;
 
   const confetti: Confetti = createConfetti(canvas, random);
   const queue: Pending[] = [];
@@ -136,6 +136,8 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
   let lastPunch = 0;
   let lastSticker = Number.NEGATIVE_INFINITY;
   let stickerTurn = Math.floor(random() * STICKER_COUNT);
+  /** Lines spoken so far: the two hosts take turns at the microphone. */
+  let lineTurn = Math.floor(random() * 2);
   // tomorrow's funny photos: once any sticker file exists, fly-bys use the photos instead of themed emoji
   const realStickers: StickerArt[] = [];
   for (let i = 0; i < STICKER_COUNT; i++) {
@@ -150,7 +152,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
 
   function show(p: Pending): void {
     speaking = true;
-    pic.src = mascotUrl(p.mood);
+    pic.src = commentatorUrl(p.mood, lineTurn++);
     bubble.textContent = p.text;
     comm.classList.toggle('is-crazy', p.crazy);
     comm.classList.remove('is-on');
@@ -387,7 +389,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
         break;
       case 'drop':
         sfx.explode();
-        flash('#ff2d46');
+        flash('#f2361b');
         fly('rain', { kind: 'emoji', char: '💣' });
         break;
       case 'tie':
@@ -410,7 +412,7 @@ export function createFunnyLayer(host: HTMLElement, seed: number): FunnyLayer {
         break;
       case 'final10':
         sfx.go();
-        flash('#ffd23f');
+        flash('#ffd21f');
         zoom();
         fly('rain', { kind: 'emoji', char: '⏰' });
         break;

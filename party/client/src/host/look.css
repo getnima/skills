@@ -1,0 +1,79 @@
+/*
+ * The party look on the TV: the tokens and fonts of the design system
+ * (client/public/assets/shimi/README.md), shared by the host shell (host.css)
+ * and the show scenes (show/show.css). Retro TV game show / comic sticker:
+ * flat colours, ink outlines, hard shadows with no blur, a sunburst stage.
+ *
+ * Type: Motaleh (Hebrew letters only, very stylised) for SHORT Hebrew headlines
+ * and stickers; Rubik for everything that has to be read precisely from the
+ * sofa: names, numbers, Latin, instructions.
+ */
+@font-face {
+  font-family: 'Motaleh';
+  src: url('/fonts/motaleh.woff2') format('woff2');
+  font-display: swap;
+}
+/* Rubik (SIL OFL 1.1), self-hosted. One variable file per script, weights 300-900. */
+@font-face {
+  font-family: 'Rubik';
+  src: url('/fonts/rubik-hebrew.woff2') format('woff2');
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+@font-face {
+  font-family: 'Rubik';
+  src: url('/fonts/rubik-latin.woff2') format('woff2');
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --yel: #ffd21f;
+  --yel-2: #ffe45a;
+  --org: #ff9f0a;
+  --red: #f2361b;
+  --red-d: #b5200a;
+  --cob: #1e3fd8;
+  --cob-d: #10238c;
+  --cob-l: #4f6cff;
+  --ink: #16120e;
+  --paper: #fff8e6;
+  --pink: #ff7eb6;
+  /* the one colour outside the palette: "up" / "found" marks */
+  --grn: #12a454;
+  /* a row that is out of the game, a played game */
+  --off: #cfcab9;
+
+  --disp: 'Motaleh', 'Arial Hebrew', 'Noto Sans Hebrew', system-ui, sans-serif;
+  --read: 'Rubik', system-ui, -apple-system, 'Segoe UI', 'Arial Hebrew', 'Noto Sans Hebrew', Arial, sans-serif;
+
+  --star14: polygon(
+    50% 0%, 58.7% 12%, 71.7% 5%, 74.3% 19.5%, 89.1% 18.8%, 85.1% 33.1%, 98.7% 38.9%, 89% 50%, 98.7% 61.1%, 85.1% 66.9%,
+    89.1% 81.2%, 74.3% 80.5%, 71.7% 95%, 58.7% 88%, 50% 100%, 41.3% 88%, 28.3% 95%, 25.7% 80.5%, 10.9% 81.2%, 14.9% 66.9%,
+    1.3% 61.1%, 11% 50%, 1.3% 38.9%, 14.9% 33.1%, 10.9% 18.8%, 25.7% 19.5%, 28.3% 5%, 41.3% 12%
+  );
+  --star10: polygon(
+    55% 0.2%, 63.3% 19.8%, 83.3% 12.7%, 78.5% 33.4%, 98.9% 39.4%, 82.8% 53.3%, 95.8% 70.1%, 74.6% 72%, 75.2% 93.2%, 57% 82.2%,
+    45% 99.8%, 36.7% 80.2%, 16.7% 87.3%, 21.5% 66.6%, 1.1% 60.6%, 17.2% 46.7%, 4.2% 29.9%, 25.4% 28%, 24.8% 6.8%, 43% 17.8%
+  );
+  --kb: polygon(
+    50% 0%, 58% 22%, 78% 6%, 74% 30%, 98% 22%, 84% 44%, 100% 58%, 78% 64%, 88% 88%, 64% 76%, 54% 100%, 44% 78%, 22% 94%, 26% 70%,
+    0% 72%, 14% 52%, 0% 32%, 24% 32%, 18% 8%, 40% 22%
+  );
+  /* SMPTE-style colour bars for idle / waiting screens */
+  --bars: linear-gradient(
+    90deg,
+    #f4f1e6 0 14.29%,
+    #ffd21f 14.29% 28.57%,
+    #19b5c8 28.57% 42.86%,
+    #2fbf71 42.86% 57.14%,
+    #ff7eb6 57.14% 71.43%,
+    #f2361b 71.43% 85.71%,
+    #1e3fd8 85.71% 100%
+  );
+}

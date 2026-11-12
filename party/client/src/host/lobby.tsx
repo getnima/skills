@@ -5,7 +5,8 @@ import { useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 import { GAME_IDS, GAMES, MAX_PLAYERS } from '../../../shared/protocol';
 import { peekAvatarUrl, useAvatarUrl } from '../avatar';
 import { StandingsPanel } from './show/index';
-import { avatarColor, lookPlateColor, unitPx } from './show/common';
+import { hostDollUrl } from './show/art';
+import { lookPlateColor, unitPx } from './show/common';
 import { PrizeRelic } from './show/prize';
 import { prettyUrl, useJoinInfo } from './util';
 
@@ -49,7 +50,7 @@ export function QrCode(props: { readonly text: string; readonly class?: string }
       data-testid="qr"
     >
       <rect x={-pad} y={-pad} width={size + pad * 2} height={size + pad * 2} fill="#ffffff" />
-      <path d={d} fill="#12082b" />
+      <path d={d} fill="#16120e" />
     </svg>
   );
 }
@@ -58,18 +59,17 @@ function JoinPanel(props: { readonly code: string; readonly compact: boolean }):
   const info = useJoinInfo(props.code);
   return (
     <section class={`hs-join ${props.compact ? 'is-compact' : ''}`} data-testid="join">
-      {props.compact ? <div class="hs-join-late">עוד לא הצטרפתם? סרקו!</div> : (
-        <div class="hs-join-title">
-          <span class="hs-join-step">1</span> סרקו עם המצלמה
-        </div>
-      )}
+      {props.compact ? <div class="hs-join-late">עוד לא בפנים? סרקו!</div> : <div class="hs-join-title">סרקו עם המצלמה</div>}
       <div class="hs-qr-card">
         <QrCode text={info.url} />
       </div>
       <div class="hs-code-row">
         <span class="hs-code-label">קוד החדר</span>
+        {/* one tile per letter; the element's text is still the plain code */}
         <span class="hs-code" dir="ltr" data-testid="room-code">
-          {props.code}
+          {Array.from(props.code).map((ch, i) => (
+            <i key={i}>{ch}</i>
+          ))}
         </span>
       </div>
       <div class="hs-url" dir="ltr" data-testid="join-url">
@@ -98,16 +98,43 @@ const CARD_MAX = 24;
 const CARD_DOLL = 132;
 const PILL_DOLL = 62;
 
-/** Starting chip scale by head count; the fit pass below shrinks further if needed. */
+/**
+ * Starting chip scale by head count; the fit pass below shrinks further if needed.
+ * The dolls are the stars: a small room gets them as big as the stage allows.
+ */
 function chipTier(n: number): number {
-  if (n <= 4) return 1.45;
-  if (n <= 8) return 1.2;
-  if (n <= 12) return 1;
-  if (n <= 18) return 0.86;
-  if (n <= CARD_MAX) return 0.76;
+  if (n <= 2) return 2.2;
+  if (n <= 4) return 1.8;
+  if (n <= 6) return 1.5;
+  if (n <= 8) return 1.3;
+  if (n <= 12) return 1.12;
+  if (n <= 18) return 0.96;
+  if (n <= CARD_MAX) return 0.86;
   if (n <= 32) return 0.9;
   if (n <= 45) return 0.76;
   return 0.64;
+}
+
+/** "Your hosts": the two host dolls wait on the stage until the first guest is in. */
+function WaitingHosts(): JSX.Element {
+  const a = hostDollUrl('a');
+  const b = hostDollUrl('b');
+  return (
+    <div class="hs-chips-empty">
+      {a !== null && b !== null ? (
+        <div class="hs-hosts" data-testid="hosts">
+          <span class="hs-hosts-tag">
+            <span>יאללה!</span>
+          </span>
+          <img src={b} alt="" draggable={false} />
+          <img src={a} alt="" draggable={false} />
+        </div>
+      ) : (
+        <span class="hs-bounce">📱</span>
+      )}
+      <span class="hs-chips-empty-text">מחכים לשחקנים הראשונים…</span>
+    </div>
+  );
 }
 
 /**
@@ -139,8 +166,8 @@ function PlayerChips(props: { readonly players: readonly PlayerPublic[]; onKick(
       const floor = portrait ? 0.95 : 0.3;
       let s = Math.max(floor, chipTier(n));
       el.style.setProperty('--cs', String(s));
-      for (let i = 0; i < 14 && el.scrollHeight > el.clientHeight + 1 && s * 0.9 >= floor; i++) {
-        s *= 0.9;
+      for (let i = 0; i < 30 && el.scrollHeight > el.clientHeight + 1 && s * 0.94 >= floor; i++) {
+        s *= 0.94;
         el.style.setProperty('--cs', s.toFixed(3));
       }
     };
@@ -156,17 +183,14 @@ function PlayerChips(props: { readonly players: readonly PlayerPublic[]; onKick(
   return (
     <div class={`hs-chips kit-scroll ${cards ? 'is-cards' : 'is-pills'}`} ref={box} data-testid="chips">
       {n === 0 ? (
-        <div class="hs-chips-empty">
-          <span class="hs-bounce">📱</span>
-          <span>מחכים לשחקנים הראשונים…</span>
-        </div>
+        <WaitingHosts />
       ) : (
         props.players.map((p, i) => (
           <button
             type="button"
             key={p.id}
             class={`hs-chip ${p.connected ? '' : 'is-away'}`}
-            style={{ '--chip': avatarColor(p.avatar), animationDelay: `${Math.min(i, 8) * 30}ms` }}
+            style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}
             title="לחצו כדי להוציא מהמשחק"
             data-testid="chip"
             data-player={p.id}
@@ -203,7 +227,7 @@ function GameCards(props: { readonly played: readonly GameId[]; onStart(g: GameI
   const next = nextGame(props.played);
   return (
     <section class="hs-games" data-testid="games">
-      {GAME_IDS.map((id, i) => {
+      {GAME_IDS.map((id) => {
         const g = GAMES[id];
         const done = props.played.includes(id);
         const isNext = id === next;
@@ -212,7 +236,6 @@ function GameCards(props: { readonly played: readonly GameId[]; onStart(g: GameI
             type="button"
             key={id}
             class={`hs-game ${done ? 'is-done' : ''} ${isNext ? 'is-next' : ''}`}
-            style={{ '--gc': GAME_COLORS[i % GAME_COLORS.length] }}
             data-testid={`game-${id}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -220,7 +243,7 @@ function GameCards(props: { readonly played: readonly GameId[]; onStart(g: GameI
             }}
           >
             {isNext ? <span class="hs-game-tag">הבא בתור</span> : null}
-            {done ? <span class="hs-game-done">✓ שוחק</span> : null}
+            {done ? <span class="hs-game-done">שיחקנו ✓</span> : null}
             <span class="hs-game-emoji">{g.emoji}</span>
             <span class="hs-game-title">{g.title}</span>
             <span class="hs-game-dur">⏱ {secondsLabel(g.durationMs)}</span>
@@ -230,8 +253,6 @@ function GameCards(props: { readonly played: readonly GameId[]; onStart(g: GameI
     </section>
   );
 }
-
-const GAME_COLORS: readonly string[] = ['#ff3d8b', '#2de2e6', '#ffd23f', '#3ddc84', '#ff8a3d'];
 
 // ───────────────────────────── Lobby ─────────────────────────────
 
@@ -257,12 +278,18 @@ export function Lobby(props: LobbyProps): JSX.Element {
       <section class="hs-players">
         <header class="hs-players-head">
           {between ? null : (
+            <div class="hs-logo" aria-hidden="true">
+              <span>פארטי</span>
+              <span>ארנה</span>
+            </div>
+          )}
+          {between ? null : (
             <div class="hs-prize-ribbon">
               <span class="hs-prize-mini">
                 <PrizeRelic variant="mini" />
               </span>
               <span class="hs-prize-text">
-                <b>בכל סיבוב יש פרס!</b>
+                <b>פרס בכל סיבוב!</b>
                 <span>המנצח לוקח הביתה מלאך שימי בעבודת יד</span>
               </span>
             </div>

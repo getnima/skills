@@ -64,18 +64,18 @@ async function runFast(browser) {
     { name: '21-spin', when: beatAt('spin', 0.55) },
     { name: '22-spin-dizzy', when: beatAt('spin', 1.05) },
     { name: '23-cork-windup', when: beatAt('cork', 0.42) },
-    { name: '24-cork-pop', when: beatAt('cork', 0.75) },
-    { name: '25-cork-back', when: beatAt('cork', 1.95) },
-    { name: '30-hand-absurd', when: (s) => s.level === 5 && !s.beat && s.taps > 150 },
+    { name: '24-cork-pop', when: beatAt('cork', 0.6) },
+    { name: '25-cork-back', when: beatAt('cork', 1.2) },
+    { name: '30-hand-absurd', when: (s) => s.level === 5 && !s.beat && !s.lastQuarter && s.taps > 100 },
     { name: '31-mess-sprint-10s', when: (s) => s.phase === 'sprint' && s.elapsedMs - s.t0 > 10000 && !s.beat },
-    { name: '32-last5', when: (s) => s.lastQuarter && s.elapsedMs - s.t0 > 15800 },
-    { name: '33-mess-sprint-19s', when: (s) => s.phase === 'sprint' && s.elapsedMs - s.t0 > 19300 },
-    { name: '40-final', when: (s) => s.phase === 'done' && s.beatT > 0.9 },
-    { name: '41-final-alive', when: (s) => s.phase === 'done' && s.beatT > 8.6 },
+    { name: '32-last5', when: (s) => s.lastQuarter && s.elapsedMs - s.t0 > 15800 && !s.beat },
+    { name: '34-last1', when: (s) => s.lastQuarter && s.elapsedMs - s.t0 > 19200 },
+        { name: '40-final', when: (s) => s.phase === 'done' && s.beatT > 0.9 },
+    { name: '41-final-alive', when: (s) => s.phase === 'done' && s.beatT > 6.1 },
   ];
   const times = L.steady(13, 1500, 20500, 0.1, 9);
   const tapping = L.tapSchedule(page, cdp, times);
-  await watch(page, plan, (s) => s.phase === 'done' && s.beatT > 9);
+  await watch(page, plan, (s) => s.phase === 'done' && s.beatT > 6.5);
   await tapping;
   const s = await L.st(page);
   console.log(JSON.stringify({ run: 'fast', taps: s.taps, beats: s.beats.map((b) => `${b.id}@${b.taps}/${b.sprintMs}`) }));
@@ -114,9 +114,13 @@ async function runIdle(browser) {
     { name: '62-wait-sneak-caught', when: beatAt('wait-sneak', 2.1) },
     { name: '63-wait-sneak-whistle', when: beatAt('wait-sneak', 3.0) },
     { name: '64-wait-yawn', when: beatAt('wait-yawn', 0.65) },
-    { name: '65-wait-knock', when: beatAt('wait-knock', 0.3) },
+    { name: '65-wait-knock', when: beatAt('wait-knock', 0.42) },
+    { name: '65b-wait-knock-press', when: beatAt('wait-knock', 1.5) },
+    { name: '65c-wait-sleep', when: beatAt('wait-sleep', 1.2) },
+    { name: '65d-wait-awake', when: beatAt('wait-sleep', 2.2) },
+    { name: '65e-wait-peek', when: beatAt('wait-peek', 0.8) },
     { name: '66-countdown-5', when: (s) => s.elapsedMs > 25150 },
-    { name: '67-countdown-2', when: (s) => s.elapsedMs > 28200 },
+    { name: '67-countdown-2', when: (s) => s.elapsedMs > 28300 },
     { name: '68-autostart', when: beatAt('autostart', 0.2) },
     { name: '69-zero-sprint', when: (s) => s.phase === 'sprint' && s.elapsedMs > 36000 },
     { name: '70-zero-final', when: (s) => s.phase === 'done' && s.beatT > 0.9 },

@@ -16,6 +16,7 @@ import { roundTime } from '../../../shared/round-clock';
 import { isMuted, setMuted, unlockAudio } from '../kit/audio';
 import { enterFullscreen } from '../kit/mobile';
 import { buildControlModel, checkAction, confirmQuestion, findAction, isGameId, nextUnplayed, parseRelay, remoteView, toRelay } from './actions';
+import { CreditsPanel } from './credits';
 import { CutsceneMenu, CutscenePlayer } from './cutscene';
 import { CountdownScreen, GoSplash, IntroScreen, ResumeOverlay } from './intro';
 import { Lobby } from './lobby';
@@ -33,7 +34,8 @@ import type { ActionId, ControlAction, ControlModel } from './actions';
 import type { ActResult, HostRoom } from './room';
 import type { ConfirmRequest } from './ui';
 
-type MenuKind = 'none' | 'cutscenes' | 'more' | 'sound';
+/** 'credits' is TV-local (an information panel, not an action of the control model). */
+type MenuKind = 'none' | 'cutscenes' | 'more' | 'sound' | 'credits';
 
 /** Automation hook for the browser tests (read-only). */
 export interface HostHooks {
@@ -155,7 +157,13 @@ function ResultsView(props: { readonly state: RoomState; readonly room: HostRoom
     () => (res !== null && props.replayAt !== null ? { ...res, revealAt: props.replayAt } : res),
     [res, props.replayAt],
   );
-  if (res === null || results === null) return <div class="hs-wait">מחשבים תוצאות…</div>;
+  if (res === null || results === null) {
+    return (
+      <div class="hs-wait">
+        <div class="hs-wait-text">מחשבים תוצאות…</div>
+      </div>
+    );
+  }
   return (
     <div class="hs-scene-wrap" data-testid="results">
       <ResultsScene
@@ -533,7 +541,9 @@ export function App(): JSX.Element {
   if (state === null) {
     scene = (
       <div class="hs-boot">
-        <div class="hs-boot-logo">🎉</div>
+        <div class="hs-boot-logo" aria-hidden="true">
+          פארטי <b>ארנה</b>
+        </div>
         <div class="hs-boot-text">{room.status === 'offline' ? 'אין חיבור לשרת. מנסים שוב…' : 'מתחברים לשרת…'}</div>
       </div>
     );
@@ -558,7 +568,11 @@ export function App(): JSX.Element {
       </div>
     );
   } else {
-    scene = <div class="hs-wait">רגע…</div>;
+    scene = (
+      <div class="hs-wait">
+        <div class="hs-wait-text">רגע…</div>
+      </div>
+    );
   }
 
   // ── the strip: the model's featured actions, the next step, the tools ──
@@ -601,7 +615,9 @@ export function App(): JSX.Element {
 
       <footer class={`hs-strip ${stripClass}`} data-testid="strip">
         <div class="hs-strip-side">
-          <span class="hs-brand">🎉 Party Arena</span>
+          <span class="hs-brand" aria-label="Party Arena">
+            פארטי <b>ארנה</b>
+          </span>
           <Connection room={room} />
         </div>
         <div class="hs-strip-main">
@@ -692,6 +708,7 @@ export function App(): JSX.Element {
               testId="btn-sound-check"
               onClick={() => click('sound-check')}
             />
+            <Btn label="קרדיטים" icon="📜" testId="btn-credits" onClick={() => setMenu('credits')} />
             <Btn
               label="איפוס תחרות"
               icon="♻️"
@@ -724,6 +741,8 @@ export function App(): JSX.Element {
       ) : null}
 
       {menu === 'sound' && phase === 'lobby' ? <SoundCheck onClose={() => setMenu('none')} /> : null}
+
+      {menu === 'credits' ? <CreditsPanel onClose={() => setMenu('none')} /> : null}
 
       {confirm !== null ? <ConfirmDialog req={confirm} onClose={() => setConfirm(null)} /> : null}
       {room.notice !== null ? <Toast id={room.notice.id} text={room.notice.text} tone={room.notice.tone} /> : null}

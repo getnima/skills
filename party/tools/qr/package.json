@@ -1,0 +1,8 @@
+{
+  "name": "party-qr-tools",
+  "private": true,
+  "description": "Makes designed QR codes with QRocodile and checks that they decode.",
+  "dependencies": {
+    "jsqr": "^1.4.0"
+  }
+}

@@ -6,6 +6,7 @@
  * - setShowCalm / isShowCalm / onShowCalmChange: the global "calm" switch
  *   that turns the funny layer down.
  */
+import '../look.css';
 import './show.css';
 
 export { PlayingScene } from './playing';

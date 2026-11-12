@@ -535,10 +535,16 @@ export const game: GameModule = {
       const bottom = h - ctx.safeBottom;
       const areaH = Math.max(120, bottom - top);
       // a very short screen (a phone on its side): no sticker band, a smaller token
-      const stickerBand = areaH < 300 ? 0 : clamp(0.16 * areaH, 56, 110);
-      const pileBand = areaH < 300 ? clamp(0.14 * areaH, 26, 50) : clamp(0.14 * areaH, 56, 110);
+      const stickerBand = areaH < 300 ? 0 : clamp(0.18 * areaH, 64, 120);
+      let pileBand = areaH < 300 ? clamp(0.14 * areaH, 26, 50) : clamp(0.14 * areaH, 56, 110);
       const counterH = areaH < 300 ? 44 : 56;
-      const D = clamp(Math.min(w - 36, areaH - stickerBand - pileBand - counterH - 8), 60, 420);
+      let D = clamp(Math.min(w - 36, areaH - stickerBand - pileBand - counterH - 8), 60, 420);
+      // the pile band must hold the pile and the two lines of name chips under the token
+      const pileNeed = areaH < 300 ? 0 : 0.15 * D + 54;
+      if (pileNeed > pileBand) {
+        pileBand = pileNeed;
+        D = clamp(Math.min(w - 36, areaH - stickerBand - pileBand - counterH - 8), 60, 420);
+      }
       geo.w = w;
       geo.h = h;
       geo.top = top;
@@ -1788,10 +1794,10 @@ export const game: GameModule = {
             squeegee.on = true;
             squeegee.t = 0;
             // from beyond the top-right corner, through the token centre, out at the bottom-left
-            squeegee.x0 = geo.cx + 0.95 * geo.D;
-            squeegee.y0 = geo.cy - 0.95 * geo.D;
-            squeegee.x1 = geo.cx - 0.95 * geo.D;
-            squeegee.y1 = geo.cy + 0.95 * geo.D;
+            squeegee.x0 = geo.cx + 0.62 * geo.D;
+            squeegee.y0 = geo.cy - 0.7 * geo.D;
+            squeegee.x1 = geo.cx - 0.62 * geo.D;
+            squeegee.y1 = geo.cy + 0.7 * geo.D;
             squeegee.px = squeegee.x0;
             squeegee.py = squeegee.y0;
             squeak(900, 1400, 700, 0.55);
@@ -2706,7 +2712,7 @@ export const game: GameModule = {
       // the fingertip out of the ear goes UNDER the head (its base hides inside the ear)
       if (ear.on && ear.out > 0) {
         const fw = 0.09 * D;
-        const ex = fx_(FRAME.earX) + 0.06 * D - ear.out * 0.07 * D;
+        const ex = fx_(FRAME.earX) + 0.05 * D - ear.out * 0.12 * D;
         const ey = fy_(FRAME.earY);
         g.save();
         g.translate(ex, ey);
@@ -2733,7 +2739,7 @@ export const game: GameModule = {
       // the shy booger peeking out of the nostril (waiting bit)
       if (peek.k > 0.01) {
         const b = art.boogers[BOOGER.Round];
-        const sz = 0.075 * D * peek.k;
+        const sz = 0.1 * D * peek.k;
         if (b) b.draw(g, nx() + 0.01 * D, ny() + sz * 0.35, sz, sz, peek.look);
       }
       // the snot slick of mini Shimi
@@ -2801,19 +2807,18 @@ export const game: GameModule = {
         if (fistOn) {
           const fw = 0.34 * D * (1 + 0.14 * knock.punch);
           const fh = (fw * art.fist.height) / art.fist.width;
-          art.fist.draw(g, cx + 0.2 * D, cy + R + fh * 0.5 - knock.up * (fh * 0.5 + 0.38 * D), fw, fh, -0.12);
+          art.fist.draw(g, cx + 0.25 * D, cy + R + fh * 0.5 - knock.up * (fh * 0.5 + 0.26 * D), fw, fh, -0.12);
         }
         g.restore();
       }
       // crack stars on the glass where he knocked
       if (knock.on && knock.cracks > 0) {
-        g.strokeStyle = PAL.ink;
-        g.lineWidth = 2.5;
+        // cracked glass: white lines with an ink edge, one star per knock, beside his fist
         g.lineCap = 'round';
         g.beginPath();
         for (let c = 0; c < knock.cracks; c++) {
-          const kx = cx + (0.14 + c * 0.07) * D;
-          const ky = cy + (0.02 - c * 0.04) * D;
+          const kx = cx + (0.36 - c * 0.08) * D;
+          const ky = cy + (-0.02 + c * 0.05) * D;
           for (let i = 0; i < 6; i++) {
             const a = i * 1.05 + c;
             const l = (0.05 + 0.03 * ((i + c) % 3)) * D;
@@ -2821,6 +2826,11 @@ export const game: GameModule = {
             g.lineTo(kx + Math.cos(a) * l, ky + Math.sin(a) * l);
           }
         }
+        g.strokeStyle = PAL.ink;
+        g.lineWidth = 5;
+        g.stroke();
+        g.strokeStyle = PAL.white;
+        g.lineWidth = 2.5;
         g.stroke();
       }
       if (yossiTip > 0.5) {
@@ -2956,6 +2966,14 @@ export const game: GameModule = {
       }
       if (!band) return;
       const b = band;
+      if (trophy.st >= 2) {
+        // the final frame: the rank sticker goes up, clear of the booger on his head
+        const top = trophyHeadY(trophySize()) - trophySize() * 0.55;
+        const room = Math.max(24, top - geo.top - 4);
+        const f = Math.min(1.1, maxW / b.s.w, room / b.s.h);
+        blit(g, b.s, geo.w / 2, geo.top + 2 + Math.max((b.s.h * f) / 2, room / 2), ease.outBack(clamp(b.t / 0.25, 0, 1)) * f);
+        return;
+      }
       const fit = Math.min(1.1, maxW / b.s.w, maxH / b.s.h);
       const cyBand = centreFor(b.s.h * fit);
       const inK = clamp(b.t / 0.25, 0, 1);
@@ -3041,6 +3059,39 @@ export const game: GameModule = {
         g.arc(tipX, tipY, 8 + cycle * 40, 0, Math.PI * 2);
         g.stroke();
         g.globalAlpha = 1;
+      }
+    }
+
+    /** The last-5 booger flying to his head, then sitting on it (crowned at the top rank); over the band. */
+    function drawTrophy(g: CanvasRenderingContext2D): void {
+      if (trophy.st >= 2) {
+        const kind = trophyKind();
+        const b = art.boogers[kind];
+        const sz = trophySize();
+        const hx = geo.cx;
+        const hy = trophyHeadY(sz);
+        let x = hx;
+        let y = hy;
+        let sx = 1;
+        let sy = 1;
+        if (trophy.st === 2) {
+          const k = clamp(trophy.t / 0.35, 0, 1);
+          x = lerp(trophy.x0, hx, k);
+          y = lerp(trophy.y0, hy, k) - Math.sin(k * Math.PI) * 0.35 * geo.D;
+        } else {
+          const land = keys(trophy.t, [0, 0.75, 0.1, 1.12, 0.24, 1]);
+          sy = land;
+          sx = 2 - land;
+          if (aliveKind === ALIVE.Hat && aliveAge < 0.4) {
+            const j = bump(aliveAge, 0, 0.4);
+            y -= j * 0.06 * geo.D;
+            sy *= 1 + 0.08 * j;
+          }
+        }
+        if (b) {
+          const dims = boogerDims(kind, sz, 1);
+          b.draw(g, x, y + (dims.h * (1 - sy)) / 2, dims.w * sx, dims.h * sy, 0);
+        }
       }
     }
 
@@ -3195,36 +3246,6 @@ export const game: GameModule = {
           g.drawImage(star.canvas, x - star.w / 2, y - star.h / 2, star.w, star.h);
         }
       }
-      // the last-5 booger flying to his head, then sitting on it (crowned at the top rank)
-      if (trophy.st >= 2) {
-        const kind = trophyKind();
-        const b = art.boogers[kind];
-        const sz = trophySize();
-        const hx = geo.cx;
-        const hy = trophyHeadY(sz);
-        let x = hx;
-        let y = hy;
-        let sx = 1;
-        let sy = 1;
-        if (trophy.st === 2) {
-          const k = clamp(trophy.t / 0.35, 0, 1);
-          x = lerp(trophy.x0, hx, k);
-          y = lerp(trophy.y0, hy, k) - Math.sin(k * Math.PI) * 0.35 * geo.D;
-        } else {
-          const land = keys(trophy.t, [0, 0.75, 0.1, 1.12, 0.24, 1]);
-          sy = land;
-          sx = 2 - land;
-          if (aliveKind === ALIVE.Hat && aliveAge < 0.4) {
-            const j = bump(aliveAge, 0, 0.4);
-            y -= j * 0.06 * geo.D;
-            sy *= 1 + 0.08 * j;
-          }
-        }
-        if (b) {
-          const dims = boogerDims(kind, sz, 1);
-          b.draw(g, x, y + (dims.h * (1 - sy)) / 2, dims.w * sx, dims.h * sy, 0);
-        }
-      }
       // the tap count on a red star sticker, on the token's lower right
       if (stScore && finalShown) {
         const k = ease.outBack(clamp((finalT - 0.35) / 0.3, 0, 1));
@@ -3257,6 +3278,7 @@ export const game: GameModule = {
       drawCounter(g);
       if (s.phase === 'waiting' && !cur && countdownDigit > 5) drawGhost(g);
       drawBand(g);
+      drawTrophy(g);
 
       // last 5 s of the sprint: a hard red frame pulses
       if (s.phase === 'sprint' && lastQuarter) {

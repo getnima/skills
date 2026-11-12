@@ -1,10 +1,9 @@
 /**
  * Things of "שימי טאפ" painted ONCE into small offscreen canvases (and only blitted in the hot
- * path): the breath fog, the finger-written digits, the fingerprint, the
- * counter panel, a star, a music note. No gradients, shadows or text measuring per frame.
+ * path): the fingerprint, the counter panel, a star, a music note. No gradients, shadows or text measuring per frame.
  */
 import { roundRectPath } from '../../kit/canvas';
-import { displayFont, makeLayer, PAL } from './look';
+import { makeLayer, PAL } from './look';
 
 export interface Layer {
   readonly canvas: HTMLCanvasElement;
@@ -23,45 +22,6 @@ export function freeLayer(l: Layer | null): void {
   if (!l) return;
   l.canvas.width = 0;
   l.canvas.height = 0;
-}
-
-/** Soft white breath-fog oval (the one gradient, painted once). */
-export function paintFog(): Layer {
-  const w = 240;
-  const h = 104;
-  return layer(w, h, 1, (c) => {
-    c.save();
-    c.translate(w / 2, h / 2);
-    c.scale(1, h / w);
-    const g = c.createRadialGradient(0, 0, 0, 0, 0, w / 2);
-    g.addColorStop(0, 'rgba(255,255,255,0.95)');
-    g.addColorStop(0.55, 'rgba(255,255,255,0.75)');
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    c.fillStyle = g;
-    c.beginPath();
-    c.arc(0, 0, w / 2, 0, Math.PI * 2);
-    c.fill();
-    c.restore();
-  });
-}
-
-/** Digits 0-9 "finger-written" on the fog: display font, translucent cobalt. Height 1 = px. */
-export function paintDigits(px: number): Layer[] {
-  const out: Layer[] = [];
-  for (let d = 0; d <= 9; d++) {
-    const w = Math.ceil(px * 0.72);
-    const h = Math.ceil(px * 1.1);
-    out.push(
-      layer(w, h, 2, (c) => {
-        c.font = displayFont(px);
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        c.fillStyle = 'rgba(13, 27, 110, 0.6)';
-        c.fillText(String(d), w / 2, h / 2 + px * 0.04);
-      }),
-    );
-  }
-  return out;
 }
 
 /** Pale fingerprint smudge, 26 x 34. */

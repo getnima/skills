@@ -1,15 +1,15 @@
 /**
- * The round prize, presented like a holy relic: rotating god-rays, a halo,
- * little wings, sparkles and a gentle float. A photo (prize.jpg) is cropped
- * around the figurine in the middle and set in an arched golden frame; a
- * transparent cut-out (prize.png) floats free in the light.
+ * The round prize, the Shimi angel, as a comic sticker: the figurine on a cobalt disc
+ * with a halo, ink-outlined wings and sparkles that pop. A photo (prize.jpg) is cropped
+ * around the figurine in the middle and set in an arched frame; a transparent cut-out
+ * (prize.png) stands free.
  */
-import { prizeArt, raysUrl } from './art';
+import { prizeArt } from './art';
 
 import type { JSX } from 'preact';
 
 export interface PrizeRelicProps {
-  /** 'full' for the ceremony, 'mini' for the winner banner (no rays, no wings). */
+  /** 'full' for the ceremony, 'mini' for the winner banner and the lobby (no disc, no wings). */
   readonly variant?: 'full' | 'mini';
   readonly class?: string;
 }
@@ -35,8 +35,8 @@ function Wing(props: { side: 'l' | 'r' }): JSX.Element {
   return (
     <svg class={`sh-prize-wing sh-prize-wing--${props.side}`} viewBox="0 0 120 160" aria-hidden="true">
       <g transform={props.side === 'r' ? 'matrix(-1 0 0 1 120 0)' : undefined}>
-        <path d={WING_SHAPE} fill="#ffffff" stroke="#d9d2ff" stroke-width="4" stroke-linejoin="round" />
-        <path d={WING_LINES} fill="none" stroke="#d9d2ff" stroke-width="4" stroke-linecap="round" />
+        <path d={WING_SHAPE} fill="#ffffff" stroke="#16120e" stroke-width="6" stroke-linejoin="round" />
+        <path d={WING_LINES} fill="none" stroke="#16120e" stroke-width="4" stroke-linecap="round" />
       </g>
     </svg>
   );
@@ -47,14 +47,12 @@ export function PrizeRelic(props: PrizeRelicProps): JSX.Element {
   const mini = props.variant === 'mini';
   return (
     <div class={`sh-prize ${mini ? 'sh-prize--mini' : ''} ${art.cutout ? 'sh-prize--cutout' : ''} ${props.class ?? ''}`}>
-      {mini ? null : <img class="sh-prize-rays" src={raysUrl()} alt="" />}
-      <div class="sh-prize-glow" />
+      {mini ? null : <div class="sh-prize-disc" />}
       <div class="sh-prize-float">
         {mini ? null : <Wing side="l" />}
         {mini ? null : <Wing side="r" />}
         <div class="sh-prize-frame">
           <img class="sh-prize-img" src={art.url} alt="" draggable={false} />
-          <div class="sh-prize-shine" />
         </div>
         <div class="sh-prize-halo" />
         {mini

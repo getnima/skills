@@ -19,11 +19,15 @@ SIZE = sys.argv[2] if len(sys.argv) > 2 else '390x844'
 # (shot, caption) in the order of a round: the wait, the start, the sprint, the final image
 ORDER = [
     ('60-wait-start', 'WAIT 0:01 tap to start'),
-    ('62-wait-sneak-caught', 'WAIT sneak bit: caught'),
-    ('66-countdown-5', 'WAIT 0:25 countdown 5'),
+    ('62-wait-sneak-caught', 'WAIT sneak: caught'),
+    ('65-wait-knock', 'WAIT the knock'),
+    ('65c-wait-sleep', 'WAIT dozing off'),
+    ('65e-wait-peek', 'WAIT the shy booger'),
+    ('67-countdown-2', 'WAIT countdown 2'),
     ('68-autostart', 'AUTO-START 0:30'),
     ('02-first-tap-click', 'FIRST TAP (paparazzi)'),
-    ('51-slow-nostril', 'hand at the nostril'),
+    ('52-slow-knuckle', 'slow: finger in'),
+    ('53-slow-innocent', 'slow: "not me"'),
     ('10-yossi', 'Yossi'),
     ('11-rope-stretch', 'the rope'),
     ('13-ear', 'out of the ear'),
@@ -31,10 +35,13 @@ ORDER = [
     ('17-sneeze-burst', 'the sneeze'),
     ('18-squeegee', 'the squeegee'),
     ('20-king-pop', 'the king'),
+    ('30-hand-absurd', 'absurd rate: two fingers'),
     ('22-spin-dizzy', 'bobble overload'),
     ('24-cork-pop', 'the cork'),
-    ('32-last5', 'last 5 seconds'),
-    ('40-final', 'FINAL IMAGE'),
+    ('34-last1', 'last 5 s: the last booger'),
+    ('40-final', 'FINAL (fast)'),
+    ('57-slow-final', 'FINAL (slow)'),
+    ('70-zero-final', 'FINAL (never tapped)'),
 ]
 
 taps = {}
@@ -64,7 +71,7 @@ try:
     big = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 26)
 except OSError:
     font = big = ImageFont.load_default()
-draw.text((14, 12), f'Shimi tap - one round ({SIZE}): wait 30 s, sprint 20 s from the first tap, final image', fill=(255, 210, 31), font=big)
+draw.text((14, 12), f'Shimi tap - one round ({SIZE}): 53 s: wait 30 s, sprint 20 s from the first tap, final image', fill=(255, 210, 31), font=big)
 for i, (path, label) in enumerate(tiles):
     r, c = divmod(i, COLS)
     x = 12 + c * (TW + 12)
