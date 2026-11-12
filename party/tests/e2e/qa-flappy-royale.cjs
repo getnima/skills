@@ -306,6 +306,9 @@ const WATCH_FINALE_TV = () => {
       const all = await Promise.all([...phones.map((ph) => ph.page.evaluate(() => window.__finaleSeen)), host.evaluate(() => window.__finaleSeen)]);
       return all.every((x) => x !== null) ? all : null;
     }, 6000, 'banner on every screen');
+    // the phones' idea of the server clock (the server runs on this machine: the truth is Date.now())
+    const clockErr = await Promise.all(phones.map((ph) => ph.page.evaluate(() => Math.round(window.__player.now() - Date.now()))));
+    console.log('[royale] clock error per phone (ms):', clockErr.join(', '));
     const stamps = seen.map((x) => x.at);
     const spread = Math.max(...stamps) - Math.min(...stamps);
     check(spread <= 400, `the finale banner appears on the 4 phones and the TV within 400 ms of each other (spread ${spread} ms)`, { texts: seen.map((x) => x.text), ms: stamps.map((t) => t - Math.min(...stamps)) });

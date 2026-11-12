@@ -9,8 +9,9 @@
 //           keys/s) and a clumsy bot (short words, same word, two-letter changes, non-words, repeats,
 //           detours, skips at ~3 keys/s). Asserts: no page scroll, keys never overlap (and are
 //           >= 30x44 px on portrait phones), the same sequence on every size, every rejection shows its
-//           Hebrew reason, the final score equals the scoring table recomputed here from the bot's own
-//           ledger (steps, par), score <= maxRaw. Prints the expert scores (maxRaw is ~1.5x).
+//           Hebrew reason, the final score equals the 80% time / 20% steps table recomputed here from the
+//           game's record (steps, par, time), the bot's own ledger agrees on steps, par and (expert) the
+//           time of every ladder, score <= maxRaw. Prints the expert scores (maxRaw is ~1.5x).
 //   shots   320x568 and 390x844: first puzzle (שימי) + demo, celebration, rejection, mid-ladder,
 //           collapsed rows, skip reveal, last 10 seconds → tests/e2e/out/plotzel/
 //   checks  freeze mid-typing and mid-celebration, reload restores progress, destroy() twice leaves no
@@ -63,8 +64,13 @@ async function waitFor(fn, ms, label) {
 }
 
 // ── the scoring table, written again here (not imported) ──
-const T = { solve: 300, perfect: 100, near: 50 };
-const tableScore = (steps, par) => T.solve + (steps <= par ? T.perfect : steps === par + 1 ? T.near : 0);
+// round.ts SCORE, recomputed here: a ladder = 1000 x (80% speed + 20% steps); the speed part runs down over 15 s per step of par
+const T = { ladder: 1000, timeShare: 0.8, stepsShare: 0.2, msPerParStep: 15000 };
+const tableScore = (steps, par, ms) => {
+  const speed = Math.min(1, Math.max(0, 1 - Math.max(0, ms) / (Math.max(1, par) * T.msPerParStep)));
+  const stepsPart = steps <= par ? 1 : Math.max(1, par) / steps;
+  return Math.max(1, Math.round(T.ladder * (T.timeShare * speed + T.stepsShare * stepsPart)));
+};
 const MSG = {
   short: 'צריך 4 אותיות',
   same: 'זו אותה מילה',
@@ -100,7 +106,7 @@ const st = (page) =>
   page.evaluate(() => {
     const p = window.__plotzel;
     if (!p) return null;
-    return { start: p.start, par: p.par, words: [...p.words], idx: p.puzzleIndex, solved: p.solved, score: p.score, phase: p.phase, typed: p.typed, skipReady: p.skipReady, party: window.__party.score, ended: window.__party.ended, leftMs: window.__party.leftMs, frozen: window.__party.frozen };
+    return { start: p.start, par: p.par, words: [...p.words], idx: p.puzzleIndex, solved: p.solved, score: p.score, worth: p.worth, elapsed: p.elapsedMs, phase: p.phase, typed: p.typed, skipReady: p.skipReady, party: window.__party.score, ended: window.__party.ended, leftMs: window.__party.leftMs, frozen: window.__party.frozen };
   });
 const party = (page) => page.evaluate(() => ({ score: window.__party.score, ended: window.__party.ended, leftMs: window.__party.leftMs, frozen: window.__party.frozen }));
 
@@ -247,7 +253,8 @@ async function expertBot(page, km, perKeyMs, until) {
       await sleep(60);
       continue;
     }
-    if (!cur || cur.idx !== s.idx) cur = { idx: s.idx, start: s.start, par: s.par, steps: 0 };
+    // the first ladder begins with the round; a later one when the bot first sees it in play (at most one poll late)
+    if (!cur || cur.idx !== s.idx) cur = { idx: s.idx, start: s.start, par: s.par, steps: 0, left0: s.idx === 0 ? DUR : s.leftMs };
     const p = await page.evaluate(() => (window.__plotzel ? window.__plotzel.path() : null)).catch(() => null);
     if (!p || p.length < 2) {
       await sleep(60);
@@ -259,7 +266,7 @@ async function expertBot(page, km, perKeyMs, until) {
     if (!after) break;
     if (after.words.length === s.words.length + 1 || after.idx !== s.idx || after.solved > s.solved) {
       cur.steps++;
-      if (next === 'פלוץ') ledger.push({ ...cur, solvedAt: after.solved });
+      if (next === 'פלוץ') ledger.push({ ...cur, solvedAt: after.solved, botMs: cur.left0 - after.leftMs });
     }
   }
   return ledger;
@@ -378,15 +385,24 @@ async function botRun(browser, w, h, kind, seed) {
   await watcher;
   const final = (await party(page)).score;
   const maxRaw = MAX_RAW;
-  // the score from the bot's own ledger and the table above
-  let expected = 0;
+  // the score from the table above (80% time, 20% steps) and the game's record of every solved ladder
   const solvedLedger = kind === 'expert' ? ledger : ledger.filter((l) => l.solved);
-  for (const l of solvedLedger) expected += tableScore(l.steps, l.par);
-  if (maxRaw) expected = Math.min(maxRaw, expected);
-  check(`${label}: final ${final} = scoring table from the bot's ledger (${solvedLedger.length} solved)`, final === expected && final > 0, { final, expected, ledger: solvedLedger.slice(0, 3) });
-  check(`${label}: score <= maxRaw ${maxRaw}`, maxRaw !== null && final <= maxRaw);
-  // the game's own record agrees on every puzzle the bot finished
   const gameSolved = lastResults.filter((r) => r.steps !== null);
+  let expected = 0;
+  for (const r of gameSolved) expected += tableScore(r.steps, r.par, r.ms);
+  if (maxRaw) expected = Math.min(maxRaw, expected);
+  check(`${label}: final ${final} = the 80/20 table over the game's record (${gameSolved.length} solved)`, final === expected && final > 0, { final, expected, game: gameSolved.slice(0, 3) });
+  const wrong = gameSolved.filter((r) => r.points !== tableScore(r.steps, r.par, r.ms) || r.points < 1 || r.points > T.ladder);
+  check(`${label}: every ladder's points = 1000 x (0.8 speed + 0.2 steps)`, wrong.length === 0, wrong.slice(0, 3));
+  check(`${label}: score <= maxRaw ${maxRaw}`, maxRaw !== null && final <= maxRaw);
+  if (kind === 'expert') {
+    // the time the game charged = the bot's own stopwatch on the round clock (the bot sees a start up to one poll late)
+    const off = solvedLedger.map((l, i) => ({ start: l.start, botMs: Math.round(l.botMs), gameMs: gameSolved[i] ? gameSolved[i].ms : null })).filter((x) => x.gameMs === null || Math.abs(x.gameMs - x.botMs) > 1200);
+    check(`${label}: the time charged for every ladder matches the bot's stopwatch (within 1.2 s)`, off.length === 0, off.slice(0, 4));
+    const slowFirst = gameSolved[0] && gameSolved.length > 3 ? gameSolved[0].points : null;
+    console.log(`   ${label}: ladder points ${gameSolved.map((r) => r.points).join(' ')}; first (שימי) ${slowFirst}`);
+  }
+  // the game's own record agrees on every puzzle the bot finished
   const agree = solvedLedger.every((l, i) => gameSolved[i] && gameSolved[i].steps === l.steps && gameSolved[i].par === l.par);
   check(`${label}: the game's results match the ledger`, agree && gameSolved.length === solvedLedger.length, { game: gameSolved.slice(0, 3), ledger: solvedLedger.slice(0, 3) });
   check(`${label}: played starts follow the sequence`, lastResults.every((r, i) => r.start === undefined || seq[i] === undefined || r.start === norm(seq[i])), lastResults.slice(0, 3).map((r) => r.start));
@@ -442,6 +458,13 @@ async function sectionShots(browser) {
     await sleep(1300);
     let s = await st(page);
     check(`${w}x${h}: the round opens with שימי (5 steps to פלוץ)`, s.idx === 0 && s.start === 'שימי' && s.par === 5, { start: s.start, par: s.par });
+    {
+      const w1 = (await st(page)).worth;
+      await sleep(1000);
+      const w2 = (await st(page)).worth;
+      const shown = Number(await page.evaluate(() => document.querySelector('.pz-worth-num').textContent));
+      check(`${w}x${h}: the tray shows what the ladder is worth and it counts down (${w1} → ${w2}, shown ${shown})`, w1 <= 1000 && w2 < w1 && w2 >= 200 && Math.abs(shown - w2) <= 8, { w1, w2, shown });
+    }
     check(`${w}x${h}: no hint button`, (await page.locator('[data-act="hint"], .pz-tool.is-hint').count()) === 0);
     check(`${w}x${h}: first puzzle shows the demo or its toast`, await page.evaluate(() => !!document.querySelector('.pz-demo.is-on') || !!document.querySelector('.pz-toast.is-on')));
     await shot('1-first-demo');
@@ -568,6 +591,7 @@ async function sectionChecks(browser) {
     const fill1 = await page.evaluate(() => getComputedStyle(document.querySelector('.pz-tool.is-skip')).getPropertyValue('--p'));
     await page.evaluate(() => window.__party.freeze(3500));
     await waitFor(async () => (await st(page)).frozen, 2000, 'frozen');
+    const f1 = await st(page); // the score's clock, read while frozen
     for (const k of ['ש', 'ד', 'ENTER', 'BACK']) await tapAt(page, km, k);
     await page.keyboard.press('KeyA');
     await page.keyboard.press('Backspace');
@@ -579,6 +603,7 @@ async function sectionChecks(browser) {
       const a = document.querySelector('.pz-row.is-active .pz-tile.is-cursor');
       return a ? a.getAnimations().map((x) => x.playState) : [];
     });
+    check(`freeze: the score's clock stands still for 1.6 s (worth ${f1.worth} → ${s2.worth}, ${f1.elapsed} → ${s2.elapsed} ms)`, s2.worth === f1.worth && Math.abs(s2.elapsed - f1.elapsed) <= 20, { f1: [f1.worth, f1.elapsed], s2: [s2.worth, s2.elapsed] });
     check('freeze mid-typing: typed letters, words, score and the skip timer stand still', s2.frozen && s2.typed === s1.typed && s2.words.join() === s1.words.join() && s2.score === s1.score && fill1 === fill2, { s1: [s1.typed, s1.words, s1.score], s2: [s2.typed, s2.words, s2.score], fill1, fill2 });
     check('freeze: CSS animations are paused', anims.length > 0 && anims.every((x) => x === 'paused'), anims);
     await waitFor(async () => !(await st(page)).frozen, 5000, 'unfrozen');
@@ -626,6 +651,7 @@ async function sectionChecks(browser) {
     await sleep(300);
     const r2 = await st(page);
     const res2 = await page.evaluate(() => window.__plotzel.results);
+    check(`reload keeps the ladder's clock running (${r1.elapsed} → ${r2.elapsed} ms), it does not start again`, r2.elapsed >= r1.elapsed && r2.elapsed < r1.elapsed + 15000 && r2.worth <= r1.worth, { r1: [r1.elapsed, r1.worth], r2: [r2.elapsed, r2.worth] });
     check('reload restores puzzle, words and score', r2.idx === r1.idx && r2.words.join() === r1.words.join() && r2.score === r1.score && r2.party === r1.score && JSON.stringify(res1) === JSON.stringify(res2), { r1: [r1.idx, r1.words, r1.score], r2: [r2.idx, r2.words, r2.score, r2.party] });
     check('reload: no demo on a restored round', !(await page.evaluate(() => !!document.querySelector('.pz-demo.is-on'))));
     check('freeze / reload: no console / page errors', g.errors.length === 0, g.errors.slice(0, 4));

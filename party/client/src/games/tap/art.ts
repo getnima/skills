@@ -14,26 +14,34 @@ import type { BoogerKind } from './schedule';
 
 /**
  * Logical box of a head frame in CSS px (pre-rendered at 2x = 512 px, the size of the files).
- * Every head frame shares one framing (hat top at 0.5%, hair 60% wide, chin at the bottom),
- * so frames swap without the head jumping.
+ * Every head frame shares one framing (hat top at the top edge, hair 60% wide, chin at the
+ * bottom edge), so frames swap without the head jumping. The game draws them clipped to a
+ * round token (see index.ts).
  */
 export const FACE_BOX = 256;
 
 /** Points of a head frame, as shares of its box (measured on the pictures). */
 export const FRAME = {
-  /** The nostril the finger goes into. */
+  /** The nostril the finger goes into (the doll's left nostril, right on screen). */
   nostrilX: 0.52,
   nostrilY: 0.665,
+  /** The other nostril (the second hand at the absurd rate). */
+  nostril2X: 0.455,
+  nostril2Y: 0.675,
   /** Fingertip in pick_out (finger just out, strand to the nostril). */
   outTipX: 0.69,
   outTipY: 0.7,
   /** Fingertip in pick_big (finger pulled down to the chin). */
   bigTipX: 0.56,
   bigTipY: 0.93,
-  /** Centre and radius of the tap target (the whole head, hat to chin). */
-  hitX: 0.5,
-  hitY: 0.5,
-  hitR: 0.4,
+  /** Outer edge of the ear on the left of the screen (the fingertip pokes out of it). */
+  earX: 0.185,
+  earY: 0.6,
+  /** Temples (sweat drops) and ears (steam). */
+  templeLX: 0.26,
+  templeRX: 0.74,
+  templeY: 0.42,
+  earRX: 0.83,
 } as const;
 
 /** Hand sprite: fingertip position as shares of its box (the forearm runs off the bottom). */
@@ -41,8 +49,8 @@ export const HAND = { w: 69, h: 200, tipX: 0.74, tipY: 0.0 } as const;
 
 const FACE_COLOR = '#d9a27a';
 
-/** Reaction faces (indexes): what the doll does when it is not picking. */
-export const FACE = {
+/** Head frames (indexes into TapArt.frames). */
+export const FR = {
   Normal: 0,
   Happy: 1,
   Surprised: 2,
@@ -51,60 +59,121 @@ export const FACE = {
   Wink: 5,
   Bored: 6,
   Proud: 7,
+  NosePick: 8,
+  Knuckle: 9,
+  Deep: 10,
+  Out: 11,
+  Big: 12,
+  Whistle: 13,
+  Caught: 14,
+  GlassPress: 15,
+  Dizzy: 16,
+  Squeeze: 17,
 } as const satisfies Record<string, number>;
+export type FrameId = (typeof FR)[keyof typeof FR];
 
-/** Picking frames (indexes into TapArt.pick). */
-export const PICKF = {
-  Enter: 0,
-  Knuckle: 1,
-  Deep: 2,
-  Out: 3,
-  Big: 4,
-} as const satisfies Record<string, number>;
+export const FRAME_NAMES: readonly string[] = [
+  'face_normal',
+  'face_happy',
+  'face_surprised',
+  'face_angry',
+  'face_tongue',
+  'face_wink',
+  'face_bored',
+  'face_proud',
+  'face_nosepick',
+  'pick_knuckle',
+  'pick_deep',
+  'pick_out',
+  'pick_big',
+  'face_whistle',
+  'face_caught',
+  'face_glass_press',
+  'face_dizzy',
+  'face_squeeze',
+];
 
 export interface TapArt {
-  /** Reaction faces, by FACE. */
-  readonly faces: readonly Drawable[];
-  /** Picking frames (the doll's own hand in the picture), by PICKF. */
-  readonly pick: readonly Drawable[];
-  /** The doll's hand alone, index finger up (the rising phase). */
+  /** Head frames, by FR. */
+  readonly frames: readonly Drawable[];
+  /** The doll's hand alone, index finger up (the rising hand, the second hand). */
   readonly hand: Drawable;
+  /** A toy fingertip pointing up (pokes out of the ear). */
+  readonly fingertip: Drawable;
+  readonly squeegee: Drawable;
+  /** Green slime splat seen from above: the decal under every booger on the glass. */
+  readonly splat: Drawable;
+  /** The round Shimi token (mini Shimi). */
+  readonly mini: Drawable;
   /** Booger characters, by BoogerKind. */
   readonly boogers: readonly Drawable[];
   /** Optional stage backdrop file (placeholder = painted sunburst at screen size). */
   readonly background: Drawable;
-  /** The teaching hint's ghost finger (drawn, not a slot): white, ink outline, pointing up. */
+  /** The waiting screen's ghost finger (drawn, not a slot): white, ink outline, pointing up. */
   readonly ghost: Drawable;
 }
 
 export async function loadTapArt(): Promise<TapArt> {
-  const s = await loadAssets('tap', [
-    { key: 'face_normal', file: 'face_normal.png', size: FACE_BOX, placeholder: facePainter('normal', FACE_COLOR) },
-    { key: 'face_happy', file: 'face_happy.png', size: FACE_BOX, placeholder: facePainter('laughing', FACE_COLOR) },
-    { key: 'face_surprised', file: 'face_surprised.png', size: FACE_BOX, placeholder: facePainter('surprised', FACE_COLOR) },
-    { key: 'face_angry', file: 'face_angry.png', size: FACE_BOX, placeholder: facePainter('angry', FACE_COLOR) },
-    { key: 'face_tongue', file: 'face_tongue.png', size: FACE_BOX, placeholder: facePainter('tongue', FACE_COLOR) },
-    { key: 'face_wink', file: 'face_wink.png', size: FACE_BOX, placeholder: facePainter('wink', FACE_COLOR) },
-    { key: 'face_bored', file: 'face_bored.png', size: FACE_BOX, placeholder: facePainter('dead', FACE_COLOR) },
-    { key: 'face_proud', file: 'face_proud.png', size: FACE_BOX, placeholder: facePainter('happy', FACE_COLOR) },
-    { key: 'face_nosepick', file: 'face_nosepick.png', size: FACE_BOX, placeholder: pickPlaceholder(0) },
-    { key: 'pick_knuckle', file: 'pick_knuckle.png', size: FACE_BOX, placeholder: pickPlaceholder(1) },
-    { key: 'pick_deep', file: 'pick_deep.png', size: FACE_BOX, placeholder: pickPlaceholder(2) },
-    { key: 'pick_out', file: 'pick_out.png', size: FACE_BOX, placeholder: pickPlaceholder(3) },
-    { key: 'pick_big', file: 'pick_big.png', size: FACE_BOX, placeholder: pickPlaceholder(4) },
-    { key: 'hand', file: 'hand.png', size: HAND.w, height: HAND.h, placeholder: handPainter },
-    { key: 'booger_round', file: 'booger_round.png', size: 128, placeholder: boogerPainter(BOOGER.Round) },
-    { key: 'booger_stretchy', file: 'booger_stretchy.png', size: 32, height: 180, placeholder: boogerPainter(BOOGER.Stretchy) },
-    { key: 'booger_googly', file: 'booger_googly.png', size: 128, placeholder: boogerPainter(BOOGER.Googly) },
-    { key: 'booger_hairy', file: 'booger_hairy.png', size: 100, height: 132, placeholder: boogerPainter(BOOGER.Hairy) },
-    { key: 'booger_golden', file: 'booger_golden.png', size: 128, placeholder: boogerPainter(BOOGER.Golden) },
-    { key: 'booger_boss', file: 'booger_boss.png', size: 180, placeholder: boogerPainter(BOOGER.Boss) },
-    { key: 'background', file: 'background.jpg', size: 430, height: 932, fit: 'cover', placeholder: (): void => undefined },
+  const [s, sh] = await Promise.all([
+    loadAssets('tap', [
+      { key: 'face_normal', file: 'face_normal.png', size: FACE_BOX, placeholder: facePainter('normal', FACE_COLOR) },
+      { key: 'face_happy', file: 'face_happy.png', size: FACE_BOX, placeholder: facePainter('laughing', FACE_COLOR) },
+      { key: 'face_surprised', file: 'face_surprised.png', size: FACE_BOX, placeholder: facePainter('surprised', FACE_COLOR) },
+      { key: 'face_angry', file: 'face_angry.png', size: FACE_BOX, placeholder: facePainter('angry', FACE_COLOR) },
+      { key: 'face_tongue', file: 'face_tongue.png', size: FACE_BOX, placeholder: facePainter('tongue', FACE_COLOR) },
+      { key: 'face_wink', file: 'face_wink.png', size: FACE_BOX, placeholder: facePainter('wink', FACE_COLOR) },
+      { key: 'face_bored', file: 'face_bored.png', size: FACE_BOX, placeholder: facePainter('dead', FACE_COLOR) },
+      { key: 'face_proud', file: 'face_proud.png', size: FACE_BOX, placeholder: facePainter('happy', FACE_COLOR) },
+      { key: 'face_nosepick', file: 'face_nosepick.png', size: FACE_BOX, placeholder: pickPlaceholder(0) },
+      { key: 'pick_knuckle', file: 'pick_knuckle.png', size: FACE_BOX, placeholder: pickPlaceholder(1) },
+      { key: 'pick_deep', file: 'pick_deep.png', size: FACE_BOX, placeholder: pickPlaceholder(2) },
+      { key: 'pick_out', file: 'pick_out.png', size: FACE_BOX, placeholder: pickPlaceholder(3) },
+      { key: 'pick_big', file: 'pick_big.png', size: FACE_BOX, placeholder: pickPlaceholder(4) },
+      { key: 'face_whistle', file: 'face_whistle.png', size: FACE_BOX, placeholder: facePainter('wink', FACE_COLOR) },
+      { key: 'face_caught', file: 'face_caught.png', size: FACE_BOX, placeholder: pickPlaceholder(1) },
+      { key: 'face_glass_press', file: 'face_glass_press.png', size: FACE_BOX, placeholder: facePainter('laughing', FACE_COLOR) },
+      { key: 'face_dizzy', file: 'face_dizzy.png', size: FACE_BOX, placeholder: facePainter('dead', FACE_COLOR) },
+      { key: 'face_squeeze', file: 'face_squeeze.png', size: FACE_BOX, placeholder: facePainter('angry', FACE_COLOR) },
+      { key: 'hand', file: 'hand.png', size: HAND.w, height: HAND.h, placeholder: handPainter },
+      { key: 'fingertip_ear', file: 'fingertip_ear.png', size: 64, placeholder: fingertipPainter },
+      { key: 'squeegee', file: 'squeegee.png', size: 192, placeholder: squeegeePainter },
+      { key: 'splat', file: 'splat.png', size: 128, placeholder: splatPainter },
+      { key: 'booger_round', file: 'booger_round.png', size: 128, placeholder: boogerPainter(BOOGER.Round) },
+      { key: 'booger_stretchy', file: 'booger_stretchy.png', size: 32, height: 180, placeholder: boogerPainter(BOOGER.Stretchy) },
+      { key: 'booger_googly', file: 'booger_googly.png', size: 128, placeholder: boogerPainter(BOOGER.Googly) },
+      { key: 'booger_hairy', file: 'booger_hairy.png', size: 100, height: 132, placeholder: boogerPainter(BOOGER.Hairy) },
+      { key: 'booger_golden', file: 'booger_golden.png', size: 128, placeholder: boogerPainter(BOOGER.Golden) },
+      { key: 'booger_boss', file: 'booger_boss.png', size: 180, placeholder: boogerPainter(BOOGER.Boss) },
+      { key: 'background', file: 'background.jpg', size: 430, height: 932, fit: 'cover', placeholder: (): void => undefined },
+    ]),
+    loadAssets('shimi', [{ key: 'mini', file: 'faces_round/normal.png', size: 96, placeholder: facePainter('happy', FACE_COLOR) }]),
   ]);
   return {
-    faces: [s.face_normal, s.face_happy, s.face_surprised, s.face_angry, s.face_tongue, s.face_wink, s.face_bored, s.face_proud],
-    pick: [s.face_nosepick, s.pick_knuckle, s.pick_deep, s.pick_out, s.pick_big],
+    frames: [
+      s.face_normal,
+      s.face_happy,
+      s.face_surprised,
+      s.face_angry,
+      s.face_tongue,
+      s.face_wink,
+      s.face_bored,
+      s.face_proud,
+      s.face_nosepick,
+      s.pick_knuckle,
+      s.pick_deep,
+      s.pick_out,
+      s.pick_big,
+      s.face_whistle,
+      s.face_caught,
+      s.face_glass_press,
+      s.face_dizzy,
+      s.face_squeeze,
+    ],
     hand: s.hand,
+    fingertip: s.fingertip_ear,
+    squeegee: s.squeegee,
+    splat: s.splat,
+    mini: sh.mini,
     boogers: [s.booger_round, s.booger_stretchy, s.booger_googly, s.booger_hairy, s.booger_golden, s.booger_boss],
     background: s.background,
     ghost: paintDrawable('tap_ghost', ghostPainter, 96, 120),
@@ -256,6 +325,41 @@ function boogerPainter(kind: BoogerKind): Painter {
   };
 }
 
+/** A fingertip pointing up (nail at the top). */
+const fingertipPainter: Painter = (ctx, w, h) => drawFinger(ctx, w / 2, h * 0.05, w * 0.32, h * 0.9);
+
+/** Yellow handle down, black blade on top. */
+const squeegeePainter: Painter = (ctx, w, h) => {
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = PAL.ink;
+  ctx.fillStyle = PAL.yel;
+  roundRectPath(ctx, w * 0.44, h * 0.2, w * 0.12, h * 0.75, w * 0.05);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#222';
+  roundRectPath(ctx, w * 0.08, h * 0.06, w * 0.84, h * 0.16, w * 0.04);
+  ctx.fill();
+  ctx.stroke();
+};
+
+/** A flat green star-shaped splat. */
+const splatPainter: Painter = (ctx, w, h) => {
+  ctx.fillStyle = '#7ed321';
+  ctx.beginPath();
+  const n = 7;
+  for (let i = 0; i <= n * 2; i++) {
+    const a = (i / (n * 2)) * Math.PI * 2;
+    const r = (i % 2 === 0 ? 0.47 : 0.28) * Math.min(w, h);
+    const x = w / 2 + Math.cos(a) * r;
+    const y = h / 2 + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+};
+
 // ───────────────────────────── Stage backdrop ─────────────────────────────
 
 /** Yellow sunburst from (cx, cy), orange towards the edges, with halftone dots. */
@@ -337,41 +441,3 @@ export function createBackdrop(bg: Drawable): Backdrop {
   };
 }
 
-// ───────────────────────────── Bottom tray ─────────────────────────────
-
-export const TRAY_H = 78;
-
-/** The cobalt tray at the bottom (the doll's "desk"): band, ink rule, marquee lights. Painted once per size. */
-export function paintTray(w: number, h: number): HTMLCanvasElement {
-  const { canvas, ctx } = makeLayer(w, h);
-  if (!ctx) return canvas;
-  ctx.fillStyle = PAL.cobD;
-  ctx.fillRect(0, 0, w, h);
-  // marquee strip on top: red band with bulbs
-  ctx.fillStyle = PAL.red;
-  ctx.fillRect(0, 0, w, 14);
-  ctx.fillStyle = PAL.ink;
-  ctx.fillRect(0, 14, w, 3);
-  ctx.fillRect(0, 0, w, 3);
-  const n = Math.max(6, Math.round(w / 26));
-  for (let i = 0; i < n; i++) {
-    const x = ((i + 0.5) / n) * w;
-    ctx.fillStyle = i % 2 === 0 ? PAL.yel : PAL.white;
-    ctx.beginPath();
-    ctx.arc(x, 8.5, 3.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = PAL.ink;
-    ctx.stroke();
-  }
-  // perspective lines of the desk
-  ctx.strokeStyle = 'rgba(79, 108, 255, 0.45)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let i = -4; i <= 4; i++) {
-    ctx.moveTo(w / 2 + i * w * 0.07, 17);
-    ctx.lineTo(w / 2 + i * w * 0.26, h);
-  }
-  ctx.stroke();
-  return canvas;
-}

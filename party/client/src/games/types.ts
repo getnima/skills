@@ -61,6 +61,13 @@ export interface GameContext {
    */
   finish(): void;
   /**
+   * Optional: the game shows its own clock (e.g. a personal sprint inside the round). The HUD
+   * displays `leftMs` (bar = leftMs / totalMs, totalMs defaults to the round length) instead
+   * of the round clock, without the stage's urgent ticks (the game plays its own countdown);
+   * null restores the round clock. The round still ends at the round clock. Cheap: call every step.
+   */
+  setClock?(leftMs: number | null, totalMs?: number): void;
+  /**
    * Elimination rounds: participants still playing (this one included while it is in), or
    * null when unknown (no message yet, the dev harness). Missing outside elimination rounds.
    */

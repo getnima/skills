@@ -53,7 +53,7 @@ const AR = {
 export const items: AvatarItem[] = [
   {
     // the picture's lower half is transparent padding: the box reaches the ear zone, the ears stand on the hair
-    id: 301, slot: 'EARS', name: 'אוזני ארנב', file: '/assets/shimi/props/301_bunny_ears.png',
+    id: 301, slot: 'EARS', name: 'אוזני ארנב', file: '/assets/shimi/props/301_bunny_ears.webp',
     place: [29, -12.5, 44, hOf(44, AR.bunny)], ar: AR.bunny, contact: [51, 3],
     fly: 'boomerang', snd: 'boing', weight: 0.3, power: 1,
     colors: ['#FFFFFF', '#F7B6CF', '#ECECEC'], burst: '#FF7EB6',
@@ -64,7 +64,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 302, slot: 'EARS', name: 'חישוקי זהב', file: '/assets/shimi/props/302_gold_hoops.png',
+    id: 302, slot: 'EARS', name: 'חישוקי זהב', file: '/assets/shimi/props/302_gold_hoops.webp',
     place: [11, 33.5, 80, hOf(80, AR.hoops)], ar: AR.hoops, contact: [51, 34],
     fly: 'frisbee', snd: 'ping', weight: 0.4, power: 1,
     colors: ['#D9B04A', '#F3D98A', '#A9802A'], burst: '#FFD21F',
@@ -76,7 +76,7 @@ export const items: AvatarItem[] = [
   },
   {
     // one flower over the doll's left ear; the rest of the picture is transparent so the box stays centred
-    id: 303, slot: 'EARS', name: 'פרח מאחורי האוזן', file: '/assets/shimi/props/303_hibiscus.png',
+    id: 303, slot: 'EARS', name: 'פרח מאחורי האוזן', file: '/assets/shimi/props/303_hibiscus.webp',
     place: [-3, 17.5, 108, hOf(108, AR.hibiscus)], ar: AR.hibiscus, contact: [88, 23],
     fly: 'feather', snd: 'soft', weight: 0.15, power: 0.8,
     colors: ['#E3241B', '#2E7D32', '#FFC23A'], burst: '#F2361B',
@@ -87,7 +87,7 @@ export const items: AvatarItem[] = [
   },
   {
     // a handset at the doll's right ear, tilted towards the mouth; padded to the right like the flower
-    id: 304, slot: 'EARS', name: 'שפופרת', file: '/assets/shimi/props/304_phone_handset.png',
+    id: 304, slot: 'EARS', name: 'שפופרת', file: '/assets/shimi/props/304_phone_handset.webp',
     place: [3, 22.5, 96, hOf(96, AR.phone)], ar: AR.phone, contact: [17, 30],
     fly: 'boomerang', snd: 'snap', weight: 0.45, power: 1,
     colors: ['#C8141B', '#E8333A', '#7E0B0F'], burst: '#F2361B',
@@ -99,17 +99,17 @@ export const items: AvatarItem[] = [
   },
   {
     // the maker's muffs with a band drawn over the head in review (tests/e2e/avatar-review-fix.py)
-    id: 305, slot: 'EARS', name: 'מחממי אוזניים', file: '/assets/shimi/props/305_earmuffs.png',
+    id: 305, slot: 'EARS', name: 'מחממי אוזניים', file: '/assets/shimi/props/305_earmuffs.webp',
     place: [5, -0.96, 92, hOf(92, AR.muffs)], ar: AR.muffs, contact: [51, 30],
     fly: 'lob', snd: 'fwump', weight: 0.4, power: 1,
     colors: ['#FF4FA3', '#FF8CC4', '#D61F7C'], burst: '#FF7EB6',
     lines: [
-      'חורף בחרמון. שמונה מעלות, אני ממשיך לגלוש.',
+      'בקר טיסה בנתב״ג. הטיסה מתעכבת בגללי.',
       'יוצא לסקי בחרמון. חוזר עם שוקו מהקפטריה.',
     ],
   },
   {
-    id: 325, slot: 'NECK', name: 'שרשרת זהב', file: '/assets/shimi/props/325_gold_chain.png',
+    id: 325, slot: 'NECK', name: 'שרשרת זהב', file: '/assets/shimi/props/325_gold_chain.webp',
     place: [29.5, 45, 43, hOf(43, AR.chain)], ar: AR.chain, contact: [51, 48],
     fly: 'lob', snd: 'thud', weight: 0.7, power: 1.1,
     colors: ['#D4A43A', '#F6D77A', '#9C7420'], burst: '#FFD21F',
@@ -120,7 +120,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 326, slot: 'NECK', name: 'בואה', file: '/assets/shimi/props/326_feather_boa.png',
+    id: 326, slot: 'NECK', name: 'בואה', file: '/assets/shimi/props/326_feather_boa.webp',
     place: [20, 44, 62, hOf(62, AR.boa)], ar: AR.boa, contact: [51, 48],
     fly: 'feather', snd: 'soft', weight: 0.15, power: 0.8,
     colors: ['#FF2D8E', '#FF7EB6', '#C8106A'], burst: '#FF7EB6',
@@ -131,7 +131,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 327, slot: 'NECK', name: 'צעיף אוהדים', file: '/assets/shimi/props/327_fan_scarf.png',
+    id: 327, slot: 'NECK', name: 'צעיף אוהדים', file: '/assets/shimi/props/327_fan_scarf.webp',
     place: [22, 42.5, 58, hOf(58, AR.scarf)], ar: AR.scarf, contact: [51, 48],
     fly: 'lob', snd: 'fwump', weight: 0.4, power: 1,
     colors: ['#1E3FD8', '#FF7A1A', '#10238C'], burst: '#FF9F0A',
@@ -142,7 +142,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 328, slot: 'NECK', name: 'מדליית זהב', file: '/assets/shimi/props/328_medal.png',
+    id: 328, slot: 'NECK', name: 'מדליית זהב', file: '/assets/shimi/props/328_medal.webp',
     place: [31, 46, 40, hOf(40, AR.medal)], ar: AR.medal, contact: [51, 48],
     fly: 'feather', snd: 'ping', weight: 0.4, power: 1,
     colors: ['#E3B53A', '#C8141B', '#FFE45A'], burst: '#FFD21F',
@@ -153,7 +153,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 329, slot: 'NECK', name: 'עניבה', file: '/assets/shimi/props/329_striped_tie.png',
+    id: 329, slot: 'NECK', name: 'עניבה', file: '/assets/shimi/props/329_striped_tie.webp',
     place: [45, 45.5, 12, hOf(12, AR.tie)], ar: AR.tie, contact: [51, 48],
     fly: 'ninja', snd: 'snap', weight: 0.2, power: 1,
     colors: ['#B3182A', '#1C2A5A', '#E0485A'], burst: '#1E3FD8',
@@ -164,7 +164,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 330, slot: 'NECK', name: 'בנדנה', file: '/assets/shimi/props/330_bandana.png',
+    id: 330, slot: 'NECK', name: 'בנדנה', file: '/assets/shimi/props/330_bandana.webp',
     place: [25.5, 44, 51, hOf(51, AR.bandana)], ar: AR.bandana, contact: [51, 48],
     fly: 'frisbee', snd: 'soft', weight: 0.25, power: 1,
     colors: ['#C8141B', '#FFFFFF', '#8E0B10'], burst: '#F2361B',

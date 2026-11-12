@@ -11,6 +11,8 @@ export interface PuzzleResult {
   readonly par: number;
   /** Steps taken; null = skipped. */
   readonly steps: number | null;
+  /** Round time spent on it, ms (what the speed part of the score used). */
+  readonly ms: number;
   readonly points: number;
 }
 
@@ -21,12 +23,14 @@ export interface Snapshot {
   readonly words: readonly string[];
   /** Game time already spent on that puzzle (the skip unlocks at 15 s). */
   readonly spentMs: number;
+  /** Round time left (ms) when that puzzle began: the score's clock. Null = it has not begun yet. */
+  readonly leftAtStartMs: number | null;
   /** Raw score so far. */
   readonly score: number;
   readonly results: readonly PuzzleResult[];
 }
 
-const PREFIX = 'plotzel:v3:';
+const PREFIX = 'plotzel:v4:';
 /** The round plus cutscenes plus slack. */
 const MAX_AGE_MS = 15 * 60_000;
 
@@ -44,7 +48,7 @@ const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFin
 function isResult(v: unknown): v is PuzzleResult {
   if (typeof v !== 'object' || v === null) return false;
   const r = v as Record<string, unknown>;
-  return isStr(r.start) && isNum(r.par) && (r.steps === null || isNum(r.steps)) && isNum(r.points);
+  return isStr(r.start) && isNum(r.par) && (r.steps === null || isNum(r.steps)) && isNum(r.ms) && isNum(r.points);
 }
 
 /** The snapshot of the round with `seed`, or null (none, unreadable or too old). */
@@ -56,10 +60,10 @@ export function loadSnapshot(seed: number): Snapshot | null {
     if (raw === null) return null;
     const v = JSON.parse(raw) as Record<string, unknown>;
     if (typeof v !== 'object' || v === null || !isNum(v.at) || Date.now() - v.at > MAX_AGE_MS) return null;
-    const { idx, words, spentMs, score, results } = v;
+    const { idx, words, spentMs, leftAtStartMs, score, results } = v;
     if (!isNum(idx) || !Array.isArray(words) || !words.every(isStr) || !isNum(spentMs) || !isNum(score)) return null;
-    if (!Array.isArray(results) || !results.every(isResult)) return null;
-    return { idx, words, spentMs, score, results };
+    if (!(leftAtStartMs === null || isNum(leftAtStartMs)) || !Array.isArray(results) || !results.every(isResult)) return null;
+    return { idx, words, spentMs, leftAtStartMs, score, results };
   } catch {
     return null;
   }

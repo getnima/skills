@@ -54,7 +54,7 @@ const AR = {
 
 export const items: AvatarItem[] = [
   {
-    id: 101, slot: 'HEAD', name: 'הילה', file: '/assets/shimi/props/101_halo.png',
+    id: 101, slot: 'HEAD', name: 'הילה', file: '/assets/shimi/props/101_halo.webp',
     place: [16, -10, 70, hOf(70, AR.halo)], ar: AR.halo, contact: [51, 2],
     fly: 'feather', snd: 'ping', weight: 0.15, power: 0.8,
     colors: ['#E3B53A', '#FFE45A', '#9C7A1E'], burst: '#FFE45A',
@@ -65,7 +65,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 102, slot: 'HEAD', name: 'קרני שטן', file: '/assets/shimi/props/102_devil_horns.png',
+    id: 102, slot: 'HEAD', name: 'קרני שטן', file: '/assets/shimi/props/102_devil_horns.webp',
     place: [13, -6, 76, hOf(76, AR.horns)], ar: AR.horns, contact: [51, 6],
     fly: 'boomerang', snd: 'snap', weight: 0.3, power: 1,
     colors: ['#E0141B', '#FF5A4F', '#9E0B10'], burst: '#F2361B',
@@ -76,7 +76,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 103, slot: 'HEAD', name: 'כובע שף', file: '/assets/shimi/props/103_chef_hat.png',
+    id: 103, slot: 'HEAD', name: 'כובע שף', file: '/assets/shimi/props/103_chef_hat.webp',
     place: [0, -18, 102, hOf(102, AR.chef)], ar: AR.chef, contact: [51, 14],
     tw: { crown: 0.02, bottom: 0.98, sink: 0.12, seat: 0.62 },
     fly: 'lob', snd: 'fwump', weight: 0.3, power: 1,
@@ -84,11 +84,11 @@ export const items: AvatarItem[] = [
     lines: [
       'מאסטר שף. השופטים בכו. מהבצל.',
       'שף. הכוכב מישלן שלי מגנט על המקרר.',
-      'שף. פתחתי ביסטרו בפלורנטין. שולחן אחד, תור עד יפו.',
+      'ביסטרו בפלורנטין. שולחן אחד, תור עד יפו.',
     ],
   },
   {
-    id: 104, slot: 'HEAD', name: 'כובע בוקרים', file: '/assets/shimi/props/104_cowboy_hat.png',
+    id: 104, slot: 'HEAD', name: 'כובע בוקרים', file: '/assets/shimi/props/104_cowboy_hat.webp',
     place: [-11.5, -9, 125, hOf(125, AR.cowboy)], ar: AR.cowboy, contact: [51, 14],
     tw: { crown: 0.02, bottom: 0.98, sink: 0.12, seat: 0.66 },
     fly: 'frisbee', snd: 'fwump', weight: 0.5, power: 1.2,
@@ -100,7 +100,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 105, slot: 'HEAD', name: 'כובע סיום', file: '/assets/shimi/props/105_graduation_cap.png',
+    id: 105, slot: 'HEAD', name: 'כובע סיום', file: '/assets/shimi/props/105_graduation_cap.webp',
     place: [-10, -14.7, 122, hOf(122, AR.grad)], ar: AR.grad, contact: [51, 12],
     tw: { crown: 0.12, bottom: 0.8, sink: 0.1, seat: 0.55 },
     fly: 'frisbee', snd: 'snap', weight: 0.35, power: 1,
@@ -112,7 +112,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 106, slot: 'HEAD', name: 'כובע קוסם', file: '/assets/shimi/props/106_wizard_hat.png',
+    id: 106, slot: 'HEAD', name: 'כובע קוסם', file: '/assets/shimi/props/106_wizard_hat.webp',
     place: [-5, -23.4, 112, hOf(112, AR.wizard)], ar: AR.wizard, contact: [51, 15],
     fly: 'feather', snd: 'ping', weight: 0.3, power: 1,
     colors: ['#1E2F9E', '#2B44C8', '#E2C27A'], burst: '#4F6CFF',
@@ -123,19 +123,19 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 107, slot: 'HEAD', name: 'כובע גרב', file: '/assets/shimi/props/107_pompom_beanie.png',
+    id: 107, slot: 'HEAD', name: 'כובע גרב', file: '/assets/shimi/props/107_pompom_beanie.webp',
     place: [12, -21.7, 78, hOf(78, AR.beanie)], ar: AR.beanie, contact: [51, 12],
     tw: { crown: 0.0, bottom: 0.98, sink: 0.22, seat: 0.55 },
     fly: 'lob', snd: 'soft', weight: 0.25, power: 1,
     colors: ['#C8191E', '#E23A2E', '#F4EEDF'], burst: '#F2361B',
     lines: [
       'נחתתי מסקי בבנסקו. השלג עוד לא נחת.',
-      'מעיל, צעיף, כובע. בחוץ עשרים ושש מעלות.',
+      'סבתא סרגה. אני הקולקציה.',
       'מדריך סקי. בחרמון, ביום שפתוח.',
     ],
   },
   {
-    id: 108, slot: 'HEAD', name: 'תרבוש', file: '/assets/shimi/props/108_fez.png',
+    id: 108, slot: 'HEAD', name: 'תרבוש', file: '/assets/shimi/props/108_fez.webp',
     place: [21, -6.9, 60, hOf(60, AR.fez)], ar: AR.fez, contact: [51, 10],
     tw: { crown: 0.03, bottom: 0.97, sink: 0.07, seat: 0.5 },
     fly: 'snapback', snd: 'boing', weight: 0.35, power: 1,
@@ -147,7 +147,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 109, slot: 'HEAD', name: 'זר פרחים', file: '/assets/shimi/props/109_flower_crown.png',
+    id: 109, slot: 'HEAD', name: 'זר פרחים', file: '/assets/shimi/props/109_flower_crown.webp',
     place: [8, 1.9, 86, hOf(86, AR.flowers)], ar: AR.flowers, contact: [51, 10],
     tw: { crown: 0.0, bottom: 0.95, sink: 0.42, seat: 0.5 },
     fly: 'feather', snd: 'soft', weight: 0.2, power: 0.9,
@@ -159,7 +159,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 110, slot: 'HEAD', name: 'קסדת אבטיח', file: '/assets/shimi/props/110_watermelon_helmet.png',
+    id: 110, slot: 'HEAD', name: 'קסדת אבטיח', file: '/assets/shimi/props/110_watermelon_helmet.webp',
     place: [6, -6.3, 90, hOf(90, AR.melon)], ar: AR.melon, contact: [51, 12],
     tw: { crown: 0.0, bottom: 0.97, sink: 0.1, seat: 0.6 },
     fly: 'lob', snd: 'thud', weight: 0.8, power: 1.3,
@@ -167,11 +167,11 @@ export const items: AvatarItem[] = [
     lines: [
       'מלך הקיץ. ממלכה: בסטה ליד חוף גורדון.',
       'אבטיח עם בולגרית. אני הבולגרית.',
-      'קסדה אורגנית. התו תקן: מהשוק בכרמל.',
+      'מציל בחוף גורדון. שומר בעיקר על האבטיח.',
     ],
   },
   {
-    id: 111, slot: 'HEAD', name: 'כובע פרופלור', file: '/assets/shimi/props/111_propeller_cap.png',
+    id: 111, slot: 'HEAD', name: 'כובע פרופלור', file: '/assets/shimi/props/111_propeller_cap.webp',
     place: [11, -6.5, 80, hOf(80, AR.propeller)], ar: AR.propeller, contact: [51, 10],
     fly: 'boomerang', snd: 'boing', weight: 0.25, power: 1,
     colors: ['#E8232A', '#F7D21E', '#1F44B8', '#1E8A4C'], burst: '#25C3DF',
@@ -182,14 +182,14 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 112, slot: 'HEAD', name: 'קונוס', file: '/assets/shimi/props/112_traffic_cone.png',
+    id: 112, slot: 'HEAD', name: 'קונוס', file: '/assets/shimi/props/112_traffic_cone.webp',
     place: [23, -25.3, 56, hOf(56, AR.cone)], ar: AR.cone, contact: [51, 12],
     fly: 'cannon', snd: 'thud', weight: 0.6, power: 1.3,
     colors: ['#FF6A13', '#FF8A3D', '#ECECEC'], burst: '#FF9F0A',
     lines: [
       'נתיבי איילון. סוגר נתיב מתי שבא לי.',
       'הרכבת הקלה. אני בדרך, מאז 2011.',
-      'קונוס. בשיפוצים אני הכוכב.',
+      'מנהל עבודה. השיפוץ ייגמר כשאני אגיד.',
     ],
   },
 ];

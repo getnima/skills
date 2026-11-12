@@ -674,7 +674,7 @@
   box-shadow: 0 0 0 var(--pz-ink);
 }
 
-/* ── tools: puzzle count, skip (no hint: the owner's rule) ── */
+/* ── tools: puzzle count, what the ladder is worth now, skip (no hint: the owner's rule) ── */
 .pz-tools {
   flex: none;
   display: flex;
@@ -765,6 +765,29 @@
 }
 .pz-done[hidden] {
   display: none;
+}
+/* what the ladder is worth right now (80% of it is speed, so it counts down) */
+.pz-worth {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--pz-read);
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--pz-white);
+  white-space: nowrap;
+}
+.pz-worth.is-off {
+  visibility: hidden;
+}
+.pz-worth-num {
+  min-width: 3.2ch;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--pz-yel);
+  text-shadow: 2px 2px 0 var(--pz-ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .pz-fx {

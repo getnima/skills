@@ -42,16 +42,24 @@ after the opener: puzzle 2 par 2, puzzle 3 par 2-3, puzzles 4-7 par 3-4, then pa
 
 ## Scoring (raw, `round.ts` → `ladderScore`)
 
-| Ladder | Points |
-| --- | --- |
-| Solved | 300 |
-| ... in exactly par steps ("מושלם") | +100 |
-| ... in par + 1 steps | +50 |
-| Skipped ("דלג", after 15 s on the same ladder, confirm tap; shows the shortest path ~2.5 s) | 0 |
+The owner's rule: **80% time, 20% attempts**. Attempts are the steps taken (the words entered), against the minimum.
+A solved ladder is worth at most 1,000 points:
 
-No points for unsolved progress. The total is clamped to `GAMES.plotzel.maxRaw` = 12,000: 1.5x the
-best 120 s score of a bot typing shortest paths at 4 keys/s with no mistakes (7,600-8,000, 19-20
-ladders, measured on six phone sizes by `tests/e2e/plotzel-play.cjs bots`).
+| Part | Points | How |
+| --- | --- | --- |
+| Speed (80%) | 0 - 800 | 800 at once, running down in a straight line to 0 over 15 s for every step of par (par 2: 30 s, par 3: 45 s, שימי with par 5: 75 s) |
+| Steps (20%) | up to 200 | 200 in the minimum number of steps, otherwise 200 x par / steps |
+| Skipped ("דלג", after 15 s on the same ladder, confirm tap; shows the shortest path ~2.5 s) | 0 | |
+
+`points = max(1, round(1000 x (0.8 x speed + 0.2 x steps)))`. No points for unsolved progress.
+
+The time of a ladder runs on the round clock (`ctx.timeLeftMs()`): it stands still in a freeze and keeps running
+through a reload (the ladder's start is in the snapshot). The first ladder starts with the round. The tray shows
+"שווה N": what the ladder is worth if the next word solves it, counting down, so players see that speed matters.
+
+The total is clamped to `GAMES.plotzel.maxRaw` = 30,000. A bot typing shortest paths at 4 keys/s with no mistakes
+gets about 17,800 in 120 s (19 ladders, about 935 each; `tests/e2e/plotzel-play.cjs bots`). Because the speed part is
+measured in milliseconds, two players with the same raw score are very unlikely.
 
 ## Freeze and reload
 
@@ -73,7 +81,7 @@ tiles, keys and chips have fixed heights so the font loading never moves anythin
 ## Test hook
 
 `window.__plotzel` (read-only, removed on destroy): `start`, `target`, `par`, `words`,
-`puzzleIndex`, `solved`, `score`, `phase`, `typed`, `skipReady`, `results`, `buildMs`,
+`puzzleIndex`, `solved`, `score`, `worth`, `elapsedMs`, `phase`, `typed`, `skipReady`, `results`, `buildMs`,
 `path()` (shortest path from the current word, as shown), `sequence(n)` (the first n start words).
 Keys carry `data-k` like the original (letters including finals, `BACK`, `ENTER`); tools
 `data-act="skip"`. Dev harness: `/dev.html?game=plotzel&seed=1`.

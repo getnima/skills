@@ -1,11 +1,12 @@
 # Art-director fixes on shipped cut-outs (python3 -I tests/e2e/avatar-review-fix.py). Idempotent: works from
-# copies of the makers' pictures kept in tests/e2e/out/avatar-review/src/.
+# copies of the makers' pictures kept in tests/e2e/out/avatar-review/src/. Writes the PNG sources in
+# client/src/avatar/art-src/; run avatar-review-webp.py afterwards to rebuild the shipped WebP files.
 #   204 monocle, 206 star glasses: a thin dark edge so gold reads on skin; 206 gets dark lenses
 #   305 earmuffs: a drawn pink band over the head (the maker shipped the muffs alone)
 import os, shutil
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 ROOT = os.path.dirname(os.path.abspath(__file__)) + '/../../'
-P = ROOT + 'client/public/assets/shimi/props/'
+P = ROOT + 'client/src/avatar/art-src/'
 SRC = ROOT + 'tests/e2e/out/avatar-review/src/'
 def src(name):
     if not os.path.exists(SRC + name): shutil.copy(P + name, SRC + name)

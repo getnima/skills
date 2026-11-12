@@ -48,7 +48,7 @@ const AR = {
 
 export const items: AvatarItem[] = [
   {
-    id: 201, slot: 'EYES', name: 'משקפי טייסים', file: '/assets/shimi/props/201_aviators.png',
+    id: 201, slot: 'EYES', name: 'משקפי טייסים', file: '/assets/shimi/props/201_aviators.webp',
     place: [23, 24.1, 58, hOf(58, AR.aviators)], ar: AR.aviators, contact: [51.5, 28],
     fly: 'ninja', snd: 'ping', weight: 0.3, power: 1,
     colors: ['#C9A23A', '#3E4A3C', '#E8D08A'], burst: '#FFD21F',
@@ -59,7 +59,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 202, slot: 'EYES', name: 'משקפי חנון', file: '/assets/shimi/props/202_nerd_glasses.png',
+    id: 202, slot: 'EYES', name: 'משקפי חנון', file: '/assets/shimi/props/202_nerd_glasses.webp',
     place: [21, 23.3, 62, hOf(62, AR.nerd)], ar: AR.nerd, contact: [51.5, 28],
     fly: 'ninja', snd: 'snap', weight: 0.35, power: 1,
     colors: ['#16120E', '#FFFFFF', '#55585F'], burst: '#1E3FD8',
@@ -70,18 +70,18 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 203, slot: 'EYES', name: 'משקפי תלת־ממד', file: '/assets/shimi/props/203_3d_glasses.png',
+    id: 203, slot: 'EYES', name: 'משקפי תלת־ממד', file: '/assets/shimi/props/203_3d_glasses.webp',
     place: [20.5, 23.55, 62, hOf(62, AR.anaglyph)], ar: AR.anaglyph, contact: [51.5, 28],
     fly: 'frisbee', snd: 'snap', weight: 0.2, power: 1,
     colors: ['#F4F2EE', '#D8262E', '#18A9C9'], burst: '#25C3DF',
     lines: [
-      'אני בתלת־ממד. אתם עוד בדו.',
+      'כוכב בתלת־ממד. גם בפרופיל אני מושלם.',
       'במאי הוליוודי. האולפן: הסלון בנס ציונה.',
       'מבקר קולנוע. חמישה כוכבים, כולם לי.',
     ],
   },
   {
-    id: 204, slot: 'EYES', name: 'מונוקל', file: '/assets/shimi/props/204_monocle.png',
+    id: 204, slot: 'EYES', name: 'מונוקל', file: '/assets/shimi/props/204_monocle.webp',
     place: [26, 23.7, 33, hOf(33, AR.monocle)], ar: AR.monocle, contact: [38, 28],
     fly: 'feather', snd: 'ping', weight: 0.2, power: 0.8,
     colors: ['#C9962E', '#F2D27A', '#FFFFFF'], burst: '#FFD21F',
@@ -92,7 +92,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 205, slot: 'EYES', name: 'רטייה', file: '/assets/shimi/props/205_eye_patch.png',
+    id: 205, slot: 'EYES', name: 'רטייה', file: '/assets/shimi/props/205_eye_patch.webp',
     place: [16.2, 19.4, 70.6, hOf(70.6, AR.patch)], ar: AR.patch, contact: [38, 28],
     fly: 'snapback', snd: 'snap', weight: 0.25, power: 1,
     colors: ['#16120E', '#3A3632', '#6B6560'], burst: '#F2361B',
@@ -103,7 +103,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 206, slot: 'EYES', name: 'משקפי כוכב', file: '/assets/shimi/props/206_star_glasses.png',
+    id: 206, slot: 'EYES', name: 'משקפי כוכב', file: '/assets/shimi/props/206_star_glasses.webp',
     place: [21.5, 22.2, 60, hOf(60, AR.stars)], ar: AR.stars, contact: [51.5, 28],
     fly: 'boomerang', snd: 'boing', weight: 0.3, power: 1,
     colors: ['#D4A93A', '#F5D77A', '#9C7A1E'], burst: '#FFD21F',
@@ -114,7 +114,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 225, slot: 'FACE', name: 'אף ליצן', file: '/assets/shimi/props/225_clown_nose.png',
+    id: 225, slot: 'FACE', name: 'אף ליצן', file: '/assets/shimi/props/225_clown_nose.webp',
     place: [42.5, 28.9, 17, hOf(17, AR.nose)], ar: AR.nose, contact: [51, 32.4],
     fly: 'lob', snd: 'boing', weight: 0.2, power: 1,
     colors: ['#E32B2B', '#B5200A', '#FF8A80'], burst: '#F2361B',
@@ -125,7 +125,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 226, slot: 'FACE', name: 'משרוקית מסיבה', file: '/assets/shimi/props/226_party_blower.png',
+    id: 226, slot: 'FACE', name: 'משרוקית מסיבה', file: '/assets/shimi/props/226_party_blower.webp',
     place: [42, 30.7, 54, hOf(54, AR.blower)], ar: AR.blower, contact: [44, 38.6],
     fly: 'boomerang', snd: 'boing', weight: 0.15, power: 1,
     colors: ['#E8213C', '#F5A623', '#1F6FD0', '#7AA62A'], burst: '#D63DC9',
@@ -136,7 +136,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 227, slot: 'FACE', name: 'ורד בשיניים', file: '/assets/shimi/props/227_rose.png',
+    id: 227, slot: 'FACE', name: 'ורד בשיניים', file: '/assets/shimi/props/227_rose.webp',
     place: [15, 32.2, 72, hOf(72, AR.rose)], ar: AR.rose, contact: [51, 38.8],
     fly: 'feather', snd: 'soft', weight: 0.15, power: 0.8,
     colors: ['#C4161C', '#3F7A2A', '#8E0F14'], burst: '#F2361B',
@@ -147,7 +147,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 228, slot: 'FACE', name: 'מוצץ', file: '/assets/shimi/props/228_pacifier.png',
+    id: 228, slot: 'FACE', name: 'מוצץ', file: '/assets/shimi/props/228_pacifier.webp',
     place: [37, 34.2, 28, hOf(28, AR.pacifier)], ar: AR.pacifier, contact: [51, 38.6],
     fly: 'lob', snd: 'boing', weight: 0.2, power: 1,
     colors: ['#F05AA8', '#FF8CC6', '#C2337E'], burst: '#FF7EB6',
@@ -158,7 +158,7 @@ export const items: AvatarItem[] = [
     ],
   },
   {
-    id: 229, slot: 'FACE', name: 'זקן', file: '/assets/shimi/props/229_beard.png',
+    id: 229, slot: 'FACE', name: 'זקן', file: '/assets/shimi/props/229_beard.webp',
     place: [15, 30.9, 72, hOf(72, AR.beard)], ar: AR.beard, contact: [51, 40],
     fly: 'lob', snd: 'fwump', weight: 0.5, power: 1,
     colors: ['#4A3020', '#6B4A33', '#2E1D12'], burst: '#FF9F0A',

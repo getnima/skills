@@ -1,282 +1,313 @@
 /**
- * The rules of "שימי טאפ" as a pure state machine: the pick meter, the phases, the digs,
- * the BIG boogers and the score. No DOM, no clock, no Math.random: the game feeds it
- * taps stamped with their round time and calls step() once per fixed 60 Hz step, so the
- * same taps give the same score on every phone and at every frame rate (unit-tested in
- * tests/unit/tap-pick.test.ts).
+ * The rules of "שימי טאפ" as a pure state machine. No DOM, no clock, no Math.random: the
+ * game feeds it touches stamped with their round time and calls step() once per fixed
+ * 60 Hz step, so the same touches give the same score and the same events on every phone
+ * and at every frame rate (unit-tested in tests/unit/tap-pick.test.ts).
  *
- * The meter is a running tap rate: every counted tap adds 1/TAU, and it decays with time
- * constant TAU, so it settles at the player's taps per second (x1.5 in the frenzy).
- * meter = rate / RATE_FULL. Full meter = the finger goes INTO the nostril (picking): from
- * then every counted tap is a dig worth DIG_POINTS and throws a booger. The finger stays in
- * while the rate is at least RATE_HOLD; below it the finger comes out and the hand sinks
- * to EXIT_SINK of the meter, so the player has to spam it back up.
+ * The round is a personal sprint. Phase 'waiting' lasts the start window (60% of the round):
+ * the player's first touch starts the sprint and is counted tap #1; with no touch the sprint
+ * starts by itself when the window runs out. The sprint lasts 40% of the round; then the
+ * phase is 'done' and the score (= counted taps, nothing else) is final.
+ *
+ * Anti-mash cap: a token bucket (RATE per second, BURST deep) and a minimum gap between
+ * counted taps. Touches over the cap "bounce": they count for nothing.
+ *
+ * The hand level (0..5) is cosmetic: it follows the smoothed tap rate with hysteresis and
+ * never touches the score. It lives here because it must be the same on every phone too.
  */
-import { BOOGER, boogerOf } from './schedule';
 
-import type { BoogerKind, TapLevel } from './schedule';
-
-export const PICK = {
+export const TAP = {
   STEP_MS: 1000 / 60,
-  /** Time constant of the tap rate (s). */
-  TAU_S: 0.85,
-  /** Taps per second that fill the meter (the finger goes in). */
-  RATE_FULL: 5.0,
-  /** While picking: below this rate the finger comes out. */
-  RATE_HOLD: 4.1,
-  /** Once in, the finger stays at least this long (ms of game time), so even a clumsy tapper gets a few digs. */
-  MIN_PICK_MS: 700,
-  /** After the finger came out the meter drops to this share (the hand sinks). */
-  EXIT_SINK: 0.55,
-  /** Every tap counts this much more for the meter in the frenzy. */
-  FRENZY_FILL: 1.5,
-  /** Counted taps per second (all fingers together), the bucket size and the minimum gap. */
-  HIT_RATE: 12,
-  HIT_BURST: 2,
-  MIN_GAP_MS: 60,
-  /** Combo: x2 at 20, x3 at 40 counted taps in a row; a gap longer than this breaks it. */
-  COMBO_STEP: 20,
-  MAX_MULT: 3,
-  COMBO_GAP_MS: 750,
-  /** Points. A tap while the hand rises = the combo multiplier (1..3). */
-  DIG_POINTS: 5,
-  GOLDEN_BONUS: 5,
-  BIG_BONUS: 25,
-  /** A tap during the BIG booger moment pulls the strand: +1, not a dig. */
-  PULL_POINTS: 1,
-  MISS_COST: 1,
-  /** The BIG booger moment (stretch + pop), game time. The finger stays in during it. */
-  BIG_MS: 900,
-  /** Below this meter the hand rests and the phase reads 'idle'. */
-  IDLE_BELOW: 0.12,
+  /** Shares of ctx.durationMs: the start window and the sprint (they add up to the round). */
+  START_SHARE: 0.6,
+  SPRINT_SHARE: 0.4,
+  /** The production sprint the tap thresholds are written for. */
+  BASE_SPRINT_MS: 20_000,
+  /** Counted taps per second (all fingers together), bucket depth and the minimum gap. */
+  RATE: 14,
+  BURST: 3,
+  MIN_GAP_MS: 40,
+  /** Time constant of the tap rate (s): every counted tap adds 1/TAU. */
+  TAU_S: 0.6,
+  /** The displayed rate is the rate low-passed over this (s). */
+  SMOOTH_S: 0.25,
+  /** Smoothed rate at which the hand reaches level 1..5 (taps per second). */
+  LEVEL_UP: [0.8, 2.2, 3.5, 6.5, 9.5],
+  /** A level is left downwards only below its threshold minus this. */
+  LEVEL_HYST: 0.6,
+  /** Minimum ms in a level before going down; once the finger is in (level >= 3), at least this long in. */
+  LEVEL_MIN_MS: 300,
+  FINGER_IN_MIN_MS: 700,
+  /** The last quarter of the sprint ("last 5 seconds"): the finger is locked in at least at this level. */
+  LAST_SHARE: 0.25,
+  LAST_MIN_LEVEL: 3,
+  /** Milestone beats at these counted taps (for a 20 s sprint; scaled by tapScale). */
+  MILESTONES: [8, 18, 30, 45, 62, 80, 100, 140, 190],
+  /** Final rank tiers: under 70 / 70-129 / 130-189 / 190+ (scaled the same way). */
+  RANKS: [70, 130, 190],
 } as const;
 
-export type PickPhase = 'idle' | 'rising' | 'picking';
+export type TapPhase = 'waiting' | 'sprint' | 'done';
+
+export const MILESTONE_IDS = ['yossi', 'rope', 'ear', 'mini', 'sneeze', 'squeegee', 'king', 'spin', 'cork'] as const;
+export type MilestoneId = (typeof MILESTONE_IDS)[number];
+
+export interface TapTiming {
+  readonly durationMs: number;
+  readonly startWindowMs: number;
+  readonly sprintMs: number;
+  /** sprintMs / 20 000: tap thresholds are multiplied by it, so short test rounds reach them. */
+  readonly tapScale: number;
+}
+
+export function tapTiming(durationMs: number): TapTiming {
+  const dur = Math.max(1000, durationMs);
+  const startWindowMs = Math.round(dur * TAP.START_SHARE);
+  const sprintMs = dur - startWindowMs;
+  return { durationMs: dur, startWindowMs, sprintMs, tapScale: sprintMs / TAP.BASE_SPRINT_MS };
+}
+
+/** Scaled thresholds, kept strictly increasing and at least 1 (so every milestone exists). */
+export function scaledThresholds(base: readonly number[], tapScale: number): number[] {
+  const out: number[] = [];
+  let prev = 0;
+  for (const b of base) {
+    const v = Math.max(prev + 1, Math.round(b * tapScale));
+    out.push(v);
+    prev = v;
+  }
+  return out;
+}
+
+/** Final rank 0..3 of a tap count (חוטט מתלמד / מוסמך / דוקטור / האף של המדינה). */
+export function rankOf(taps: number, tapScale: number): number {
+  const tiers = scaledThresholds(TAP.RANKS, tapScale);
+  let r = 0;
+  for (const t of tiers) if (taps >= t) r++;
+  return r;
+}
 
 /** What happened, for the game's visuals and sounds. Called synchronously from step(). */
-export interface PickListener {
-  /** A counted tap while the hand rises (points = combo multiplier). */
-  hit?(points: number, mult: number): void;
-  /** A counted tap while picking: dig #index threw booger `kind`. */
-  dig?(index: number, kind: BoogerKind, points: number): void;
-  /** A tap off the face (points lost, maybe 0). */
-  miss?(cost: number, comboLost: number): void;
-  /** A counted tap during the BIG booger moment (pulls the strand). */
-  pull?(index: number, points: number): void;
-  /** A tap on the face over the rate cap (no points). */
-  bounce?(): void;
-  /** The meter filled: the finger goes in. */
-  enter?(): void;
-  /** The player slowed down: the finger comes out. */
-  exit?(): void;
-  /** The BIG booger starts coming out (bonus points already counted). */
-  bigStart?(index: number, bonus: number): void;
-  /** The BIG booger popped out (end of the moment). */
-  bigPop?(index: number): void;
-  /** The combo multiplier went up. */
-  mult?(mult: number): void;
-  /** The combo was broken by a slow-down (combo >= 5 only). */
-  comboBreak?(combo: number): void;
-  /** The frenzy started. */
-  frenzy?(): void;
+export interface TapListener {
+  /** The sprint started: by the first touch (auto = false, that touch is tap #1) or by itself. */
+  start?(auto: boolean, t0: number): void;
+  /** A counted tap: `taps` is the new count. */
+  tap?(taps: number, t: number): void;
+  /** A touch over the cap (nothing counted). */
+  bounce?(t: number): void;
+  /** A touch after the sprint (counts for nothing). */
+  late?(t: number): void;
+  /** Counted taps reached milestone #index. */
+  milestone?(id: MilestoneId, index: number, taps: number): void;
+  /** The hand level changed. */
+  level?(from: number, to: number): void;
+  /** The last quarter of the sprint began. */
+  last?(): void;
+  /** The sprint is over: `taps` is final. Fires exactly once. */
+  done?(taps: number): void;
 }
 
-export interface PickState {
+export interface TapState {
   readonly elapsedMs: number;
-  readonly rate: number;
-  readonly meter: number;
-  readonly phase: PickPhase;
-  readonly picking: boolean;
-  readonly frenzy: boolean;
-  readonly score: number;
-  readonly combo: number;
-  readonly mult: number;
-  readonly hits: number;
-  readonly misses: number;
+  readonly phase: TapPhase;
+  /** Round time the sprint started at (-1 while waiting). */
+  readonly t0: number;
+  /** Round time the sprint ends at (-1 while waiting). */
+  readonly endAt: number;
+  readonly auto: boolean;
+  readonly taps: number;
   readonly bounces: number;
-  readonly digs: number;
-  readonly bigBoogers: number;
-  /** Times the finger went in. */
-  readonly picks: number;
-  /** Game time spent picking, ms. */
-  readonly pickingMs: number;
-  /** ms left of the BIG booger moment (0 = none). */
-  readonly bigLeftMs: number;
+  readonly late: number;
+  /** Raw tap rate (taps/s, exponential with TAU). */
+  readonly rate: number;
+  /** The rate low-passed for display. */
+  readonly rateSm: number;
+  /** Hand level 0..5. */
+  readonly level: number;
+  /** The last quarter of the sprint has begun. */
+  readonly lastQuarter: boolean;
   /** Round time of the last counted tap (-1 = none). */
   readonly lastTapMs: number;
+  /** Milestones reached so far. */
+  readonly milestones: number;
 }
 
-export interface PickEngine {
-  readonly state: PickState;
-  /** Queue a touch at round time `t` (ms). `onFace` = it landed on the doll. */
-  tap(t: number, onFace: boolean): void;
+export interface TapEngine {
+  readonly state: TapState;
+  readonly timing: TapTiming;
+  /** Tap thresholds of the milestones (scaled). */
+  readonly milestoneAt: readonly number[];
+  /** Queue `n` touches (fingers) at round time `t` (ms). */
+  tap(t: number, n?: number): void;
   /**
-   * One fixed step at round time `elapsedMs`: decay, then every queued tap with t <= elapsedMs
-   * (all of them when `flush`, used when the game clock lags the round clock).
+   * One fixed step at round time `elapsedMs`: every queued touch with t <= elapsedMs (all of
+   * them when `flush`, used when the game clock lags the round clock), then the clock.
    */
   step(elapsedMs: number, flush?: boolean): void;
-  /** Taps waiting for their step. */
+  /** Touches waiting for their step. */
   readonly queued: number;
 }
 
 const DT = 1 / 60;
 
-export function createPickEngine(level: TapLevel, maxRaw: number, on: PickListener = {}): PickEngine {
-  const decay = Math.exp(-DT / PICK.TAU_S);
-  const queue: Array<{ t: number; face: boolean }> = [];
-
+/**
+ * `joinedAtMs` = round time when this phone started the game: a phone that joins after the
+ * start window starts its sprint at once (and it is cut at the end of the round).
+ */
+export function createTapEngine(durationMs: number, on: TapListener = {}, joinedAtMs = 0): TapEngine {
+  const timing = tapTiming(durationMs);
+  const milestoneAt = scaledThresholds(TAP.MILESTONES, timing.tapScale);
+  const decay = Math.exp(-DT / TAP.TAU_S);
+  const smooth = 1 - Math.exp(-DT / TAP.SMOOTH_S);
+  const queue: number[] = [];
   const st = {
     elapsedMs: 0,
-    rate: 0,
-    meter: 0,
-    phase: 'idle' as PickPhase,
-    picking: false,
-    frenzy: false,
-    score: 0,
-    combo: 0,
-    mult: 1,
-    hits: 0,
-    misses: 0,
+    phase: 'waiting' as TapPhase,
+    t0: -1,
+    endAt: -1,
+    auto: false,
+    taps: 0,
     bounces: 0,
-    digs: 0,
-    bigBoogers: 0,
-    picks: 0,
-    pickingMs: 0,
-    bigLeftMs: 0,
+    late: 0,
+    rate: 0,
+    rateSm: 0,
+    level: 0,
+    lastQuarter: false,
     lastTapMs: -1,
+    milestones: 0,
   };
-  let tokens: number = PICK.HIT_BURST;
-  let sessionMs = 0;
-  let bigIdx = 0;
+  let tokens: number = TAP.BURST;
+  let levelMs = 0;
+  let inMs = 0;
 
-  function addScore(n: number): void {
-    st.score = Math.max(0, Math.min(maxRaw, st.score + n));
-  }
-
-  function refreshMeter(): void {
-    st.meter = Math.min(1, st.rate / PICK.RATE_FULL);
-    st.phase = st.picking ? 'picking' : st.meter >= PICK.IDLE_BELOW ? 'rising' : 'idle';
+  function startSprint(t0: number, auto: boolean): void {
+    st.phase = 'sprint';
+    st.t0 = t0;
+    st.endAt = Math.min(timing.durationMs, t0 + timing.sprintMs);
+    st.auto = auto;
+    on.start?.(auto, t0);
   }
 
   function counted(t: number): void {
     tokens -= 1;
-    st.hits++;
-    st.combo++;
+    st.taps++;
     st.lastTapMs = t;
-    const mult = Math.min(PICK.MAX_MULT, 1 + Math.floor(st.combo / PICK.COMBO_STEP));
-    if (mult > st.mult) {
-      st.mult = mult;
-      on.mult?.(mult);
+    st.rate += 1 / TAP.TAU_S;
+    on.tap?.(st.taps, t);
+    while (st.milestones < milestoneAt.length && st.taps >= (milestoneAt[st.milestones] ?? Infinity)) {
+      const i = st.milestones;
+      st.milestones++;
+      on.milestone?.(MILESTONE_IDS[i] ?? 'cork', i, st.taps);
     }
-    st.mult = mult;
-    st.rate += (st.frenzy ? PICK.FRENZY_FILL : 1) / PICK.TAU_S;
-
-    if (st.picking && st.bigLeftMs > 0) {
-      addScore(PICK.PULL_POINTS);
-      on.pull?.(st.bigBoogers - 1, PICK.PULL_POINTS);
-      refreshMeter();
-      return;
-    }
-    if (st.picking) {
-      const index = st.digs;
-      st.digs++;
-      const kind = boogerOf(level, index);
-      const pts = PICK.DIG_POINTS + (kind === BOOGER.Golden ? PICK.GOLDEN_BONUS : 0);
-      addScore(pts);
-      on.dig?.(index, kind, pts);
-      const next = level.bigAt[bigIdx];
-      if (next !== undefined && st.digs >= next) {
-        bigIdx++;
-        st.bigBoogers++;
-        st.bigLeftMs = PICK.BIG_MS;
-        addScore(PICK.BIG_BONUS);
-        on.bigStart?.(st.bigBoogers - 1, PICK.BIG_BONUS);
-      }
-      refreshMeter();
-      return;
-    }
-
-    addScore(mult);
-    on.hit?.(mult, mult);
-    if (st.rate >= PICK.RATE_FULL) {
-      st.picking = true;
-      st.picks++;
-      sessionMs = 0;
-      on.enter?.();
-    }
-    refreshMeter();
   }
 
-  function process(t: number, face: boolean): void {
-    if (!face) {
-      st.misses++;
-      const lost = st.combo;
-      const before = st.score;
-      if (st.score > 0) addScore(-PICK.MISS_COST);
-      st.combo = 0;
-      st.mult = 1;
-      on.miss?.(before - st.score, lost);
+  function touch(t: number): void {
+    if (st.phase === 'waiting') {
+      if (t >= timing.startWindowMs) startSprint(timing.startWindowMs, true);
+      else {
+        startSprint(t, false);
+        counted(t);
+        return;
+      }
+    }
+    if (st.phase === 'done' || t >= st.endAt) {
+      st.late++;
+      on.late?.(t);
       return;
     }
-    if (tokens < 1 || (st.lastTapMs >= 0 && t - st.lastTapMs < PICK.MIN_GAP_MS)) {
+    if (t < st.t0) {
       st.bounces++;
-      on.bounce?.();
+      on.bounce?.(t);
+      return;
+    }
+    if (tokens < 1 || (st.lastTapMs >= 0 && t - st.lastTapMs < TAP.MIN_GAP_MS)) {
+      st.bounces++;
+      on.bounce?.(t);
       return;
     }
     counted(t);
   }
 
+  function setLevel(next: number): void {
+    if (next === st.level) return;
+    const from = st.level;
+    st.level = next;
+    levelMs = 0;
+    if (next < 3) inMs = 0;
+    on.level?.(from, next);
+  }
+
+  function stepLevel(e: number): void {
+    if (st.phase !== 'sprint') {
+      if (st.level !== 0) setLevel(0);
+      return;
+    }
+    levelMs += TAP.STEP_MS;
+    if (st.level >= 3) inMs += TAP.STEP_MS;
+    const r = st.rateSm;
+    const last = e >= st.t0 + timing.sprintMs * (1 - TAP.LAST_SHARE);
+    const floor = last ? TAP.LAST_MIN_LEVEL : 0;
+    let up = 0;
+    for (let i = 0; i < TAP.LEVEL_UP.length; i++) if (r >= (TAP.LEVEL_UP[i] ?? Infinity)) up = i + 1;
+    up = Math.max(up, floor);
+    if (up > st.level) {
+      setLevel(up);
+      return;
+    }
+    if (st.level <= floor) return;
+    const downAt = (TAP.LEVEL_UP[st.level - 1] ?? 0) - TAP.LEVEL_HYST;
+    if (r >= downAt || levelMs < TAP.LEVEL_MIN_MS) return;
+    if (st.level === 3 && inMs < TAP.FINGER_IN_MIN_MS) return;
+    setLevel(Math.max(floor, st.level - 1));
+  }
+
   return {
-    get state(): PickState {
+    get state(): TapState {
       return st;
     },
+    timing,
+    milestoneAt,
     get queued(): number {
       return queue.length;
     },
-    tap(t: number, onFace: boolean): void {
-      // keep the queue in time order (touches can arrive a hair out of order)
-      let i = queue.length;
-      while (i > 0 && (queue[i - 1]?.t ?? 0) > t) i--;
-      queue.splice(i, 0, { t, face: onFace });
+    tap(t: number, n = 1): void {
+      for (let k = 0; k < n; k++) {
+        // keep the queue in time order (touches can arrive a hair out of order)
+        let i = queue.length;
+        while (i > 0 && (queue[i - 1] ?? 0) > t) i--;
+        queue.splice(i, 0, t);
+      }
     },
     step(elapsedMs: number, flush = false): void {
       st.elapsedMs = elapsedMs;
-      if (!st.frenzy && elapsedMs >= level.frenzyFrom) {
-        st.frenzy = true;
-        on.frenzy?.();
-      }
+      // a phone that joined after the start window: the sprint starts at once
+      if (st.phase === 'waiting' && joinedAtMs >= timing.startWindowMs) startSprint(Math.min(joinedAtMs, timing.durationMs), true);
       st.rate *= decay;
-      tokens = Math.min(PICK.HIT_BURST, tokens + PICK.HIT_RATE * DT);
+      tokens = Math.min(TAP.BURST, tokens + TAP.RATE * DT);
 
       let n = 0;
       while (n < queue.length) {
-        const q = queue[n];
-        if (!q || (!flush && q.t > elapsedMs)) break;
+        const t = queue[n] ?? 0;
+        if (!flush && t > elapsedMs) break;
         n++;
-        process(q.t, q.face);
+        touch(t);
       }
       if (n > 0) queue.splice(0, n);
 
-      if (st.bigLeftMs > 0) {
-        st.bigLeftMs = Math.max(0, st.bigLeftMs - PICK.STEP_MS);
-        if (st.bigLeftMs <= 0) on.bigPop?.(st.bigBoogers - 1);
-      }
-      if (st.picking) {
-        st.pickingMs += PICK.STEP_MS;
-        sessionMs += PICK.STEP_MS;
-        if (st.bigLeftMs <= 0 && sessionMs >= PICK.MIN_PICK_MS && st.rate < PICK.RATE_HOLD) {
-          st.picking = false;
-          st.rate = Math.min(st.rate, PICK.RATE_FULL * PICK.EXIT_SINK);
-          refreshMeter();
-          on.exit?.();
+      if (st.phase === 'waiting' && elapsedMs >= timing.startWindowMs) startSprint(timing.startWindowMs, true);
+      st.rateSm += (st.rate - st.rateSm) * smooth;
+      if (st.phase === 'sprint') {
+        if (!st.lastQuarter && elapsedMs >= st.t0 + timing.sprintMs * (1 - TAP.LAST_SHARE) && st.endAt - elapsedMs > 0) {
+          st.lastQuarter = true;
+          on.last?.();
+        }
+        stepLevel(elapsedMs);
+        if (elapsedMs >= st.endAt) {
+          st.phase = 'done';
+          setLevel(0);
+          on.done?.(st.taps);
         }
       }
-      if (st.combo > 0 && st.lastTapMs >= 0 && elapsedMs - st.lastTapMs > PICK.COMBO_GAP_MS) {
-        if (st.combo >= 5) on.comboBreak?.(st.combo);
-        st.combo = 0;
-        st.mult = 1;
-      }
-      refreshMeter();
     },
   };
 }

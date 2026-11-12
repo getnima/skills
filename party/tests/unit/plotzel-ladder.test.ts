@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { COMMON, DICT, STARTS } from '../../client/src/games/plotzel/data';
 import { checkStep, diffCount, diffPos, disp, getLadder, norm, TARGET, TARGET_D, unpack } from '../../client/src/games/plotzel/ladder';
-import { DEMO_WORDS, ladderScore, OPENER, parBand, roundSequence, SCORE } from '../../client/src/games/plotzel/round';
+import { DEMO_WORDS, ladderScore, OPENER, parBand, roundSequence, SCORE, speedFactor, stepsFactor } from '../../client/src/games/plotzel/round';
 import { GAMES } from '../../shared/protocol';
 
 const ORIGINAL = resolve(import.meta.dirname, '../../client/src/games/plotzel/original/plotzel.netlify.app.html');
@@ -244,18 +244,55 @@ describe('plotzel round sequence', () => {
   });
 });
 
-describe('plotzel scoring', () => {
-  it('follows the table', () => {
-    expect(ladderScore(3, 3)).toBe(400); // perfect
-    expect(ladderScore(4, 3)).toBe(350); // par + 1
-    expect(ladderScore(5, 3)).toBe(300);
-    expect(ladderScore(9, 3)).toBe(300);
-    expect(ladderScore(5, 5)).toBe(SCORE.solve + SCORE.perfect); // the opener, solved in its 5 steps
-    expect(ladderScore(6, 5)).toBe(SCORE.solve + SCORE.near);
+describe('plotzel scoring: 80% time, 20% attempts (the owner\'s rule)', () => {
+  it('a ladder is worth at most 1000: 800 for speed and 200 for steps', () => {
+    expect(SCORE.ladder * SCORE.timeShare).toBe(800);
+    expect(SCORE.ladder * SCORE.stepsShare).toBe(200);
+    expect(SCORE.timeShare + SCORE.stepsShare).toBe(1);
+    expect(ladderScore(3, 3, 0)).toBe(1000); // at once, in the minimum
+  });
+
+  it('the speed part runs down in a straight line over 15 s per step of par, then stays at 0', () => {
+    expect(speedFactor(2, 0)).toBe(1);
+    expect(speedFactor(2, 15_000)).toBe(0.5);
+    expect(speedFactor(2, 30_000)).toBe(0);
+    expect(speedFactor(2, 90_000)).toBe(0);
+    expect(speedFactor(5, 30_000)).toBeCloseTo(0.6, 10); // שימי: 75 s
+    expect(speedFactor(3, -5)).toBe(1);
+    expect(ladderScore(2, 2, 15_000)).toBe(600); // 400 speed + 200 steps
+    expect(ladderScore(2, 2, 30_000)).toBe(200); // steps only
+    expect(ladderScore(2, 2, 999_999)).toBe(200);
+  });
+
+  it('the steps part is full for the minimum, then par / steps', () => {
+    expect(stepsFactor(3, 3)).toBe(1);
+    expect(stepsFactor(2, 3)).toBe(1); // cannot happen (par is the true minimum); never above 1
+    expect(stepsFactor(6, 3)).toBe(0.5);
+    expect(ladderScore(4, 3, 0)).toBe(950); // 800 + 200 x 3/4
+    expect(ladderScore(6, 3, 0)).toBe(900);
+    expect(ladderScore(5, 5, 37_500)).toBe(600); // the opener, half of its 75 s, in its 5 steps
+  });
+
+  it('time weighs four times as much as steps, and a solved ladder is never worth 0', () => {
+    // all the time gone, perfect steps = 200; no time gone, endless steps tends to 800
+    expect(ladderScore(3, 3, 10 ** 9)).toBe(200);
+    expect(ladderScore(3000, 3, 0)).toBe(800);
+    expect(ladderScore(3000, 3, 10 ** 9)).toBeGreaterThanOrEqual(1);
+    // faster is never worse, fewer steps is never worse
+    for (const par of [2, 3, 4, 5]) {
+      let prev = Infinity;
+      for (let ms = 0; ms <= 100_000; ms += 250) {
+        const v = ladderScore(par, par, ms);
+        expect(v).toBeLessThanOrEqual(prev);
+        prev = v;
+      }
+      for (let steps = par; steps < par + 8; steps++) expect(ladderScore(steps + 1, par, 5000)).toBeLessThanOrEqual(ladderScore(steps, par, 5000));
+    }
   });
 
   it('maxRaw sits above what a fast expert can reach', () => {
-    expect(GAMES.plotzel.maxRaw).toBeGreaterThan(20 * (SCORE.solve + SCORE.perfect));
+    // a bot typing shortest paths at 4 keys/s solves about 20 ladders in 120 s, each close to the full 1000
+    expect(GAMES.plotzel.maxRaw).toBeGreaterThanOrEqual(1.4 * 20 * SCORE.ladder);
     expect(GAMES.plotzel.durationMs).toBe(120_000);
   });
 });

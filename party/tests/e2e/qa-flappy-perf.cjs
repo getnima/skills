@@ -2,8 +2,9 @@
 // (4x = a cheap Android), with an outside player tapping (real touches), for `ms` of flight.
 //   PARTY_CLIENT_PORT=5331 npx vite --config tests/e2e/qa-icy-vite.config.mjs
 //   QA_BASE=http://localhost:5331 node tests/e2e/qa-flappy-perf.cjs [size=360x640] [throttle=4] [ms=25000] [query='&field=8']
-// The player restarts the page when the bird goes down before `ms`, so the numbers are
-// always of a flying phone. Prints one JSON line; exit 1 when p95 is over 34 ms.
+// query '&pilot=1&field=8': the game's own pilot flies instead (through the finale).
+// The page is restarted when the bird goes down before `ms`, so the numbers are always of
+// a flying phone. Prints one JSON line; exit 1 when p95 is over 34 ms.
 const { chromium } = require('playwright');
 const { phoneContext, createTouch, SIZES, sleep } = require('./qa-icy-lib.cjs');
 const { playFlappy } = require('./qa-flappy-lib.cjs');
@@ -19,7 +20,7 @@ const query = process.argv[5] || '';
   const errors = [];
   let flights = 0;
   let seed = 4;
-  while (frames.length === 0 || frames.reduce((a, b) => a + b, 0) < ms) {
+  while (frames.length === 0 || ms - frames.reduce((a, b) => a + b, 0) > 800) {
     const context = await phoneContext(browser, size);
     const page = await context.newPage();
     page.on('pageerror', (e) => errors.push(e.message));
@@ -42,7 +43,16 @@ const query = process.argv[5] || '';
       requestAnimationFrame(f);
     });
     const left = ms - frames.reduce((a, b) => a + b, 0);
-    await playFlappy(page, touch, SIZES[size], 'expert', 7 + flights, { maxMs: left });
+    if (/pilot=1/.test(query)) {
+      // the game's own pilot flies (its look-ahead runs inside the frame: the numbers are on the safe side)
+      const t0 = Date.now();
+      for (;;) {
+        const st = await page.evaluate(() => (window.__flappy ? window.__flappy.mode : null));
+        if (process.env.QA_LOG) console.log(Date.now() - t0, st);
+        if (Date.now() - t0 >= left || st !== "fly") break;
+        await sleep(100);
+      }
+    } else await playFlappy(page, touch, SIZES[size], 'expert', 7 + flights, { maxMs: left });
     // only the frames of the flight: the crash and what follows are another screen
     frames.push(...(await page.evaluate(() => { window.__rec = false; return window.__frames.slice(5, -3); })));
     flights++;

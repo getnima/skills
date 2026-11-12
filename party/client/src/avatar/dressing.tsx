@@ -16,7 +16,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { AVATAR_BG_COUNT, AVATAR_MAX_TOWER, defaultLook, encodeLook, randomLook, shakeOff, wornIds } from '../../../shared/avatar';
 import { Avatar } from './Avatar';
-import { AVATAR_BGS, DOLL, ITEMS, ITEM_IDS, getItem, normalizeLook, tapItem } from './catalog';
+import { AVATAR_BGS, DOLL, ITEMS, ITEM_IDS, comboFor, getItem, normalizeLook, tapItem } from './catalog';
 import { clearFx, confetti, flyIn, kaboom, sparks, squashFrames, tumble } from './dressing-fx';
 import { boxOnStage, frameStage, stageMode } from './dressing-stage';
 import { peekThumb, plateUrl, requestThumb, thumbStats } from './dressing-thumbs';
@@ -782,9 +782,11 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
         const stacked = it.slot === 'HEAD' && next.head.length > 1 && next.head[next.head.length - 1] === id;
         launch(next, it, from, stacked);
         const replacedTop = it.slot === 'HEAD' && prev.head.length >= AVATAR_MAX_TOWER && next.head.length === prev.head.length;
-        if (replacedTop) say(pick(LINES.towerFull));
-        else if (stacked) say(LINES.tower[next.head.length] ?? itemLine(it));
-        else say(itemLine(it));
+        // a completed combination (the guide's table, three hats included) wins; then the tower lines; then the item's own
+        if (comboFor(next, id) !== null) say(itemLine(it, next));
+        else if (replacedTop) say(pick(LINES.towerFull));
+        else if (stacked) say(pick(LINES.tower));
+        else say(itemLine(it, next));
         if (stacked) sound.stack(next.head.length);
         return;
       }
@@ -886,7 +888,8 @@ export function DressingRoom(props: DressingRoomFullProps): JSX.Element {
       }
       wobble(0.9, true);
       // the big burst sits on his chest for a moment; the line comes once it has popped
-      const line = pick(LINES.random);
+      const combo = comboFor(next);
+      const line = combo !== null ? pick(combo.lines) : pick(LINES.random);
       later(() => say(line, true), live() ? 480 : 0);
     };
     if (!live()) {

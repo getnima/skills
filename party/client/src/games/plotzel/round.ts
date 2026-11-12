@@ -10,19 +10,39 @@ import type { Ladder } from './ladder';
 
 // ───────────────────────────── Scoring ─────────────────────────────
 
-/** The scoring table (raw points, higher is better). */
+/**
+ * The scoring table (raw points, higher is better). The owner's rule: the score of a ladder is
+ * 80% time and 20% attempts (attempts = the steps taken, against the minimum). No hints.
+ */
 export const SCORE = {
-  /** Every solved ladder. */
-  solve: 300,
-  /** Solved in exactly par steps ("מושלם!"). */
-  perfect: 100,
-  /** Solved in par + 1 steps. */
-  near: 50,
+  /** The most a solved ladder is worth. */
+  ladder: 1000,
+  /** The part of it for speed. */
+  timeShare: 0.8,
+  /** The part of it for the number of steps. */
+  stepsShare: 0.2,
+  /** The speed part runs down to nothing over this much time for every step of par. */
+  msPerParStep: 15_000,
 } as const;
 
-/** Points for a solved ladder: `steps` taken and its `par`. There are no hints (the owner's rule). */
-export function ladderScore(steps: number, par: number): number {
-  return SCORE.solve + (steps <= par ? SCORE.perfect : steps === par + 1 ? SCORE.near : 0);
+/** The speed part of a ladder solved after `elapsedMs`: 1 at once, 0 after par x msPerParStep. */
+export function speedFactor(par: number, elapsedMs: number): number {
+  const allowance = Math.max(1, par) * SCORE.msPerParStep;
+  return Math.min(1, Math.max(0, 1 - Math.max(0, elapsedMs) / allowance));
+}
+
+/** The steps part: 1 for the minimum (`par`), then par / steps. */
+export function stepsFactor(steps: number, par: number): number {
+  return steps <= par ? 1 : Math.max(1, par) / steps;
+}
+
+/**
+ * Points for a ladder solved in `steps` steps (its minimum is `par`) after `elapsedMs` on it:
+ * ladder x (80% speed + 20% steps), never less than 1.
+ */
+export function ladderScore(steps: number, par: number, elapsedMs: number): number {
+  const part = SCORE.timeShare * speedFactor(par, elapsedMs) + SCORE.stepsShare * stepsFactor(steps, par);
+  return Math.max(1, Math.round(SCORE.ladder * part));
 }
 
 // ───────────────────────────── Sequence ─────────────────────────────

@@ -1,24 +1,25 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import {
   AVATAR_BASE_IDS, AVATAR_BASE_SLOTS, AVATAR_BG_COUNT, AVATAR_ENCODED_MAX, AVATAR_ID_RANGES, AVATAR_MAX_TOWER, AVATAR_SLOTS,
-  DEFAULT_LOOK, decodeLook, defaultLook, encodeLook, isWearing, lookKey, looksEqual, randomLook, removeItem, sanitizeLook,
+  DEFAULT_LOOK, decodeLook, defaultLook, encodeLook, isWearing, lookKey, lookSignature, looksEqual, randomLook, randomLookAvoiding, removeItem, sanitizeLook,
   seedFromText, shakeOff, slotOfId, toggleItem, wearItem, wornIds,
 } from '../../shared/avatar';
 import {
   AVATAR_BGS, BASE_ITEMS, CATALOG_PARTS, CATALOG_PROBLEMS, DOLL, ITEMS, ITEM_IDS, canCarry, canStack, getItem, itemAr, itemProblem,
-  normalizeLook, tapItem,
+  COMBOS, GENERIC_LINES, comboFor, linesFor, normalizeLook, tapItem,
 } from '../../client/src/avatar/catalog';
-import { frameLook, layoutLook, placeBox } from '../../client/src/avatar/layout';
+import { ICON_MIN_HEAD, frameLook, layoutLook, placeBox } from '../../client/src/avatar/layout';
 
 import type { AvatarLook } from '../../shared/avatar';
 import type { AvatarItem } from '../../client/src/avatar/catalog';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const PUBLIC = resolve(ROOT, 'client/public');
+const GUIDE = readFileSync(resolve(ROOT, 'design/punchlines.he.md'), 'utf8');
 
 /** Every id any range allows: the widest id list a look can use. */
 const ALL_POSSIBLE: number[] = [...AVATAR_BASE_IDS, ...AVATAR_ID_RANGES.flatMap((r) => Array.from({ length: r.to - r.from + 1 }, (_, i) => r.from + i))];
@@ -214,7 +215,7 @@ describe('randomLook', () => {
     expect(share((l) => l.head.length > 1)).toBeLessThan(0.35);
     expect(share((l) => l.head.length === 3)).toBeGreaterThan(0.01);
     expect(share((l) => l.eyes !== null)).toBeGreaterThan(0.3);
-    expect(share((l) => l.eyes !== null)).toBeLessThan(0.5);
+    expect(share((l) => l.eyes !== null)).toBeLessThan(0.65);
     expect(share((l) => l.face !== null)).toBeGreaterThan(0.12);
     expect(share((l) => l.ears !== null)).toBeGreaterThan(0.1);
     expect(share((l) => l.neck !== null)).toBeGreaterThan(0.2);
@@ -224,6 +225,45 @@ describe('randomLook', () => {
     // neighbours differ: 60 guests in a row do not look alike
     const sixty = looks.slice(0, 60).map(encodeLook);
     expect(new Set(sixty).size).toBeGreaterThan(50);
+    // nobody is bare or wears a single thing
+    expect(looks.every((l) => wornIds(l).length >= 2)).toBe(true);
+  });
+
+  it('spreads 60 guests of the real catalog: almost never two identical icons', () => {
+    let identical = 0;
+    for (let room = 0; room < 200; room++) {
+      const keys = Array.from({ length: 60 }, (_, i) => encodeLook(normalizeLook(randomLook(seedFromText(`r${room}p${i}`), ITEM_IDS))));
+      identical += 60 - new Set(keys).size;
+    }
+    expect(identical).toBeLessThan(40); // measured 3-17 over several seedings; about 92 before the top-up
+  });
+
+  it('randomLookAvoiding gives every guest of a room a doll of their own', () => {
+    for (let room = 0; room < 40; room++) {
+      const taken: string[] = [];
+      for (let i = 0; i < 60; i++) {
+        const l = randomLookAvoiding(seedFromText(`r${room}p${i}`), taken, ITEM_IDS);
+        expect(randomLookAvoiding(seedFromText(`r${room}p${i}`), taken, ITEM_IDS)).toEqual(l);
+        taken.push(encodeLook(l));
+      }
+      expect(new Set(taken.map(lookSignature)).size).toBe(60);
+    }
+    expect(randomLookAvoiding(5, [])).toEqual(randomLook(5));
+  });
+
+  it('two different looks never share a key', () => {
+    const r = rng(77);
+    const seen = new Map<string, string>();
+    for (let i = 0; i < 20000; i++) {
+      const look = normalizeLook(randomLook(Math.floor(r() * 2 ** 31), ITEM_IDS));
+      const canon = JSON.stringify([look.head, look.eyes, look.ears, look.face, look.neck, look.bg]);
+      const key = lookKey(look);
+      const prev = seen.get(key);
+      if (prev !== undefined) expect(prev).toBe(canon);
+      seen.set(key, canon);
+      expect(lookKey(decodeLook(key))).toBe(key);
+    }
+    expect(seen.size).toBeGreaterThan(15000);
   });
 
   it('only uses the ids it is given', () => {
@@ -287,6 +327,20 @@ function pngSize(file: string): [number, number] {
   return [b.readUInt32BE(16), b.readUInt32BE(20)];
 }
 
+/** Pixel size of a PNG or a WebP (VP8X / VP8L / VP8 headers). */
+function picSize(file: string): [number, number] {
+  if (file.endsWith('.png')) return pngSize(file);
+  const b = readFileSync(file);
+  expect(b.subarray(0, 4).toString('latin1') + b.subarray(8, 12).toString('latin1'), file).toBe('RIFFWEBP');
+  const kind = b.subarray(12, 16).toString('latin1');
+  if (kind === 'VP8X') return [1 + b.readUIntLE(24, 3), 1 + b.readUIntLE(27, 3)];
+  if (kind === 'VP8L') {
+    const v = b.readUInt32LE(21);
+    return [1 + (v & 0x3fff), 1 + ((v >> 14) & 0x3fff)];
+  }
+  return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
+}
+
 describe('catalog files and placement', () => {
   it('the doll picture is the box the placement refers to', () => {
     expect(pngSize(resolve(PUBLIC, DOLL.file.slice(1)))).toEqual([DOLL.width, DOLL.height]);
@@ -296,7 +350,9 @@ describe('catalog files and placement', () => {
     for (const it of ITEMS) {
       const file = resolve(PUBLIC, it.file.slice(1));
       expect(existsSync(file), `${it.file} (item ${it.id})`).toBe(true);
-      const [w, h] = pngSize(file);
+      const [w, h] = picSize(file);
+      expect(file.endsWith('.webp'), `${it.file} is a shipped WebP`).toBe(true);
+      expect(statSync(file).size, `${it.file} weight`).toBeLessThan(130_000);
       const box = placeBox(it);
       // the picture is not squashed: the placed box has the picture's own shape (2% slack)
       expect(Math.abs(box.h / box.w / (h / w) - 1), `item ${it.id} place vs picture`).toBeLessThan(0.02);
@@ -305,6 +361,11 @@ describe('catalog files and placement', () => {
       expect(it.name.length).toBeGreaterThan(1);
       expect(/[֐-׿]/.test(it.name), `item ${it.id} has a Hebrew name`).toBe(true);
     }
+  });
+
+  it('the shipped folder holds exactly the catalog pictures (no PNG sources, no leftovers)', () => {
+    const shipped = readdirSync(resolve(PUBLIC, 'assets/shimi/props')).sort();
+    expect(shipped).toEqual(ITEMS.map((i) => i.file.split('/').pop() ?? '').sort());
   });
 
   it('every item sits in the part of the doll its slot means', () => {
@@ -343,13 +404,15 @@ describe('catalog files and placement', () => {
       expect(it.colors?.length ?? 0).toBeGreaterThanOrEqual(3);
       expect(it.fly !== undefined && it.snd !== undefined && it.contact !== undefined && it.burst !== undefined).toBe(true);
       expect(it.tw !== undefined, `item ${it.id} tw`).toBe(it.slot === 'HEAD');
-      expect(it.file).toMatch(new RegExp(`^/assets/shimi/prop_${String(it.id).padStart(2, '0')}_[a-z_]+\\.png$`));
+      expect(it.file).toMatch(new RegExp(`^/assets/shimi/props/${String(it.id).padStart(2, '0')}_[a-z_]+\\.webp$`));
     }
     // spot checks against design/albert-14-11.source.html
     expect(getItem(1)).toMatchObject({ name: 'קסדת בירה', place: [-5.59, -13.07, 110, 53.99], tw: { crown: 0.08, bottom: 0.5, sink: 0.1, seat: 0.261 }, fly: 'lob', snd: 'thud' });
     expect(getItem(11)).toMatchObject({ slot: 'FACE', name: 'שפם', place: [20.7, 32.75, 62.11, 5.5] });
     expect(getItem(15)).toMatchObject({ slot: 'NECK', name: 'זר הוואי', place: [20.7, 47.67, 60.04, 27] });
-    expect(getItem(17)?.lines?.[2]).toBe('החרוט עליי, העוגה עליכם.');
+    expect(getItem(3)?.lines?.[0]).toBe('ג׳וני דפ התימני.'); // the owner's own lines, word for word
+    expect(getItem(4)?.lines?.[0]).toBe('רוצה לקנות קורס באינסטגרם ממני?');
+    expect(getItem(5)?.lines?.[0]).toBe('אחשילי.');
   });
 
   it('matches ITEMS in the source page, number by number', () => {
@@ -368,7 +431,8 @@ describe('catalog files and placement', () => {
       expect(it.weight).toBe(Number(m[8]));
       expect(it.power).toBe(Number(m[9]));
       expect(it.snd).toBe(m[10]);
-      for (const line of it.lines ?? []) expect(block.includes(`'${line}'`), `item ${it.id} line`).toBe(true);
+      // the funny lines are no longer the source page's: they are the approved ones of the voice guide
+      for (const line of it.lines ?? []) expect(GUIDE.includes(line), `item ${it.id} line is in design/punchlines.he.md`).toBe(true);
     }
   });
 
@@ -436,6 +500,7 @@ describe('layout and framing', () => {
 
   it('the frame is a square that holds everything, centred on the face line', () => {
     const cx = (DOLL.centerX / 100) * DOLL.width;
+    const headW = ((DOLL.headBox[2] - DOLL.headBox[0]) / 100) * DOLL.width;
     const r = rng(11);
     for (let i = 0; i < 1500; i++) {
       const look = normalizeLook(randomLook(Math.floor(r() * 1e9), ITEM_IDS));
@@ -449,17 +514,19 @@ describe('layout and framing', () => {
           if (p.layer === 'NECK' && crop !== 'full') continue;
           expect(p.x, `${encodeLook(look)} ${crop} left`).toBeGreaterThanOrEqual(f.x + margin);
           expect(p.x + p.w).toBeLessThanOrEqual(f.x + f.w - margin);
-          expect(p.y).toBeGreaterThanOrEqual(f.y + margin);
+          // the icon may cut the top of a tall tower (the face stays big); bust and full hold all of it
+          if (crop !== 'icon' || headW / f.w > ICON_MIN_HEAD + 1e-9) expect(p.y).toBeGreaterThanOrEqual(f.y + margin);
           if (crop === 'full') expect(p.y + p.h).toBeLessThanOrEqual(f.y + f.h - margin);
         }
         // the head is always inside
         expect((DOLL.headBox[0] / 100) * DOLL.width).toBeGreaterThanOrEqual(f.x + margin - 1e-6);
         expect((DOLL.headBox[1] / 100) * DOLL.height).toBeGreaterThanOrEqual(f.y + margin - 1e-6);
+        if (crop === 'icon') expect(headW / f.w).toBeGreaterThanOrEqual(ICON_MIN_HEAD - 1e-9);
       }
     }
   });
 
-  it('the bare head fills the icon; a 3-hat tower still leaves a readable face', () => {
+  it('the bare head fills the icon; one hat always fits whole; a 3-hat tower never shrinks the face below the floor', () => {
     const headW = ((DOLL.headBox[2] - DOLL.headBox[0]) / 100) * DOLL.width;
     const bare = frameLook(defaultLook(), 'icon');
     expect(headW / bare.w).toBeGreaterThan(0.55);
@@ -470,13 +537,67 @@ describe('layout and framing', () => {
       const look = normalizeLook({ ...defaultLook(), head: [a.id, b.id, c.id] });
       smallest = Math.min(smallest, headW / frameLook(look, 'icon').w);
     }
-    // at 28 px the head is then still at least 28 * 0.2 = 5.6 px wide: a dot with a hat pile, by design
-    expect(smallest).toBeGreaterThan(0.2);
+    // the tower grows out of the top edge instead: at 28 px the head is still 10 px wide
+    expect(smallest).toBeGreaterThanOrEqual(ICON_MIN_HEAD - 1e-9);
+    for (const a of hats) {
+      const look = normalizeLook({ ...defaultLook(), head: [a.id] });
+      const f = frameLook(look, 'icon');
+      expect(placeBox(a).y, `hat ${a.id} fits the icon whole`).toBeGreaterThanOrEqual(f.y);
+    }
   });
 
   it('normalizeLook cuts the tower above a hat that cannot carry', () => {
     expect(normalizeLook({ head: [8, 17, 4], bg: 0 }).head).toEqual([8, 17, 4]);
     expect(normalizeLook({ head: [8, 140, 4], bg: 0 }).head.includes(140)).toBe(ITEM_IDS.includes(140));
     expect(normalizeLook('junk')).toEqual(DEFAULT_LOOK);
+  });
+});
+
+describe('what the doll says', () => {
+  const look = (o: Partial<AvatarLook>): AvatarLook => normalizeLook({ ...defaultLook(), ...o });
+
+  it('every combination and generic line is in the voice guide, and its ids exist', () => {
+    expect(COMBOS.length).toBe(15);
+    for (const c of COMBOS) {
+      for (const line of c.lines) expect(GUIDE.includes(line), line).toBe(true);
+      for (const id of c.ids ?? []) expect(ITEM_IDS.includes(id), `combo id ${id}`).toBe(true);
+      expect((c.ids === undefined) !== (c.when === undefined)).toBe(true);
+    }
+    expect(GENERIC_LINES.length).toBe(25);
+    for (const line of GENERIC_LINES) expect(GUIDE.includes(line), line).toBe(true);
+  });
+
+  it('every item has two or three lines of 1 to 12 words that do not name it', () => {
+    for (const it of ITEMS) {
+      expect(it.lines?.length ?? 0, `item ${it.id}`).toBeGreaterThanOrEqual(2);
+      expect(it.lines?.length ?? 0, `item ${it.id}`).toBeLessThanOrEqual(3);
+      for (const line of it.lines ?? []) {
+        const words = line.split(/\s+/).length;
+        expect(words, line).toBeLessThanOrEqual(12);
+        expect(/[!?.״]$/.test(line), line).toBe(true);
+      }
+    }
+  });
+
+  it('a combination wins when the item that completes it lands, and only then', () => {
+    expect(linesFor(look({ head: [3], eyes: 205 }), 205)).toEqual(['רטייה. ככה אני רואה רק חצי מהחשבון.']);
+    expect(linesFor(look({ head: [3], eyes: 205 }), 3)).toEqual(['רטייה. ככה אני רואה רק חצי מהחשבון.']);
+    // the bow has nothing to do with the pirate set: its own lines
+    expect(linesFor(look({ head: [3], eyes: 205, neck: 7 }), 7)).toBe(getItem(7)?.lines);
+    expect(linesFor(look({ head: [3] }), 3)).toBe(getItem(3)?.lines);
+    // the hat may be anywhere in the tower
+    expect(comboFor(look({ head: [2, 10], eyes: 204 }), 204)?.ids).toEqual([10, 204]);
+    expect(comboFor(look({ head: [1, 17] }), 17)?.ids).toEqual([1, 17]);
+  });
+
+  it('knows the three states: a full tower, a bare doll, every slot filled', () => {
+    expect(comboFor(look({ head: [2, 10, 4] }), 4)?.when).toBe('tower3');
+    expect(comboFor(look({ head: [2, 10, 4], neck: 7 }), 7)).toBeNull();
+    expect(comboFor(defaultLook())?.when).toBe('bare');
+    expect(comboFor(defaultLook(), 7)).toBeNull();
+    expect(comboFor(look({ head: [2], eyes: 202, ears: 302, face: 225, neck: 7 }), 7)?.when).toBe('full');
+    expect(comboFor(look({ head: [2], eyes: 202, ears: 302, face: 225 }), 225)).toBeNull();
+    // an id set beats a state
+    expect(comboFor(look({ head: [8], eyes: 202, ears: 13, face: 225, neck: 7 }), 13)?.ids).toEqual([8, 13]);
   });
 });

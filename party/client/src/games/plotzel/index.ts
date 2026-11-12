@@ -4,7 +4,8 @@
  * changes exactly one letter and must be a dictionary word. One round = a
  * seeded sequence of ladders (round.ts) that always opens with שימי; solve one
  * and the next slides in. No hints (the owner's rule); "דלג" shows the shortest
- * path for no points.
+ * path for no points. A ladder's score is 80% speed and 20% steps (round.ts);
+ * the tray shows what the ladder is worth right now, counting down.
  *
  * Rules and texts: ladder.ts (the original's logic) and round.ts (sequence,
  * scoring). DOM board + on-screen keyboard; every timer is a kit loop timer and
@@ -74,6 +75,10 @@ export interface PlotzelDebug {
   readonly phase: Phase;
   readonly typed: string;
   readonly skipReady: boolean;
+  /** Round ms spent on the current ladder (the score's clock). */
+  readonly elapsedMs: number;
+  /** What the ladder is worth if the next word solves it (the number in the tray). */
+  readonly worth: number;
   readonly results: readonly PuzzleResult[];
   readonly buildMs: number;
   /** Shortest path from the current word (the start until the first step) to פלוץ, as shown. */
@@ -206,13 +211,18 @@ export const game: GameModule = {
     const doneEl = el('span', 'pz-done');
     doneEl.dir = 'ltr';
     countEl.append(countNum, doneEl);
+    // what this ladder is worth if the next word solves it: counts down (80% of a ladder is speed)
+    const worthEl = el('div', 'pz-worth');
+    const worthNum = el('span', 'pz-worth-num');
+    worthNum.dir = 'ltr';
+    worthEl.append(el('span', 'pz-worth-cap', 'שווה'), worthNum);
     const skipBtn = el('button', 'pz-tool is-skip');
     skipBtn.dataset.act = 'skip';
     const skipLabel = el('span', 'pz-tool-label', 'דלג');
     skipBtn.append(el('span', 'pz-skip-fill'), skipLabel);
     skipBtn.setAttribute('type', 'button');
     skipBtn.tabIndex = -1;
-    tools.append(countEl, skipBtn);
+    tools.append(countEl, worthEl, skipBtn);
 
     const fxRoot = el('div', 'pz-fx');
     root.append(head, board, kb, tools, fxRoot);
@@ -229,6 +239,9 @@ export const game: GameModule = {
     let words: string[] = [start];
     let typed = '';
     let puzzleT0 = 0;
+    /** Round time left (ms) when this ladder began: the score's clock, kept across a reload. */
+    let puzzleLeft0 = ctx.durationMs;
+    let shownWorth = -1;
     let score = 0;
     let results: PuzzleResult[] = [];
     let phase: Phase = 'play';
@@ -250,6 +263,15 @@ export const game: GameModule = {
     const current = (): string => words[words.length - 1] ?? start;
     const steps = (): number => words.length - 1;
     const isPaused = (): boolean => isKitPaused() || ctx.isPaused();
+    /** Round time left now; the countdown before the round is "the round has not begun". */
+    const leftNow = (): number => clamp(ctx.timeLeftMs(), 0, ctx.durationMs);
+    /**
+     * Time spent on this ladder, for the score: by the round clock (it survives a reload and
+     * stands still in a freeze), and never less than the game's own clock.
+     */
+    const elapsedMs = (): number => Math.max(0, puzzleLeft0 - leftNow(), loop.timeMs - puzzleT0);
+    /** What the ladder is worth if the next word solves it. */
+    const worthNow = (): number => ladderScore(Math.max(par, steps() + 1), par, elapsedMs());
 
     // ── snapshot (reload resumes) ──
     function snapshot(over?: Partial<Snapshot>): void {
@@ -257,6 +279,7 @@ export const game: GameModule = {
         idx,
         words,
         spentMs: phase === 'play' ? Math.max(0, loop.timeMs - puzzleT0) : 0,
+        leftAtStartMs: phase === 'play' ? puzzleLeft0 : null,
         score,
         results,
         ...over,
@@ -265,7 +288,7 @@ export const game: GameModule = {
     /** The committed state after a solve / skip: the next puzzle, fresh. */
     function snapshotNext(): void {
       const next = seq[idx + 1];
-      snapshot({ idx: idx + 1, words: next !== undefined ? [next] : [], spentMs: 0 });
+      snapshot({ idx: idx + 1, words: next !== undefined ? [next] : [], spentMs: 0, leftAtStartMs: null });
     }
 
     // ── layout (sizes only, never gameplay) ──
@@ -329,6 +352,7 @@ export const game: GameModule = {
       countNum.textContent = `חידה ${idx + 1}`;
       doneEl.textContent = `✓ ${solveCount}`;
       doneEl.hidden = solveCount === 0;
+      worthEl.classList.toggle('is-off', phase !== 'play');
     }
 
     function renderActive(popAt = -1): void {
@@ -361,6 +385,11 @@ export const game: GameModule = {
       typed = '';
       phase = 'play';
       puzzleT0 = loop.timeMs - (restored ? clamp(restored.spentMs, 0, SKIP_AFTER_MS) : 0);
+      // the first ladder begins with the round; a restored one keeps the start it had
+      const left = leftNow();
+      const kept = restored ? restored.leftAtStartMs : null;
+      puzzleLeft0 = kept !== null ? clamp(kept, left, ctx.durationMs) : i === 0 ? ctx.durationMs : left;
+      shownWorth = -1;
       disarmSkip();
       revealEl.classList.remove('is-on');
       revealEl.replaceChildren();
@@ -453,10 +482,11 @@ export const game: GameModule = {
 
     function solved(row: HTMLElement): void {
       const s = steps();
-      const points = ladderScore(s, par);
+      const ms = Math.round(elapsedMs());
+      const points = ladderScore(s, par, ms);
       score = Math.min(MAX_RAW, score + points);
       ctx.setScore(score);
-      results = [...results, { start, par, steps: s, points }];
+      results = [...results, { start, par, steps: s, ms, points }];
       solveCount++;
       phase = 'celebrate';
       snapshotNext();
@@ -505,6 +535,7 @@ export const game: GameModule = {
         return;
       }
       setupPuzzle(idx + 1, null);
+      snapshot(); // the ladder's start time is kept from its first moment
       replay(head, 'is-enter');
       replay(rowsEl, 'is-enter');
       sfx.whoosh(1.2);
@@ -535,7 +566,7 @@ export const game: GameModule = {
       }
       disarmSkip();
       // the original's give-up: reveal the shortest path, nothing scored
-      results = [...results, { start, par, steps: null, points: 0 }];
+      results = [...results, { start, par, steps: null, ms: Math.round(elapsedMs()), points: 0 }];
       phase = 'reveal';
       snapshotNext();
       typed = '';
@@ -630,6 +661,13 @@ export const game: GameModule = {
     let drawnIdle = false;
     const loop = createLoop({
       update(dt: number): void {
+        if (phase === 'play' && (shownWorth < 0 || loop.steps % 6 === 0)) {
+          const w = worthNow();
+          if (w !== shownWorth) {
+            shownWorth = w;
+            worthNum.textContent = String(w);
+          }
+        }
         if (phase === 'play') {
           const p = Math.min(100, Math.floor(((loop.timeMs - puzzleT0) / SKIP_AFTER_MS) * 100));
           if (p !== shownSkipP) {
@@ -758,6 +796,12 @@ export const game: GameModule = {
       },
       get skipReady(): boolean {
         return skipReady();
+      },
+      get elapsedMs(): number {
+        return Math.round(elapsedMs());
+      },
+      get worth(): number {
+        return worthNow();
       },
       get results(): readonly PuzzleResult[] {
         return results.map((r) => ({ ...r }));

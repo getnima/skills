@@ -1,27 +1,28 @@
 /**
  * Dressing room voice: what the doll says, the burst words, and the sounds and haptics.
- * Lines follow the owner's page (design/albert-14-11.source.html) and the voice notes in
- * client/public/assets/shimi/README.md. Sounds and haptics never throw (audio may be locked).
+ * Lines follow the owner's voice guide, design/punchlines.he.md (combination lines win over an item's own). Sounds and haptics never throw (audio may be locked).
  */
 import { sfx } from '../kit/audio';
 import { haptic } from '../kit/haptics';
 
+import { linesFor } from './catalog';
+
+import type { AvatarLook } from '../../../shared/avatar';
 import type { AvatarItem, AvatarSnd } from './catalog';
 
 export const pick = <T>(list: readonly T[]): T => list[Math.floor(Math.random() * list.length)] as T;
 
 export const LINES = {
   hello: (name: string): string => (name !== '' ? `היי ${name}! תלבישו אותי. ככה תופיעו בטבלה.` : 'היי! תלבישו אותי. ככה תופיעו בטבלה.'),
-  tower: ['', '', 'שני כובעים. כמו דוד בפורים.', 'שלושה כובעים, אפס מכנסיים. סדר עדיפויות.'] as readonly string[],
-  towerFull: ['תקרה! החלפתי את הקומה העליונה.', 'שלושה זה המקסימום. הוועדה המקומית לא מאשרת יותר.', 'הכובע העליון הוחלף. הקומות למטה נשארות.'],
-  flick: ['הוריד לי את זה! איזו חוצפה.', 'אוקיי, אוקיי. קיבלתי את המסר.', 'זה היה בתשלומים!', 'הלך האביזר. הביטחון העצמי נשאר.'],
-  bowOff: ['רגע! זה היה כל הבגד שלי!', 'בלי הפפיון אני שוב בגרסת הבסיס.'],
-  shake: ['מתחילים מחדש. ערום ומאושר.', 'ניעור! הכל עף. אני נשאר.', 'פינוי־בינוי! מתחילים מחדש.'],
-  shakeEmpty: ['אין מה להוריד. אני כבר בגרסת הבסיס.', 'ניערת אותי סתם. אני כבר ערום.'],
+  tower: ['הוספתי קומה. בלי היתר.', 'דופלקס. הנוף מלמעלה מדהים.'] as readonly string[],
+  towerFull: ['שלוש קומות זה המקסימום. הוועדה המקומית לא מאשרת יותר.', 'החלפתי את הפנטהאוז. הדיירים למטה נשארים.'],
+  flick: ['גם בלי זה אני אייקון.', 'הלך האביזר. הכריזמה נשארה.', 'זה היה בהשאלה. ממוזיאון ישראל.', 'מינימליזם. גם את זה אני עושה הכי טוב.'],
+  bowOff: ['הפפיון ירד. האירוע ממשיך, כי האירוע זה אני.'],
+  shake: ['גרסת אנפלאגד. הקהל ביקש.', 'ניעור! הכול עף. אני נשאר.', 'פינוי־בינוי. מתחילים מחדש.'],
+  shakeEmpty: ['אין מה לנער. אני כבר אנפלאגד.', 'מקורי, בלי תוספות. כמו חומוס טוב.'],
   random: ['מחורחר! מי הלביש אותי?', 'לוק חדש, אותו ביטחון.', 'נודר? זה אני?', 'וואו! לא הייתי בוחר את זה. מושלם.'],
   bg: ['רקע חדש, אותו חתיך.', 'וואו, איזה רקע!', 'צבע של מנצחים.', 'ככה רואים אותי מכל הסלון.'],
   done: ['צדיק! ככה אני עולה לטבלה.', 'בן פורת יוסף! יאללה למסיבה.', 'מוכן! שמרו לי מקום ראשון.'],
-  generic: (it: AvatarItem): string[] => [`${it.name}! וואו!`, `${it.name}. צדיק!`, 'נודר, זה יושב עליי מושלם.'],
 } as const;
 
 export const BURST = {
@@ -35,11 +36,15 @@ export const BURST = {
 
 const turn = new Map<number, number>();
 
-/** The item's next funny line (they take turns), or a generic one. */
-export function itemLine(it: AvatarItem): string {
-  const list = it.lines !== undefined && it.lines.length > 0 ? it.lines : LINES.generic(it);
-  const i = turn.get(it.id) ?? Math.floor(Math.random() * list.length);
-  turn.set(it.id, i + 1);
+/**
+ * What the doll says when `it` lands on `look` (the look with the item on): the line of a
+ * combination the item completes, else the item's next line (they take turns), else a generic reaction.
+ */
+export function itemLine(it: AvatarItem, look: AvatarLook): string {
+  const list = linesFor(look, it.id);
+  const key = list === it.lines ? it.id : -it.id;
+  const i = turn.get(key) ?? Math.floor(Math.random() * list.length);
+  turn.set(key, i + 1);
   return list[i % list.length] ?? it.name;
 }
 

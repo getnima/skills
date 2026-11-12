@@ -260,6 +260,12 @@ export function seedFromText(text: string): number {
     h ^= text.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
+  // final mix: short, similar texts ("p1", "p2") must not give neighbouring seeds
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
   return h >>> 0;
 }
 

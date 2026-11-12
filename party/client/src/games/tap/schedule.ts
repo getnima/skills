@@ -1,10 +1,10 @@
 /**
  * The show of "שימי טאפ" that does not depend on the player: which booger comes out at
- * every dig, after how many digs the BIG booger comes, when the frenzy starts, which bored
- * faces the doll pulls while nobody taps, and where each booger lands on the glass. All of
- * it is computed up front from the seed and the round length only, so every phone in the
- * room gets exactly the same sequence (the player only decides how far into it they get).
- * Times are ms of round time. Pure: no DOM, no Math.random, no clock.
+ * every drip, which drip is the golden one, the order of the waiting bits, the slow-player
+ * fillers and the final-frame gags, and where each booger lands on the glass. All of it is
+ * computed up front from the seed and the round length only, so every phone in the room
+ * gets exactly the same sequence (the player only decides how far into it they get).
+ * Pure: no DOM, no Math.random, no clock.
  */
 import { createRng } from '../../kit/rng';
 
@@ -20,22 +20,33 @@ export const BOOGER = {
 export type BoogerKind = (typeof BOOGER)[keyof typeof BOOGER];
 export const BOOGER_KINDS = 6;
 
-/** Faces the doll pulls while it is bored (nobody taps): indexes into IDLE_FACES of the game. */
-export const IDLE_FACE_COUNT = 4;
+/** Length of the precomputed drip sequence; it repeats after that (at most ~95 drips in a sprint). */
+export const BOOGER_SEQ_LEN = 256;
 
-/** Length of the precomputed booger sequence; it repeats after that (nobody digs 512 times in a minute). */
-export const BOOGER_SEQ_LEN = 512;
+/** The waiting bits (index order of IDLE_BITS in the game). */
+export const IDLE_BIT = { Sneak: 0, Yawn: 1, Knock: 2 } as const satisfies Record<string, number>;
+export type IdleBit = (typeof IDLE_BIT)[keyof typeof IDLE_BIT];
+
+/** Slow-player fillers, each at most once per round. */
+export const FILLER = { EyeRoll: 0, Wink: 1, Sniff: 2 } as const satisfies Record<string, number>;
+export type Filler = (typeof FILLER)[keyof typeof FILLER];
+
+/** Small gags of the final frame (one every 4 s). */
+export const ALIVE = { Slide: 0, Blink: 1, Fog: 2, Press: 3 } as const satisfies Record<string, number>;
+export type Alive = (typeof ALIVE)[keyof typeof ALIVE];
+
+/** Golden booger: one per player, on a drip between these counted taps (scaled). */
+export const GOLDEN_TAPS: readonly [number, number] = [42, 108];
 
 export interface TapLevel {
   readonly durationMs: number;
-  /** Round time at which the frenzy ("last 15 seconds") starts. */
-  readonly frenzyFrom: number;
-  /** Kind of the booger thrown by dig #i (i from 0), for i < BOOGER_SEQ_LEN (then it repeats). */
+  /** Kind of the booger of drip #i (i from 0), for i < BOOGER_SEQ_LEN (then it repeats). Never golden or boss. */
   readonly boogers: readonly BoogerKind[];
-  /** Dig counts (cumulative, ascending) at which the BIG booger comes out. */
-  readonly bigAt: readonly number[];
-  /** Bored faces in order (the doll cycles through them while nobody taps). */
-  readonly idleFaces: readonly number[];
+  /** Index of the drip that is golden instead. */
+  readonly goldenDrip: number;
+  readonly idleBits: readonly IdleBit[];
+  readonly fillers: readonly Filler[];
+  readonly alive: readonly Alive[];
   /** Short stable string of the whole level (for tests and logs). */
   readonly fingerprint: string;
 }
@@ -49,78 +60,79 @@ function hash(parts: readonly number[]): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-/** Normal digs: everything but the boss (the boss only comes at the BIG moments). */
-const DIG_WEIGHTS: ReadonlyArray<readonly [BoogerKind, number]> = [
-  [BOOGER.Round, 34],
-  [BOOGER.Stretchy, 22],
-  [BOOGER.Googly, 20],
+/** Drip characters: round 40%, googly 25%, hairy 20%, stretchy 15%. */
+const DRIP_WEIGHTS: ReadonlyArray<readonly [BoogerKind, number]> = [
+  [BOOGER.Round, 40],
+  [BOOGER.Googly, 25],
   [BOOGER.Hairy, 20],
-  [BOOGER.Golden, 4],
+  [BOOGER.Stretchy, 15],
 ];
-const DIG_WEIGHT_SUM = DIG_WEIGHTS.reduce((s, [, w]) => s + w, 0);
+const DRIP_WEIGHT_SUM = DRIP_WEIGHTS.reduce((s, [, w]) => s + w, 0);
 
-/** First BIG booger after this many digs, then every BIG_GAP digs (both seeded within the range). */
-export const BIG_FIRST: readonly [number, number] = [12, 16];
-export const BIG_GAP: readonly [number, number] = [24, 34];
-
-export function buildLevel(seed: number, durationMs: number): TapLevel {
+/**
+ * `dripEvery` = counted taps per drip (6); `tapScale` scales the golden window.
+ */
+export function buildLevel(seed: number, durationMs: number, tapScale = 1, dripEvery = 6): TapLevel {
   const dur = Math.max(1000, durationMs);
   const root = createRng(seed);
-  const frenzyFrom = dur - Math.min(15_000, dur * 0.25);
 
-  // ── booger sequence (no golden twice in a row, never the same character three times) ──
+  // ── drip sequence: weighted, never the same kind twice in a row ──
   const rb = root.fork('boogers');
   const boogers: BoogerKind[] = [];
   for (let i = 0; i < BOOGER_SEQ_LEN; i++) {
+    const prev = boogers[i - 1];
+    let total = DRIP_WEIGHT_SUM;
+    for (const [k, w] of DRIP_WEIGHTS) if (k === prev) total -= w;
+    let x = rb.next() * total;
     let kind: BoogerKind = BOOGER.Round;
-    for (let tries = 0; tries < 6; tries++) {
-      let x = rb.next() * DIG_WEIGHT_SUM;
-      for (const [k, w] of DIG_WEIGHTS) {
-        x -= w;
-        if (x < 0) {
-          kind = k;
-          break;
-        }
+    for (const [k, w] of DRIP_WEIGHTS) {
+      if (k === prev) continue;
+      x -= w;
+      if (x < 0) {
+        kind = k;
+        break;
       }
-      const a = boogers[i - 1];
-      const b = boogers[i - 2];
-      if (kind === BOOGER.Golden && a === BOOGER.Golden) continue;
-      if (kind === a && kind === b) continue;
-      break;
     }
-    // still a repeat after the retries: the next normal character instead (deterministic)
-    if ((kind === BOOGER.Golden && boogers[i - 1] === BOOGER.Golden) || (kind === boogers[i - 1] && kind === boogers[i - 2])) {
-      kind = ((kind + 1) % BOOGER.Golden) as BoogerKind;
-    }
+    if (kind === prev) kind = prev === BOOGER.Round ? BOOGER.Googly : BOOGER.Round;
     boogers.push(kind);
   }
 
-  // ── BIG booger thresholds (in digs) ──
-  const rg = root.fork('big');
-  const bigAt: number[] = [];
-  let at = rg.int(BIG_FIRST[0], BIG_FIRST[1]);
-  while (at < 2000) {
-    bigAt.push(at);
-    at += rg.int(BIG_GAP[0], BIG_GAP[1]);
+  // ── the golden drip: between GOLDEN_TAPS (scaled) counted taps ──
+  const rgold = root.fork('golden');
+  const lo = Math.max(1, Math.ceil((GOLDEN_TAPS[0] * tapScale) / dripEvery) - 1);
+  const hi = Math.max(lo, Math.floor((GOLDEN_TAPS[1] * tapScale) / dripEvery) - 1);
+  const goldenDrip = rgold.int(lo, hi);
+
+  // ── waiting bits: seeded, never the same twice in a row ──
+  const ri = root.fork('idle');
+  const idleBits: IdleBit[] = [];
+  let prevBit = -1;
+  for (let i = 0; i < 16; i++) {
+    let b = prevBit < 0 ? ri.int(0, 2) : ri.int(0, 1);
+    if (prevBit >= 0 && b >= prevBit) b++;
+    idleBits.push(b as IdleBit);
+    prevBit = b;
   }
 
-  // ── bored faces ──
-  const rf = root.fork('faces');
-  const idleFaces: number[] = [];
-  let cur = -1;
+  const fillers = root.fork('fillers').shuffle([FILLER.EyeRoll, FILLER.Wink, FILLER.Sniff]) as Filler[];
+
+  const ra = root.fork('alive');
+  const alive: Alive[] = [];
+  let prevA = -1;
   for (let i = 0; i < 32; i++) {
-    let next = rf.int(0, IDLE_FACE_COUNT - 2);
-    if (next >= cur && cur >= 0) next++;
-    cur = next;
-    idleFaces.push(cur);
+    let a = ra.int(0, 2);
+    if (prevA >= 0 && a >= prevA) a++;
+    alive.push(a as Alive);
+    prevA = a;
   }
 
-  const parts: number[] = [dur, frenzyFrom, ...boogers, ...bigAt.slice(0, 40), ...idleFaces];
-  return { durationMs: dur, frenzyFrom, boogers, bigAt, idleFaces, fingerprint: hash(parts) };
+  const parts: number[] = [dur, goldenDrip, ...boogers.slice(0, 64), ...idleBits, ...fillers, ...alive];
+  return { durationMs: dur, boogers, goldenDrip, idleBits, fillers, alive, fingerprint: hash(parts) };
 }
 
-/** Kind of the booger of dig #i. */
+/** Kind of the booger of drip #i (the golden drip included). */
 export function boogerOf(level: TapLevel, i: number): BoogerKind {
+  if (i === level.goldenDrip) return BOOGER.Golden;
   return level.boogers[((i % BOOGER_SEQ_LEN) + BOOGER_SEQ_LEN) % BOOGER_SEQ_LEN] ?? BOOGER.Round;
 }
 
@@ -153,4 +165,9 @@ export function boogerTraits(seed: number, i: number): BoogerTraits {
     slide: mix(base + 0x27d4eb2f),
     size: mix(base + 0x165667b1),
   };
+}
+
+/** A seeded 0..1 value for (seed, salt, i): fingerprint rotations, digit tilts, sneeze spots. */
+export function seeded(seed: number, salt: number, i: number): number {
+  return mix(Math.imul((seed | 0) ^ Math.imul(salt + 1, 0x27d4eb2f), 0x85ebca6b) + Math.imul(i + 7, 0xc2b2ae35));
 }
