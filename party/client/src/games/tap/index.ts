@@ -23,7 +23,7 @@ import { createInput } from '../../kit/input';
 import { createLoop } from '../../kit/loop';
 import { createBackdrop, FR, FRAME, FRAME_NAMES, HAND, loadTapArt } from './art';
 import { blit, createStickerCache, loadDisplayFont, makeLayer, PAL, renderChip, renderSticker } from './look';
-import { drawBarWell, freeLayer, paintCounter, paintDigits, paintDisc, paintFingerprint, paintFog, paintNote, paintStar } from './paint';
+import { drawBarWell, freeLayer, paintCounter, paintDigits, paintFingerprint, paintFog, paintNote, paintStar } from './paint';
 import { createTapEngine, rankOf, scaledThresholds, TAP } from './pick';
 import { BOOGER, boogerOf, boogerTraits, buildLevel, FILLER, IDLE_BIT, ALIVE, seeded } from './schedule';
 
@@ -487,7 +487,6 @@ export const game: GameModule = {
     }
 
     // ── pre-rendered layers (per size) ──
-    let disc: Layer | null = null;
     let counter: Layer | null = null;
     let fog: Layer | null = null;
     let digits: Layer[] = [];
@@ -497,17 +496,22 @@ export const game: GameModule = {
     const star = paintStar(22);
     let glass: HTMLCanvasElement | null = null;
     let glassCtx: CanvasRenderingContext2D | null = null;
-    let glassScale = 1;
+    /** The decals over the token (the full-screen glass holds the backdrop + the decals off the token). */
+    let tokenGlass: HTMLCanvasElement | null = null;
+    let tokenCtx: CanvasRenderingContext2D | null = null;
+    let tokenGlassUsed = false;
     const glassOps: GlassOp[] = [];
     let pileCanvas: HTMLCanvasElement | null = null;
     let pileCtx: CanvasRenderingContext2D | null = null;
     let pileDirty = true;
-    const PILE_EXTRA = 70;
+    const PILE_EXTRA = 0;
 
+    /** The pile layer only as tall as the pile can get: two rows of boogers and the name chips. */
+    function pileLayerH(): number {
+      return Math.ceil(0.12 * geo.D + 0.045 * geo.D + 34 + PILE_EXTRA);
+    }
     function rebuildLayers(): void {
       const scale = Math.min(2, view.dpr);
-      freeLayer(disc);
-      disc = paintDisc(geo.D, scale);
       freeLayer(counter);
       counter = paintCounter(geo.w, geo.counterH + ctx.safeBottom, scale);
       if (!fog) fog = paintFog();
@@ -527,34 +531,123 @@ export const game: GameModule = {
         glass.width = 0;
         glass.height = 0;
       }
+      // one full-screen layer = the backdrop + the mess off the token (one blit per frame)
       const gl = makeLayer(geo.w, geo.h, scale);
       glass = gl.canvas;
       glassCtx = gl.ctx;
-      glassScale = scale;
+      if (glassCtx) {
+        backdrop.draw(glassCtx, geo.w, geo.h, scale, geo.cx, geo.cy);
+        glassCtx.setTransform(scale, 0, 0, scale, 0, 0);
+        glassCtx.fillStyle = PAL.ink;
+        glassCtx.beginPath();
+        glassCtx.arc(geo.cx + 5, geo.cy + 6, geo.R, 0, Math.PI * 2);
+        glassCtx.fill();
+      }
+      if (tokenGlass) {
+        tokenGlass.width = 0;
+        tokenGlass.height = 0;
+      }
+      const tl = makeLayer(geo.D, geo.D, scale);
+      tokenGlass = tl.canvas;
+      tokenCtx = tl.ctx;
+      tokenGlassUsed = false;
       for (const op of glassOps) paintGlassOp(op);
       if (pileCanvas) {
         pileCanvas.width = 0;
         pileCanvas.height = 0;
       }
-      const pl = makeLayer(geo.w, geo.pileH + PILE_EXTRA, scale);
+      const pl = makeLayer(geo.w, pileLayerH(), scale);
       pileCanvas = pl.canvas;
       pileCtx = pl.ctx;
       pileDirty = true;
     }
 
     // ── the glass: decals, trails, smears and baked boogers painted incrementally ──
+    /** Bounding box of a glass op (CSS px): x0, y0, x1, y1. */
+    const opBox = [0, 0, 0, 0];
+    function boxOf(op: GlassOp): void {
+      const { cx, cy, D } = geo;
+      let x0: number;
+      let y0: number;
+      let x1: number;
+      let y1: number;
+      switch (op.k) {
+        case 'decal': {
+          const hw = op.s * D * Math.max(1, op.sx) * 0.75;
+          x0 = cx + op.u * D - hw;
+          x1 = cx + op.u * D + hw;
+          y0 = cy + op.v * D - hw;
+          y1 = cy + op.v * D + hw;
+          break;
+        }
+        case 'trail':
+          x0 = cx + op.u * D - op.wd * D;
+          x1 = cx + op.u * D + op.wd * D;
+          y0 = cy + op.v * D - 2;
+          y1 = cy + op.v * D + op.len * D + op.wd * D;
+          break;
+        case 'sprite': {
+          const hw = op.s * D * 1.1;
+          x0 = cx + op.u * D - hw;
+          x1 = cx + op.u * D + hw;
+          y0 = cy + op.v * D - hw;
+          y1 = cy + op.v * D + hw;
+          break;
+        }
+        case 'smear': {
+          const a = cx + op.u0 * D;
+          const b = cx + op.u1 * D;
+          const e = cy + op.v0 * D;
+          const f = cy + op.v1 * D;
+          x0 = Math.min(a, b) - 0.03 * D;
+          x1 = Math.max(a, b) + 0.03 * D;
+          y0 = Math.min(e, f) - 0.03 * D;
+          y1 = Math.max(e, f) + 0.03 * D;
+          break;
+        }
+        default: {
+          const never: never = op;
+          throw new Error(`Unhandled glass op ${JSON.stringify(never)}`);
+        }
+      }
+      opBox[0] = x0;
+      opBox[1] = y0;
+      opBox[2] = x1;
+      opBox[3] = y1;
+    }
     function paintGlassOp(op: GlassOp): void {
-      const c = glassCtx;
-      if (!c) return;
       const { cx, cy, D, R } = geo;
+      boxOf(op);
+      const [x0, y0, x1, y1] = opBox as [number, number, number, number];
+      // where the box is relative to the circle: all outside, all inside, or across the edge
+      const nearX = clamp(cx, x0, x1);
+      const nearY = clamp(cy, y0, y1);
+      const touches = Math.hypot(nearX - cx, nearY - cy) < R;
+      const farX = Math.max(Math.abs(x0 - cx), Math.abs(x1 - cx));
+      const farY = Math.max(Math.abs(y0 - cy), Math.abs(y1 - cy));
+      const inside = Math.hypot(farX, farY) <= R;
       for (let pass = 0; pass < 2; pass++) {
+        if (pass === 0 && inside) continue;
+        if (pass === 1 && !touches) continue;
+        const c = pass === 0 ? glassCtx : tokenCtx;
+        if (!c) continue;
         c.save();
-        c.beginPath();
-        if (pass === 0) {
-          c.rect(0, 0, geo.w, geo.h);
-          c.arc(cx, cy, R, 0, Math.PI * 2, true);
-        } else c.arc(cx, cy, R, 0, Math.PI * 2);
-        c.clip();
+        if (pass === 1) {
+          c.translate(-(cx - R), -(cy - R));
+          tokenGlassUsed = true;
+        }
+        if (touches && !inside) {
+          // a round clip only across the edge, and only over the op's box (small mask)
+          c.beginPath();
+          c.rect(x0, y0, x1 - x0, y1 - y0);
+          c.clip();
+          c.beginPath();
+          if (pass === 0) {
+            c.rect(x0, y0, x1 - x0, y1 - y0);
+            c.arc(cx, cy, R, 0, Math.PI * 2, true);
+          } else c.arc(cx, cy, R, 0, Math.PI * 2);
+          c.clip();
+        }
         const sprite = op.k === 'sprite';
         c.globalAlpha = pass === 0 ? (sprite ? 0.9 : 0.5) : sprite ? 0.55 : 0.2;
         switch (op.k) {
@@ -1050,7 +1143,7 @@ export const game: GameModule = {
       const c = pileCtx;
       if (!c) return;
       pileDirty = false;
-      const H = geo.pileH + PILE_EXTRA;
+      const H = pileLayerH();
       c.clearRect(0, 0, geo.w, H);
       const top = geo.pileBottom - H;
       for (let row = 1; row >= 0; row--) {
@@ -2475,11 +2568,19 @@ export const game: GameModule = {
       if (rot !== 0) g.rotate(rot);
       g.scale(sx, sy);
       g.translate(-cx, -cy);
-      if (disc) g.drawImage(disc.canvas, cx - disc.w / 2, cy - disc.h / 2, disc.w, disc.h);
+      // the cream disc (its hard ink shadow is painted once into the backdrop layer)
+      g.fillStyle = '#FFF6E0';
+      g.beginPath();
+      g.arc(cx, cy, R, 0, Math.PI * 2);
+      g.fill();
       // the picture, clipped to the circle (a porthole)
       g.save();
+      // The porthole. Everything of the doll stays within 0.48 D of the centre except what
+      // comes up from below (the hands, a pressed chin), so a straight cut just above the
+      // bottom of the ring is enough, and an axis-aligned rect clip costs nothing (a round
+      // anti-aliased clip cost ~20% of a frame on a throttled phone). The ring covers the rest.
       g.beginPath();
-      g.arc(cx, cy, R - geo.ring * 0.5, 0, Math.PI * 2);
+      g.rect(cx - R, cy - R, D, R + 0.462 * D);
       g.clip();
       if (p.prot !== 0 || p.pscale !== 1) {
         g.translate(cx, cy);
@@ -2623,7 +2724,7 @@ export const game: GameModule = {
 
     function drawPile(g: CanvasRenderingContext2D, hop: number): void {
       if (pileDirty) paintPile();
-      const H = geo.pileH + PILE_EXTRA;
+      const H = pileLayerH();
       if (pileCanvas && pile.length > 0) g.drawImage(pileCanvas, 0, geo.pileBottom - H - hop, geo.w, H);
       // Yossi waves from his place
       if (yossi.st === 2 && yossi.slot >= 0) {
@@ -2800,12 +2901,17 @@ export const game: GameModule = {
       const g = view.ctx;
       const { w, h } = geo;
       const s = engine.state;
-      backdrop.draw(g, w, h, view.dpr, geo.cx, geo.cy);
+      if (glass) {
+        g.save();
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.drawImage(glass, 0, 0);
+        g.restore();
+      }
 
       g.save();
       fx.applyShake(g);
       drawToken(g);
-      if (glass) g.drawImage(glass, 0, 0, w, h);
+      if (tokenGlass && tokenGlassUsed) g.drawImage(tokenGlass, geo.cx - geo.R, geo.cy - geo.R, geo.D, geo.D);
 
       // the pile under the token, hopping with every tap
       const hop = bobT < 0.1 ? 3 * Math.sin((bobT / 0.1) * Math.PI) : 0;
@@ -3019,8 +3125,8 @@ export const game: GameModule = {
         backdrop.dispose();
         style.remove();
         chipCache.dispose();
-        for (const l of [disc, counter, fog, print, note, star, ...digits]) freeLayer(l);
-        for (const c of [glass, pileCanvas]) {
+        for (const l of [counter, fog, print, note, star, ...digits]) freeLayer(l);
+        for (const c of [glass, pileCanvas, tokenGlass]) {
           if (c) {
             c.width = 0;
             c.height = 0;
@@ -3028,9 +3134,10 @@ export const game: GameModule = {
         }
         glass = null;
         glassCtx = null;
+        tokenGlass = null;
+        tokenCtx = null;
         pileCanvas = null;
         pileCtx = null;
-        disc = null;
         counter = null;
         fog = null;
         digits = [];

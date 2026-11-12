@@ -1,7 +1,7 @@
 /** Small shared pieces of the phone UI: avatars, ticking hooks, confetti, rank helpers. */
 import { useEffect, useRef, useState } from 'preact/hooks';
 
-import { Avatar as LookAvatar } from '../avatar/Avatar';
+import { Avatar as LookAvatar } from '../avatar';
 import { createGameCanvas } from '../kit/canvas';
 import { createFx } from '../kit/fx';
 import { createLoop } from '../kit/loop';

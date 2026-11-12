@@ -10,6 +10,7 @@
 import { io } from 'socket.io-client';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
+import { applyLooks } from '../../../shared/room-looks';
 import { parseRelay, toRelay } from '../host/actions';
 import { createServerClock, serverUrl } from '../net/connection';
 import { makeRid } from './logic';
@@ -262,6 +263,15 @@ export function useRemoteLink(): RemoteLink {
       if (stateRef.current?.round?.index !== msg.round) return;
       setScores(msg.scores);
     };
+    // somebody's doll changed: a small patch, not a whole state
+    const onLooks = (msg: { looks: ReadonlyArray<readonly [string, string]> }): void => {
+      const cur = stateRef.current;
+      if (cur === null) return;
+      const next = applyLooks(cur, msg?.looks);
+      if (next === cur) return;
+      stateRef.current = next;
+      setState(next);
+    };
     const onRelay = (msg: { from: HostRole; data: RelayData }): void => {
       if (msg.from !== 'screen') return;
       const m = parseRelay(msg.data);
@@ -281,6 +291,7 @@ export function useRemoteLink(): RemoteLink {
     socket.on('disconnect', onDisconnect);
     socket.on('state', onState);
     socket.on('scores', onScores);
+    socket.on('looks', onLooks);
     socket.on('relay', onRelay);
     socket.io.on('reconnect_attempt', onAttempt);
     if (pw.current !== null) socket.connect();
@@ -303,6 +314,7 @@ export function useRemoteLink(): RemoteLink {
       socket.off('disconnect', onDisconnect);
       socket.off('state', onState);
       socket.off('scores', onScores);
+      socket.off('looks', onLooks);
       socket.off('relay', onRelay);
       socket.io.off('reconnect_attempt', onAttempt);
       document.removeEventListener('visibilitychange', wake);

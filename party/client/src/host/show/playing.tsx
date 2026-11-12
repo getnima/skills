@@ -17,6 +17,8 @@ interface Racer {
   readonly id: string;
   readonly name: string;
   readonly avatar: number;
+  /** The player's dressed doll (PlayerPublic.look). */
+  readonly look?: string;
   readonly score: number;
   /** Elimination round: this player is out (their final is in). */
   readonly out?: boolean;
@@ -90,7 +92,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
     const list: Racer[] = [];
     for (const p of props.players) {
       const score = props.scores.get(p.id);
-      if (score !== undefined) list.push({ id: p.id, name: p.name, avatar: p.avatar, score, out: elimination?.out.has(p.id) ?? false });
+      if (score !== undefined) list.push({ id: p.id, name: p.name, avatar: p.avatar, look: p.look, score, out: elimination?.out.has(p.id) ?? false });
     }
     const before = prevOrder.current;
     if (elimination !== null) {
@@ -381,7 +383,7 @@ export function PlayingScene(props: PlayingSceneProps): JSX.Element {
         <div class={`sh-row-enter ${enter.cls}`} key={r.id}>
           <div class="sh-row-in">
             <span class="sh-rank">{i + 1}</span>
-            <Avatar avatar={r.avatar} name={r.name} />
+            <Avatar avatar={r.avatar} name={r.name} look={r.look} />
             <span class={`sh-name ${Array.from(r.name).length > 11 ? 'is-long' : ''}`} dir="auto">
               <bdi>{r.name}</bdi>
             </span>

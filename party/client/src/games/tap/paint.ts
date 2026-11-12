@@ -1,6 +1,6 @@
 /**
  * Things of "שימי טאפ" painted ONCE into small offscreen canvases (and only blitted in the hot
- * path): the token disc, the breath fog, the finger-written digits, the fingerprint, the
+ * path): the breath fog, the finger-written digits, the fingerprint, the
  * counter panel, a star, a music note. No gradients, shadows or text measuring per frame.
  */
 import { roundRectPath } from '../../kit/canvas';
@@ -23,22 +23,6 @@ export function freeLayer(l: Layer | null): void {
   if (!l) return;
   l.canvas.width = 0;
   l.canvas.height = 0;
-}
-
-/** Hard ink shadow disc (offset 5, 6) + cream disc of diameter D; drawn centred on the token centre. */
-export function paintDisc(D: number, scale: number): Layer {
-  const pad = 10;
-  const s = D + pad * 2;
-  return layer(s, s, scale, (c) => {
-    c.fillStyle = PAL.ink;
-    c.beginPath();
-    c.arc(s / 2 + 5, s / 2 + 6, D / 2, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = '#FFF6E0';
-    c.beginPath();
-    c.arc(s / 2, s / 2, D / 2, 0, Math.PI * 2);
-    c.fill();
-  });
 }
 
 /** Soft white breath-fog oval (the one gradient, painted once). */

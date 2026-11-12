@@ -42,6 +42,9 @@ const RECORD = `(() => {
   await browser.close();
   const all = ft.filter(([, left]) => left > 0 && left < DURATION).map(([d]) => d);
   const busy = ft.filter(([, left]) => left > 0 && left < 15000).map(([d]) => d);
+  // the sprint: the first 20 s of tapping (the bot taps from the start of the round), glass filling up
+  const sprint = ft.filter(([, left]) => left < DURATION - 1000 && left > DURATION - 20000).map(([d]) => d);
+  const late = ft.filter(([, left]) => left < DURATION - 14000 && left > DURATION - 20000).map(([d]) => d);
   console.log(
     JSON.stringify({
       label: LABEL,
@@ -53,6 +56,12 @@ const RECORD = `(() => {
       p50: +pct(all, 50).toFixed(1),
       p95: +pct(all, 95).toFixed(1),
       p99: +pct(all, 99).toFixed(1),
+      sprintP50: +pct(sprint, 50).toFixed(1),
+      sprintP95: +pct(sprint, 95).toFixed(1),
+      sprintP99: +pct(sprint, 99).toFixed(1),
+      fullGlassP50: +pct(late, 50).toFixed(1),
+      fullGlassP95: +pct(late, 95).toFixed(1),
+      fullGlassP99: +pct(late, 99).toFixed(1),
       last15p50: +pct(busy, 50).toFixed(1),
       last15p95: +pct(busy, 95).toFixed(1),
       last15p99: +pct(busy, 99).toFixed(1),

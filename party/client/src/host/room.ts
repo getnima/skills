@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
+import { applyLooks } from '../../../shared/room-looks';
 import { connect, createServerClock } from '../net/connection';
 
 import type { Ack, ErrorCode, GameId, HostRole, RelayData, RoomState } from '../../../shared/protocol';
@@ -154,6 +155,15 @@ export function useHostRoom(): HostRoom {
       if (r === null || r === undefined || r.index !== msg.round) return;
       setScores(new Map(msg.scores));
     };
+    // somebody's doll changed (a guest is dressing): a small patch, not a whole state
+    const onLooks = (msg: { looks: ReadonlyArray<readonly [string, string]> }): void => {
+      const cur = stateRef.current;
+      if (cur === null) return;
+      const next = applyLooks(cur, msg?.looks);
+      if (next === cur) return;
+      stateRef.current = next;
+      setState(next);
+    };
     const onReconnectAttempt = (): void => setStatus('connecting');
     const onRelayMsg = (msg: { from: HostRole; data: RelayData }): void => {
       for (const fn of relayListeners) {
@@ -169,6 +179,7 @@ export function useHostRoom(): HostRoom {
     socket.on('disconnect', onDisconnect);
     socket.on('state', onState);
     socket.on('scores', onScores);
+    socket.on('looks', onLooks);
     socket.on('relay', onRelayMsg);
     socket.io.on('reconnect_attempt', onReconnectAttempt);
     if (socket.connected) onConnect();
@@ -184,6 +195,7 @@ export function useHostRoom(): HostRoom {
       socket.off('disconnect', onDisconnect);
       socket.off('state', onState);
       socket.off('scores', onScores);
+      socket.off('looks', onLooks);
       socket.off('relay', onRelayMsg);
       socket.io.off('reconnect_attempt', onReconnectAttempt);
       document.removeEventListener('visibilitychange', onVisible);

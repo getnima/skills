@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 
+import { plateColor, useAvatarUrl } from '../../avatar';
+
 import type { JSX } from 'preact';
 
 /** Avatar palette: PlayerPublic.avatar is an index into it (wraps around). */
@@ -42,10 +44,52 @@ export function isolate(name: string): string {
 export interface AvatarProps {
   readonly avatar: number;
   readonly name: string;
+  /**
+   * The player's dressed Shimi (PlayerPublic.look / ResultRow.look). With it the avatar is the
+   * doll; without it (old data) the coloured initial.
+   */
+  readonly look?: string | null;
+  /** 'icon' the head (default); 'bust' head and shoulders (the podium, the winner). */
+  readonly crop?: 'icon' | 'bust';
   readonly class?: string;
 }
 
+/** Design units (--av in show.css) of the avatar variants, to pick a picture that is sharp enough. */
+function avatarUnits(cls: string): number {
+  return cls.includes('sh-avatar--xl') ? 180 : cls.includes('sh-avatar--lg') ? 120 : 68;
+}
+
+/** Roughly one design unit in CSS px (useStage's `u`, the host shell's --hu), without measuring every row. */
+export function unitPx(): number {
+  if (typeof window === 'undefined') return 1;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  return h > w * 1.05 ? Math.min(w / 640, h / 1380) : Math.min(w / 1920, h / 1080);
+}
+
+/** The plate colour of an encoded look ("1.<bg>. ..."): the box colour before the picture is there. */
+export function lookPlateColor(look: string): string {
+  return plateColor(Number(look.split('.')[1] ?? 0) || 0);
+}
+
+/**
+ * The dressed doll in the show's avatar box. The box keeps the size its CSS gives it (--av),
+ * so no scene's layout changes; the picture comes from the avatar module's cache (one picture
+ * per look and size for the whole page: rows that move or re-render never compose again).
+ */
+function DollAvatar(props: { readonly look: string; readonly crop: 'icon' | 'bust'; readonly class: string }): JSX.Element {
+  const px = Math.max(24, Math.round(avatarUnits(props.class) * unitPx()));
+  const url = useAvatarUrl(props.look, px, props.crop);
+  return (
+    <span class={`sh-avatar sh-avatar--doll ${props.class}`} style={{ backgroundColor: lookPlateColor(props.look) }} data-look={props.look}>
+      {url !== null ? <img src={url} alt="" draggable={false} /> : null}
+    </span>
+  );
+}
+
 export function Avatar(props: AvatarProps): JSX.Element {
+  const look = props.look;
+  if (typeof look === 'string' && look !== '') return <DollAvatar look={look} crop={props.crop ?? 'icon'} class={props.class ?? ''} />;
   return (
     <span class={`sh-avatar ${props.class ?? ''}`} style={{ backgroundColor: avatarColor(props.avatar) }}>
       {initialOf(props.name)}

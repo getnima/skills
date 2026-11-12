@@ -64,23 +64,26 @@ const MISSING = process.argv.includes('missing=1');
     g.textAlign = 'center';
     const R = 43; // a 390 px wide phone
     const hit = R * 1.05;
-    const box = (R / art.BODY_RADIUS) * 1.05;
     /** The two halves around (x, y), `gap` apart, `k` times the phone size, the cut turned by `turn`. */
     const pair = (i, x, y, k, gap, turn) => {
       const [up, lo] = halves[i];
-      const b = box * k;
       g.save();
       g.translate(x, y);
       g.rotate(turn);
-      g.drawImage(up, -b / 2, -b / 2 - gap, b, b);
-      g.drawImage(lo, -b / 2, -b / 2 + gap, b, b);
+      art.drawSprite(g, up, 0, -gap, hit * k);
+      art.drawSprite(g, lo, 0, gap, hit * k);
       g.restore();
     };
     sprites.forEach((d, i) => {
       const x0 = (i % cols) * CW;
       const y0 = Math.floor(i / cols) * CH;
       // as it flies, at phone size, with the hit circle
-      d.draw(g, x0 + 75, y0 + 85, box, box);
+      art.drawSprite(g, d, x0 + 75, y0 + 85, hit);
+      // (dashed: the trimmed box the game blits)
+      g.setLineDash([3, 3]);
+      g.strokeStyle = 'rgba(255,255,255,0.5)';
+      g.strokeRect(x0 + 75 + d.left * hit, y0 + 85 + d.top * hit, d.width * hit, d.height * hit);
+      g.setLineDash([]);
       g.strokeStyle = '#FFD21F';
       g.lineWidth = 1;
       g.beginPath();
@@ -99,7 +102,7 @@ const MISSING = process.argv.includes('missing=1');
     const by = rows * CH + 190;
     a.bombs.forEach((b, i) => {
       for (const [r, bx] of [[105, 180 + i * 520], [hit, 430 + i * 520]]) {
-        g.drawImage(b.source, bx + b.left * r, by + b.top * r, b.size * r, b.size * r);
+        art.drawSprite(g, b, bx, by, r);
         g.strokeStyle = '#FFD21F';
         g.lineWidth = 1.5;
         g.beginPath();
@@ -114,7 +117,7 @@ const MISSING = process.argv.includes('missing=1');
       g.fillStyle = '#fff';
       g.fillText(`${b.key}${b.isPlaceholder ? ' (drawn)' : ''}`, 180 + i * 520, by + 128);
     });
-    return { tLoad: Math.round(tLoad), tHalves: +tHalves.toFixed(1), tSplats: +tSplats.toFixed(1), real: a.real, W, H, sprite: [a.targets[0].source.width, a.targets[0].source.height], bomb: [a.bombs[0].source.width, a.bombs[0].source.height] };
+    return { tLoad: Math.round(tLoad), tHalves: +tHalves.toFixed(1), tSplats: +tSplats.toFixed(1), real: a.real, W, H, px: { targets: Object.fromEntries(sprites.map((d, i) => [names[i], `${d.source.width}x${d.source.height}`])), halves: Object.fromEntries(halves.map((h, i) => [names[i], h.map((c) => `${c.source.width}x${c.source.height}`).join(' ')])), bombs: a.bombs.map((b) => `${b.source.width}x${b.source.height}`) } };
   });
   await page.setViewportSize({ width: info.W, height: info.H });
   await page.waitForTimeout(200);

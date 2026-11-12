@@ -647,16 +647,34 @@
 .hs-chip:hover {
   transform: scale(1.05);
 }
+/* the guest's dressed Shimi (a rounded plate: a circle would cut the hats); the picture fills it */
 .hs-chip-av {
+  position: relative;
   flex: none;
-  display: grid;
-  place-items: center;
-  width: calc(56 * var(--hu) * var(--cs));
-  height: calc(56 * var(--hu) * var(--cs));
-  border-radius: 50%;
-  font-size: calc(30 * var(--hu) * var(--cs));
-  color: var(--hs-ink);
+  width: calc(62 * var(--hu) * var(--cs));
+  height: calc(62 * var(--hu) * var(--cs));
+  border-radius: 24%;
+  overflow: hidden;
   background: var(--chip);
+  box-shadow: 0 0 0 calc(3 * var(--hu) * var(--cs)) rgba(255, 255, 255, 0.92);
+}
+.hs-chip-av > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  /* a new picture = the guest just changed something in the dressing room */
+  animation: hs-doll-in 340ms cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+@keyframes hs-doll-in {
+  0% {
+    transform: scale(1.22) rotate(-5deg);
+  }
+  100% {
+    transform: none;
+  }
 }
 .hs-chip-name {
   overflow: hidden;
@@ -665,6 +683,55 @@
 }
 .hs-chip-off {
   font-size: 0.8em;
+}
+/* pills (a full room): a little taller than before, for the doll */
+.hs-chips.is-pills .hs-chip {
+  height: calc(78 * var(--hu) * var(--cs));
+}
+/* cards (up to 24 guests): the doll big, the name under it */
+.hs-chips.is-cards {
+  justify-content: center;
+  gap: calc(18 * var(--hu) * var(--cs)) calc(16 * var(--hu) * var(--cs));
+  padding: calc(10 * var(--hu));
+}
+.hs-chips.is-cards .hs-chip {
+  position: relative;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: calc(10 * var(--hu) * var(--cs));
+  width: calc(172 * var(--hu) * var(--cs));
+  height: auto;
+  padding: 0;
+  border-radius: calc(26 * var(--hu) * var(--cs));
+  background: none;
+  box-shadow: none;
+}
+.hs-chips.is-cards .hs-chip-av {
+  width: calc(132 * var(--hu) * var(--cs));
+  height: calc(132 * var(--hu) * var(--cs));
+  box-shadow:
+    0 0 0 calc(5 * var(--hu) * var(--cs)) #fff,
+    0 calc(9 * var(--hu) * var(--cs)) 0 calc(5 * var(--hu) * var(--cs)) rgba(0, 0, 0, 0.38);
+}
+.hs-chips.is-cards .hs-chip-name {
+  max-width: 100%;
+  padding: 0 calc(2 * var(--hu));
+  font-size: calc(31 * var(--hu) * var(--cs));
+  line-height: 1.12;
+  text-align: center;
+  /* a long name wraps (two lines at most) instead of losing its end */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.hs-chips.is-cards .hs-chip-off {
+  position: absolute;
+  top: calc(-6 * var(--hu) * var(--cs));
+  inset-inline-end: calc(6 * var(--hu) * var(--cs));
+  font-size: calc(40 * var(--hu) * var(--cs));
 }
 .hs-chip.is-away {
   opacity: 0.38;

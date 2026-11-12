@@ -468,7 +468,11 @@ body {
   overflow: hidden;
 }
 .rm-chip {
-  padding: 5px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 4px 3px 11px;
   border: 2px solid var(--ink);
   border-radius: 999px;
   background: var(--white);

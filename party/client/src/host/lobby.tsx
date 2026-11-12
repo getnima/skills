@@ -3,8 +3,9 @@ import { create as createQr } from 'qrcode';
 import { useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 
 import { GAME_IDS, GAMES, MAX_PLAYERS } from '../../../shared/protocol';
+import { peekAvatarUrl, useAvatarUrl } from '../avatar';
 import { StandingsPanel } from './show/index';
-import { avatarColor, initialOf } from './show/common';
+import { avatarColor, lookPlateColor, unitPx } from './show/common';
 import { PrizeRelic } from './show/prize';
 import { prettyUrl, useJoinInfo } from './util';
 
@@ -87,14 +88,43 @@ function JoinPanel(props: { readonly code: string; readonly compact: boolean }):
 
 // ───────────────────────────── Players ─────────────────────────────
 
+/**
+ * Up to this many guests each one is a CARD: the dressed doll, big, with the name under it
+ * (the room watches people dress). Above it the room is too full for cards: a pill with a
+ * smaller doll and the name beside it, which keeps the names readable at 60.
+ */
+const CARD_MAX = 24;
+/** The doll's side in design units at scale 1 (host.css: .hs-chip-av). */
+const CARD_DOLL = 132;
+const PILL_DOLL = 62;
+
 /** Starting chip scale by head count; the fit pass below shrinks further if needed. */
 function chipTier(n: number): number {
-  if (n <= 6) return 1.35;
-  if (n <= 12) return 1.1;
-  if (n <= 20) return 0.95;
-  if (n <= 32) return 0.82;
-  if (n <= 45) return 0.7;
-  return 0.6;
+  if (n <= 4) return 1.45;
+  if (n <= 8) return 1.2;
+  if (n <= 12) return 1;
+  if (n <= 18) return 0.86;
+  if (n <= CARD_MAX) return 0.76;
+  if (n <= 32) return 0.9;
+  if (n <= 45) return 0.76;
+  return 0.64;
+}
+
+/**
+ * The guest's dressed Shimi in a chip. The box is sized by CSS (--hu x --cs); `px` only picks
+ * a picture that is sharp enough. The picture comes from the avatar module's cache: a state
+ * message that does not change this guest's look costs nothing here, and while a new look is
+ * being composed the old picture stays.
+ */
+function ChipDoll(props: { readonly look: string; readonly px: number }): JSX.Element {
+  const url = useAvatarUrl(props.look, props.px);
+  // data-drawn: the picture on screen is the one of data-look (not the previous look's, kept while composing)
+  const drawn = url !== null && peekAvatarUrl(props.look, props.px) === url;
+  return (
+    <span class="hs-chip-av" style={{ backgroundColor: lookPlateColor(props.look) }} data-look={props.look} data-drawn={drawn ? '1' : '0'}>
+      {url !== null ? <img key={url} src={url} alt="" draggable={false} /> : null}
+    </span>
+  );
 }
 
 function PlayerChips(props: { readonly players: readonly PlayerPublic[]; onKick(p: PlayerPublic): void }): JSX.Element {
@@ -120,8 +150,11 @@ function PlayerChips(props: { readonly players: readonly PlayerPublic[]; onKick(
     return () => ro.disconnect();
   }, [n]);
 
+  const cards = n <= CARD_MAX;
+  // an upper bound of the doll's size on screen (the fit pass only shrinks): the picture is never blurry
+  const dollPx = Math.max(32, Math.round((cards ? CARD_DOLL : PILL_DOLL) * chipTier(n) * unitPx()));
   return (
-    <div class="hs-chips kit-scroll" ref={box} data-testid="chips">
+    <div class={`hs-chips kit-scroll ${cards ? 'is-cards' : 'is-pills'}`} ref={box} data-testid="chips">
       {n === 0 ? (
         <div class="hs-chips-empty">
           <span class="hs-bounce">📱</span>
@@ -136,12 +169,13 @@ function PlayerChips(props: { readonly players: readonly PlayerPublic[]; onKick(
             style={{ '--chip': avatarColor(p.avatar), animationDelay: `${Math.min(i, 8) * 30}ms` }}
             title="לחצו כדי להוציא מהמשחק"
             data-testid="chip"
+            data-player={p.id}
             onClick={(e) => {
               e.stopPropagation();
               props.onKick(p);
             }}
           >
-            <span class="hs-chip-av">{initialOf(p.name)}</span>
+            <ChipDoll look={p.look} px={dollPx} />
             <span class="hs-chip-name" dir="auto">
               {p.name}
             </span>

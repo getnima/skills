@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { GAMES } from '../../../shared/protocol';
+import { Avatar } from '../avatar';
 import { haptic } from '../kit/haptics';
 import { keepAwake } from '../kit/mobile';
 import { findAction } from '../host/actions';
@@ -277,6 +278,7 @@ function Picker(props: {
 function LiveTop(props: { readonly link: RemoteLink }): JSX.Element {
   const { link } = props;
   const rows = topFive(link.state, link.scores);
+  const looks = new Map((link.state?.players ?? []).map((p) => [p.id, p.look]));
   const { online, total } = connectedCount(link.state);
   return (
     <section class="rm-live" data-testid="live">
@@ -291,6 +293,7 @@ function LiveTop(props: { readonly link: RemoteLink }): JSX.Element {
         {rows.map((r) => (
           <li key={r.id} class={`rm-top5-row ${r.place === 1 ? 'is-first' : ''} ${r.connected ? '' : 'is-away'}`} data-testid="top5-row">
             <span class="rm-place">{r.place}</span>
+            <Avatar look={looks.get(r.id)} size={26} ring />
             <span class="rm-name" dir="auto">
               {r.name}
             </span>
@@ -320,8 +323,9 @@ function Players(props: { readonly link: RemoteLink }): JSX.Element {
       ) : (
         <div class="rm-chips">
           {players.map((p) => (
-            <span key={p.id} class={`rm-chip ${p.connected ? '' : 'is-away'}`} dir="auto">
-              {p.name}
+            <span key={p.id} class={`rm-chip ${p.connected ? '' : 'is-away'}`}>
+              <Avatar look={p.look} size={24} ring />
+              <span dir="auto">{p.name}</span>
             </span>
           ))}
         </div>
@@ -356,6 +360,7 @@ function RoundTop(props: { readonly link: RemoteLink }): JSX.Element {
         {rows.map((r) => (
           <li key={r.playerId} class={`rm-top5-row ${r.roundRank === 1 ? 'is-first' : ''}`}>
             <span class="rm-place">{r.roundRank}</span>
+            <Avatar look={r.look} size={26} ring />
             <span class="rm-name" dir="auto">
               {r.name}
             </span>
@@ -380,6 +385,7 @@ function Standings(props: { readonly link: RemoteLink; readonly title: string })
         {players.map((p) => (
           <li key={p.id} class={`rm-top5-row ${p.rank === 1 ? 'is-first' : ''}`}>
             <span class="rm-place">{p.rank}</span>
+            <Avatar look={p.look} size={26} ring />
             <span class="rm-name" dir="auto">
               {p.name}
             </span>
@@ -605,6 +611,8 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
   const act = (id: ActionId): ControlAction | undefined => (model !== null ? findAction(model, id) : undefined);
   const cutAction = act('cutscene');
   const kickAction = act('kick');
+  /** The dolls of the players in the kick list (the action model only carries ids and names). */
+  const kickLooks = new Map((link.state?.players ?? []).map((p) => [p.id, p.look]));
 
   // the top half is for reading, the bottom half (the thumb's reach) for pressing
   let mid: JSX.Element | null = null;
@@ -832,9 +840,12 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
                   tap(kickAction, item.arg);
                 }}
               >
-                <span class="rm-row-icon">{item.icon}</span>
+                <span class="rm-row-icon">
+                  <Avatar look={kickLooks.get(item.arg)} size={28} ring />
+                </span>
                 <span class="rm-row-label" dir="auto">
                   {item.label}
+                  {item.mark === 'away' ? ' 💤' : ''}
                 </span>
                 <span class="rm-row-chev">✕</span>
               </button>

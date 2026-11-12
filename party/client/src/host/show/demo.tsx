@@ -12,8 +12,10 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import '../../kit/base.css';
 import './demo.css';
+import { encodeLook, randomLook } from '../../../../shared/avatar';
 import { GAMES, GAME_IDS, WINNER_REVEAL_MS } from '../../../../shared/protocol';
 import { computeRoundScores, rankOverall } from '../../../../shared/scoring';
+import { ITEM_IDS } from '../../avatar';
 import { isMuted, setMuted, unlockAudio } from '../../kit/audio';
 import { initMobileViewport } from '../../kit/mobile';
 import { stopTrack } from '../../kit/music';
@@ -99,6 +101,7 @@ function makePlayers(count: number): PlayerPublic[] {
       id: `p${i + 1}`,
       name,
       avatar: i,
+      look: encodeLook(randomLook(SEED * 131 + i, ITEM_IDS)),
       connected: i % 13 !== 12,
       total: Math.round(rng.float(300, 2_400) / 10) * 10,
       rank: i + 1,
@@ -158,6 +161,7 @@ function buildResults(players: readonly PlayerPublic[], raws: ReadonlyMap<string
       playerId: p.id,
       name: p.name,
       avatar: p.avatar,
+      look: p.look,
       raw: raw.get(p.id) ?? 0,
       points: s?.points ?? 0,
       roundRank: s?.roundRank ?? players.length,

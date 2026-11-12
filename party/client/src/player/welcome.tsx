@@ -15,12 +15,12 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { decodeLook, encodeLook } from '../../../shared/avatar';
 import { NAME_MAX_LEN, ROOM_CODE_LEN } from '../../../shared/protocol';
-import { Avatar as LookAvatar } from '../avatar/Avatar';
-import { DressingRoom } from '../avatar/dressing';
+import { Avatar as LookAvatar, preloadAvatarAssets } from '../avatar';
 import { isMuted, setMuted, sfx, unlockAudio } from '../kit/audio';
 import { haptic } from '../kit/haptics';
 import { isStandalone, keepAwake } from '../kit/mobile';
 import { goFullscreen } from './device';
+import { dressStepEnabled } from './dressing-state';
 import { dismissTip, isTipDismissed } from './identity';
 import { BootScreen, Dots, Movement } from './screens';
 import { Avatar, fmt, medal, standings } from './ui';
@@ -28,7 +28,34 @@ import { Avatar, fmt, medal, standings } from './ui';
 import type { JSX } from 'preact';
 import type { AvatarLook } from '../../../shared/avatar';
 import type { RoomState } from '../../../shared/protocol';
+import type { DressingRoomFullProps } from '../avatar/dressing';
 import type { PlayerController, Snapshot } from './controller';
+
+// ───────────────────────────── the dressing room's code ─────────────────────────────
+
+type RoomComponent = (props: DressingRoomFullProps) => JSX.Element;
+
+let roomLoaded: RoomComponent | null = null;
+let roomLoading: Promise<RoomComponent> | null = null;
+
+/**
+ * The dressing room is a chunk of its own (client/src/avatar/README.md): never imported
+ * statically. It is fetched once, as early as the join screen, so it is there when the guest
+ * has typed a name. A failed fetch may be tried again.
+ */
+function loadDressingRoom(): Promise<RoomComponent> {
+  if (roomLoading === null) {
+    const loading = import('../avatar/dressing').then((m): RoomComponent => {
+      roomLoaded = m.DressingRoom;
+      return m.DressingRoom;
+    });
+    roomLoading = loading;
+    loading.catch(() => {
+      if (roomLoading === loading) roomLoading = null;
+    });
+  }
+  return roomLoading;
+}
 
 // ───────────────────────────── 1. the name ─────────────────────────────
 
@@ -93,6 +120,17 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
     }
   }, [snap.joinError]);
 
+  // While the guest types a name: fetch the dressing room and its pictures (about 2 MB, once),
+  // so the next step opens ready. Not when the step is switched off (dressing-state.ts).
+  useEffect(() => {
+    if (!dressStepEnabled(window.location.search, navigator.webdriver === true)) return undefined;
+    const t = setTimeout(() => {
+      void loadDressingRoom().catch(() => undefined);
+      void preloadAvatarAssets();
+    }, 500);
+    return (): void => clearTimeout(t);
+  }, []);
+
   function submit(e?: Event): void {
     e?.preventDefault();
     if (busy) return;
@@ -107,6 +145,8 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
   }
 
   const showCodeInput = !snap.codeLocked;
+  // the cover dolls: bigger on a tall phone (the stage has the room), decided once
+  const [tall] = useState(() => window.innerHeight >= 760);
   return (
     <form class="pp-screen pp-join pw pw-join" onSubmit={submit} autocomplete="off">
       <div class="pw-stage pw-cover">
@@ -122,9 +162,9 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
           פארטי <span>ארנה</span>
         </h1>
         <div class="pw-cover-dolls" aria-hidden="true">
-          <LookAvatar look={COVER_LOOKS[0]} size={64} ring class="pw-cd pw-cd-a" />
-          <LookAvatar look={COVER_LOOKS[1]} size={84} ring class="pw-cd pw-cd-b" />
-          <LookAvatar look={COVER_LOOKS[2]} size={64} ring class="pw-cd pw-cd-c" />
+          <LookAvatar look={COVER_LOOKS[0]} size={tall ? 78 : 60} ring class="pw-cd pw-cd-a" />
+          <LookAvatar look={COVER_LOOKS[1]} size={tall ? 104 : 78} ring class="pw-cd pw-cd-b" />
+          <LookAvatar look={COVER_LOOKS[2]} size={tall ? 78 : 60} ring class="pw-cd pw-cd-c" />
         </div>
         <div class="pp-sub">5 משחקים · בובה לכל אחד · פרס בכל סיבוב</div>
       </div>
@@ -198,6 +238,9 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
 
 /** How long the room's own "done" burst plays before the waiting room takes over. */
 const DONE_BEAT_MS = 650;
+/** The room's code is tried this many times (flaky Wi-Fi) before the guest is let through to the waiting room. */
+const ROOM_LOAD_TRIES = 4;
+const ROOM_RETRY_MS = 1_500;
 
 /**
  * The dressing room, full screen. Every change goes to the controller at once (it remembers
@@ -208,30 +251,72 @@ const DONE_BEAT_MS = 650;
 export function DressingScreen(props: { readonly ctl: PlayerController; readonly snap: Snapshot }): JSX.Element {
   const { ctl, snap } = props;
   const look = useMemo<AvatarLook>(() => decodeLook(snap.look), [snap.look]);
+  const [Room, setRoom] = useState<RoomComponent | null>(() => roomLoaded);
   const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (Room !== null) return undefined;
+    let alive = true;
+    let tries = 0;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const go = (): void => {
+      loadDressingRoom().then(
+        (R) => {
+          if (alive) setRoom(() => R);
+        },
+        () => {
+          if (!alive) return;
+          tries++;
+          // No dressing room on this connection: the guest waits with the doll they have;
+          // the waiting room's button tries again.
+          if (tries >= ROOM_LOAD_TRIES) ctl.closeDressing();
+          else retry = setTimeout(go, ROOM_RETRY_MS);
+        },
+      );
+    };
+    go();
+    return (): void => {
+      alive = false;
+      if (retry !== null) clearTimeout(retry);
+    };
+  }, [Room]);
+
   useEffect(
     () => () => {
       if (doneTimer.current !== null) clearTimeout(doneTimer.current);
     },
     [],
   );
+
   return (
-    <div class="pp-screen pw pw-dress" data-look={snap.look ?? ''}>
-      <div class="pw-dress-room">
-        <DressingRoom
-          look={look}
-          name={snap.name}
-          onChange={(l) => ctl.setLook(encodeLook(l))}
-          onDone={(l) => {
-            ctl.setLook(encodeLook(l));
-            if (doneTimer.current !== null) return;
-            doneTimer.current = setTimeout(() => {
-              doneTimer.current = null;
-              ctl.closeDressing();
-            }, DONE_BEAT_MS);
-          }}
-        />
-      </div>
+    <div class="pp-screen pw pw-dress" data-look={snap.look ?? ''} data-ready={Room !== null ? '1' : '0'}>
+      {Room === null ? (
+        <div class="pw-stage pw-dress-wait">
+          <div class="pw-glow" aria-hidden="true" />
+          <div class="pw-dots" aria-hidden="true" />
+          <LookAvatar look={snap.look} size={128} crop="bust" ring />
+          <div class="pw-dress-wait-text">
+            פותחים את חדר ההלבשה
+            <Dots />
+          </div>
+        </div>
+      ) : (
+        <div class="pw-dress-room">
+          <Room
+            look={look}
+            name={snap.name}
+            onChange={(l) => ctl.setLook(encodeLook(l))}
+            onDone={(l) => {
+              ctl.setLook(encodeLook(l));
+              if (doneTimer.current !== null) return;
+              doneTimer.current = setTimeout(() => {
+                doneTimer.current = null;
+                ctl.closeDressing();
+              }, DONE_BEAT_MS);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -263,7 +348,7 @@ function StandingsList(props: { readonly state: RoomState; readonly me: string; 
   return (
     <ol class="pp-standings kit-scroll">
       {rows.map(({ player, rank }) => (
-        <li key={player.id} class={player.id === props.me ? 'is-me' : ''}>
+        <li key={player.id} class={player.id === props.me ? 'is-me' : ''} data-player={player.id} data-look={player.look}>
           <span class="pp-st-rank">{medal(rank) || rank}</span>
           <Avatar look={player.id === props.me ? (props.myLook ?? player.look) : player.look} size={32} />
           <span class="pp-st-name">{player.name}</span>
@@ -372,7 +457,7 @@ export function LobbyScreen(props: { readonly ctl: PlayerController; readonly sn
             ) : (
               <div class="pp-chips kit-scroll">
                 {others.map((p) => (
-                  <span key={p.id} class={`pp-chip ${p.connected ? '' : 'is-off'}`}>
+                  <span key={p.id} class={`pp-chip ${p.connected ? '' : 'is-off'}`} data-player={p.id} data-look={p.look}>
                     <Avatar look={p.look} size={30} />
                     <span>{p.name}</span>
                   </span>

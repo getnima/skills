@@ -191,7 +191,8 @@
 }
 .pw-join .pp-brand {
   margin: 0;
-  font: 700 clamp(48px, 17vw, 70px) / 0.92 var(--disp);
+  /* two lines, like a logo: each word as wide as the phone allows */
+  font: 700 clamp(58px, 20vw, 88px) / 0.88 var(--disp);
   color: #fff;
   -webkit-text-stroke: 0.045em var(--ink);
   paint-order: stroke fill;
@@ -202,6 +203,7 @@
   white-space: nowrap;
 }
 .pw-join .pp-brand span {
+  display: block;
   color: var(--red);
   text-shadow: 0.06em 0.08em 0 var(--ink);
 }
@@ -386,6 +388,9 @@
   .pw-cover {
     gap: 8px;
   }
+  .pw-join .pp-brand {
+    font-size: clamp(46px, 16vw, 60px);
+  }
   .pw-join:has(.pp-tip) .pw-cover-dolls,
   .pw-join:has(.pp-code-input) .pp-sub {
     display: none;
@@ -404,8 +409,12 @@
   .pw-next {
     display: none;
   }
+  /* one line */
   .pw-join .pp-brand {
-    font-size: 40px;
+    font-size: clamp(36px, 12vw, 44px);
+  }
+  .pw-join .pp-brand span {
+    display: inline;
   }
 }
 @container (max-height: 430px) {
@@ -438,6 +447,19 @@
   flex: 1 1 auto;
   min-height: 0;
   position: relative;
+}
+/* the moment before the room's code is there: the doll the guest has, on the stage */
+.pw-dress-wait {
+  gap: 16px;
+}
+.pw-dress-wait-text {
+  padding: 7px 14px 8px;
+  border-radius: 10px;
+  background: #fff;
+  border: 3px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  font: 700 20px/1.1 var(--disp);
+  color: var(--ink);
 }
 
 /* ───────────────────────── 3. the waiting room ───────────────────────── */

@@ -31,7 +31,7 @@ import { createInput } from '../../kit/input';
 import { createLoop, STEP_S } from '../../kit/loop';
 import { COLORS } from '../../kit/theme';
 import { GAMES } from '../../../../shared/protocol';
-import { BODY_RADIUS, BOMB_CAP_X, BOMB_CAP_Y, buildHalves, buildSplats, createBackdrop, loadNinjaArt } from './art';
+import { BODY_RADIUS, BOMB_CAP_X, BOMB_CAP_Y, buildHalves, buildSplats, createBackdrop, drawSprite, loadNinjaArt } from './art';
 import { PAL, blit, createStickerCache, loadDisplayFont, renderChip, renderSticker } from './look';
 import { BOMB_KEYS, buildSkins, TARGET_KEYS } from './skins';
 import { buildSchedule, GRAVITY, LAUNCH_Y, scheduleSignature } from './waves';
@@ -39,7 +39,7 @@ import { buildSchedule, GRAVITY, LAUNCH_Y, scheduleSignature } from './waves';
 import type { BurstOptions } from '../../kit/fx';
 import type { KitPointer } from '../../kit/input';
 import type { GameContext, GameInstance, GameModule } from '../types';
-import type { CutLook } from './art';
+import type { CutLook, Sprite } from './art';
 import type { Sticker } from './look';
 import type { ThrowKind } from './waves';
 
@@ -145,7 +145,7 @@ interface Flyer {
 interface Half {
   active: boolean;
   /** Pre-cut picture of this half (buildHalves). */
-  img: HTMLCanvasElement | null;
+  img: Sprite | null;
   x: number;
   y: number;
   px: number;
@@ -1023,17 +1023,13 @@ export const game: GameModule = {
     }
 
     function drawHalves(g: CanvasRenderingContext2D, alpha: number): void {
-      const d = box * DRAW_K;
+      const r = R * DRAW_K;
       for (const h of halves) {
         if (!h.active || !h.img) continue;
         const x = lerp(h.px, h.x, alpha);
         const y = lerp(h.py, h.y, alpha);
         const rot = lerp(h.prot, h.rot, alpha);
-        g.save();
-        g.translate(x, y);
-        g.rotate(h.cut + rot);
-        g.drawImage(h.img, -d / 2, -d / 2, d, d);
-        g.restore();
+        drawSprite(g, h.img, x, y, r, h.cut + rot);
       }
     }
 
@@ -1074,7 +1070,8 @@ export const game: GameModule = {
       const x = toX(lerp(f.px, f.x, alpha));
       const y = toY(lerp(f.py, f.y, alpha));
       const rot = lerp(f.prot, f.rot, alpha);
-      const bx = box * DRAW_K;
+      // the hit radius: a target's picture is fitted into it, a bomb's sphere fills it
+      const r = R * DRAW_K;
       // pop-in squash and stretch
       const k = f.age < 16 ? ease.outBack(f.age / 16) : 1;
       const sx = lerp(0.7, 1, k);
@@ -1088,12 +1085,11 @@ export const game: GameModule = {
         const b = art.bombs[f.skin % art.bombs.length];
         // the picture is placed by its black sphere: the sphere is the hit circle (r), the
         // cap, hat and hair stand out of it; the fuse is drawn in the same turned space
-        const r = R * DRAW_K;
         g.save();
         g.translate(x, y);
         g.scale(sx, sy);
         g.rotate(wob);
-        if (b) g.drawImage(b.source, b.left * r, b.top * r, b.size * r, b.size * r);
+        if (b) g.drawImage(b.source, b.left * r, b.top * r, b.width * r, b.height * r);
         drawFuse(g, f, r);
         g.restore();
         if (f.id === firstBomb && f.age < 150) drawTag(g, x, y);
@@ -1114,10 +1110,10 @@ export const game: GameModule = {
           g.save();
           g.translate(x, y);
           g.scale(sx, sy);
-          d.draw(g, 0, 0, bx, bx, rot);
+          drawSprite(g, d, 0, 0, r, rot);
           g.restore();
         } else {
-          d.draw(g, x, y, bx, bx, gold ? Math.sin(rot) * 0.35 : rot);
+          drawSprite(g, d, x, y, r, gold ? Math.sin(rot) * 0.35 : rot);
         }
       }
     }
@@ -1470,7 +1466,7 @@ export const game: GameModule = {
         fx.clear();
         // release the pre-rendered canvases of this round
         stickers.dispose();
-        for (const pair of halfArt) for (const c of pair) c.width = 0;
+        for (const pair of halfArt) for (const c of pair) c.source.width = 0;
         for (const set of splatArt.values()) for (const c of set) c.width = 0;
         splatArt.clear();
         art.sunburst.width = 0;

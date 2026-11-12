@@ -67,6 +67,21 @@
 .sh-avatar--xl {
   --av: 180;
 }
+/* the player's dressed Shimi: a rounded plate (a circle would cut the hats), the picture fills it */
+.sh-avatar--doll {
+  position: relative;
+  border-radius: 24%;
+  overflow: hidden;
+  box-shadow: 0 0 0 calc(var(--av) * 0.06 * var(--u)) rgba(255, 255, 255, 0.9);
+}
+.sh-avatar--doll > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
 .sh-rank {
   flex: none;
   width: calc(64 * var(--u));

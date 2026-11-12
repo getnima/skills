@@ -4,7 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { decodeLook, defaultLook, encodeLook, wornIds } from '../../shared/avatar';
+import { decodeLook, defaultLook, encodeLook, lookSignature, wornIds } from '../../shared/avatar';
+import { ITEM_IDS } from '../../client/src/avatar/catalog';
 import { GAMES, LOOK_BROADCAST_INTERVAL_MS, MAX_PLAYERS } from '../../shared/protocol';
 import { applyLooks } from '../../shared/room-looks';
 import { cleanLook, startingLook } from '../../server/looks';
@@ -93,6 +94,12 @@ describe('cleanLook / startingLook', () => {
     // half-broken text: what is valid in it survives, the rest is dropped
     expect(cleanLook('1.-1.-8.0.0.0.0')).toBe('1.0.8.0.0.0.0');
     expect(cleanLook('1.3.8-abc-17.zz.0.0.7')).toBe('1.3.8-17.0.0.0.7');
+    // an id of a valid range that no picture exists for (the catalog is the list)
+    expect(ITEM_IDS).not.toContain(149);
+    expect(cleanLook('1.3.8-149.0.0.0.7')).toBe('1.3.8.0.0.0.7');
+    expect(cleanLook('1.0.149.0.0.0.0')).toBeNull();
+    // the new accessories are known
+    expect(cleanLook('1.11.103-104.201.301.225.325')).toBe('1.11.103-104.201.301.225.325');
   });
 
   it('refuses everything that is not a look', () => {
@@ -116,6 +123,7 @@ describe('cleanLook / startingLook', () => {
       '1.0.9999.0.0.0.0',
       '1.0.0.0.0.0.0 ',
       '1.0.8.0.0.0.0'.repeat(20),
+      `1.0.8.0.0.0.${'0'.repeat(40)}7`,
       'x'.repeat(100_000),
       '1.0.8;DROP.0.0.0.0',
     ];
@@ -123,7 +131,7 @@ describe('cleanLook / startingLook', () => {
   });
 
   it('whatever comes out is at most 48 characters of [0-9.-] and decodes to itself', () => {
-    for (const text of [FANCY, PIRATE, SOMBRERO, BARE, '1.11.101-102-103.201.301.225.325']) {
+    for (const text of [FANCY, PIRATE, SOMBRERO, BARE, '1.11.103-104-105.201.301.225.325']) {
       const clean = cleanLook(text);
       expect(clean).not.toBeNull();
       expect(clean).toMatch(/^[0-9.-]{13,48}$/);
@@ -139,14 +147,16 @@ describe('cleanLook / startingLook', () => {
     // the same id in a room where that doll is taken gets another one
     const b = startingLook('player-1', [a]);
     expect(b).not.toBe(a);
-    expect(wornIds(decodeLook(b)).join()).not.toBe(wornIds(decodeLook(a)).join());
+    expect(lookSignature(b)).not.toBe(lookSignature(a));
     expect(startingLook('player-1', [a])).toBe(b);
-    // 60 guests: all valid, and (nearly) all different dolls
+    // 60 guests: all valid, all different dolls (the plate does not count), only accessories that have a picture
     const taken: string[] = [];
     for (let i = 0; i < MAX_PLAYERS; i++) taken.push(startingLook(`tok${i * 2 + 1}`, taken));
-    for (const l of taken) expect(isStored(l)).toBe(true);
-    const dolls = new Set(taken.map((l) => wornIds(decodeLook(l)).join('-')));
-    expect(dolls.size).toBeGreaterThanOrEqual(MAX_PLAYERS - 2);
+    for (const l of taken) {
+      expect(isStored(l)).toBe(true);
+      for (const id of wornIds(decodeLook(l))) expect(ITEM_IDS).toContain(id);
+    }
+    expect(new Set(taken.map((l) => lookSignature(l))).size).toBe(MAX_PLAYERS);
   });
 });
 

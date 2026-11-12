@@ -4,14 +4,15 @@
  * (food/*.png), the golden falafel trophy, and one bomb per party host (bombs/*.png).
  * Which throw wears which picture is decided in skins.ts (looks only).
  *
- * The pictures are not round and not framed alike, so each is measured once when it loads:
- * the smallest circle around its opaque pixels is fitted to the body circle of the sprite
- * box (= the hit circle the game draws to), keeping the aspect. A bomb is framed by its
- * black sphere instead (BOMB_FRAME), so the sphere is the hit circle and the cap, hat and
- * hair stand out of it. The bomb's fuse, its spark, the warning burst and the blade are
- * drawn in code by the game, so they survive an art swap. A missing file falls back to a
- * drawing made here. Everything else the game shows (the stage, splats, halves, UI stickers)
- * is pre-rendered once here so the hot path only calls drawImage.
+ * The pictures are not round and not framed alike, so each is measured once when it loads
+ * and becomes a Sprite: the smallest circle around its solid pixels is the hit circle the
+ * game draws to (aspect kept), and the sprite is trimmed to what it shows, so a blit costs
+ * what the food covers, not a whole box. A bomb is framed by its black sphere instead
+ * (BOMB_FRAME): the sphere is the hit circle and the cap, hat and hair stand out of it. The
+ * bomb's fuse, its spark, the warning burst and the blade are drawn in code by the game, so
+ * they survive an art swap. A missing file falls back to a drawing made here, which goes
+ * through the same measuring. Everything else the game shows (the stage, splats, halves, UI
+ * stickers) is pre-rendered once here so the hot path only calls drawImage.
  *
  * Style: the party look (shimi/README.md): flat colours, thick ink outlines, hard highlights,
  * no soft glows.
@@ -24,10 +25,12 @@ import { BOMB_KEYS, TARGET_KEYS } from './skins';
 import type { Drawable, FaceExpression, Painter } from '../../kit/assets';
 import type { TargetKey } from './skins';
 
-/** Logical box of a target sprite in CSS px (pre-rendered at 2x = 256px). */
+/** Logical box of a target in CSS px, as the game lays it out (rastered at 2x). */
 export const SPRITE_BOX = 128;
-/** Share of the box the body circle covers (radius / box): the hit circle, and what a picture is fitted into. */
+/** Share of that box the body circle covers (radius / box): the hit circle, and what a picture is fitted into. */
 export const BODY_RADIUS = 0.42;
+/** Raster px of one hit radius in every sprite (the body circle of SPRITE_BOX at 2x). */
+const UNIT_PX = SPRITE_BOX * 2 * BODY_RADIUS;
 
 const INK = PAL.ink;
 
@@ -250,7 +253,8 @@ function shine(ctx: CanvasRenderingContext2D, rx = 1, ry = 1): void {
 /**
  * The drawn stand-in of each target, used only when its file is missing or did not load: a
  * flat sticker blob in the food's colour and rough proportions (body radius = 1) with a
- * little face. It is cut with the same CUT_LOOKS row, so its inside is still the food's.
+ * little face. It is painted where the picture would be and measured like one, and it is
+ * cut with the same CUT_LOOKS row, so its inside is still the food's.
  */
 const FALLBACK_SHAPES: Readonly<Record<TargetKey, readonly [color: string, rx: number, ry: number]>> = {
   shawarma: ['#F1D9A8', 1, 0.62],
@@ -326,22 +330,6 @@ export const BOMB_FRAME = { cx: 0.5, cy: 0.603, r: 0.365, capX: 0.505, capY: 0.0
 export const BOMB_CAP_X = (BOMB_FRAME.capX - BOMB_FRAME.cx) / BOMB_FRAME.r;
 export const BOMB_CAP_Y = (BOMB_FRAME.capY - BOMB_FRAME.cy) / BOMB_FRAME.r;
 
-/**
- * A bomb picture pre-rendered so that its black sphere is as big as a target's body circle.
- * Draw it around the bomb's centre with r = the hit radius:
- * drawImage(source, left * r, top * r, size * r, size * r): the sphere then is the hit circle.
- */
-export interface BombSprite {
-  readonly key: string;
-  readonly source: HTMLCanvasElement;
-  /** The picture's box from the sphere's centre, in sphere radii. */
-  readonly left: number;
-  readonly top: number;
-  readonly size: number;
-  /** True when the file was missing and the drawn stand-in is used. */
-  readonly isPlaceholder: boolean;
-}
-
 /** The drawn stand-in of a host bomb, in the frame of the real pictures (unit = the picture). */
 function paintBombFallback(ctx: CanvasRenderingContext2D, ring: string, face: FaceExpression): void {
   const { cx, cy, r, capX, capY } = BOMB_FRAME;
@@ -405,30 +393,59 @@ const BOMB_FALLBACKS: readonly (readonly [string, FaceExpression])[] = [
   [PAL.pink, 'wink'],
 ];
 
-/** Pre-render a bomb: the loaded picture (or its stand-in), the sphere at the body-circle size. */
-function bombSprite(key: string, index: number, pic: Drawable): BombSprite {
-  // logical px: the sphere's radius is the body radius of a target sprite
-  const size = (SPRITE_BOX * BODY_RADIUS) / BOMB_FRAME.r;
-  const { canvas, ctx } = makeLayer(size, size);
-  if (ctx) {
-    if (pic.isPlaceholder) {
-      const [ring, face] = BOMB_FALLBACKS[index % BOMB_FALLBACKS.length] ?? [PAL.red, 'laughing'];
-      ctx.scale(size, size);
-      paintBombFallback(ctx, ring, face);
-    } else {
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(pic.source, 0, 0, size, size);
-    }
+/** Slot placeholder of host bomb `index`: its stand-in, painted in the picture's own frame. */
+function bombFallbackPainter(index: number): Painter {
+  const [ring, face] = BOMB_FALLBACKS[index % BOMB_FALLBACKS.length] ?? [PAL.red, 'laughing'];
+  return (ctx, w, h) => {
+    ctx.save();
+    ctx.scale(w, h);
+    paintBombFallback(ctx, ring, face);
+    ctx.restore();
+  };
+}
+
+// ───────────────────────────── Sprites: measuring and fitting a picture ─────────────────────────────
+
+/**
+ * A picture pre-rendered for the game: scaled so that one hit radius is UNIT_PX px, trimmed
+ * to what it shows, and placed around a centre (a target: the middle of the smallest circle
+ * around it; a bomb: the middle of its sphere).
+ */
+export interface Sprite {
+  readonly key: string;
+  readonly source: HTMLCanvasElement;
+  /** The box of `source` from the sprite's centre, in hit radii (see drawSprite). */
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+  /** Points around what it shows (x0, y0, x1, y1, ...) from the centre, in hit radii: its halves are trimmed with them. */
+  readonly outline: Float32Array;
+  /** True when the file was missing (or did not load) and the game's own drawing is shown. */
+  readonly isPlaceholder: boolean;
+}
+
+/** Draw `s` around (x, y) so that its hit circle has the radius `r` (CSS px), turned by `rotation` radians. */
+export function drawSprite(g: CanvasRenderingContext2D, s: Sprite, x: number, y: number, r: number, rotation = 0): void {
+  if (rotation) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(rotation);
+    g.drawImage(s.source, s.left * r, s.top * r, s.width * r, s.height * r);
+    g.restore();
+  } else {
+    g.drawImage(s.source, x + s.left * r, y + s.top * r, s.width * r, s.height * r);
   }
-  return { key, source: canvas, left: -BOMB_FRAME.cx / BOMB_FRAME.r, top: -BOMB_FRAME.cy / BOMB_FRAME.r, size: 1 / BOMB_FRAME.r, isPlaceholder: pic.isPlaceholder };
 }
 
 // ───────────────────────────── Fitting a picture into the body circle ─────────────────────────────
 
 /** Side of the small copy a picture is measured on (px). */
 const MEASURE = 96;
-/** A pixel counts as part of the picture above this alpha (0..255): soft edges and shadows do not. */
-const OPAQUE_ALPHA = 24;
+/** A pixel is solid above this alpha (0..255): the hit circle goes around these; soft edges and shadows do not count. */
+const SOLID_ALPHA = 24;
+/** A pixel is visible above this alpha: a sprite is trimmed around these, so nothing that can be seen is cut off. */
+const VISIBLE_ALPHA = 3;
 
 /** Smallest circle around the points (x0, y0, x1, y1, ...): [cx, cy, r]. Exact; expected linear time. */
 function enclosingCircle(pts: Float32Array, n: number): [number, number, number] {
@@ -482,66 +499,143 @@ function enclosingCircle(pts: Float32Array, n: number): [number, number, number]
   return [cx, cy, r];
 }
 
-/**
- * The smallest circle around the opaque pixels of `src`, as shares of its width: [cx, cy, r].
- * Measured on a small copy (`scratch`, MEASURE px), on the outer corners of each row's first
- * and last opaque pixel, so the circle never cuts into the picture. Null for an empty picture.
- */
-function opaqueCircle(src: HTMLCanvasElement, scratch: CanvasRenderingContext2D): [number, number, number] | null {
-  const N = MEASURE;
-  scratch.clearRect(0, 0, N, N);
-  scratch.drawImage(src, 0, 0, N, N);
-  let data: Uint8ClampedArray;
-  try {
-    data = scratch.getImageData(0, 0, N, N).data;
-  } catch {
-    return null; // a tainted canvas (a picture from another origin): use the picture as it is framed
-  }
-  const pts = new Float32Array(N * 8);
-  let n = 0;
-  for (let y = 0; y < N; y++) {
-    let x0 = -1;
-    let x1 = -1;
-    for (let x = 0; x < N; x++) {
-      if ((data[(y * N + x) * 4 + 3] ?? 0) > OPAQUE_ALPHA) {
-        if (x0 < 0) x0 = x;
-        x1 = x;
-      }
-    }
-    if (x0 < 0) continue;
-    for (const [px, py] of [
-      [x0, y],
-      [x0, y + 1],
-      [x1 + 1, y],
-      [x1 + 1, y + 1],
-    ] as const) {
-      pts[n * 2] = px;
-      pts[n * 2 + 1] = py;
-      n++;
-    }
-  }
-  if (n === 0) return null;
-  const [cx, cy, r] = enclosingCircle(pts, n);
-  return r > 0 ? [cx / N, cy / N, r / N] : null;
+/** What a picture shows, measured once on a small copy. Everything in px of the picture. */
+interface Scan {
+  /** The smallest circle around its solid pixels. */
+  readonly cx: number;
+  readonly cy: number;
+  readonly r: number;
+  /** The box around everything visible (soft edges too), with a little room. */
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+  /** The outer corners of every row's first and last visible pixel. */
+  readonly outline: Float32Array;
 }
 
 /**
- * A loaded picture as a target sprite: scaled (aspect kept) and moved so that the smallest
- * circle around what it shows is exactly the body circle of the sprite box. Whatever the
- * picture's shape, it then sits inside the hit circle the game draws to, as large as it can.
+ * Measure `src` on a small copy (MEASURE px, aspect kept): per row its first and last solid
+ * and visible pixel. The circle goes around the outer corners of the solid ones, so it never
+ * cuts into the picture. Null for an empty picture, or when its pixels cannot be read.
  */
-function fitSprite(key: string, pic: Drawable, scratch: CanvasRenderingContext2D | null): Drawable {
+function scanPicture(src: HTMLCanvasElement): Scan | null {
+  const m = measureContext();
+  if (!m || src.width === 0 || src.height === 0) return null;
+  const N = MEASURE;
+  const k = N / Math.max(src.width, src.height);
+  m.setTransform(1, 0, 0, 1, 0, 0);
+  m.clearRect(0, 0, N, N);
+  m.drawImage(src, 0, 0, src.width * k, src.height * k);
+  let data: Uint8ClampedArray;
+  try {
+    data = m.getImageData(0, 0, N, N).data;
+  } catch {
+    return null; // a tainted canvas (a picture from another origin): use the picture as it is framed
+  }
+  const solid = new Float32Array(N * 8);
+  const seen = new Float32Array(N * 8);
+  let ns = 0;
+  let nv = 0;
+  let bx0 = N;
+  let bx1 = 0;
+  let by0 = N;
+  let by1 = 0;
+  for (let y = 0; y < N; y++) {
+    let s0 = -1;
+    let s1 = -1;
+    let v0 = -1;
+    let v1 = -1;
+    for (let x = 0; x < N; x++) {
+      const alpha = data[(y * N + x) * 4 + 3] ?? 0;
+      if (alpha <= VISIBLE_ALPHA) continue;
+      if (v0 < 0) v0 = x;
+      v1 = x;
+      if (alpha <= SOLID_ALPHA) continue;
+      if (s0 < 0) s0 = x;
+      s1 = x;
+    }
+    if (v0 < 0) continue;
+    for (const px of [v0, v1 + 1]) {
+      for (const py of [y, y + 1]) {
+        seen[nv * 2] = px / k;
+        seen[nv * 2 + 1] = py / k;
+        nv++;
+      }
+    }
+    bx0 = Math.min(bx0, v0);
+    bx1 = Math.max(bx1, v1 + 1);
+    by0 = Math.min(by0, y);
+    by1 = y + 1;
+    if (s0 < 0) continue;
+    for (const px of [s0, s1 + 1]) {
+      for (const py of [y, y + 1]) {
+        solid[ns * 2] = px;
+        solid[ns * 2 + 1] = py;
+        ns++;
+      }
+    }
+  }
+  if (ns === 0) return null;
+  const [cx, cy, r] = enclosingCircle(solid, ns);
+  if (!(r > 0)) return null;
+  return {
+    cx: cx / k,
+    cy: cy / k,
+    r: r / k,
+    // one px of the copy of room on every side
+    x0: Math.max(0, (bx0 - 1) / k),
+    y0: Math.max(0, (by0 - 1) / k),
+    x1: Math.min(src.width, (bx1 + 1) / k),
+    y1: Math.min(src.height, (by1 + 1) / k),
+    outline: seen.slice(0, nv * 2),
+  };
+}
+
+/**
+ * `src` as a sprite: (cx, cy) px of it is the sprite's centre and `unit` px of it one hit
+ * radius; trimmed to the scan's box (the whole picture without a scan).
+ */
+function makeSprite(key: string, src: HTMLCanvasElement, scan: Scan | null, cx: number, cy: number, unit: number, isPlaceholder: boolean): Sprite {
+  const k = UNIT_PX / unit;
+  const x0 = scan ? scan.x0 : 0;
+  const y0 = scan ? scan.y0 : 0;
+  const x1 = scan ? scan.x1 : src.width;
+  const y1 = scan ? scan.y1 : src.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.ceil((x1 - x0) * k));
+  canvas.height = Math.max(1, Math.ceil((y1 - y0) * k));
+  const g = canvas.getContext('2d');
+  if (g) {
+    g.imageSmoothingQuality = 'high';
+    g.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+    g.drawImage(src, 0, 0);
+  }
+  const pts = scan ? scan.outline : new Float32Array([x0, y0, x1, y0, x1, y1, x0, y1]);
+  const outline = new Float32Array(pts.length);
+  for (let i = 0; i + 1 < pts.length; i += 2) {
+    outline[i] = ((pts[i] ?? 0) - cx) / unit;
+    outline[i + 1] = ((pts[i + 1] ?? 0) - cy) / unit;
+  }
+  return { key, source: canvas, left: (x0 - cx) / unit, top: (y0 - cy) / unit, width: canvas.width / UNIT_PX, height: canvas.height / UNIT_PX, outline, isPlaceholder };
+}
+
+/**
+ * A picture as a target sprite: the smallest circle around what it shows is its hit circle.
+ * Whatever its shape, it then sits inside the hit circle the game draws to, as large as it
+ * can, aspect kept.
+ */
+function fitSprite(key: string, pic: Drawable): Sprite {
   const src = pic.source;
-  const c = (scratch && opaqueCircle(src, scratch)) ?? [0.5, 0.5, 0.5];
-  return paintDrawable(
-    key,
-    (ctx, w, h) => {
-      const k = (Math.min(w, h) * BODY_RADIUS) / (c[2] * src.width);
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(src, w / 2 - c[0] * src.width * k, h / 2 - c[1] * src.height * k, src.width * k, src.height * k);
-    },
-    SPRITE_BOX,
-  );
+  const scan = scanPicture(src);
+  if (!scan) return makeSprite(key, src, null, src.width / 2, src.height / 2, Math.min(src.width, src.height) / 2, pic.isPlaceholder);
+  return makeSprite(key, src, scan, scan.cx, scan.cy, scan.r, pic.isPlaceholder);
+}
+
+/** A bomb picture as a sprite: its black sphere (BOMB_FRAME) is the hit circle. */
+function bombSprite(key: string, pic: Drawable): Sprite {
+  const src = pic.source;
+  return makeSprite(key, src, scanPicture(src), BOMB_FRAME.cx * src.width, BOMB_FRAME.cy * src.height, BOMB_FRAME.r * src.width, pic.isPlaceholder);
 }
 
 // ───────────────────────────── Stage, hint hand ─────────────────────────────
@@ -735,19 +829,16 @@ function goldSkin(key: string, prop: Drawable): Drawable {
 }
 
 export interface NinjaArt {
-  /**
-   * The ordinary targets, index = skin (skins.ts TARGET_KEYS: the 11 foods, then the joke
-   * items), each fitted into the body circle of its SPRITE_BOX sprite.
-   */
-  readonly targets: readonly Drawable[];
+  /** The ordinary targets, index = skin (skins.ts TARGET_KEYS: the 11 foods, then the joke items). */
+  readonly targets: readonly Sprite[];
   /** Cut look per target skin (CUT_LOOKS). */
   readonly cuts: readonly CutLook[];
   /** Cut look of the golden target. */
   readonly goldCut: CutLook;
   /** The golden target's looks: the gold falafel trophy (without the file: gold props, one per throw by its id). */
-  readonly golds: readonly Drawable[];
+  readonly golds: readonly Sprite[];
   /** The host bombs, index = skin (skins.ts BOMB_KEYS). */
-  readonly bombs: readonly BombSprite[];
+  readonly bombs: readonly Sprite[];
   readonly background: Drawable;
   readonly hand: Drawable;
   /** UI sprites (pre-rendered, not replaceable). */
@@ -760,7 +851,7 @@ export interface NinjaArt {
 
 /**
  * Slot size the pictures are loaded at: the kit rasters a slot at 2x, so 192 keeps the files'
- * own 384 px. They are then fitted into SPRITE_BOX sprites and these big copies are released.
+ * own 384 px. They are then measured and made into sprites, and these big copies are released.
  */
 const PICTURE = 192;
 const nothing: Painter = () => undefined;
@@ -768,9 +859,9 @@ const nothing: Painter = () => undefined;
 export async function loadNinjaArt(): Promise<NinjaArt> {
   const [a, p] = await Promise.all([
     loadAssets('ninja', [
-      ...TARGET_KEYS.map((key) => ({ key, file: `food/${key}.png`, size: PICTURE, placeholder: nothing })),
-      { key: 'gold_falafel', file: 'food/gold_falafel.png', size: PICTURE, placeholder: nothing },
-      ...BOMB_KEYS.map((key) => ({ key, file: `bombs/${key}.png`, size: PICTURE, placeholder: nothing })),
+      ...TARGET_KEYS.map((key, i) => ({ key, file: `food/${key}.png`, size: PICTURE, placeholder: fallbackPainter(key, i) })),
+      { key: 'gold_falafel', file: 'food/gold_falafel.png', size: PICTURE, placeholder: goldPainter },
+      ...BOMB_KEYS.map((key, i) => ({ key, file: `bombs/${key}.png`, size: PICTURE, placeholder: bombFallbackPainter(i) })),
       { key: 'background', file: 'background.jpg', size: 430, height: 932, fit: 'cover', placeholder: backgroundPainter },
     ]),
     // the props are fetched only when no gold falafel file is there
@@ -783,26 +874,30 @@ export async function loadNinjaArt(): Promise<NinjaArt> {
   ]);
   const real: Record<string, boolean> = {};
   for (const [k, d] of Object.entries(a)) real[k] = !d.isPlaceholder;
-  const scratch = measureContext();
-  const targets = TARGET_KEYS.map((key, i) => {
-    const pic = a[key];
-    const d = pic.isPlaceholder ? paintDrawable(key, fallbackPainter(key, i), SPRITE_BOX) : fitSprite(key, pic, scratch);
-    pic.source.width = 0;
-    return d;
+  // every picture (a file, or the drawing that stands in for it) becomes a sprite; its big copy goes
+  const targets = TARGET_KEYS.map((key) => {
+    const sprite = fitSprite(key, a[key]);
+    a[key].source.width = 0;
+    return sprite;
   });
-  let golds: Drawable[];
-  if (!a.gold_falafel.isPlaceholder) {
-    golds = [fitSprite('gold_falafel', a.gold_falafel, scratch)];
+  let golds: Sprite[];
+  const props = GOLD_PROPS.map((g) => p[g.key]).filter((d): d is Drawable => !!d && !d.isPlaceholder);
+  if (a.gold_falafel.isPlaceholder && props.length > 0) {
+    golds = props.map((d) => {
+      const skin = goldSkin(d.key, d);
+      const sprite = fitSprite(skin.key, skin);
+      skin.source.width = 0;
+      return sprite;
+    });
   } else {
-    const skins = GOLD_PROPS.map((g) => p[g.key]).filter((d): d is Drawable => !!d && !d.isPlaceholder);
-    golds = skins.length > 0 ? skins.map((d) => goldSkin(d.key, d)) : [paintDrawable('gold_falafel', goldPainter, SPRITE_BOX)];
-    for (const d of Object.values(p)) d.source.width = 0;
+    golds = [fitSprite('gold_falafel', a.gold_falafel)];
   }
   a.gold_falafel.source.width = 0;
-  const bombs = BOMB_KEYS.map((key, i) => {
-    const b = bombSprite(key, i, a[key]);
+  for (const d of Object.values(p)) d.source.width = 0;
+  const bombs = BOMB_KEYS.map((key) => {
+    const sprite = bombSprite(key, a[key]);
     a[key].source.width = 0;
-    return b;
+    return sprite;
   });
   // the warning burst behind a bomb: red kaboom with an ink outline
   const kb = makeLayer(128, 128);
@@ -918,7 +1013,7 @@ export function createBackdrop(bg: Drawable, overscale = 1): Backdrop {
 // ───────────────────────────── Halves and splats ─────────────────────────────
 
 /**
- * The one small canvas pictures are measured on (their opaque circle, where a cut line
+ * The one small canvas pictures are measured on (their circle and box, where a cut line
  * crosses them). Pixels are read back only from here, never from a sprite the game draws
  * every frame: a canvas that is read back may stop being drawn fast. Kept for the page's life.
  */
@@ -1164,19 +1259,26 @@ function cutFace(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number
 }
 
 /**
- * Where the horizontal middle line of the S x S picture `pic` crosses something opaque:
- * [x0, x1, x0, x1, ...] in px. Gaps and bits narrower than 5% of S are ignored (a chair
- * gives one span per leg; a solid food gives one). Empty when the line crosses nothing.
+ * Where the horizontal line through the centre of `d` (turned by `turn`) crosses something
+ * solid: [x0, x1, x0, x1, ...] in sprite px from the centre. Gaps and bits narrower than 5%
+ * of the sprite box are ignored (a chair gives one span per leg; a solid food gives one).
+ * Empty when the line crosses nothing, or when pixels cannot be read.
  */
-function cutSpans(pic: HTMLCanvasElement, S: number): number[] {
+function cutSpans(d: Sprite, turn: number): number[] {
   const m = measureContext();
   const out: number[] = [];
   if (!m) return out;
   const N = MEASURE;
+  const half = SPRITE_BOX; // the sprite box at 2x is SPRITE_BOX px on each side of the centre
   const rows = 3;
-  m.clearRect(0, 0, N, rows);
-  // the band around the line (3% of S), squeezed into a few rows of the measuring canvas
-  m.drawImage(pic, 0, pic.height * 0.485, pic.width, pic.height * 0.03, 0, 0, N, rows);
+  const band = 4; // px on each side of the line
+  m.setTransform(1, 0, 0, 1, 0, 0);
+  m.clearRect(0, 0, N, N);
+  // the band around the line squeezed into a few rows, the box's width across the canvas
+  m.setTransform(N / (2 * half), 0, 0, rows / (2 * band), N / 2, rows / 2);
+  m.rotate(turn);
+  m.drawImage(d.source, d.left * UNIT_PX, d.top * UNIT_PX, d.width * UNIT_PX, d.height * UNIT_PX);
+  m.setTransform(1, 0, 0, 1, 0, 0);
   let data: Uint8ClampedArray;
   try {
     data = m.getImageData(0, 0, N, rows).data;
@@ -1184,10 +1286,11 @@ function cutSpans(pic: HTMLCanvasElement, S: number): number[] {
     return out;
   }
   const min = Math.ceil(N * 0.05);
+  const px = (col: number): number => (col / N) * 2 * half - half;
   let start = -1;
   let gap = 0;
   const close = (end: number): void => {
-    if (start >= 0 && end - start >= min) out.push((start / N) * S, (end / N) * S);
+    if (start >= 0 && end - start >= min) out.push(px(start), px(end));
     start = -1;
   };
   for (let x = 0; x < N; x++) {
@@ -1204,58 +1307,90 @@ function cutSpans(pic: HTMLCanvasElement, S: number): number[] {
   return out;
 }
 
+const NO_OUTLINE = new Float32Array(0);
+
 /**
- * The two halves of a sliced target, pre-cut once along the horizontal middle line of its
- * sprite (after the look's `turn`), each showing the cut face of its food wherever that
+ * The two halves of a sliced target, pre-cut once along the horizontal line through its
+ * centre (after the look's `turn`), each showing the cut face of its food wherever that
  * line crosses the picture: as wide as the food is there, not as the hit circle.
- * [upper half, lower half], each a canvas of the full sprite box at 2x. Drawing a half is
- * then one rotated drawImage, not a clip per half per frame.
+ * [upper half, lower half], each a sprite around the same centre, trimmed to its own half
+ * and its cut face. Drawing a half is then one rotated drawImage of a small picture, not a
+ * clip per half per frame.
  */
-export function buildHalves(d: Drawable, look: CutLook): readonly [HTMLCanvasElement, HTMLCanvasElement] {
-  const S = SPRITE_BOX * 2;
-  let pic = d.source;
-  let turned: HTMLCanvasElement | null = null;
-  if (look.turn) {
-    turned = document.createElement('canvas');
-    turned.width = S;
-    turned.height = S;
-    const t = turned.getContext('2d');
-    if (t) {
-      t.translate(S / 2, S / 2);
-      t.rotate(look.turn);
-      t.drawImage(d.source, -S / 2, -S / 2, S, S);
-    }
-    pic = turned;
+export function buildHalves(d: Sprite, look: CutLook): readonly [Sprite, Sprite] {
+  const U = UNIT_PX;
+  const turn = look.turn ?? 0;
+  const cos = Math.cos(turn);
+  const sin = Math.sin(turn);
+  // the box of the turned picture, px from the centre
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (let i = 0; i + 1 < d.outline.length; i += 2) {
+    const x = (d.outline[i] ?? 0) * U;
+    const y = (d.outline[i + 1] ?? 0) * U;
+    const tx = x * cos - y * sin;
+    const ty = x * sin + y * cos;
+    x0 = Math.min(x0, tx);
+    x1 = Math.max(x1, tx);
+    y0 = Math.min(y0, ty);
+    y1 = Math.max(y1, ty);
   }
-  let spans = cutSpans(pic, S);
+  if (!(x1 > x0 && y1 > y0)) {
+    // no outline: the whole sprite box
+    x0 = y0 = -SPRITE_BOX;
+    x1 = y1 = SPRITE_BOX;
+  }
+  let spans = cutSpans(d, turn);
   // nothing measured (no 2D read-back): one face as wide as the body circle
-  if (spans.length === 0) spans = [S / 2 - S * BODY_RADIUS * 0.94, S / 2 + S * BODY_RADIUS * 0.94];
+  if (spans.length === 0) spans = [-U * 0.94, U * 0.94];
   const depth = look.depth ?? 0.36;
-  const make = (upper: boolean): HTMLCanvasElement => {
-    const c = document.createElement('canvas');
-    c.width = S;
-    c.height = S;
-    const g = c.getContext('2d');
-    if (!g) return c;
-    g.save();
-    g.beginPath();
-    g.rect(0, upper ? 0 : S / 2, S, S / 2);
-    g.clip();
-    g.drawImage(pic, 0, 0, S, S);
-    g.restore();
+  const make = (upper: boolean): Sprite => {
+    // this half's own box: its side of the picture, and the cut faces (they lean over the line)
+    let bx0 = x0;
+    let bx1 = x1;
+    let by0 = upper ? y0 : 0;
+    let by1 = upper ? 0 : y1;
+    const faces: number[] = [];
     for (let i = 0; i + 1 < spans.length; i += 2) {
-      const x0 = spans[i] ?? 0;
-      const x1 = spans[i + 1] ?? 0;
-      const rx = ((x1 - x0) / 2) * 0.98;
-      const ry = Math.min(rx * depth, S * BODY_RADIUS * 0.4);
+      const a = spans[i] ?? 0;
+      const b = spans[i + 1] ?? 0;
+      const rx = ((b - a) / 2) * 0.98;
+      const ry = Math.min(rx * depth, U * 0.4);
       // the face leans towards the viewer: the upper half shows it below its cut, the lower above
-      cutFace(g, (x0 + x1) / 2, S / 2 + (upper ? ry * 0.15 : -ry * 0.15), rx, ry, look);
+      const fx = (a + b) / 2;
+      const fy = upper ? ry * 0.15 : -ry * 0.15;
+      const line = Math.max(3, rx * 0.06) / 2;
+      faces.push(fx, fy, rx, ry);
+      bx0 = Math.min(bx0, fx - rx - line);
+      bx1 = Math.max(bx1, fx + rx + line);
+      by0 = Math.min(by0, fy - ry - line);
+      by1 = Math.max(by1, fy + ry + line);
     }
-    return c;
+    bx0 = Math.floor(bx0) - 1;
+    by0 = Math.floor(by0) - 1;
+    bx1 = Math.ceil(bx1) + 1;
+    by1 = Math.ceil(by1) + 1;
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, bx1 - bx0);
+    c.height = Math.max(1, by1 - by0);
+    const g = c.getContext('2d');
+    if (g) {
+      g.translate(-bx0, -by0); // from here on: px from the centre
+      g.save();
+      g.beginPath();
+      if (upper) g.rect(bx0, by0, bx1 - bx0, -by0);
+      else g.rect(bx0, 0, bx1 - bx0, by1);
+      g.clip();
+      g.rotate(turn);
+      g.drawImage(d.source, d.left * U, d.top * U, d.width * U, d.height * U);
+      g.restore();
+      for (let i = 0; i + 3 < faces.length; i += 4) cutFace(g, faces[i] ?? 0, faces[i + 1] ?? 0, faces[i + 2] ?? 0, faces[i + 3] ?? 0, look);
+    }
+    return { key: d.key, source: c, left: bx0 / U, top: by0 / U, width: c.width / U, height: c.height / U, outline: NO_OUTLINE, isPlaceholder: d.isPlaceholder };
   };
-  const out = [make(true), make(false)] as const;
-  if (turned) turned.width = 0;
-  return out;
+  return [make(true), make(false)];
 }
 
 /**

@@ -388,7 +388,7 @@ function Suspense(props: { plan: Plan; view: View; title: string; emoji: string 
               {on ? (
                 <div class="sh-rrow-in">
                   <span class="sh-rank">{r.raw > 0 ? medal(r.roundRank) : '·'}</span>
-                  <Avatar avatar={r.avatar} name={r.name} />
+                  <Avatar avatar={r.avatar} name={r.name} look={r.look} />
                   <span class="sh-name" dir="auto">
                     <bdi>{r.name}</bdi>
                   </span>
@@ -424,7 +424,7 @@ function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skip
         <div class="sh-cer-kicker">{`המקום הראשון · ${props.title}`}</div>
         {first ? (
           <div class="sh-cer-solo">
-            <Avatar avatar={first.avatar} name={first.name} class="sh-avatar--xl" />
+            <Avatar avatar={first.avatar} name={first.name} look={first.look} crop="bust" class="sh-avatar--xl" />
             <div class="sh-cer-name" dir="auto" style={{ fontSize: nameSize(first.name, props.portrait ? 120 : 230, props.portrait ? 590 : 1180) }}>
               <bdi>{first.name}</bdi>
             </div>
@@ -521,7 +521,7 @@ function Standings(props: { plan: Plan; view: View; size: StageSize; clockT(): n
                 <span class={`sh-move ${!moved || delta === null || delta === 0 ? 'is-flat' : delta > 0 ? 'is-up' : 'is-down'}`} dir="ltr">
                   {!moved ? '' : delta === null ? (plan.firstRound ? '' : 'חדש') : delta === 0 ? '•' : delta > 0 ? `▲${delta}` : `▼${-delta}`}
                 </span>
-                <Avatar avatar={r.avatar} name={r.name} />
+                <Avatar avatar={r.avatar} name={r.name} look={r.look} />
                 <span class="sh-name" dir="auto">
                   <bdi>{r.name}</bdi>
                 </span>

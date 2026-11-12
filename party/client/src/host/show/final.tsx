@@ -50,7 +50,7 @@ function Column(props: { place: 1 | 2 | 3; entry: Ranked | undefined; up: boolea
       <div class="sh-pod-rise">
         <div class="sh-pod-who">
           {entry.rank === 1 ? <img class="sh-pod-crown" src={crownUrl()} alt="" /> : null}
-          <Avatar avatar={entry.player.avatar} name={entry.player.name} class={place === 1 ? 'sh-avatar--xl' : 'sh-avatar--lg'} />
+          <Avatar avatar={entry.player.avatar} name={entry.player.name} look={entry.player.look} crop="bust" class={place === 1 ? 'sh-avatar--xl' : 'sh-avatar--lg'} />
           <div class="sh-pod-name" dir="auto">
             <bdi>{entry.player.name}</bdi>
           </div>
@@ -206,7 +206,7 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
             {pageRows.map((r, i) => (
               <div class={`sh-frow ${r.rank <= 3 ? `is-top${r.rank}` : ''}`} key={r.player.id} style={{ animationDelay: `${i * 60}ms` }}>
                 <span class="sh-rank">{r.rank}</span>
-                <Avatar avatar={r.player.avatar} name={r.player.name} />
+                <Avatar avatar={r.player.avatar} name={r.player.name} look={r.player.look} />
                 <span class="sh-name" dir="auto">
                   <bdi>{r.player.name}</bdi>
                 </span>
