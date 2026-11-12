@@ -1,0 +1,244 @@
+/*
+ * The player card (cards.tsx) on the TV's leaderboards: a white sticker card with an ink outline
+ * and a hard shadow, the dressed doll (head and shoulders) filling its top on the doll's own
+ * plate, the place on a round sticker over the top-right corner, the name and the points under
+ * the doll. Everything is sized from --cw (the card's width in px, from the board's grid), so a
+ * card of 120 px and one of 380 px are the same drawing.
+ *
+ * The board positions the cards with a transform (a change of place slides); only transform and
+ * opacity animate. Type: Rubik (var(--read)) for the names and the numbers.
+ */
+.pc {
+  --cw: 200px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--cw);
+  height: calc(var(--cw) * 1.36);
+  direction: rtl;
+  will-change: transform;
+  transition:
+    transform 1050ms cubic-bezier(0.3, 0.9, 0.3, 1.05),
+    opacity 420ms ease;
+}
+.pc.is-hidden {
+  opacity: 0;
+}
+.pc-in {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  border: calc(var(--cw) * 0.024) solid var(--ink);
+  border-radius: calc(var(--cw) * 0.1);
+  background: #fff;
+  box-shadow: calc(var(--cw) * 0.028) calc(var(--cw) * 0.04) 0 var(--ink);
+  overflow: hidden;
+  animation: pc-in 480ms cubic-bezier(0.2, 1.35, 0.4, 1) both;
+}
+/* the doll on its plate, head and shoulders */
+.pc-pic {
+  position: relative;
+  flex: none;
+  width: 100%;
+  aspect-ratio: 1 / 0.94;
+  overflow: hidden;
+  border-bottom: calc(var(--cw) * 0.022) solid var(--ink);
+}
+.pc-pic .sh-avatar.pc-doll {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: calc(var(--cw) * 0.5);
+}
+.pc-badge {
+  position: absolute;
+  bottom: calc(var(--cw) * 0.04);
+  left: calc(var(--cw) * 0.04);
+  max-width: 92%;
+  padding: 0 calc(var(--cw) * 0.05) calc(var(--cw) * 0.01);
+  border: calc(var(--cw) * 0.016) solid var(--ink);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font: 900 calc(var(--cw) * 0.1) / 1.25 var(--read);
+  white-space: nowrap;
+  transform: rotate(-4deg);
+}
+.pc-foot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 calc(var(--cw) * 0.07) calc(var(--cw) * 0.015);
+  text-align: center;
+}
+.pc-name {
+  max-width: 100%;
+  font: 800 calc(var(--cw) * 0.135) / 1.12 var(--read);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pc-score {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: calc(var(--cw) * 0.04);
+  max-width: 100%;
+  direction: ltr;
+  font: 900 calc(var(--cw) * 0.15) / 1.08 var(--read);
+  color: var(--cob-d);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* the points of this round, beside the total */
+.pc-gain {
+  font-size: calc(var(--cw) * 0.095);
+  color: var(--red);
+  transition:
+    opacity 700ms ease 500ms,
+    transform 700ms ease 500ms;
+}
+.pc-gain.is-zero {
+  color: rgba(22, 18, 14, 0.4);
+}
+
+/* the place: a round sticker over the top-right corner; gold, silver and bronze for the top three */
+.pc-rank {
+  position: absolute;
+  top: calc(var(--cw) * -0.075);
+  right: calc(var(--cw) * -0.075);
+  width: calc(var(--cw) * 0.28);
+  height: calc(var(--cw) * 0.28);
+  display: grid;
+  place-items: center;
+  border: calc(var(--cw) * 0.022) solid var(--ink);
+  border-radius: 50%;
+  background: var(--yel);
+  color: var(--ink);
+  font: 900 calc(var(--cw) * 0.15) / 1 var(--read);
+  font-variant-numeric: tabular-nums;
+  box-shadow: calc(var(--cw) * 0.014) calc(var(--cw) * 0.02) 0 var(--ink);
+  transform: rotate(-8deg);
+}
+.pc-rank--1 {
+  background: var(--red);
+  color: #fff;
+}
+.pc-rank--2 {
+  background: #e6ebf5;
+}
+.pc-rank--3 {
+  background: #f2a766;
+}
+/* the move in the table: a tilted tab over the top-left corner */
+.pc-move {
+  position: absolute;
+  top: calc(var(--cw) * -0.05);
+  left: calc(var(--cw) * -0.05);
+  padding: 0 calc(var(--cw) * 0.055) calc(var(--cw) * 0.012);
+  border: calc(var(--cw) * 0.018) solid var(--ink);
+  border-radius: 999px;
+  background: var(--grn);
+  color: #fff;
+  font: 900 calc(var(--cw) * 0.105) / 1.25 var(--read);
+  white-space: nowrap;
+  box-shadow: calc(var(--cw) * 0.012) calc(var(--cw) * 0.016) 0 var(--ink);
+  transform: rotate(7deg);
+  animation: pc-pop 420ms cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+.pc-move--down {
+  background: var(--red);
+}
+.pc-move--new {
+  background: var(--pink);
+  color: var(--ink);
+}
+.pc-move--flat {
+  display: none;
+}
+/* the spotlight (מוביל חדש, מטפס הסיבוב): a band across the doll's chest */
+.pc-ribbon {
+  position: absolute;
+  top: calc(var(--cw) * 0.72);
+  left: calc(var(--cw) * -0.03);
+  right: calc(var(--cw) * -0.03);
+  padding: calc(var(--cw) * 0.008) calc(var(--cw) * 0.04) calc(var(--cw) * 0.016);
+  border: calc(var(--cw) * 0.018) solid var(--ink);
+  border-radius: calc(var(--cw) * 0.04);
+  background: var(--pink);
+  color: var(--ink);
+  font: 900 calc(var(--cw) * 0.095) / 1.2 var(--read);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: rotate(-3deg);
+  animation: pc-pop 420ms cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+.pc-ribbon--gold {
+  background: var(--yel);
+}
+
+/* the first place: a yellow card */
+.pc.is-first .pc-in {
+  background: var(--yel);
+}
+/* the spotlight: the card flashes its red outline */
+.pc.is-spot .pc-in {
+  animation:
+    pc-in 480ms cubic-bezier(0.2, 1.35, 0.4, 1) both,
+    pc-flash 0.5s steps(1) infinite;
+}
+/* not connected right now (the lobby's table) */
+.pc.is-away .pc-pic {
+  filter: grayscale(1) opacity(0.6);
+}
+
+@keyframes pc-in {
+  from {
+    opacity: 0;
+    transform: scale(0.82) rotate(-3deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pc-pop {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@keyframes pc-flash {
+  0% {
+    border-color: var(--red);
+  }
+  50% {
+    border-color: var(--ink);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc,
+  .pc-in,
+  .pc-move,
+  .pc-ribbon {
+    transition: opacity 200ms ease;
+    animation: none;
+  }
+}
