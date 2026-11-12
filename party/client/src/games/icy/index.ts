@@ -222,7 +222,20 @@ const DASH: number[] = [10, 8];
 const NO_DASH: number[] = [];
 
 const F_HINT_PX = 22;
-const BANNER_PX = 40;
+/**
+ * Announcements (zone names, milestones, combos, "נפלת!") are drawn in one lane at the top of the
+ * play area, between the floor chip and the combo chip, never on the climb (the owner's rule,
+ * 2026-11-12: "the announcements are hiding the game play"). Font px of the lane's first line.
+ */
+const LANE_PX = 28;
+/** The lane's tallest drawing, CSS px (times `ui`). */
+const LANE_MAX_H = 70;
+/** A word on a big single jump shows in the combo chip for this long (seconds). */
+const COMBO_WORD_S = 0.8;
+/** Room kept for the combo chip at the right of the lane (CSS px). */
+const COMBO_RESERVE = 60;
+/** From this much sky beside the tower (CSS px), the lane moves off the tower into the sky. */
+const SIDE_LANE_MIN = 150;
 
 type Mode = 'run' | 'dead';
 
@@ -232,6 +245,8 @@ interface Banner {
   color: string;
   age: number;
   life: number;
+  /** A newer message replaces this one unless this one is more important and under half a second old. */
+  prio: number;
 }
 
 interface Pop {
@@ -546,6 +561,9 @@ export const game: GameModule = {
     let comboBonus = 0;
     let comboTimer = 0;
     let comboPop = 0;
+    /** The word a big single jump earned, shown in the combo chip while comboWordT > 0 (looks only). */
+    let comboWord = '';
+    let comboWordT = 0;
     let superAir = false;
     let rot = 0;
     let squash = 0;
@@ -600,9 +618,6 @@ export const game: GameModule = {
     let lastFrameAt = 0;
     let slowSteps = 0;
     let zoneShown = 0;
-    let zoneAge = 0;
-    let zoneLife = 0;
-    let zoneSticker: Sticker | null = null;
     const streakX = new Float64Array(STREAKS);
     const streakY = new Float64Array(STREAKS);
     const streakL = new Float64Array(STREAKS);
@@ -616,16 +631,19 @@ export const game: GameModule = {
     const puffK = new Float64Array(PUFFS);
     let puffCursor = 0;
 
-    const banner: Banner = { text: '', sub: '', color: PAL.yel, age: 0, life: 0 };
-    function showBanner(text: string, sub: string, color: string, seconds = 1.4): void {
+    const banner: Banner = { text: '', sub: '', color: PAL.yel, age: 0, life: 0, prio: 0 };
+    /** One message in the top lane at a time (see LANE_PX). */
+    function showBanner(text: string, sub: string, color: string, seconds = 1.4, prio = 1): void {
+      if (banner.life > 0 && prio < banner.prio && banner.age < STEP_HZ / 2) return;
       banner.text = text;
       banner.sub = sub;
       banner.color = color;
       banner.age = 0;
       banner.life = Math.round(seconds * STEP_HZ);
+      banner.prio = prio;
     }
 
-    /** Floating "+points" sticker at world px (x, y) (look only). */
+    /** A small "+points" that trails behind the hero, at world px (x, y) (look only). */
     function addPop(x: number, y: number, text: string, color: string, px: number): void {
       const p = pops[popCursor];
       popCursor = (popCursor + 1) % POPS;
@@ -635,8 +653,8 @@ export const game: GameModule = {
       p.x = x;
       p.y = y;
       p.age = 0;
-      p.life = 0.9;
-      p.rise = 70;
+      p.life = 0.6;
+      p.rise = 34;
     }
 
     function addPuff(x: number, a: number, k: number): void {
@@ -670,7 +688,8 @@ export const game: GameModule = {
         const mega = comboFloors >= 20;
         // the bigger the combo, the bigger the word (the owner's slang; looks only)
         const word = comboFloors >= 25 ? 'מחורחר!' : comboFloors >= 15 ? 'בן פורת יוסף!' : comboFloors >= 8 ? 'צדיק!' : 'וואו!';
-        showBanner(word, `קומבו ${comboFloors} קומות · +${comboBonus}`, mega ? PAL.yel : PAL.pink, 1.6);
+        // the points are an LTR isolate, so the plus stays in front of the number in the Hebrew line
+        showBanner(word, `${comboFloors} קומות · \u2066+${comboBonus}\u2069`, mega ? PAL.yel : PAL.pink, 1.6, mega ? 2 : 1);
         if (mega) {
           fx.confetti({ count: 70, width: view.width, colors: [PAL.yel, PAL.red, PAL.pink, PAL.cobL, PAL.white] });
           sfx.cheer();
@@ -719,9 +738,15 @@ export const game: GameModule = {
         runBonus += bonus;
         comboTimer = COMBO_WINDOW;
         comboPop = 1;
-        addPop(sx, sy - 70 * scale, `+${bonus}`, PAL.yel, 24 + Math.min(14, comboJumps * 2));
-        // a word flies out on a big single jump
-        if (delta >= 4) addPop(sx, sy - 118 * scale, COMBO_WORDS[comboJumps % COMBO_WORDS.length] ?? 'וואו!', PAL.pink, 22);
+        // the points trail behind the hero (where he came from), never on the floors ahead
+        const back = body.vx > 30 ? -1 : body.vx < -30 ? 1 : 0;
+        const popX = clamp(sx + back * 46 * scale, wx(INNER_L) + 24, wx(INNER_R) - 24);
+        addPop(popX, sy - (back === 0 ? 70 : 34) * scale, `+${bonus}`, PAL.yel, 15 + Math.min(5, comboJumps));
+        // a word on a big single jump: in the combo chip, not on the climb
+        if (delta >= 4) {
+          comboWord = COMBO_WORDS[comboJumps % COMBO_WORDS.length] ?? 'וואו!';
+          comboWordT = COMBO_WORD_S;
+        }
         fx.burst(sx, sy, { count: 10 + Math.min(14, comboJumps * 2), shape: 'star', colors: [PAL.yel, PAL.red, PAL.white, PAL.pink], speed: 320, size: 6, life: 0.6 });
         sfx.coin(1 + Math.min(10, comboJumps) * 0.07);
         haptic.tap();
@@ -743,7 +768,7 @@ export const game: GameModule = {
         runFloor = j;
         if (Math.floor(j / 10) > before && j >= 10) {
           const m = Math.floor(j / 10) * 10;
-          showBanner(`קומה ${m}!`, m % 50 === 0 ? 'אגדה של קרח 🧊' : '', PAL.yel, 1.3);
+          showBanner(`קומה ${m}!`, m % 50 === 0 ? 'אגדה של קרח 🧊' : '', PAL.yel, 1.3, 2);
           const ma = level.alt[m] ?? body.py;
           fx.confetti({ x: view.width / 2, y: fy(ma), colors: [PAL.yel, PAL.red, PAL.pink, PAL.cobL, PAL.white] });
           sfx.success();
@@ -752,7 +777,7 @@ export const game: GameModule = {
       }
       if (!recordShown && runs > 0 && bestBefore > 0 && runScore() > bestBefore) {
         recordShown = true;
-        showBanner('שיא חדש!', 'נודר, הריצה הכי טובה שלך', '#3ddc84', 1.3);
+        showBanner('שיא חדש!', 'נודר, הריצה הכי טובה שלך', '#3ddc84', 1.3, 3);
         sfx.success();
       }
       publish();
@@ -771,7 +796,7 @@ export const game: GameModule = {
       popY = -30;
       prevPopY = popY;
       popV = 1250;
-      showBanner('נפלת!', `קומה ${runFloor} · שיא ${bestFloor}`, PAL.red, 1.1);
+      showBanner('נפלת!', `קומה ${runFloor} · שיא ${bestFloor}`, PAL.red, 1.1, 3);
       fx.shake(12, 380);
       sfx.fall();
       haptic.fail();
@@ -909,20 +934,17 @@ export const game: GameModule = {
           runDist += Math.abs(body.vx) * dt;
         } else runPhase += dt * 9;
       }
-      // a sticker when the player first climbs into a new zone this round
+      // the zone's name in the lane when the player first climbs into a new zone this round
+      // (a milestone reached on the same landing, "קומה 50!", becomes its second line)
       const z = zoneOfFloor(runFloor);
       if (mode === 'run' && z > zoneShown) {
         zoneShown = z;
         const L = lookOf(z);
-        zoneSticker = stickers.get(`z|${z}`, (old) => renderSticker(L.name, { size: 34, fill: z === 3 ? PAL.yel : PAL.white, shadow: L.wall === PAL.yel ? PAL.red : L.wall, burst: z === 3 ? PAL.red : PAL.yel }, old));
-        zoneAge = 0;
-        zoneLife = Math.round(1.9 * STEP_HZ);
+        const same = banner.life > 0 && banner.age <= 1 && banner.text.startsWith('קומה ') ? banner.text : '';
+        showBanner(L.name, same, z === 3 ? PAL.yel : PAL.white, 1.6, 2);
         fx.confetti({ count: 40, width: view.width, colors: [L.wall, L.wallHi, PAL.yel, PAL.white] });
       }
-      if (zoneLife > 0) {
-        zoneAge++;
-        if (zoneAge >= zoneLife) zoneLife = 0;
-      }
+      if (comboWordT > 0) comboWordT = Math.max(0, comboWordT - dt);
       for (const p of pops) {
         if (!p.active) continue;
         p.age += dt;
@@ -969,7 +991,7 @@ export const game: GameModule = {
         if (hintSteps < HINT_STEPS) hintSteps++;
         if (!lastTenShown && ctx.timeLeftMs() <= 10_000 && ctx.timeLeftMs() > 0 && steps > 60) {
           lastTenShown = true;
-          showBanner('10 שניות אחרונות!', 'עוד קפיצה אחת גדולה', PAL.org, 1.5);
+          showBanner('10 שניות אחרונות!', 'עוד קפיצה אחת גדולה', PAL.org, 1.5, 3);
           sfx.beep();
         }
         updateSnow(dt);
@@ -1599,11 +1621,17 @@ export const game: GameModule = {
       g.fillRect(offX, y0 - 1.5, playW, 3);
     }
 
+    /** How visible the first-run hint is now (0 when it is gone). */
+    function hintFade(): number {
+      if (runs > 0 || hintSteps >= HINT_STEPS) return 0;
+      return Math.min(1, (HINT_STEPS - hintSteps) / 24) * Math.min(1, hintSteps / 8);
+    }
+
     function drawHint(): void {
       if (runs > 0 || hintSteps >= HINT_STEPS) return;
       const g = view.ctx;
       const t = hintSteps / STEP_HZ;
-      const fade = Math.min(1, (HINT_STEPS - hintSteps) / 24) * Math.min(1, hintSteps / 8);
+      const fade = hintFade();
       const half = view.width / 2;
       const phaseLen = 0.65;
       const side = Math.floor(t / phaseLen) % 2 === 0 ? 1 : -1;
@@ -1657,7 +1685,10 @@ export const game: GameModule = {
       art.finger.draw(g, fxp + 10, fyp, 64, 64, -0.25 * side);
       // one short line
       const line = stickers.get('hint', (old) => renderSticker('החזיקו צד כדי לרוץ ולקפוץ', { size: Math.round(F_HINT_PX * Math.min(1, ui + 0.1)), fill: PAL.white, shadow: PAL.cob }, old));
-      blit(g, line, half, top + playH * 0.3, Math.min(1, (view.width - 16) / line.w));
+      // in the lane, like every other message
+      const lane = laneBox();
+      const lk = Math.min(1, lane.w / line.w);
+      blit(g, line, lane.cx, lane.y + (line.h * lk) / 2, lk);
       g.globalAlpha = 1;
     }
 
@@ -1688,64 +1719,76 @@ export const game: GameModule = {
 
     function drawUi(): void {
       const g = view.ctx;
+      const lane = laneBox();
+      // while the lane talks in the tower's top row, the floor chips step aside (the combo chip stays: its clock is play)
+      const msg = banner.life > 0 ? Math.min(1, (banner.life - banner.age) / 14, banner.age / 4) : 0;
+      const away = lane.side ? 0 : Math.max(msg, hintFade());
       // floor chip (top left, under the HUD)
       const fl = stickers.get(`f|${runFloor}`, (old) => renderChip(`קומה ${runFloor}`, 17, PAL.paper, PAL.ink, old));
-      const pxl = offX > fl.w + 16 ? offX - fl.w - 10 : offX + WALL_W * scale + 8;
-      g.drawImage(fl.canvas, pxl, top + 8, fl.w, fl.h);
-      // best floor of the round so far (after the first fall)
-      if (bestFloor > 0) {
-        const bl = stickers.get(`b|${bestFloor}`, (old) => renderChip(`שיא ${bestFloor}`, 14, '#3ddc84', PAL.ink, old));
-        const bx = offX > bl.w + 16 ? offX - bl.w - 10 : offX + WALL_W * scale + 8;
-        g.drawImage(bl.canvas, bx, top + 12 + fl.h, bl.w, bl.h);
-      }
-
-      // combo meter (top center): a red star-burst sticker and its clock
-      if (comboJumps > 0) {
-        const n = Math.min(comboJumps, 99);
-        const st = stickers.get(`c|${n}`, (old) => renderSticker(`×${n}`, { size: 34, fill: PAL.yel, shadow: PAL.ink, sub: 'קומבו', burst: PAL.red, skew: 0.1, tilt: -0.05 }, old));
-        const cx = view.width / 2;
-        const cy = top + 44 * ui;
-        const s = (0.82 + comboPop * 0.4) * ui;
-        blit(g, st, cx, cy, s);
-        // the combo meter: full on every combo jump, drains until the combo is lost
-        const bw = 118 * ui;
-        const bh = 10;
-        const by = cy + st.h * 0.42 * s + 2;
-        const frac = clamp(comboTimer / COMBO_WINDOW, 0, 1);
-        g.fillStyle = PAL.ink;
-        g.fillRect(cx - bw / 2 - 2.5, by - 2.5, bw + 5 + 3, bh + 5 + 3);
-        g.fillStyle = PAL.paper;
-        g.fillRect(cx - bw / 2, by, bw, bh);
-        g.fillStyle = comboPop > 0.55 ? PAL.white : frac < 0.3 ? PAL.red : PAL.yel;
-        g.fillRect(cx - bw / 2, by, bw * frac, bh);
-        g.fillStyle = PAL.ink;
-        for (let i = 1; i < 4; i++) g.fillRect(cx - bw / 2 + (bw * i) / 4 - 1, by, 2, bh);
-      }
-
-      // zone sticker
-      if (zoneLife > 0 && zoneSticker) {
-        const a = zoneAge;
-        const pop = a < BANNER_POP ? ease.outBack(a / BANNER_POP) : 1;
-        g.globalAlpha = Math.min(1, (zoneLife - a) / 14);
-        const fit = Math.min(ui, (view.width - 16) / zoneSticker.w);
-        blit(g, zoneSticker, view.width / 2, top + playH * 0.5, pop * fit);
+      const chipsOut = offX > fl.w + 16;
+      const pxl = chipsOut ? offX - fl.w - 10 : offX + WALL_W * scale + 8;
+      const chipAlpha = chipsOut ? 1 : 1 - away;
+      if (chipAlpha > 0.01) {
+        g.globalAlpha = chipAlpha;
+        g.drawImage(fl.canvas, pxl, top + 8, fl.w, fl.h);
+        // best floor of the round so far (after the first fall)
+        if (bestFloor > 0) {
+          const bl = stickers.get(`b|${bestFloor}`, (old) => renderChip(`שיא ${bestFloor}`, 14, '#3ddc84', PAL.ink, old));
+          const bx = offX > bl.w + 16 ? offX - bl.w - 10 : offX + WALL_W * scale + 8;
+          g.drawImage(bl.canvas, bx, top + 12 + fl.h, bl.w, bl.h);
+        }
         g.globalAlpha = 1;
       }
 
-      // banner
+      // combo chip (top right, mirroring the floor chip) and its clock: full on every combo jump,
+      // drains until the combo is lost. A big single jump's word replaces "קומבו" for a moment.
+      if (comboJumps > 0) {
+        const n = Math.min(comboJumps, 99);
+        const word = comboWordT > 0 ? comboWord : 'קומבו';
+        const ch = stickers.get(`c|${n}|${word}`, (old) => renderChip(`×${n}`, 18, PAL.red, PAL.yel, old, word));
+        const cxr = offX > COMBO_RESERVE + 16 ? offX + playW + 10 : offX + playW - WALL_W * scale - 8 - ch.w;
+        const s = 1 + comboPop * 0.22;
+        g.drawImage(ch.canvas, cxr + (ch.w * (1 - s)) / 2, top + 8 + (ch.h * (1 - s)) / 2, ch.w * s, ch.h * s);
+        const bw = ch.w - 6;
+        const bh = 6;
+        const by = top + 8 + ch.h + 3;
+        const frac = clamp(comboTimer / COMBO_WINDOW, 0, 1);
+        g.fillStyle = PAL.ink;
+        g.fillRect(cxr - 2, by - 2, bw + 4, bh + 4);
+        g.fillStyle = PAL.paper;
+        g.fillRect(cxr, by, bw, bh);
+        g.fillStyle = comboPop > 0.55 ? PAL.white : frac < 0.3 ? PAL.red : PAL.yel;
+        g.fillRect(cxr, by, bw * frac, bh);
+      }
+
+      // the lane: one message at a time
       if (banner.life > 0) {
         const a = banner.age;
         const pop = a < BANNER_POP ? ease.outBack(a / BANNER_POP) : 1;
         const fade = Math.min(1, (banner.life - a) / 14);
-        const cx = view.width / 2;
-        const cy = top + Math.max(playH * 0.3, 150 * ui);
         const b = banner;
-        const st = stickers.get(`n|${b.text}|${b.sub}|${b.color}`, (old) => renderSticker(b.text, { size: BANNER_PX, fill: b.color, shadow: b.color === PAL.red ? PAL.yel : PAL.red, sub: b.sub || undefined }, old));
-        const fit = Math.min(ui, (Math.min(view.width, playW + 120) - 16) / Math.max(1, st.w));
+        const st = stickers.get(`n|${b.text}|${b.sub}|${b.color}`, (old) => renderSticker(b.text, { size: LANE_PX, fill: b.color, shadow: b.color === PAL.red ? PAL.yel : PAL.red, sub: b.sub || undefined }, old));
+        // the sky lane (landscape) has room to spare, so it is not shrunk with the short tower
+        const cap = lane.side ? 1 : ui;
+        const k = Math.min(cap, (LANE_MAX_H * cap) / Math.max(1, st.h), lane.w / Math.max(1, st.w));
         g.globalAlpha = fade;
-        blit(g, st, cx, cy, pop * fit);
+        blit(g, st, lane.cx, lane.y + (st.h * k) / 2, pop * k);
         g.globalAlpha = 1;
       }
+    }
+
+    /**
+     * Where the lane draws. In portrait it is the tower's top row, from the left wall to the combo
+     * chip's place (kept free whether or not a combo runs, so a message never jumps sideways); the
+     * floor chips step aside while it talks. When the tower leaves wide sky on its sides (landscape,
+     * desktop) it is the sky on the left, under the floor chips, and covers no tower at all.
+     */
+    function laneBox(): { cx: number; y: number; w: number; side: boolean } {
+      if (offX >= SIDE_LANE_MIN) return { cx: offX / 2, y: top + 80, w: offX - 24, side: true };
+      const l = offX + WALL_W * scale + 8;
+      const inR = offX + playW - WALL_W * scale - 8;
+      const r = offX > COMBO_RESERVE + 16 ? inR : inR - COMBO_RESERVE - 6;
+      return { cx: (l + r) / 2, y: top + 6, w: r - l, side: false };
     }
 
     function draw(alpha: number): void {
