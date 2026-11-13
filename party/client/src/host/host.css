@@ -762,6 +762,41 @@ button.hs-nextup-card:active {
   align-items: center;
   gap: calc(18 * var(--hu));
 }
+/* the label and the tiles: side by side as the row was, one above the other beside the small code */
+.hs-code-stack {
+  display: flex;
+  flex-direction: inherit;
+  align-items: center;
+  gap: inherit;
+}
+.hs-code-row.has-mini {
+  gap: calc(14 * var(--hu));
+}
+.hs-code-row.has-mini .hs-code-stack {
+  flex-direction: column;
+  gap: calc(10 * var(--hu));
+}
+/* the tiles step back a little so the small code can be as big as the row allows */
+.hs-code-row.has-mini .hs-code {
+  gap: calc(8 * var(--hu));
+  font-size: calc(72 * var(--hu));
+}
+.hs-code-row.has-mini .hs-code i {
+  width: calc(80 * var(--hu));
+  height: calc(96 * var(--hu));
+}
+/* under the designed code: a small plain code of this room's own link, for a phone that cannot
+   read the picture. White, square corners inside, its quiet zone is in the drawing. */
+.hs-qr-mini {
+  flex: none;
+  width: calc(236 * var(--hu));
+  aspect-ratio: 1;
+  padding: calc(8 * var(--hu));
+  border: calc(4 * var(--hu)) solid var(--ink);
+  border-radius: calc(14 * var(--hu));
+  background: #fff;
+  box-shadow: calc(4 * var(--hu)) calc(6 * var(--hu)) 0 var(--ink);
+}
 .hs-code-label {
   font: 700 calc(40 * var(--hu)) / 1 var(--disp);
   color: #fff;
@@ -2475,6 +2510,10 @@ button.hs-nextup-card:active {
   }
   .hs-join.is-compact .hs-qr-card {
     width: calc(210 * var(--hu));
+  }
+  /* no room for the small plain code on a narrow window */
+  .hs-qr-mini {
+    display: none;
   }
   .hs-code-row {
     flex-direction: column;

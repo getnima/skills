@@ -39,7 +39,7 @@ function qrPath(text: string): { size: number; d: string } {
   return { size, d };
 }
 
-export function QrCode(props: { readonly text: string; readonly class?: string }): JSX.Element {
+export function QrCode(props: { readonly text: string; readonly class?: string; readonly testId?: string }): JSX.Element {
   const { size, d } = useMemo(() => qrPath(props.text), [props.text]);
   // quiet zone in modules: with the white card around it this is more than the 4 the standard asks for
   const pad = 3;
@@ -50,7 +50,7 @@ export function QrCode(props: { readonly text: string; readonly class?: string }
       shape-rendering="crispEdges"
       role="img"
       aria-label="QR להצטרפות"
-      data-testid="qr"
+      data-testid={props.testId ?? 'qr'}
     >
       <rect x={-pad} y={-pad} width={size + pad * 2} height={size + pad * 2} fill="#ffffff" />
       <path d={d} fill="#16120e" />
@@ -134,14 +134,24 @@ function JoinPanel(props: { readonly code: string; readonly compact: boolean; re
           <QrCode text={info.url} />
         </div>
       )}
-      <div class="hs-code-row">
-        <span class="hs-code-label">קוד החדר</span>
-        {/* one tile per letter; the element's text is still the plain code */}
-        <span class="hs-code" dir="ltr" data-testid="room-code">
-          {Array.from(props.code).map((ch, i) => (
-            <i key={i}>{ch}</i>
-          ))}
-        </span>
+      <div class={`hs-code-row ${designed !== null && !props.compact ? 'has-mini' : ''}`}>
+        {designed !== null && !props.compact ? (
+          // Under the designed code, a small plain one (the owner's call, 13.11): a phone whose
+          // camera cannot read the picture reads this. It is this room's own link, so it is right
+          // whatever /j does.
+          <div class="hs-qr-mini">
+            <QrCode text={info.url} testId="qr-plain" />
+          </div>
+        ) : null}
+        <div class="hs-code-stack">
+          <span class="hs-code-label">קוד החדר</span>
+          {/* one tile per letter; the element's text is still the plain code */}
+          <span class="hs-code" dir="ltr" data-testid="room-code">
+            {Array.from(props.code).map((ch, i) => (
+              <i key={i}>{ch}</i>
+            ))}
+          </span>
+        </div>
       </div>
       <div class="hs-url" dir="ltr" data-testid="join-url">
         {designed !== null ? designed.link : prettyUrl(info.url)}
