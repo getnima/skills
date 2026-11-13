@@ -17,7 +17,6 @@ import { PlayerCard, useBoardBox } from './cards';
 import { Avatar, CountUp, formatScore, GameArt, useFrame, useStage, useTicker } from './common';
 import { useFunnyLayer } from './funny';
 import { cueNarration, isNarratorOn, setNarrationSlot } from './narrator-bus';
-import { PrizeRelic } from './prize';
 
 import type { JSX } from 'preact';
 import type { GameMeta, ResultRow, RoundResults } from '../../../../shared/protocol';
@@ -495,8 +494,9 @@ function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skip
   return (
     <div class="sh-cer" style={`--skip:${props.skipMs}ms`}>
       <div class="sh-cer-sun" />
+      {/* a round has no prize (the owner's call, 13.11): the angel is given once, at the podium. The round gets a medal. */}
       <div class="sh-cer-prize">
-        <PrizeRelic />
+        <RoundMedal />
       </div>
       <div class="sh-cer-text">
         <div class="sh-cer-kicker">{`המקום הראשון · ${props.title}`}</div>
@@ -510,7 +510,7 @@ function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skip
         <div class="sh-cer-won">
           {first ? <Avatar avatar={first.avatar} name={first.name} look={first.look} crop="bust" class="sh-avatar--hero" /> : null}
           <div class="sh-cer-says">
-            <div class="sh-cer-line">זוכה בשימי אנג׳ל!</div>
+            <div class="sh-cer-line">ניצחון בסיבוב!</div>
             {first ? (
               <div class="sh-cer-score">
                 {props.elimination ? (
@@ -536,15 +536,30 @@ function Ceremony(props: { winner: ResultRow | undefined; earlier: boolean; skip
   );
 }
 
+/** The round's own award in the ceremony: a gold medal on a ribbon (the prize itself waits for the podium). */
+function RoundMedal(): JSX.Element {
+  return (
+    <div class="sh-medal" aria-hidden="true">
+      <svg class="sh-medal-ribbon" viewBox="0 0 200 190">
+        <path d="M34 0 L92 0 L128 150 L70 150 Z" fill="#f2361b" stroke="#16120e" stroke-width="9" stroke-linejoin="round" />
+        <path d="M166 0 L108 0 L72 150 L130 150 Z" fill="#1d3fd6" stroke="#16120e" stroke-width="9" stroke-linejoin="round" />
+      </svg>
+      <div class="sh-medal-disc">
+        <span class="sh-medal-num">1</span>
+      </div>
+    </div>
+  );
+}
+
 function Nobody(props: { skipMs: number }): JSX.Element {
   return (
     <div class="sh-cer sh-cer--nobody" style={`--skip:${props.skipMs}ms`}>
-      <div class="sh-nobody-prize">
-        <PrizeRelic />
+      <div class="sh-nobody-prize sh-nobody-shrug" aria-hidden="true">
+        🤷
       </div>
       <div class="sh-nobody-text">
         <div class="sh-nobody-a">אף אחד לא זכה...</div>
-        <div class="sh-nobody-b">המלאך נשאר בבית 😇</div>
+        <div class="sh-nobody-b">אפס לכולם. ממשיכים!</div>
       </div>
     </div>
   );
@@ -581,16 +596,17 @@ function Standings(props: { plan: Plan; view: View; size: StageSize; clockT(): n
       </aside>
       <div class="sh-main">
         <div class={`sh-banner ${winners.length === 0 ? 'sh-banner--none' : ''}`}>
-          {winners.length > 0 ? <PrizeRelic variant="mini" /> : <span class="sh-banner-emoji">😇</span>}
+          <span class="sh-banner-emoji">{winners.length > 0 ? '👑' : '🤷'}</span>
           <span class="sh-banner-text">
             {winners.length === 0 ? (
-              'אף אחד לא זכה בסיבוב הזה. המלאך נשאר בבית'
+              'אף אחד לא זכה בסיבוב הזה. קורה'
             ) : (
               <>
+                הסיבוב של{' '}
                 <b>
                   <bdi>{winners[0]?.name}</bdi>
-                </b>{' '}
-                זוכה בשימי אנג׳ל!
+                </b>
+                !
               </>
             )}
           </span>

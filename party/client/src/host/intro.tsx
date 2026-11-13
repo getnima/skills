@@ -196,7 +196,7 @@ export function IntroScreen(props: IntroProps): JSX.Element {
               <span class="hs-prize-mini hs-prize-mini--sm">
                 <PrizeRelic variant="mini" />
               </span>
-              <span>הפרס: מלאך שימי למנצח</span>
+              <span>הפרס בסוף הערב: מלאך שימי</span>
             </div>
             <div class="hs-intro-players">
               📱 <b dir="ltr">{props.players}</b> {props.players === 1 ? 'שחקן מוכן' : 'שחקנים מוכנים'}

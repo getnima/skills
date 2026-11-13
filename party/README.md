@@ -6,8 +6,10 @@ their own phone, type a name, **dress their own Shimi doll** (it is their icon
 everywhere) and wait in the lobby. The owner runs the show from **his own phone**
 (`/remote`, password protected); the TV only shows and plays the music. Every phone
 plays the same game at the same moment while the TV shows a live race, then the TV
-runs the **round-winner ceremony** (the prize, a custom Shimi angel figurine, plus
-the victory song) and the standings. After the last game: the final podium.
+runs the **round-winner ceremony** (a medal and the victory song; a round has no
+prize) and the standings, and goes on to the next game by itself. After the last game:
+the final podium, where the evening's winner gets **the prize, a custom Shimi angel
+figurine**.
 
 Five mini games:
 - **שימי טאפ** (tap): 8 s to start, then your own 20 s of tapping on Shimi picking his nose. Score = taps.
@@ -41,7 +43,7 @@ a deploy needs the deploy again** (step 3).
 
 | What | Folder | File name |
 | --- | --- | --- |
-| The prize (figurine) in every winner ceremony | `client/public/assets/host/` | `prize.png` (transparent cut-out, best) or `prize.jpg` |
+| The prize (figurine): in the lobby and the intro, and in the champion's trophy at the podium | `client/public/assets/host/` | `prize.png` (transparent cut-out, best) or `prize.jpg` |
 | Round winner's song | `client/public/audio/` | `victory.mp3` |
 | Champion's song (final podium) | `client/public/audio/` | `final.mp3` |
 | Lobby song, quiet loop | `client/public/audio/` | `lobby.mp3` |
@@ -62,7 +64,7 @@ npm run build && npm start
 ```
 Open `http://localhost:8787/host` in Chrome. The QR shows the laptop's Wi-Fi
 address (`http://192.168.x.x:8787/...`); scan it with your phone on the same
-Wi-Fi and play one round of שימי טאפ. Check the prize and `victory.mp3` in the
+Wi-Fi and play one round of שימי טאפ. Check the medal and `victory.mp3` in the
 ceremony. macOS asks *"Do you want the application node to accept incoming
 network connections?"*: **Allow**. Ctrl+C when done.
 
@@ -76,7 +78,8 @@ address>` must say *All good*. After changing files later: `deploy/gce-deploy.sh
 (only the app, about 1 minute). Do not deploy during the party: it empties the room.
 
 **4. The TV and your phone.** On the laptop, Chrome → `https://<address>/host` → click once
-anywhere (allows sound) → `F` (fullscreen). On **your own phone** open
+anywhere: that allows sound and makes the page fullscreen (`Esc` leaves it, `F` toggles it,
+`/host?fs=0` never does it by itself). On **your own phone** open
 `https://<address>/remote` and enter the remote password (the default is set in
 `server/config.ts`, server side only; to use another one set `PARTY_REMOTE_PASSWORD`
 on the server). From then on the phone is the remote, and the keyboard keys below keep
@@ -105,9 +108,14 @@ They are kept in that Chrome profile for that address: calibrate on the address 
 
 **5. Run of show.** Guests scan the QR (or type the address and the 4-letter room
 code), type a name and dress their Shimi. The remote's big button (or `Space`) starts
-the next game → instructions → 3-2-1 → 50 s to 2 min of play (TV shows the race) → 8 s of suspense → the round winner, the prize and the
-victory song: hand over the figurine → `Space` for the next game. After the last
-game the final podium. `C` = videos menu (jokers), `S` skips a video, `M` mutes.
+the FIRST game → instructions → 3-2-1 → 30 s to 2 min of play (TV shows the race) → 8 s of suspense → the round winner, a medal and the
+victory song → the standings → the lobby with the next game and a countdown → the next game.
+From the first game on **the TV goes on by itself** (the autopilot): 9 s on the standings,
+10 s in the lobby. `P` (or the ☰ menu, or "more" on the remote) holds it and lets it go;
+while it is held `Space` moves each step, as before. `/host?auto=0` opens the TV with it off.
+After the last game the final podium: **hand over the figurine to the evening's winner**
+(the TV and the winner's phone say so; no round gives a prize). The podium stays until you
+press. `C` = videos menu (jokers), `S` skips a video, `M` mutes.
 Guests can join any time; they play from the next round.
 
 **6. When something goes wrong.**
@@ -308,9 +316,11 @@ scorer gets at least one point less than the one above, and a new total that wou
 somebody else's is nudged down by a point. A raw score of 0 earns 0. The overall rank
 is strict too: total, then round wins, best round, latest round, join order.
 The **round winner** is the one player in first place with a score above 0 (nobody if
-nobody scored): that is who gets the figurine. The
-TV builds suspense for 8 s, reveals the winner with the prize and the victory
+nobody scored). The
+TV builds suspense for 8 s, reveals the winner with a medal and the victory
 song, then shows the standings. Phones hide their own result until the reveal.
+A round gives no prize (the owner's call, 13.11): the figurine goes to the one player in
+first place overall, at the podium, and only the podium (TV and that player's phone) says so.
 
 **The two hosts** (toy figurines in a pose, a speech bubble, no audio) narrate the TV: the
 opening, each game, GO, the last ten seconds, the reveal, the podium. During a round they
@@ -322,7 +332,7 @@ only the big moments.
 
 **Host keys** on the TV page: `Space`/`Enter` main action (next game, continue),
 `N` next game, `E` end the round now, `C` cutscene menu, `S` skip the video,
-`R` replay, `M` mute, `F` fullscreen.
+`R` replay, `M` mute, `F` fullscreen, `P` autopilot on / off (the TV says which).
 
 ## Adding the real graphics, songs and videos
 
@@ -359,7 +369,7 @@ program files themselves are never stale). Songs and videos are checked on every
 | `client/public/assets/ninja/` ([README](client/public/assets/ninja/README.md)) | `food/` 11 foods + `garden_chair`, `flip_flop`, `gold_falafel`; `bombs/bomb_host_a`, `bomb_host_b`; `background.jpg` |
 | `client/public/assets/plotzel/` ([README](client/public/assets/plotzel/README.md)) | `puff`, `mascot` |
 | `client/public/assets/intro/` ([README](client/public/assets/intro/README.md)) | one picture per game for its intro and lobby card (`tap`, `icy`, `flappy`, `plotzel`, `ninja`) and `show` (the host) |
-| `client/public/assets/host/` ([README](client/public/assets/host/README.md)) | **`prize.jpg` / `prize.png` = the figurine in the round-winner ceremony** (a transparent `prize.png` wins and looks best), `mascot_normal`, `mascot_happy`, `mascot_shocked`, `mascot_laugh`, `mascot_angry`, `sticker_1` .. `sticker_8`, `crown`, `last_place`, `podium_1` .. `podium_3` (.png), `bg_show.jpg` |
+| `client/public/assets/host/` ([README](client/public/assets/host/README.md)) | **`prize.jpg` / `prize.png` = the figurine: the lobby's ribbon, the intro, the champion's trophy at the podium** (a transparent `prize.png` wins and looks best), `mascot_normal`, `mascot_happy`, `mascot_shocked`, `mascot_laugh`, `mascot_angry`, `sticker_1` .. `sticker_8`, `crown`, `last_place`, `podium_1` .. `podium_3` (.png), `bg_show.jpg` |
 | `client/public/audio/` ([README](client/public/audio/README.md)) | **`victory.mp3` = the round winner's song** (a synth tune plays until it exists), `final.mp3` (champion), `lobby.mp3`, one song per game `tap.mp3` `icy.mp3` `flappy.mp3` `plotzel.mp3` `ninja.mp3`, `round.mp3` (fallback for a game without its own; levels and start offsets in `client/src/host/music-config.ts`). `.m4a` / `.ogg` / `.wav` also work |
 | `client/public/cutscenes/` ([README](client/public/cutscenes/README.md)) | `opening.mp4`, `tap_freeze.mp4`, `before_ninja.mp4`, `before_podium.mp4`, `joker_1.mp4`, `joker_2.mp4` |
 
@@ -584,11 +594,11 @@ npx --yes firebase-tools hosting:disable --project YOUR_PROJECT_ID   # path C
 
 - [ ] Steps 1-3 of the morning checklist done; `deploy/smoke.sh <url>`: all green.
 - [ ] Play one full round with **one iPhone and one Android**, one of them on
-      mobile data. Check the round-winner ceremony shows the prize and plays
-      `victory.mp3`.
+      mobile data. Check the round-winner ceremony shows the medal and plays
+      `victory.mp3`, and that the TV goes on to the next game by itself.
 - [ ] Laptop: on power, `caffeinate -dis` running, notifications off.
-- [ ] TV page `https://<host>/host` in Chrome, **fullscreen** (`F`), click once
-      on the page so sound is allowed, sound through the TV (AirPlay / HDMI
+- [ ] TV page `https://<host>/host` in Chrome, click once on the page (sound is
+      allowed and the page goes **fullscreen**), sound through the TV (AirPlay / HDMI
       output set to the TV), volume up.
 - [ ] iPhone guests: Share → **Add to Home Screen** opens the game without the
       Safari bars. Android goes fullscreen by itself when the guest joins.

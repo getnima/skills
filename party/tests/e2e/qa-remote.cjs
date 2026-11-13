@@ -226,6 +226,18 @@ async function joinPlayer(browser, code, name) {
     await shot(r, '390-02-main-lobby');
 
     // ───────── pick and start a game (picking alone starts nothing) ─────────
+    // Before the first game (where the autopilot never presses anything by itself): the owner
+    // switches it from the sofa. It is off in an automated TV, and left off for the rest of this run.
+    await step('the autopilot switch in the more sheet', async () => {
+      await more(r, 'more-autopilot');
+      await waitFor('TV autopilot on', async () => (await tvModel(tv)).actions.find((a) => a.id === 'autopilot').on === true && (await tv.evaluate(() => window.__host.autopilot())) === true);
+      await waitFor('sheet shows it', () => r.getAttribute('[data-testid=more-autopilot]', 'aria-pressed').then((v) => v === 'true'), 4000);
+      await r.click('[data-testid=more-autopilot]');
+      await waitFor('TV autopilot off', async () => (await tvModel(tv)).actions.find((a) => a.id === 'autopilot').on === false && (await tv.evaluate(() => window.__host.autopilot())) === false);
+      await closeSheet(r);
+      check('the autopilot (TV-local) is switched from the phone', true);
+    });
+
     await step('pick a game, then start it from the big button', async () => {
       await r.click('[data-testid=pick-flappy]');
       await sleep(600);

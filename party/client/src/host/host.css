@@ -650,6 +650,19 @@ button.hs-nextup-card:active {
   font-size: calc(34 * var(--hu));
   font-weight: 800;
 }
+/* the autopilot's countdown to the next game */
+.hs-nextup-auto {
+  display: block;
+  white-space: nowrap;
+}
+.hs-nextup-auto b {
+  display: inline-block;
+  min-width: 1.2em;
+  color: var(--yel);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
 /* 28 px at 1080p: the smallest text the room reads from the sofa */
 .hs-nextup-late {
   font-size: calc(28 * var(--hu));

@@ -19,10 +19,9 @@ import { GAMES } from '../../../shared/protocol';
 import { roundTime } from '../../../shared/round-clock';
 import { preloadGame } from '../games/registry';
 import { sfx } from '../kit/audio';
-import { findPublicFile } from '../kit/files';
 import { haptic, vibrate } from '../kit/haptics';
 import { playTrack, stopTrack } from '../kit/music';
-import { preload, preloadGameArt, preloadOn } from '../kit/preload';
+import { preloadGameArt } from '../kit/preload';
 import { usePreloadBar } from './boot-preload';
 import { GameArt } from './intro-art';
 import { Avatar, Burst, Confetti, Num, dollPx, fmt, medal, standings, useCountUp, useTick, useViewport } from './ui';
@@ -64,11 +63,16 @@ function Live(props: { readonly children: ComponentChildren }): JSX.Element {
   );
 }
 
-/** A game's name as a logo: the first word white, the rest red, a line each (like "פארטי ארנה" on the cover). */
-function Logo(props: { readonly text: string; readonly class: string }): JSX.Element {
-  const cut = props.text.indexOf(' ');
-  const first = cut < 0 ? props.text : props.text.slice(0, cut);
-  const rest = cut < 0 ? '' : props.text.slice(cut + 1);
+/**
+ * A game's name as a logo: the first word white, the rest red, a line each (like "פארטי ארנה" on
+ * the cover). `lead`: how many words go on the white line (a sentence whose rest is too long
+ * for one line of a phone).
+ */
+function Logo(props: { readonly text: string; readonly class: string; readonly lead?: number }): JSX.Element {
+  const words = props.text.split(' ');
+  const lead = Math.max(1, props.lead ?? 1);
+  const first = words.slice(0, lead).join(' ');
+  const rest = words.slice(lead).join(' ');
   return (
     <h1 class={`${props.class} ps-logo`}>
       {rest === '' ? first : `${first} `}
@@ -360,24 +364,6 @@ export function SendingScreen(props: {
 }
 
 export function SuspenseScreen(): JSX.Element {
-  // Whoever wins sees the prize picture in a few seconds: have it in the cache by then.
-  useEffect(() => {
-    const url = prizeUrl();
-    if (url === null) return;
-    if (preloadOn()) {
-      // the background loading has the picture in its list: moved to the front, not fetched twice;
-      // loaded long ago, it is asked for again now (a 304), so the winner's <img> does not wait for one
-      preload([{ url, kind: 'image' }], { front: true, refresh: true });
-      return;
-    }
-    try {
-      const img = new Image();
-      img.decoding = 'async';
-      img.src = url;
-    } catch {
-      // ignore
-    }
-  }, []);
   return (
     <div class="pp-screen pw ps pp-suspense">
       <header class="pw-bar">
@@ -386,8 +372,8 @@ export function SuspenseScreen(): JSX.Element {
       <div class="ps-night">
         <div class="pp-spot" aria-hidden="true" />
         <GameArt id="show" emoji="🥁" size="big" class="pp-drum" />
-        {/* the same question as on the TV (the owner's wording, 13.11) */}
-        <Logo text="מי זכה בסיבוב?" class="ps-susp-title" />
+        {/* the same question as on the TV (the owner's wording, 13.11); two words a line, so it fits a phone */}
+        <Logo text="מי זכה בסיבוב?" lead={2} class="ps-susp-title" />
         <div class="ps-quip">השופטים מתייעצים. בארומה.</div>
         <div class="pp-tv-hint">📺 תסתכלו על הטלוויזיה</div>
       </div>
@@ -395,37 +381,8 @@ export function SuspenseScreen(): JSX.Element {
   );
 }
 
-/** The prize: a transparent cut-out of the figurine when there is one (like the TV), else the photo. */
-function prizeUrl(): string | null {
-  return findPublicFile('/assets/host/prize.png', ['png', 'webp', 'jpg', 'jpeg']);
-}
-
-function isCutOut(url: string): boolean {
-  return /\.(png|webp)$/i.test(url);
-}
-
-/**
- * The Shimi figurine a round winner takes home: the cut-out standing on a cobalt disc (like
- * the doll in the dressing room), a framed photo when the picture has a background, an angel
- * until there is a picture at all.
- */
-function Prize(): JSX.Element {
-  const url = prizeUrl();
-  const [imgOk, setImgOk] = useState(url !== null);
-  const shown = imgOk && url !== null;
-  return (
-    <div class={`pp-prize ${shown && isCutOut(url) ? 'is-cut' : 'is-photo'}`}>
-      {shown ? (
-        <img src={url} alt="הפרס" onError={() => setImgOk(false)} draggable={false} />
-      ) : (
-        <div class="pp-prize-ph">
-          <span>👼</span>
-        </div>
-      )}
-      <span class="pp-prize-shine" />
-    </div>
-  );
-}
+// A round has no prize (the owner's call, 13.11): the Shimi angel is given once, to the evening's
+// winner at the podium. The round winner's phone celebrates the round.
 
 export function WinScreen(props: { readonly onDone: () => void; readonly look: string | null }): JSX.Element {
   const v = useViewport();
@@ -441,7 +398,8 @@ export function WinScreen(props: { readonly onDone: () => void; readonly look: s
       <StageLight />
       <Confetti bursts={5} intensity={1.3} />
       <h1 class="pp-win-title ps-logo">ניצחת!</h1>
-      <div class="ps-win-sub">זכית בשימי אנג׳ל!</div>
+      {/* a round, not the evening: the prize is given once, at the podium */}
+      <div class="ps-win-sub">הסיבוב הזה שלך!</div>
       <div class="ps-quip ps-win-quip">כמו האוסקר, רק בחנוכת בית.</div>
       <div class="ps-win-show">
         <div class="ps-win-me">
@@ -451,9 +409,8 @@ export function WinScreen(props: { readonly onDone: () => void; readonly look: s
           <Avatar look={props.look} size={dollPx(v, 0.42, 0.22, 100, 176)} crop="bust" />
           <Burst text="מחורחר!" class="ps-hero-burst" />
         </div>
-        <Prize />
       </div>
-      <div class="pp-win-go">לכו לקחת את הפרס!</div>
+      <div class="pp-win-go">הפרס? רק בסוף!</div>
       <button type="button" class="pp-btn pp-btn-ghost" onClick={props.onDone}>
         לתוצאות שלי ←
       </button>
@@ -480,7 +437,7 @@ export function RevealScreen(props: { readonly results: RoundResults; readonly o
         <StageLight />
         {winner !== undefined ? (
           <>
-            <div class="pp-label-big">הפרס הולך ל…</div>
+            <div class="pp-label-big">הסיבוב הולך ל…</div>
             <div class="pp-reveal-faces" style={{ height: `${size}px` }}>
               <div class="pp-reveal-face ps-hero">
                 <span class="pp-crown" aria-hidden="true">
@@ -489,11 +446,10 @@ export function RevealScreen(props: { readonly results: RoundResults; readonly o
                 <Avatar look={winner.look} size={size} crop="bust" />
                 <Burst text="וואו!" class="ps-hero-burst" />
               </div>
-              <Prize />
             </div>
             <div class="pp-reveal-name">{winner.name}</div>
             {elimination ? <div class="pp-text">נשאר/ה אחרון/ה באוויר.</div> : null}
-            <div class="ps-quip">הכרזה רשמית: שימי אנג׳ל עובר דירה.</div>
+            <div class="ps-quip">הכרזה רשמית. מחיאות כפיים.</div>
             {byTime ? (
               <div class="pp-earlier">⏱ {elimination ? 'אותו מרחק' : 'אותו ניקוד'}, מי שהגיע אליו קודם מנצח</div>
             ) : null}
@@ -505,7 +461,7 @@ export function RevealScreen(props: { readonly results: RoundResults; readonly o
               <span>🤷</span>
             </span>
             <div class="pp-title">אף אחד לא קלע הפעם</div>
-            <div class="ps-quip">שימי אנג׳ל נשאר בוויטרינה. כמו בעזריאלי.</div>
+            <div class="ps-quip">אפס לכולם. קורה במשפחות הכי טובות.</div>
           </>
         )}
       </div>
@@ -712,7 +668,8 @@ export function FinalScreen(props: { readonly state: RoomState; readonly me: str
           <span class="ps-star">⭐</span> {fmt(total)} <small>נק׳</small>
         </div>
         <div class="pp-text pp-final-line">
-          {rank === 1 && podium ? 'אלופ/ת הערב. ככה נראה אייקון.' : podium ? 'על הפודיום. טפו חמסה.' : 'תואר כבוד: אורח/ת השנה.'}
+          {/* the one place a phone says it: the evening's winner takes the angel home */}
+          {rank === 1 && podium ? 'זכית בשימי אנג׳ל! לכו לקחת את הפרס 👼' : podium ? 'על הפודיום. טפו חמסה.' : 'תואר כבוד: אורח/ת השנה.'}
         </div>
       </div>
       <div class="pw-tray ps-final-tray">

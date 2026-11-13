@@ -901,6 +901,7 @@ function Main(props: { readonly link: RemoteLink }): JSX.Element {
               }}
             />
             <SheetRow action={act('calm')} testId="more-calm" onPress={() => toggle(act('calm'))} />
+            <SheetRow action={act('autopilot')} testId="more-autopilot" onPress={() => toggle(act('autopilot'))} />
             <SheetRow
               action={act('reset')}
               label="איפוס התחרות"

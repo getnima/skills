@@ -18,7 +18,7 @@ import { isMuted, preloadClips, setMuted, sfx, unlockAudio } from '../kit/audio'
 import { avSync, onAvSyncChange, pictureClock, pictureLeadMs, soundOffsetMs } from '../kit/av-sync';
 import { enterFullscreen } from '../kit/mobile';
 import { preloadOn } from '../kit/preload';
-import { buildControlModel, checkAction, confirmQuestion, findAction, isGameId, nextUnplayed, parseRelay, remoteView, toRelay } from './actions';
+import { autopilotStep, buildControlModel, checkAction, confirmQuestion, findAction, isGameId, nextUnplayed, parseRelay, remoteView, toRelay } from './actions';
 import { CreditsPanel } from './credits';
 import { CutsceneMenu, CutscenePlayer } from './cutscene';
 import { GoSplash, markResumeGo, markStartGong, PreRoundScreen, ResumeOverlay, startGongScheduled, useCountdownCues } from './intro';
@@ -59,6 +59,8 @@ export interface HostHooks {
    * card, so a script that plays the games out of order starts them here (the owner uses the remote).
    */
   start(game: string): void;
+  /** Whether the TV moves the show on by itself between rounds (`?auto=1` / `?auto=0`, the P key). */
+  autopilot(): boolean;
 }
 
 declare global {
@@ -232,7 +234,7 @@ const STRIP_TEST_ID: Readonly<Partial<Record<ActionId, string>>> = {
   lobby: 'btn-lobby',
 };
 
-type Source = 'click' | 'key' | 'remote';
+type Source = 'click' | 'key' | 'remote' | 'auto';
 
 interface RunOptions {
   readonly source: Source;
@@ -318,6 +320,38 @@ function PreloadBar(): JSX.Element | null {
   );
 }
 
+/**
+ * Whether the show goes on by itself between rounds (the owner's ask, 13.11; actions.ts
+ * autopilotStep). On by default: `?auto=0` starts with it off, and P, the ☰ menu or the remote
+ * switch it while the page is open. An automated browser presses every step itself, so there it
+ * is off unless the address says `?auto=1`.
+ */
+function autopilotWanted(): boolean {
+  try {
+    const q = new URLSearchParams(window.location.search).get('auto');
+    if (q === '1') return true;
+    if (q === '0') return false;
+    return navigator.webdriver !== true;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * The first click or key on the TV page also makes it fullscreen (the owner's ask, 13.11): the
+ * browser only allows fullscreen from a click or a key, and the page needs one for its sound
+ * anyway. Once per page: Esc leaves it and F toggles it as before. `?fs=0` turns it off; an
+ * automated browser never does it.
+ */
+function autoFullscreenWanted(): boolean {
+  try {
+    if (new URLSearchParams(window.location.search).get('fs') === '0') return false;
+    return navigator.webdriver !== true;
+  } catch {
+    return false;
+  }
+}
+
 export function App(): JSX.Element {
   const room = useHostRoom();
   const { state } = room;
@@ -325,6 +359,9 @@ export function App(): JSX.Element {
   const locked = useAudioLocked();
   const fullscreen = useFullscreen();
   const calm = useCalm();
+  const [autopilot, setAutopilot] = useState(autopilotWanted);
+  /** The toast of the autopilot switch (the TV has no strip to show it on). */
+  const [autoNote, setAutoNote] = useState<{ readonly id: number; readonly text: string } | null>(null);
   const [menu, setMenu] = useState<MenuKind>('none');
   // the TV's sound / picture delay (AirPlay): its clock for what is drawn by the server clock
   const [, setAvRev] = useState(0);
@@ -350,9 +387,17 @@ export function App(): JSX.Element {
   const phaseKey = `${state?.code ?? ''}:${phase ?? ''}:${state?.round?.index ?? -1}:${state?.results?.roundIndex ?? -1}`;
   // stamped during render, so a key pressed right after the new screen appears is already guarded
   const lastPhaseKey = useRef(phaseKey);
+  const lastPhase = useRef(phase);
+  /** The lobby on screen came straight after a round's results: the only lobby the autopilot leaves by itself. */
+  const afterResults = useRef(false);
   if (lastPhaseKey.current !== phaseKey) {
     lastPhaseKey.current = phaseKey;
     phaseAt.current = performance.now();
+    // a moment without a state (a reconnect) is not a new screen
+    if (phase !== null) {
+      if (!(phase === 'lobby' && lastPhase.current === 'lobby')) afterResults.current = phase === 'lobby' && lastPhase.current === 'results';
+      lastPhase.current = phase;
+    }
   }
   useEffect(() => setArmed(null), [phaseKey]);
   useEffect(() => {
@@ -428,6 +473,33 @@ export function App(): JSX.Element {
     };
   }, []);
 
+  // the first click or key also goes fullscreen, once (autoFullscreenWanted)
+  useEffect(() => {
+    if (!autoFullscreenWanted()) return undefined;
+    const off = (): void => {
+      window.removeEventListener('pointerdown', first, true);
+      window.removeEventListener('pointerup', first, true);
+      window.removeEventListener('keydown', first, true);
+    };
+    const first = (e: Event): void => {
+      if (e instanceof KeyboardEvent) {
+        // a shortcut of the browser (reload, a new tab), Esc and a lone modifier are not "start the show"
+        if (e.ctrlKey || e.metaKey || e.altKey || e.key === 'Escape' || e.key === 'Shift' || e.key === 'Tab') return;
+        // F is the fullscreen key itself: its own handler does it
+        if (e.code === 'KeyF') {
+          off();
+          return;
+        }
+      }
+      off();
+      void enterFullscreen();
+    };
+    window.addEventListener('pointerdown', first, true);
+    window.addEventListener('pointerup', first, true);
+    window.addEventListener('keydown', first, true);
+    return off;
+  }, []);
+
   // a new round's results / a new phase: the replay starts over
   const resultsKey = `${phase}:${state?.results?.roundIndex ?? -1}`;
   useEffect(() => {
@@ -454,7 +526,7 @@ export function App(): JSX.Element {
   const res = state?.results ?? null;
   const ceremonyDone = phase !== 'results' || res === null || room.clock.now() >= standingsAt(replayAt !== null ? { ...res, revealAt: replayAt } : res);
   const sync = { open: menu === 'sync', soundMs: soundOffsetMs(), auto: !avSync().soundSet, pictureMs: pictureLeadMs() };
-  const model = buildControlModel({ state, ceremonyDone, muted, calm, fullscreen, sync });
+  const model = buildControlModel({ state, ceremonyDone, muted, calm, autopilot, fullscreen, sync });
   const modelRef = useRef(model);
   modelRef.current = model;
   const action = (id: ActionId): ControlAction | undefined => findAction(model, id);
@@ -498,6 +570,13 @@ export function App(): JSX.Element {
       case 'calm':
         setShowCalm(arg === 'on' ? true : arg === 'off' ? false : !isShowCalm());
         return done('בוצע');
+      case 'autopilot': {
+        const want = arg === 'on' ? true : arg === 'off' ? false : !autopilot;
+        const text = want ? 'מעבר אוטומטי בין המשחקים: פועל' : 'מעבר אוטומטי: כבוי. רווח ממשיך';
+        setAutopilot(want);
+        setAutoNote((n) => ({ id: (n?.id ?? 0) + 1, text }));
+        return done(text);
+      }
       case 'fullscreen':
         toggleFullscreen();
         return done('בוצע');
@@ -559,7 +638,8 @@ export function App(): JSX.Element {
       });
       return ran ?? done('ממתין ללחיצה שנייה');
     }
-    return perform(id, arg, remote);
+    // the autopilot's own press fails quietly (the host or a remote got there first): no error on the TV
+    return perform(id, arg, remote || opts.source === 'auto');
   };
   const runRef = useRef(runAction);
   runRef.current = runAction;
@@ -575,8 +655,58 @@ export function App(): JSX.Element {
       model: () => modelRef.current,
       preload: () => tvPreloadProgress(),
       start: (game: string) => void runRef.current('start', game, { source: 'click' }),
+      autopilot: () => autopilotRef.current,
     };
   }, []);
+
+  // ── the autopilot: between rounds the show goes on by itself (actions.ts autopilotStep) ──
+  const autopilotRef = useRef(autopilot);
+  autopilotRef.current = autopilot;
+  /** What the autopilot would press on this screen and in how long, or null. */
+  const autoStep = (): ReturnType<typeof autopilotStep> => {
+    if (!autopilot || state === null) return null;
+    const since = phase === 'results' && res !== null ? room.clock.now() - standingsAt(replayAt !== null ? { ...res, revealAt: replayAt } : res) : null;
+    return autopilotStep({
+      model: modelRef.current,
+      played: state.played.length,
+      online: state.players.filter((p) => p.connected).length,
+      screenMs: performance.now() - phaseAt.current,
+      sinceCeremonyMs: since !== null && since >= 0 ? since : null,
+      afterResults: afterResults.current,
+    });
+  };
+  /** The screen the autopilot already pressed on: one press a screen. */
+  const autoPressed = useRef('');
+  const autoTick = useRef<() => void>(() => undefined);
+  autoTick.current = (): void => {
+    if (room.status !== 'online') return;
+    // the host is in the middle of something (a menu, a question, a second press): hands off
+    if (confirm !== null || menu !== 'none' || armed !== null) return;
+    if (autoPressed.current === phaseKey) return;
+    const step = autoStep();
+    if (step === null || step.inMs > 0) return;
+    const key = phaseKey;
+    autoPressed.current = key;
+    void runRef
+      .current(step.id, undefined, { source: 'auto', confirmed: true, key })
+      .catch((): ActResult => refused(''))
+      .then((r) => {
+        // refused (the server was away for a moment): this screen gets another try in a little while
+        if (!r.ok) {
+          setTimeout(() => {
+            if (autoPressed.current === key) autoPressed.current = '';
+          }, 3_000);
+        }
+      });
+  };
+  useEffect(() => {
+    if (!autopilot) return undefined;
+    const id = setInterval(() => autoTick.current(), 400);
+    return () => clearInterval(id);
+  }, [autopilot]);
+  // the lobby between games shows when the next game starts
+  const lobbyAuto = phase === 'lobby' ? autoStep() : null;
+  const autoStartAt = lobbyAuto !== null ? Date.now() + lobbyAuto.inMs : null;
 
   // ── the remotes: the model goes out, presses come in ──
   const publishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -657,6 +787,10 @@ export function App(): JSX.Element {
       if (action('end-round')?.enabled === true) key('end-round');
     } else if (code === 'KeyC') key('cutscene-menu');
     else if (code === 'KeyA') key('av-sync');
+    else if (code === 'KeyP') {
+      if (e.repeat) return;
+      key('autopilot');
+    }
     else if (code === 'KeyR') {
       if (action('replay')?.enabled === true) key('replay');
     } else return;
@@ -681,7 +815,7 @@ export function App(): JSX.Element {
       </div>
     );
   } else if (phase === 'lobby') {
-    scene = <Lobby state={state} onStart={(g) => click('start', g)} onKick={(p) => click('kick', p.id)} />;
+    scene = <Lobby state={state} autoStartAt={autoStartAt} onStart={(g) => click('start', g)} onKick={(p) => click('kick', p.id)} />;
   } else if ((phase === 'intro' || phase === 'countdown') && state.round !== null) {
     const game = GAMES[state.round.gameId];
     // one element through the intro and the 3-2-1: the clock decides which one shows
@@ -731,6 +865,7 @@ export function App(): JSX.Element {
   const muteAction = tool('mute');
   const fsAction = tool('fullscreen');
   const calmAction = tool('calm');
+  const autoAction = tool('autopilot');
   const soundAction = tool('sound-check');
   const resetAction = tool('reset');
   const newRoomAction = tool('new-room');
@@ -834,6 +969,7 @@ export function App(): JSX.Element {
         <Modal title="☰ עוד" onClose={() => setMenu('none')} testId="more-menu">
           <div class="hs-more">
             <Switch on={calmAction?.on === true} label="מצב רגוע (פחות בדיחות על המסך)" onChange={(on) => click('calm', on ? 'on' : 'off')} />
+            <Switch on={autoAction?.on === true} label="מעבר אוטומטי בין המשחקים (P)" onChange={(on) => click('autopilot', on ? 'on' : 'off')} />
             <Btn
               label={soundAction?.label ?? 'בדיקת סאונד'}
               icon="🎵"
@@ -866,7 +1002,7 @@ export function App(): JSX.Element {
               <b>קיצורי מקלדת</b>
               <span>
                 <kbd>רווח</kbd>/<kbd>Enter</kbd> הפעולה הראשית · <kbd>N</kbd> המשחק הבא · <kbd>E</kbd> סיום סיבוב · <kbd>C</kbd> סרטונים · <kbd>S</kbd> דילוג על סרטון ·{' '}
-                <kbd>R</kbd> שוב · <kbd>F</kbd> מסך מלא · <kbd>M</kbd> השתקה · <kbd>A</kbd> סנכרון סאונד
+                <kbd>R</kbd> שוב · <kbd>F</kbd> מסך מלא · <kbd>M</kbd> השתקה · <kbd>A</kbd> סנכרון סאונד · <kbd>P</kbd> מעבר אוטומטי
               </span>
               <span>לחיצה על שחקן בלובי מוציאה אותו מהחדר.</span>
             </div>
@@ -882,6 +1018,7 @@ export function App(): JSX.Element {
 
       {confirm !== null ? <ConfirmDialog req={confirm} onClose={() => setConfirm(null)} /> : null}
       {room.notice !== null ? <Toast id={room.notice.id} text={room.notice.text} tone={room.notice.tone} /> : null}
+      {autoNote !== null ? <Toast id={autoNote.id} text={autoNote.text} tone="info" /> : null}
     </div>
   );
 }

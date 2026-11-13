@@ -25,7 +25,7 @@
 //   - the 'before' (ninja) and 'final' (podium) cutscenes play; a phone reload and a host reload
 //     mid-round resume
 //   - winner ceremony: no phone shows a result before results.revealAt; the TV shows the winner's
-//     name and the prize, the winner's phone shows the WIN moment within the same beat, the other
+//     name and the round medal (no prize: the angel is given at the podium), the winner's phone shows the WIN moment within the same beat, the other
 //     phones show who won, the victory song started on the TV and on the winner's phone
 //   - points and totals on the host equal shared/scoring.ts applied to the raw scores
 // Plotzel (the word ladder to פלוץ) is typed on its on-screen Hebrew keyboard: every phone follows
@@ -596,7 +596,7 @@ function plotzelDriver(ph, keyGapMs) {
       await shots(tag('suspense'), [H, A, C]);
       check((await host.locator('.sh-results--suspense').count()) === 1 && (await host.locator('.sh-cer-name').count()) === 0, 'TV: suspense, the winner is still hidden');
 
-      // the reveal: TV name + prize, winner's phone WIN, other phones who won: on the same beat
+      // the reveal: TV name + medal, winner's phone WIN, other phones who won: on the same beat
       const stamp = async (p, fn, ms) => { await waitFor(fn, ms, `${p.label} reveal`); return p === H ? hnow() : (await pinfo(p)).now; };
       const [tTv, tWin, ...tOthers] = await Promise.all([
         stamp(H, async () => (await host.locator('.sh-cer-name').count()) > 0, 12000),
@@ -612,15 +612,17 @@ function plotzelDriver(ph, keyGapMs) {
       await shots(tag('ceremony'), [H, { page: winner.page, label: `${winner.label}-WIN` }, { page: loser.page, label: `${loser.label}-reveal` }]);
       const tvName = await host.textContent('.sh-cer-name');
       const tvLine = await host.textContent('.sh-cer-line');
-      check(tvName.includes(winner.name) && tvLine.includes('שימי אנג׳ל') && (await host.locator('.sh-cer-prize .sh-prize').count()) === 1, `TV ceremony: ${winner.name} + the prize`, { tvName, tvLine });
+      // a round has no prize (the owner's call, 13.11): the round, a medal, and not a word about the angel
+      const tvCer = await host.textContent('.sh-cer');
+      check(tvName.includes(winner.name) && tvLine.includes('ניצחון בסיבוב') && (await host.locator('.sh-cer .sh-prize').count()) === 0 && (await host.locator('.sh-cer-prize .sh-medal').count()) === 1 && !/אנג׳ל|מלאך/.test(tvCer), `TV ceremony: ${winner.name} + the round medal, no prize`, { tvName, tvLine });
       const mh = await music(host);
       check(mh.started === songsBefore + 1 && mh.playing, 'TV: the victory song started with the ceremony', mh);
       const mw = await music(winner.page);
       check(mw.playing, `${winner.label}: victory song on the winner's phone`, mw);
       const winText = await winner.page.textContent('.pp-win');
-      check(winText.includes('זכית בשימי אנג׳ל'), `${winner.label}: WIN moment`, winText.slice(0, 60));
+      check(winText.includes('הסיבוב הזה שלך') && !/אנג׳ל|לקחת את הפרס/.test(winText), `${winner.label}: WIN moment (the round, not the prize)`, winText.slice(0, 60));
       const revText = await loser.page.textContent('.pp-reveal');
-      check(revText.includes(winner.name), `${loser.label}: sees who won`, revText.slice(0, 60));
+      check(revText.includes(winner.name) && !/אנג׳ל|הפרס/.test(revText), `${loser.label}: sees who won the round`, revText.slice(0, 60));
       await sleep(2600);
       await shots(tag('ceremony-prize'), [H]);
 
@@ -696,6 +698,12 @@ function plotzelDriver(ph, keyGapMs) {
     check(finalText.includes(champ.name), `podium shows the champion ${champ.name}`);
     const place = await byId.get(champ.id).page.textContent('.pp-final-place').catch(() => '');
     check(/1|ראשון|🥇/.test(place || ''), "champion's phone shows first place", place);
+    // the prize is given once, here: the champion's phone and the TV say so, nobody else's phone does
+    const champFinal = await byId.get(champ.id).page.textContent('.pp-final').catch(() => '');
+    check((champFinal || '').includes('זכית בשימי אנג׳ל'), "champion's phone: you won the angel", (champFinal || '').slice(0, 80));
+    const otherFinal = await phones.find((p) => p.id !== champ.id).page.textContent('.pp-final').catch(() => '');
+    check(!/אנג׳ל/.test(otherFinal || ''), "another phone: no angel", (otherFinal || '').slice(0, 60));
+    check(finalText.includes('זוכה בשימי אנג׳ל'), 'podium: the champion wins the angel');
 
     if (SINGLE_ORIGIN) {
       log('── single-origin server checks ──');

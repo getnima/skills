@@ -8,7 +8,7 @@ import { findPublicFile } from '../kit/files';
 import { StandingsPanel } from './show/index';
 import { designedQrUrl, hostDollUrl, introArtUrl } from './show/art';
 import { narratorSpeaking, onNarratorSpeaking } from './show/narrator-bus';
-import { GameArt, lookPlateColor, unitPx } from './show/common';
+import { GameArt, lookPlateColor, unitPx, useTicker } from './show/common';
 import { PrizeRelic } from './show/prize';
 import { prettyUrl, useJoinInfo, useShortLinkIsMine } from './util';
 
@@ -357,9 +357,12 @@ function GameCards(props: { readonly played: readonly GameId[]; onStart(g: GameI
  * shows the table and what is next, nothing else). After the last game: the podium is next.
  * `late` is one small line for a guest who walked in after the first game: where to join.
  */
-function NextUp(props: { readonly played: readonly GameId[]; readonly late: string; onStart(g: GameId): void }): JSX.Element {
+function NextUp(props: { readonly played: readonly GameId[]; readonly late: string; readonly autoStartAt: number | null; onStart(g: GameId): void }): JSX.Element {
   const next = nextGame(props.played);
   const g = next !== null ? GAMES[next] : null;
+  // the autopilot's countdown to the next game (app.tsx): the room sees when it starts
+  useTicker(250);
+  const autoIn = props.autoStartAt !== null && next !== null ? Math.max(0, Math.ceil((props.autoStartAt - Date.now()) / 1000)) : null;
   return (
     <section class="hs-nextup" data-testid="games">
       <div class="hs-nextup-title">{next !== null ? 'המשחק הבא' : 'שיחקנו הכול!'}</div>
@@ -387,6 +390,17 @@ function NextUp(props: { readonly played: readonly GameId[]; readonly late: stri
       )}
       <div class="hs-nextup-step">
         {next !== null ? `משחק ${Math.min(props.played.length + 1, GAME_IDS.length)} מתוך ${GAME_IDS.length}` : 'ועכשיו: מי לקח את הערב'}
+        {autoIn !== null ? (
+          <span class="hs-nextup-auto" data-testid="auto-start">
+            {autoIn > 0 ? (
+              <>
+                מתחילים בעוד <b dir="ltr">{autoIn}</b>
+              </>
+            ) : (
+              'מתחילים!'
+            )}
+          </span>
+        ) : null}
       </div>
       <div class="hs-nextup-late" data-testid="join-late">
         <span>עוד לא בפנים?</span> <b dir="ltr">{props.late}</b>
@@ -399,6 +413,8 @@ function NextUp(props: { readonly played: readonly GameId[]; readonly late: stri
 
 export interface LobbyProps {
   readonly state: RoomState;
+  /** Date.now() ms at which the autopilot starts the next game, or null (off, or not its turn). */
+  readonly autoStartAt?: number | null;
   onStart(g: GameId): void;
   onKick(p: PlayerPublic): void;
 }
@@ -422,7 +438,7 @@ export function Lobby(props: LobbyProps): JSX.Element {
         <div class="hs-standings-slot" data-testid="standings">
           <StandingsPanel players={state.players} results={state.results} />
         </div>
-        <NextUp played={state.played} late={late} onStart={props.onStart} />
+        <NextUp played={state.played} late={late} autoStartAt={props.autoStartAt ?? null} onStart={props.onStart} />
       </div>
     );
   }
@@ -452,7 +468,8 @@ export function Lobby(props: LobbyProps): JSX.Element {
                 <PrizeRelic variant="mini" />
               </span>
               <span class="hs-prize-text">
-                <b>פרס בכל סיבוב!</b>
+                {/* one prize, for the evening's winner (the owner's call, 13.11): no round gives one */}
+                <b>הפרס הגדול!</b>
                 <span>המנצח לוקח הביתה מלאך שימי בעבודת יד</span>
               </span>
             </div>

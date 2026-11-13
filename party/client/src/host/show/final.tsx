@@ -323,7 +323,7 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
       <header class="sh-final-head">
         {step >= 3 && champion ? (
           <div class="sh-champ" key="champ">
-            <div class="sh-champ-kicker">🏆 המקום הראשון של הערב 🏆</div>
+            <div class="sh-champ-kicker">🏆 המקום הראשון · זוכה בשימי אנג׳ל! 🏆</div>
             <div class="sh-champ-name" style={{ fontSize: `calc(${Math.min(size.portrait ? 110 : 190, Math.round((size.portrait ? 590 : 1500) / (Math.max(4, Array.from(champName).length) * 0.6)))} * var(--u))` }}>
               <bdi>{champion.player.name}</bdi>
             </div>

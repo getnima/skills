@@ -9,6 +9,9 @@ import { CUTSCENES } from '../../shared/cutscenes';
 import { GAME_IDS, GAMES, MAX_PLAYERS, RELAY_MAX_BYTES, WINNER_REVEAL_MS } from '../../shared/protocol';
 import { Room } from '../../server/room';
 import {
+  AUTOPILOT_AFTER_CEREMONY_MS,
+  AUTOPILOT_LOBBY_MS,
+  autopilotStep,
   buildControlModel,
   checkAction,
   confirmQuestion,
@@ -22,7 +25,7 @@ import { askFor, bigButton, defaultPick, liveCountText, phaseText, roundClockTex
 
 import type { CutsceneDef } from '../../shared/cutscenes';
 import type { GameId, RoomState } from '../../shared/protocol';
-import type { ActionId, ControlModel, ModelInput } from '../../client/src/host/actions';
+import type { ActionId, AutopilotInput, ControlModel, ModelInput } from '../../client/src/host/actions';
 import type { RoomSink, Scheduler } from '../../server/room';
 
 // ───────────────────────────── a room on a manual clock ─────────────────────────────
@@ -106,14 +109,14 @@ describe('action model', () => {
   it('has every action exactly once, whatever the phase', () => {
     const ids = model(null).actions.map((a) => a.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.length).toBe(21);
+    expect(ids.length).toBe(22);
   });
 
   it('no state yet: nothing to press but the TV tools', () => {
     const m = model(null);
     expect(m.primary).toBeNull();
     expect(m.hint).toContain('מתחברים');
-    expect(m.actions.filter((a) => a.enabled).map((a) => a.id).sort()).toEqual(['calm', 'fullscreen', 'more-menu', 'mute', 'new-room']);
+    expect(m.actions.filter((a) => a.enabled).map((a) => a.id).sort()).toEqual(['autopilot', 'calm', 'fullscreen', 'more-menu', 'mute', 'new-room']);
   });
 
   it('lobby, no players: the next game is the primary; nothing to kick', () => {
@@ -270,6 +273,10 @@ describe('action model', () => {
     expect(act(m, 'auto-cutscenes')).toMatchObject({ kind: 'toggle', on: false });
     expect(act(m, 'mute')).toMatchObject({ on: true, icon: '🔇' });
     expect(act(m, 'calm').on).toBe(true);
+    // the autopilot: off unless the TV says so; the remote gets it too (it is how the owner holds the show from the sofa)
+    expect(act(m, 'autopilot')).toMatchObject({ kind: 'toggle', on: false, enabled: true, kbd: 'P' });
+    expect(act(model(room.snapshot(), { autopilot: true }), 'autopilot').on).toBe(true);
+    expect(findAction(remoteView(model(room.snapshot(), { autopilot: true })), 'autopilot')?.on).toBe(true);
   });
 
   it('the key changes with every screen and only then', () => {
@@ -423,5 +430,104 @@ describe('room host roles', () => {
     expect(room.screenConnected).toBe(true);
     room.start('tap');
     expect(room.snapshot().cutscene?.id).toBe('pre');
+  });
+});
+
+// ───────────────────────────── the autopilot ─────────────────────────────
+
+describe('the autopilot (the show goes on by itself between rounds)', () => {
+  const auto = (m: ControlModel, extra: Partial<AutopilotInput> = {}) =>
+    autopilotStep({ model: m, played: 1, online: 2, screenMs: 60_000, sinceCeremonyMs: 60_000, afterResults: true, ...extra });
+
+  it('the first game of a competition is the host\'s own press', () => {
+    const { room } = makeRoom();
+    join(room, 'דנה');
+    const m = model(room.snapshot());
+    expect(m.primary).toBe('next');
+    expect(auto(m, { played: 0, afterResults: false })).toBeNull();
+    // even if somebody says this lobby came after results
+    expect(auto(m, { played: 0 })).toBeNull();
+  });
+
+  it('a round is never touched: intro, countdown, playing', () => {
+    const { room, clock } = makeRoom();
+    join(room, 'דנה');
+    room.start('tap');
+    expect(auto(model(room.snapshot()))).toBeNull();
+    clock.advance(1_000);
+    expect(room.snapshot().phase).toBe('countdown');
+    expect(auto(model(room.snapshot()))).toBeNull();
+    clock.advance(1_000);
+    expect(room.snapshot().phase).toBe('playing');
+    expect(auto(model(room.snapshot()))).toBeNull();
+  });
+
+  it('results: waits for the ceremony, then the standings, then goes back to the lobby', () => {
+    const { room, clock } = makeRoom();
+    const a = join(room, 'דנה');
+    playRound(room, clock, 'tap', [a]);
+    // the ceremony still plays
+    expect(auto(model(room.snapshot(), { ceremonyDone: false }), { sinceCeremonyMs: null })).toBeNull();
+    // the standings came up 2 s ago: not yet, and it says in how long
+    expect(auto(model(room.snapshot()), { sinceCeremonyMs: 2_000 })).toEqual({ id: 'continue', inMs: AUTOPILOT_AFTER_CEREMONY_MS - 2_000 });
+    const due = auto(model(room.snapshot()), { sinceCeremonyMs: AUTOPILOT_AFTER_CEREMONY_MS + 1 });
+    expect(due?.id).toBe('continue');
+    expect(due?.inMs).toBeLessThanOrEqual(0);
+  });
+
+  it('the lobby after results: the next game after a pause, and only that lobby', () => {
+    const { room, clock } = makeRoom();
+    const a = join(room, 'דנה');
+    playRound(room, clock, 'tap', [a]);
+    room.toLobby();
+    const m = model(room.snapshot());
+    expect(m.primary).toBe('next');
+    expect(auto(m, { screenMs: 3_000 })).toEqual({ id: 'next', inMs: AUTOPILOT_LOBBY_MS - 3_000 });
+    expect(auto(m, { screenMs: AUTOPILOT_LOBBY_MS })?.inMs).toBeLessThanOrEqual(0);
+    // a lobby the host came back to by hand (a cancelled round, a reload): the host's press
+    expect(auto(m, { afterResults: false })).toBeNull();
+    // nobody is connected: nothing starts in an empty room
+    expect(auto(m, { online: 0 })).toBeNull();
+  });
+
+  it('a cancelled intro lands in a lobby the autopilot leaves alone', () => {
+    const { room, clock } = makeRoom();
+    const a = join(room, 'דנה');
+    playRound(room, clock, 'tap', [a]);
+    room.toLobby();
+    room.start('icy');
+    room.endRound();
+    expect(room.snapshot().phase).toBe('lobby');
+    expect(auto(model(room.snapshot()), { afterResults: false })).toBeNull();
+  });
+
+  it('after the last game: the podium, and the podium is never left', () => {
+    const { room, clock } = makeRoom();
+    const a = join(room, 'דנה');
+    for (const g of GAME_IDS) {
+      playRound(room, clock, g, [a]);
+      if (g !== GAME_IDS[GAME_IDS.length - 1]) room.toLobby();
+    }
+    const m = model(room.snapshot());
+    expect(m.primary).toBe('podium');
+    expect(auto(m, { played: GAME_IDS.length })?.id).toBe('podium');
+    room.toFinal();
+    const f = model(room.snapshot());
+    expect(f.primary).toBe('reset');
+    expect(auto(f, { played: GAME_IDS.length })).toBeNull();
+    // back in the lobby with every game played: the podium again is the host's call
+    room.toLobby();
+    expect(model(room.snapshot()).primary).toBe('podium');
+    expect(auto(model(room.snapshot()), { played: GAME_IDS.length })).toBeNull();
+  });
+
+  it('a cutscene and the sync screen hold it', () => {
+    const { room, clock } = makeRoom();
+    const a = join(room, 'דנה');
+    playRound(room, clock, 'tap', [a]);
+    expect(auto(model(room.snapshot(), { sync: { open: true, soundMs: 0, auto: true, pictureMs: 0 } }))).toBeNull();
+    expect(room.startCutscene('joker_1').ok).toBe(true);
+    expect(model(room.snapshot()).primary).toBe('cutscene-skip');
+    expect(auto(model(room.snapshot()))).toBeNull();
   });
 });

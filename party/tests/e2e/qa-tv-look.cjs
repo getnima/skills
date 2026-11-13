@@ -271,8 +271,8 @@ async function rooms(browser, sizeName, vp, shot) {
     await shot(page, '20-results-suspense');
     await untilReveal(page, 5200);
     await shot(page, '21-ceremony');
-    const cer = await page.evaluate(() => ({ name: document.querySelector('.sh-cer-name').textContent, line: document.querySelector('.sh-cer-line').textContent, prize: (document.querySelector('.sh-cer-prize .sh-prize-img') || {}).naturalWidth || 0, doll: !!document.querySelector('.sh-cer .sh-avatar--hero img'), stickers: document.querySelectorAll('.sh-cer .sh-burst').length }));
-    check(cer.name.includes('נועה') && cer.line.includes('שימי אנג׳ל') && cer.prize > 0 && cer.doll && cer.stickers === 2, 'ceremony: the winner, the doll, the prize picture and two stickers', cer);
+    const cer = await page.evaluate(() => ({ name: document.querySelector('.sh-cer-name').textContent, line: document.querySelector('.sh-cer-line').textContent, medal: document.querySelectorAll('.sh-cer-prize .sh-medal').length, prize: document.querySelectorAll('.sh-cer .sh-prize').length, doll: !!document.querySelector('.sh-cer .sh-avatar--hero img'), stickers: document.querySelectorAll('.sh-cer .sh-burst').length }));
+    check(cer.name.includes('נועה') && cer.line.includes('ניצחון בסיבוב') && cer.medal === 1 && cer.prize === 0 && cer.doll && cer.stickers === 2, 'ceremony: the winner, the doll, the round medal (no prize) and two stickers', cer);
     await untilReveal(page, 10600 + 4200);
     await shot(page, '22-standings');
     await page.waitForFunction(() => !/מדלג/.test(document.querySelector('[data-testid=btn-primary]').textContent), null, { timeout: 30000 });

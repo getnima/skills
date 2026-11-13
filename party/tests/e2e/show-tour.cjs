@@ -157,10 +157,12 @@ const sections = {
     await shot('ceremony-3-settled');
     const c = await page.evaluate(() => {
       const name = document.querySelector('.sh-cer-name');
-      const img = document.querySelector('.sh-prize-img');
-      return { name: name && name.textContent, px: name && parseFloat(getComputedStyle(name).fontSize), line: document.querySelector('.sh-cer-line').textContent, prize: img && img.naturalWidth, bubble: document.querySelector('.sh-comm-bubble').textContent };
+      // a round has no prize (the angel is given at the podium): a medal instead
+      const medal = document.querySelectorAll('.sh-cer-prize .sh-medal').length;
+      const prizes = document.querySelectorAll('.sh-cer .sh-prize').length;
+      return { name: name && name.textContent, px: name && parseFloat(getComputedStyle(name).fontSize), line: document.querySelector('.sh-cer-line').textContent, medal, prizes, bubble: document.querySelector('.sh-comm-bubble').textContent };
     });
-    check('ceremony: huge name + prize + line', c.px >= 130 && c.line.includes('שימי אנג׳ל') && c.prize > 0, c);
+    check('ceremony: huge name + round medal + line, no prize', c.px >= 130 && c.line.includes('ניצחון בסיבוב') && c.medal === 1 && c.prizes === 0, c);
     await at(8500);
     await shot('ceremony-4-hold');
     await at(10600 + 1000);
@@ -181,7 +183,7 @@ const sections = {
         dollPx: card ? card.querySelector('.sh-avatar').getBoundingClientRect().width : 0,
       };
     });
-    check('standings: banner + cards with big dolls and readable names', st.banner.includes('שימי אנג׳ל') && st.cards >= 9 && st.namePx >= 24 && st.dollPx >= 150, st);
+    check('standings: banner + cards with big dolls and readable names', st.banner.includes('הסיבוב של') && !st.banner.includes('אנג׳ל') && st.cards >= 9 && st.namePx >= 24 && st.dollPx >= 150, st);
     check('results: no scroll', noScroll(await layout(page)));
 
     // late mount: jumps straight to the right stage
@@ -207,7 +209,7 @@ const sections = {
     await at(2600);
     await shot('ceremony-nobody');
     const nobody = await page.evaluate(() => document.querySelector('.sh-nobody-text').textContent);
-    check('ceremony: nobody beat', nobody.includes('אף אחד לא זכה') && nobody.includes('המלאך נשאר בבית'), nobody);
+    check('ceremony: nobody beat', nobody.includes('אף אחד לא זכה') && nobody.includes('אפס לכולם') && !nobody.includes('מלאך'), nobody);
     await at(6000 + 2500);
     await shot('standings-nobody');
 

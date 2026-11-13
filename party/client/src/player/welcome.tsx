@@ -157,7 +157,7 @@ export function JoinScreen(props: { readonly ctl: PlayerController; readonly sna
           <LookAvatar look={COVER_LOOKS[1]} size={tall ? 104 : 78} ring class="pw-cd pw-cd-b" />
           <LookAvatar look={COVER_LOOKS[2]} size={tall ? 78 : 60} ring class="pw-cd pw-cd-c" />
         </div>
-        <div class="pp-sub">5 משחקים · בובה לכל אחד · פרס בכל סיבוב</div>
+        <div class="pp-sub">5 משחקים · בובה לכל אחד · פרס למנצח הערב</div>
       </div>
 
       <div class="pp-join-card pw-tray">

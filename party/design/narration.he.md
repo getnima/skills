@@ -104,10 +104,13 @@ two hosts themselves (`bomb_hosts.png`), so the hosts make the joke about themse
 
 ### The reveal (9) · the winner's name has landed (the name is on screen, not in the line)
 
-| B · cheering | וואו! כמו אוסקר, רק עם כנפיים. |
+A round has no prize (the owner's call, 13.11): these lines cheer the round and never the angel.
+The angel is the champion's, below.
+
+| B · cheering | וואו! כמו אוסקר, רק בלי הנאום. |
 | --- | --- |
-| *or* A · cheering | כפרה! המלאך עובר דירה. |
-| *or* B · laughing | כפרה! המלאך כבר מחפש חניה ליד הבית. |
+| *or* A · cheering | כפרה! איזה סיבוב. תכבדו! |
+| *or* B · laughing | כפרה! ככה לוקחים סיבוב. |
 
 ### The standings (5)
 
@@ -126,6 +129,7 @@ two hosts themselves (`bomb_hosts.png`), so the hosts make the joke about themse
 | A · cheering, then B · cheering | יש לנו אלוף ערב! תכבדו! / וואו! מחר זה בכותרת הראשית של ynet. |
 | --- | --- |
 | *or* B · cheering | וואו! אלוף הערב, רשמית ובחתימה של שנינו. |
+| *or* A · cheering, then B · laughing | כפרה! המלאך עובר דירה. / הוא כבר מחפש חניה ליד הבית. |
 
 ### Goodbye (8) · once the final table has had a look
 

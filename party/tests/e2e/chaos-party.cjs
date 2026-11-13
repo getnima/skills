@@ -998,8 +998,10 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
       await shot(`r${n}-ceremony`, [TV, winnerPhone || phones[1], others[0]]);
       const tvName = await tv.textContent('.sh-cer-name', { timeout: 2000 }).catch(() => '');
       check(winnerRow && tvName.includes(winnerRow.name), `round ${n}: TV ceremony names the round winner "${winnerRow && winnerRow.name}"`, { tvName });
-      const prize = await tv.locator('.sh-cer-prize .sh-prize, .sh-prize').count().catch(() => 0);
-      check(prize > 0, `round ${n}: TV ceremony shows the prize`);
+      // a round has no prize (the angel is given at the podium): the ceremony shows the round medal
+      const medal = await tv.locator('.sh-cer-prize .sh-medal').count().catch(() => 0);
+      const prize = await tv.locator('.sh-cer .sh-prize').count().catch(() => 1);
+      check(medal > 0 && prize === 0, `round ${n}: TV ceremony shows the round medal and no prize`);
       const mus = await tv.evaluate(() => (window.__partyMusic ? { playing: window.__partyMusic.playing('victory'), started: window.__partyMusic.started.slice(-4) } : null)).catch(() => null);
       check(mus && mus.playing, `round ${n}: TV plays the victory song in the ceremony`, mus);
       if (winnerPhone) {

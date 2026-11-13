@@ -122,9 +122,9 @@ export const NARRATION: Readonly<Record<NarrationMoment, MomentScript>> = {
   reveal: {
     priority: 9,
     takes: [
-      [b('cheer', 'וואו! כמו אוסקר, רק עם כנפיים.')],
-      [a('cheer', 'כפרה! המלאך עובר דירה.')],
-      [b('laugh', 'כפרה! המלאך כבר מחפש חניה ליד הבית.')],
+      [b('cheer', 'וואו! כמו אוסקר, רק בלי הנאום.')],
+      [a('cheer', 'כפרה! איזה סיבוב. תכבדו!')],
+      [b('laugh', 'כפרה! ככה לוקחים סיבוב.')],
     ],
   },
   standings: {
@@ -140,6 +140,7 @@ export const NARRATION: Readonly<Record<NarrationMoment, MomentScript>> = {
     takes: [
       [a('cheer', 'יש לנו אלוף ערב! תכבדו!'), b('cheer', 'וואו! מחר זה בכותרת הראשית של ynet.')],
       [b('cheer', 'וואו! אלוף הערב, רשמית ובחתימה של שנינו.')],
+      [a('cheer', 'כפרה! המלאך עובר דירה.'), b('laugh', 'הוא כבר מחפש חניה ליד הבית.')],
     ],
   },
   goodbye: {

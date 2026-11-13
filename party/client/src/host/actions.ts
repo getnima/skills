@@ -28,6 +28,7 @@ export const ACTION_IDS = [
   'auto-cutscenes', // toggle; arg 'on' | 'off' (or flip)
   'mute', // TV-local toggle
   'calm', // TV-local toggle (fewer jokes on screen)
+  'autopilot', // TV-local toggle: between rounds the show goes on by itself
   'fullscreen', // TV only
   'cutscene-menu', // TV only: the cutscene menu
   'more-menu', // TV only: the ☰ menu
@@ -106,6 +107,8 @@ export interface ModelInput {
   readonly ceremonyDone: boolean;
   readonly muted: boolean;
   readonly calm: boolean;
+  /** The TV moves the show on by itself between rounds (autopilotStep). */
+  readonly autopilot?: boolean;
   readonly fullscreen: boolean;
   readonly sync?: SyncView;
 }
@@ -288,6 +291,16 @@ export function buildControlModel(input: ModelInput): ControlModel {
   });
   actions.push({ id: 'mute', label: 'השתקת הטלוויזיה', icon: input.muted ? '🔇' : '🔊', kind: 'toggle', on: input.muted, enabled: true, featured: false, kbd: 'M' });
   actions.push({ id: 'calm', label: 'מצב רגוע (פחות בדיחות)', icon: '😌', kind: 'toggle', on: input.calm, enabled: true, featured: false });
+  actions.push({
+    id: 'autopilot',
+    label: 'מעבר אוטומטי בין המשחקים',
+    icon: '🤖',
+    kind: 'toggle',
+    on: input.autopilot === true,
+    enabled: true,
+    featured: false,
+    kbd: 'P',
+  });
 
   actions.push({ id: 'fullscreen', label: 'מסך מלא', icon: input.fullscreen ? '🗗' : '⛶', kind: 'toggle', on: input.fullscreen, enabled: true, featured: false, kbd: 'F', tvOnly: true });
   actions.push({ id: 'cutscene-menu', label: 'סרטונים', icon: '🎬', kind: 'normal', enabled: state !== null, featured: false, kbd: 'C', tvOnly: true });
@@ -396,6 +409,59 @@ export function checkAction(model: ControlModel, id: ActionId, arg: string | und
     if (item === undefined || !item.enabled) return { ok: false, text: 'לא נמצא. נסו שוב' };
   }
   return { ok: true };
+}
+
+// ───────────────────────────── the autopilot ─────────────────────────────
+
+/** After a round's ceremony: how long the standings stay up before the TV goes back to the lobby (or on to the podium). */
+export const AUTOPILOT_AFTER_CEREMONY_MS = 9_000;
+/** Between games: how long the standings and the next game stay up before the next game starts. */
+export const AUTOPILOT_LOBBY_MS = 10_000;
+
+export interface AutopilotInput {
+  readonly model: ControlModel;
+  /** Games played so far in this competition. */
+  readonly played: number;
+  /** Players connected right now. */
+  readonly online: number;
+  /** ms since this screen (model.key) came up. */
+  readonly screenMs: number;
+  /** Results: ms since the winner ceremony ended; null while it still plays. */
+  readonly sinceCeremonyMs: number | null;
+  /** This lobby came straight after a round's results (not after a cancelled round, a reset, the podium or a reload). */
+  readonly afterResults: boolean;
+}
+
+export interface AutopilotStep {
+  readonly id: ActionId;
+  /** ms until it is pressed (0 or less: now). */
+  readonly inMs: number;
+}
+
+/**
+ * What the autopilot presses on this screen and when, or null. It only carries the show on
+ * between rounds (the owner's ask, 13.11): results → the lobby (the podium after the last game),
+ * and that lobby → the next game. Everything else stays the host's own press: the first game
+ * of a competition (people are still joining), a lobby the host came back to by hand, ending a
+ * round, leaving the podium. Nothing starts in an empty room, during a cutscene or while the
+ * sync screen is open.
+ */
+export function autopilotStep(input: AutopilotInput): AutopilotStep | null {
+  const { model } = input;
+  if (model.sync?.open === true) return null;
+  if (model.phase === 'results') {
+    // a cutscene makes "skip" the primary: wait for it
+    if (model.primary !== 'continue' && model.primary !== 'podium') return null;
+    if (findAction(model, model.primary)?.enabled !== true) return null;
+    if (input.sinceCeremonyMs === null) return null;
+    return { id: model.primary, inMs: AUTOPILOT_AFTER_CEREMONY_MS - input.sinceCeremonyMs };
+  }
+  if (model.phase === 'lobby') {
+    if (model.primary !== 'next' || findAction(model, 'next')?.enabled !== true) return null;
+    if (!input.afterResults || input.played === 0 || input.online === 0) return null;
+    return { id: 'next', inMs: AUTOPILOT_LOBBY_MS - input.screenMs };
+  }
+  return null;
 }
 
 // ───────────────────────────── relay messages ─────────────────────────────

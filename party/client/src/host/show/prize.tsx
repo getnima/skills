@@ -1,5 +1,6 @@
 /**
- * The round prize, the Shimi angel, as a comic sticker: the figurine on a cobalt disc
+ * The evening's prize, the Shimi angel, as a comic sticker (no round gives it: it goes to the
+ * overall winner at the podium; the lobby and the intro show it small): the figurine on a cobalt disc
  * with a halo, ink-outlined wings and sparkles that pop. A photo (prize.jpg) is cropped
  * around the figurine in the middle and set in an arched frame; a transparent cut-out
  * (prize.png) stands free.
