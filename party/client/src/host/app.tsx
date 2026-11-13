@@ -44,7 +44,7 @@ import type { ConfirmRequest } from './ui';
 /** 'credits' is TV-local (an information panel, not an action of the control model). */
 type MenuKind = 'none' | 'cutscenes' | 'more' | 'sound' | 'credits' | 'sync';
 
-/** Automation hook for the browser tests (read-only). */
+/** Automation hook for the browser tests (read-only, but for `start`). */
 export interface HostHooks {
   state(): RoomState | null;
   /** Server time. */
@@ -54,6 +54,11 @@ export interface HostHooks {
   model(): ControlModel;
   /** How far the background loading is (boot-preload.ts): wait for `finished`, then read `failed`. */
   preload(): PreloadProgress;
+  /**
+   * Start this game, as a click on its card does. Between games the TV shows only the next game's
+   * card, so a script that plays the games out of order starts them here (the owner uses the remote).
+   */
+  start(game: string): void;
 }
 
 declare global {
@@ -560,6 +565,7 @@ export function App(): JSX.Element {
       status: () => hookRef.current.status,
       model: () => modelRef.current,
       preload: () => tvPreloadProgress(),
+      start: (game: string) => void runRef.current('start', game, { source: 'click' }),
     };
   }, []);
 

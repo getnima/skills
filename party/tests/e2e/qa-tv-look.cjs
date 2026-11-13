@@ -291,7 +291,7 @@ async function rooms(browser, sizeName, vp, shot) {
       const outAt = i < 4 ? 1600 + i * 60 : i < 9 ? 3200 + i * 40 : i < 11 ? 8600 + i * 80 : Infinity;
       return t >= outAt ? { out: Math.round(outAt / 6) } : Math.round(t / 6);
     });
-    await page.click('[data-testid=game-flappy]');
+    await page.evaluate(() => window.__host.start('flappy')); // between games the TV shows only the next game's card
     await waitPhase(page, 'intro');
     await sleep(650);
     await shot(page, '32-intro-flappy');
@@ -372,7 +372,7 @@ async function rooms(browser, sizeName, vp, shot) {
     await waitChips(B.page, 12);
     await shot(B.page, '50-lobby-12');
     stop = playRound(phones, (i, t) => (t / 100) * (16 - i) * (1 + 0.35 * Math.sin(t / 900 + i)));
-    await B.page.click('[data-testid=game-icy]');
+    await B.page.evaluate(() => window.__host.start('icy')); // between games the TV shows only the next game's card
     await waitPhase(B.page, 'playing');
     await sleep(5200);
     await shot(B.page, '51-live-12');

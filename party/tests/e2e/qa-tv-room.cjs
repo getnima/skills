@@ -107,7 +107,7 @@ const NAMES = ['דנה', 'Yossi', 'מיכל', 'רון'];
 
     // game 2: flappy (elimination)
     phones[0].stopAt = Number.POSITIVE_INFINITY;
-    await tv.click('[data-testid=game-flappy]');
+    await tv.evaluate(() => window.__host.start('flappy')); // between games the TV shows only the next game's card
     await waitPhase('playing', 20000);
     const t0 = Date.now();
     phones[0].stopAt = t0 + 1500;

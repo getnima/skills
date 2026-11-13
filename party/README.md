@@ -13,7 +13,7 @@ Five mini games:
 - **שימי טאפ** (tap): 30 s to start, then your own 20 s of tapping on Shimi picking his nose. Score = taps.
 - **אייסי שימי** (icy): a tower climber; hold a side to run, he jumps when he lands. Best run counts.
 - **פלאפי תבורי** (flappy): last one in the air wins; when 3 are left a finale makes it harder.
-- **פלוצל** (plotzel): the owner's word ladder to פלוץ, opening with חמוד, פוקי, נדיר, שימי (an easy word on each side of פוקי); 80% speed, 20% steps, no hints.
+- **פלוצל** (plotzel): the owner's word ladder to פלוץ, opening with חמוד, פוקי, נדיר, שימי (two easy words after חמוד); 80% speed, 20% steps, no hints.
 - **נינג׳ה תבורי** (ninja): slice the Israeli food, never the two host bombs.
 
 Short **cutscene videos** can interrupt at any moment: phones freeze with "watch the

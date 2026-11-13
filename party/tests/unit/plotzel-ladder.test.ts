@@ -218,22 +218,22 @@ describe('plotzel round sequence', () => {
     expect(a).not.toBe(b);
   });
 
-  it('opens with the owner\'s four words in order, an easy word on each side of פוקי: חמוד, easy, פוקי, easy, נדיר, שימי', () => {
+  it('opens with the owner\'s four words in order, two easy words after the first: חמוד, easy, easy, פוקי, נדיר, שימי', () => {
     expect(OPENERS).toEqual(['חמוד', 'פוקי', 'נדיר', 'שימי']);
-    expect(EASY_AFTER).toEqual([1, 1, 0, 0]);
+    expect(EASY_AFTER).toEqual([2, 0, 0, 0]);
     expect(OPENING_LENGTH).toBe(6);
     const easy = new Set<string>();
     for (const seed of [1, 7, 99, 123456, 987654321]) {
       const head = roundSequence(seed, ladder).slice(0, OPENING_LENGTH);
-      expect([head[0], head[2], head[4], head[5]]).toEqual([...OPENERS]);
+      expect([head[0], head[3], head[4], head[5]]).toEqual([...OPENERS]);
       // the two words in between: two steps from the goal, through common words, and not the same word twice
-      for (const w of [head[1] as string, head[3] as string]) {
+      for (const w of [head[1] as string, head[2] as string]) {
         expect(ladder.dist(w), disp(w)).toBe(2);
         expect(ladder.cdist(w), disp(w)).toBe(2);
         expect(OPENERS).not.toContain(w);
         easy.add(w);
       }
-      expect(head[1]).not.toBe(head[3]);
+      expect(head[1]).not.toBe(head[2]);
     }
     // drawn by the seed: not the same pair in every round
     expect(easy.size).toBeGreaterThan(2);

@@ -56,7 +56,7 @@ const boardTop = (tv) =>
     await tv.waitForFunction(() => window.__host.state().autoCutscenes === false, null, { timeout: 5000 });
     await tv.keyboard.press('Escape');
     await L.sleep(1800);
-    await tv.click('[data-testid=game-ninja]');
+    await tv.evaluate(() => window.__host.start('ninja')); // between games the TV shows only the next game's card
     await tv.waitForFunction(() => window.__host.state().phase === 'playing', null, { timeout: 30000 });
     const r = (await tv.evaluate(() => window.__host.state())).round;
     const send = (p, score) => p.s.emit('player:score', { round: r.index, score });

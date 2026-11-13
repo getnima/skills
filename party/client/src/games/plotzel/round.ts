@@ -55,11 +55,11 @@ export function ladderScore(steps: number, par: number, elapsedMs: number): numb
  */
 export const OPENERS: readonly string[] = ['חמוד', 'פוקי', 'נדיר', 'שימי'];
 /**
- * Easy words between the openers (the owner's call, 13.11: two easy words in between, פוקי stays):
- * EASY_AFTER[i] par-2 words, drawn by the round's seed, follow OPENERS[i]. So a round opens
- * חמוד, an easy word, פוקי, an easy word, נדיר, שימי: a breather on each side of the hardest one.
+ * Easy words between the openers (the owner's call, 13.11): EASY_AFTER[i] par-2 words, drawn by
+ * the round's seed, follow OPENERS[i]. So a round opens חמוד, two easy words, פוקי, נדיר, שימי:
+ * everybody has solved a few ladders before the hard ones come.
  */
-export const EASY_AFTER: readonly number[] = [1, 1, 0, 0];
+export const EASY_AFTER: readonly number[] = [2, 0, 0, 0];
 /** How many puzzles the opening takes: the openers and the easy words between them. */
 export const OPENING_LENGTH = OPENERS.length + EASY_AFTER.reduce((a, b) => a + b, 0);
 

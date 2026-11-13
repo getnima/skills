@@ -13,8 +13,8 @@ is the true minimum number of steps (BFS over the whole dictionary).
 
 A party round (120 s, `GAMES.plotzel`) is a **sequence** of ladders, the same on every phone
 (derived only from the round seed). Solve one, a short celebration, the next slides in, until
-time is up. Every round opens with the owner's four words, in this order, with an easy word on each side of פוקי:
-**חמוד, an easy word, פוקי, an easy word, נדיר, שימי** (`OPENERS` and `EASY_AFTER` in `round.ts`).
+time is up. Every round opens with the owner's four words, in this order, with two easy words after the first:
+**חמוד, two easy words, פוקי, נדיר, שימי** (`OPENERS` and `EASY_AFTER` in `round.ts`).
 There are **no hints** (the owner's rule: the original's hint button is removed). Skip as in the original.
 
 ## Where each rule lives
@@ -35,8 +35,8 @@ Rejections, in the original's order and words: fewer than 4 letters `צריך 4 
 `X לא נמצאת במילון`; already used `כבר השתמשתם בX`. A rejected word stays in the row (as in the
 original): ⌫ to fix it.
 
-Sequence: the opening is always חמוד (par 3), an easy word (par 2, drawn by the seed), פוקי (par 5), another easy
-word, נדיר (par 5), שימי (par 5). פוקי is not in the
+Sequence: the opening is always חמוד (par 3), two easy words (par 2, drawn by the seed), פוקי (par 5),
+נדיר (par 5), שימי (par 5). פוקי is not in the
 dictionary: it still starts a ladder (`startPar` = one more than its best neighbour, `startPath` goes through it),
 and its first step must be a real word like any other step. After the openers the start words have a path through
 common words as short as par (`CDIST = DIST`), never repeat and are never the demo word or an opener. Par ramp after

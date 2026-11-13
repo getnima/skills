@@ -69,7 +69,7 @@ const covered = (page) =>
         phones = await scriptedPhones(code, ['נועה'], () => null);
         await tv.waitForFunction(() => window.__host.state().players.length === 1, null, { timeout: 15000 });
         await tv.waitForTimeout(1700);
-        await tv.click(`[data-testid=game-${game}]`);
+        await tv.evaluate((g) => window.__host.start(g), game); // between games the TV shows only the next game's card
         await tv.waitForFunction(() => window.__host.state().phase === 'intro' && !window.__host.state().cutscene, null, { timeout: 30000 });
         const seen = [];
         for (let beat = 0; beat < 2; beat++) {
