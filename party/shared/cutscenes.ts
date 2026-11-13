@@ -42,7 +42,7 @@ export interface CutsceneDef {
 
 /**
  * The owner's call (13.11): no videos for now. Nothing plays by itself: not the clip in the middle
- * of שימי טאפ, not the ones before the ninja and before the podium (there are no real videos yet,
+ * of שימי טאפ, not the one before the podium (the commercial before the ninja does, see below) (there are no real videos yet,
  * so the room saw a test clip and placeholder cards). The entries stay, and each one still plays
  * from the TV's video menu (C) or the remote. To bring the automatic ones back: set this to true.
  */
@@ -60,7 +60,15 @@ export const CUTSCENES: readonly CutsceneDef[] = [
     phoneText: '✋ עוצרים הכל! תסתכלו על הטלוויזיה',
     enabled: AUTO,
   },
-  { id: 'before_ninja', title: 'לפני הנינג׳ה', file: 'before_ninja.mp4', when: { at: 'before', gameId: 'ninja' }, enabled: AUTO },
+  // The owner's call (13.11, late): a commercial break before the last game, by itself (whatever
+  // AUTO says). The file is the owner's download (53 s), git-ignored: this repository is public.
+  {
+    id: 'before_ninja',
+    title: 'פרסומות לפני המשחק האחרון',
+    file: 'before_ninja.mp4',
+    when: { at: 'before', gameId: 'ninja' },
+    phoneText: '📺 פרסומות! תסתכלו על הטלוויזיה',
+  },
   { id: 'before_podium', title: 'לפני הפודיום', file: 'before_podium.mp4', when: { at: 'final' }, enabled: AUTO },
   { id: 'joker_1', title: 'ג׳וקר 1', file: 'joker_1.mp4', when: { at: 'manual' } },
   { id: 'joker_2', title: 'ג׳וקר 2', file: 'joker_2.mp4', when: { at: 'manual' } },

@@ -13,3 +13,6 @@ client/public/audio/*
 !client/public/audio/README.md
 !client/public/audio/airhorn.mp3
 !client/public/audio/gong.mp3
+
+# The commercial before the last game (shared/cutscenes.ts): the owner's download, not ours to publish.
+client/public/cutscenes/before_ninja.*

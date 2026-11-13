@@ -398,7 +398,8 @@ function plotzelDriver(ph, keyGapMs) {
         await sleep(700);
         await shots(tag('cutscene-before'), [H, A, C]);
         check((await host.locator('[data-testid=cutscene]').count()) === 1, 'TV shows the cutscene player');
-        await waitCut(false, 12000);
+        // the commercial is 53 s (a test clip or the placeholder card is much shorter)
+        await waitCut(false, 75000);
       }
 
       await waitPhase('intro', 8000);
@@ -663,7 +664,8 @@ function plotzelDriver(ph, keyGapMs) {
     await sleep(800);
     await shots('lobby-before-last', [H]);
 
-    await playRound('ninja', AUTO_CUTSCENES ? { beforeCutscene: 'before_ninja' } : {});
+    // the commercial before the last game plays by itself, whatever AUTO says (the owner, 13.11)
+    await playRound('ninja', { beforeCutscene: 'before_ninja' });
 
     // ── final podium, after its cutscene ──
     const st = await hs();
