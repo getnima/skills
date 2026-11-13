@@ -428,7 +428,8 @@ async function joinPlayer(browser, code, name) {
     });
     await step('the TV page reloading: the model comes back, the strip stays hidden', async () => {
       await tv.reload();
-      await tv.waitForSelector('[data-testid=room-code]');
+      // (between games the TV shows no room code: the page's own state says it is back)
+      await tv.waitForFunction(() => window.__host && window.__host.state() && window.__host.status() === 'online', null, { timeout: 30000 });
       const t0 = Date.now();
       await waitFor('remote sees the TV again', async () => (await remoteTv(r)) === 'online', 12000, 100);
       await sleep(800);
@@ -457,8 +458,8 @@ async function joinPlayer(browser, code, name) {
       tv = await tvCtx.newPage();
       tapFrames(tv, 'tv2', frames);
       await tv.goto(`${BASE}/host`);
-      await tv.waitForSelector('[data-testid=room-code]');
-      const again = (await tv.textContent('[data-testid=room-code]')).trim();
+      await tv.waitForFunction(() => window.__host && window.__host.state() && window.__host.status() === 'online', null, { timeout: 30000 });
+      const again = await tv.evaluate(() => window.__host.state().code);
       check('TV reopened in the same room', again === code, { again });
       await waitFor('remote sees the TV again', async () => (await remoteTv(r)) === 'online', 12000);
       check('remote back to normal once the TV is open', true);

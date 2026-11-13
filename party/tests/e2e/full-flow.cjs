@@ -40,6 +40,10 @@ const ROOT = path.resolve(__dirname, '../..');
 const BASE = (process.env.BASE_URL || 'http://localhost:5209').replace(/\/+$/, '');
 const HOST_PATH = process.env.HOST_PATH || '/host.html';
 const SINGLE_ORIGIN = process.env.SINGLE_ORIGIN === '1';
+// No video plays by itself for now (shared/cutscenes.ts, AUTO = false). AUTO_CUTSCENES=1 when that is
+// set back to true: the tap clip, the one before the ninja and the one before the podium are then
+// expected to start by themselves, as this script was written.
+const AUTO_CUTSCENES = process.env.AUTO_CUTSCENES === '1';
 const OUT = path.join(__dirname, 'out', 'full-flow');
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
@@ -632,8 +636,8 @@ function plotzelDriver(ph, keyGapMs) {
     }
 
     // ── the competition ──
-    // (no video plays by itself for now, shared/cutscenes.ts AUTO: the tap clip is played from the TV's menu, mid-round)
-    await playRound('tap', { startByCard: true, phoneReload: D, freeze: { id: 'tap_freeze', manual: true, phone: A } });
+    // (without the automatic videos the tap clip is played from the TV's menu, mid-round)
+    await playRound('tap', { startByCard: true, phoneReload: D, freeze: { id: 'tap_freeze', manual: !AUTO_CUTSCENES, phone: A } });
     await host.click('[data-testid=btn-primary]', { force: true });
     await waitPhase('lobby');
     await Promise.all(phones.map((p) => waitScreen(p, ['lobby'], 5000, 'lobby')));
@@ -654,7 +658,7 @@ function plotzelDriver(ph, keyGapMs) {
     await sleep(800);
     await shots('lobby-before-last', [H]);
 
-    await playRound('ninja', { beforeCutscene: 'before_ninja' });
+    await playRound('ninja', AUTO_CUTSCENES ? { beforeCutscene: 'before_ninja' } : {});
 
     // ── final podium, after its cutscene ──
     const st = await hs();
@@ -662,12 +666,18 @@ function plotzelDriver(ph, keyGapMs) {
     const label = await host.textContent('[data-testid=btn-primary]');
     check(label.includes('פודיום'), 'primary button offers the podium', label);
     await host.click('[data-testid=btn-primary]', { force: true });
-    await waitCut(true, 5000);
-    check((await hs()).cutscene.id === 'before_podium', "'final' cutscene before the podium");
-    await waitFor(async () => (await pinfo(A)).cutscene, 4000, 'phone sees the final cutscene');
-    await sleep(700);
-    await shots('final-cutscene', [H, A, C]);
-    await waitCut(false, 12000);
+    if (AUTO_CUTSCENES) {
+      await waitCut(true, 5000);
+      check((await hs()).cutscene.id === 'before_podium', "'final' cutscene before the podium");
+      await waitFor(async () => (await pinfo(A)).cutscene, 4000, 'phone sees the final cutscene');
+      await sleep(700);
+      await shots('final-cutscene', [H, A, C]);
+      await waitCut(false, 12000);
+    } else {
+      await waitPhase('final');
+      await sleep(1500);
+      check((await hs()).cutscene === null, 'no video plays by itself before the podium');
+    }
     await waitPhase('final');
     await Promise.all(phones.map((p) => waitScreen(p, ['final'], 6000, 'final')));
     await sleep(2500);

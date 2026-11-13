@@ -287,7 +287,10 @@ function spawnBots(code, players, mode, prefix) {
     await tapGame(C, 3);
     await shot(C, '07-playing-after-reload');
 
-    // the automatic mid-game cutscene (tap_freeze at the scaled half)
+    // a mid-game cutscene. No video plays by itself for now (shared/cutscenes.ts, AUTO = false), so
+    // the host starts the tap clip, as the TV's video menu does; with AUTO back on it starts by itself.
+    await sleep(1500);
+    if (host.state().cutscene === null) await host.call('host:cutscene', { id: 'tap_freeze' });
     await waitFor(() => host.state().cutscene !== null, 12000, 'mid-game cutscene');
     await sleep(400);
     const frozenA = await playState(A);
