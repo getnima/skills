@@ -61,6 +61,47 @@ function fetchLanIps(): Promise<readonly string[]> {
   return lanIpsOnce;
 }
 
+/** How often a TV asks where the short link leads (lobby only; one tiny request). */
+const SHORT_LINK_POLL_MS = 4_000;
+
+/**
+ * True while the server says the short link (/j) opens THIS room. False until the first answer,
+ * on any failure, and while `on` is false (nothing is asked then).
+ */
+export function useShortLinkIsMine(code: string, on: boolean): boolean {
+  const [mine, setMine] = useState(false);
+  useEffect(() => {
+    if (!on) {
+      setMine(false);
+      return undefined;
+    }
+    let alive = true;
+    const ask = async (): Promise<void> => {
+      let answer = false;
+      try {
+        const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+        const giveUp = setTimeout(() => ctrl?.abort(), 3_000);
+        const res = await fetch(`${serverUrl().replace(/\/+$/, '')}/api/short-link`, { cache: 'no-store', signal: ctrl?.signal ?? null });
+        clearTimeout(giveUp);
+        if (res.ok) {
+          const body: unknown = await res.json();
+          answer = typeof body === 'object' && body !== null && (body as { code?: unknown }).code === code;
+        }
+      } catch {
+        answer = false;
+      }
+      if (alive) setMine(answer);
+    };
+    void ask();
+    const timer = setInterval(() => void ask(), SHORT_LINK_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [code, on]);
+  return mine;
+}
+
 function buildJoinInfo(rawBase: string, code: string): JoinInfo {
   const base = rawBase.replace(/\/+$/, '');
   let local = false;

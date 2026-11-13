@@ -130,10 +130,16 @@ describe('http', () => {
     await newPlayer(party.code, 'דנה');
     await newPlayer(party.code, 'מיכל');
     expect(await where()).toBe(`/?room=${party.code}`);
+    // what a TV asks before it shows its designed QR: the same room, never cached
+    const asked = await fetch(`${url}/api/short-link`);
+    expect(asked.headers.get('cache-control')).toBe('no-store');
+    expect(await asked.json()).toEqual({ code: party.code });
     // the owner opens /host on his phone by mistake: a new, empty room with a newer TV attach
     const stray = await newHost();
     expect(stray.code).not.toBe(party.code);
     expect(await where()).toBe(`/?room=${party.code}`);
+    // ...so the stray screen is told the link is not its own (it keeps its generated code)
+    expect(await (await fetch(`${url}/api/short-link`)).json()).toEqual({ code: party.code });
     // the party TV reloads (same room, same host key)
     party.s.close();
     const back = track(await connect());

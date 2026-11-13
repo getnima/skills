@@ -10,7 +10,7 @@ import { designedQrUrl, hostDollUrl, introArtUrl } from './show/art';
 import { narratorSpeaking, onNarratorSpeaking } from './show/narrator-bus';
 import { GameArt, lookPlateColor, unitPx } from './show/common';
 import { PrizeRelic } from './show/prize';
-import { prettyUrl, useJoinInfo } from './util';
+import { prettyUrl, useJoinInfo, useShortLinkIsMine } from './util';
 
 import type { JSX } from 'preact';
 import type { GameId, PlayerPublic, RoomState } from '../../../shared/protocol';
@@ -64,8 +64,10 @@ export function QrCode(props: { readonly text: string; readonly class?: string }
 // redirects to the room that is on the TV right now. Two optional files next to each other:
 // assets/host/qr.png (the picture) and assets/host/qr.json = { "url": "https://the-host/j" }.
 // A wrong picture would send every guest nowhere, so the TV shows it only when qr.json says
-// the picture encodes exactly THIS page's origin + '/j'. Anything else (no file, another
-// origin, a page opened on localhost or with ?join=) keeps the generated code.
+// the picture encodes exactly THIS page's origin + '/j', AND the server has just said that /j
+// opens this TV's own room (asked every few seconds: a second /host page somewhere would
+// otherwise show the same picture and send its guests into the other room). Anything else (no
+// file, another origin, a page opened on localhost or with ?join=, no answer) keeps the generated code.
 
 let qrLinkOnce: Promise<string | null> | null = null;
 
@@ -95,7 +97,7 @@ interface DesignedQr {
   readonly link: string;
 }
 
-function useDesignedQr(info: JoinInfo & { readonly pending: boolean }): DesignedQr | null {
+function useDesignedQr(info: JoinInfo & { readonly pending: boolean }, code: string): DesignedQr | null {
   const picture = designedQrUrl();
   const [link, setLink] = useState<string | null>(null);
   useEffect(() => {
@@ -108,10 +110,12 @@ function useDesignedQr(info: JoinInfo & { readonly pending: boolean }): Designed
       alive = false;
     };
   }, [picture]);
-  if (picture === null || link === null) return null;
   const origin = window.location.origin;
   // strict: the picture's link is this origin's /j, and the generated code would point at this origin too
-  if (link !== `${origin}/j` || info.pending || info.local || info.base !== origin) return null;
+  const matches = picture !== null && link !== null && link === `${origin}/j` && !info.pending && !info.local && info.base === origin;
+  // ...and /j leads here right now (asked only when the picture could be shown at all)
+  const mine = useShortLinkIsMine(code, matches);
+  if (picture === null || link === null || !matches || !mine) return null;
   return { picture, link: prettyUrl(link) };
 }
 
@@ -395,13 +399,14 @@ export function Lobby(props: LobbyProps): JSX.Element {
   const online = state.players.filter((p) => p.connected).length;
   const n = state.players.length;
   const info = useJoinInfo(state.code);
-  const designed = useDesignedQr(info);
+  const designed = useDesignedQr(info, state.code);
   const hero = introArtUrl('show');
   if (between) {
     // No QR, no room code tiles, no guest list here: by now everybody is in. One small line stays
-    // for a late guest: the short link (it opens the room on this TV without a code), or on a
-    // local address the link with the room's code.
-    const late = info.pending ? '' : info.local ? prettyUrl(info.url) : prettyUrl(`${info.base}/j`);
+    // for a late guest: the short link (it opens the room on this TV without a code) where the
+    // designed QR is in use, else the link with the room's code.
+    // (the short link only while it leads to this very room: `designed` says so; otherwise the link with the code)
+    const late = info.pending ? '' : designed !== null ? designed.link : prettyUrl(info.url);
     return (
       <div class="hs-lobby is-recap" data-testid="lobby">
         <div class="hs-standings-slot" data-testid="standings">

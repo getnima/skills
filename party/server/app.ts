@@ -199,6 +199,15 @@ export function createPartyApp(config: ServerConfig): PartyApp {
     res.redirect(302, code !== null ? `/?room=${encodeURIComponent(code)}` : '/');
   });
 
+  // Which room the short link opens right now. A TV shows its designed QR (which encodes /j) only
+  // while this is its own room: with a second /host page open somewhere, the picture on the other
+  // screen would send its guests into the wrong room, so that screen keeps its own generated code.
+  app.get('/api/short-link', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json({ code: registry.shortLinkRoom() });
+  });
+
   const clientDir = findClientDir();
   if (clientDir !== null) mountClient(app, clientDir);
 
