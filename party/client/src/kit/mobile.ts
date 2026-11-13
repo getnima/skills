@@ -6,6 +6,12 @@ function isEditable(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 }
 
+/** iPhone / iPad: every browser there is WebKit, and its keyboard never resizes the page. */
+function isIOS(): boolean {
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
 function isInteractive(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('button, a, input, textarea, select, label, [role="button"]') !== null;
 }
@@ -155,18 +161,20 @@ export function initMobileViewport(): void {
 
   const vv = window.visualViewport;
   const root = document.documentElement;
+  const ios = isIOS();
   const apply = (): void => {
-    const h = vv ? vv.height : window.innerHeight;
-    if (h > 0) root.style.setProperty('--app-h', `${Math.round(h * 100) / 100}px`);
     const editing = isEditable(document.activeElement);
-    // iOS scrolls the fixed page when the keyboard opens: put it back.
-    if (!editing && (window.scrollX !== 0 || window.scrollY !== 0)) window.scrollTo(0, 0);
-    // While a field has focus iPhone Safari does not resize the page for the keyboard: it slides the
-    // visible part down the page to show the field. The app is already as tall as the visible part
-    // (--app-h), so without this it would sit above it, out of sight: --app-top moves it to where
-    // the visible part is. Zero whenever nothing is being typed (iOS 26 leaves a stale offset behind).
-    const top = editing && vv ? Math.max(0, Math.round(vv.offsetTop * 100) / 100) : 0;
-    root.style.setProperty('--app-top', `${top}px`);
+    // iPhone, a field has focus: the page keeps the height it had. Safari there never resizes the
+    // page for the keyboard, it slides the page up to show the field (as on every site). Making the
+    // app as short as the visible part at that moment left it above the visible part, out of
+    // sight: the guest typed a name into an empty screen. Android resizes the page itself
+    // (interactive-widget=resizes-content), so there the app does follow the keyboard.
+    if (!(ios && editing)) {
+      const h = vv ? vv.height : window.innerHeight;
+      if (h > 0) root.style.setProperty('--app-h', `${Math.round(h * 100) / 100}px`);
+    }
+    // The keyboard is gone: put the page back where iOS slid it from.
+    if (!editing && (window.scrollX !== 0 || window.scrollY !== 0 || (vv !== null && vv.offsetTop > 0.5))) window.scrollTo(0, 0);
   };
   apply();
   if (vv) {
@@ -176,18 +184,42 @@ export function initMobileViewport(): void {
   window.addEventListener('resize', apply);
   window.addEventListener('orientationchange', () => setTimeout(apply, 250));
   window.addEventListener('scroll', apply, { passive: true });
-  // While a field has focus, look again a few times a second: iPhone Safari does not always report
-  // the keyboard's slide (visualViewport's events are unreliable there).
-  let typingPoll: ReturnType<typeof setInterval> | null = null;
-  document.addEventListener('focusin', () => {
-    setTimeout(apply, 60);
-    if (typingPoll === null && isEditable(document.activeElement)) typingPoll = setInterval(apply, 200);
-  });
+  // After a field loses focus the keyboard is still sliding away: look again once it is down
+  // (iPhone Safari does not always report the last step).
   document.addEventListener('focusout', () => {
-    if (typingPoll !== null) clearInterval(typingPoll);
-    typingPoll = null;
-    setTimeout(apply, 60);
+    for (const ms of [60, 350, 800, 1500]) setTimeout(apply, ms);
   });
+  if (/[?&]vvdebug=1(&|$)/.test(window.location.search)) showViewportDebug();
+}
+
+/**
+ * ?vvdebug=1: small rulers down the left edge with the numbers the browser reports about the
+ * visible part of the page. For a screenshot from a real phone with the keyboard up (no
+ * simulator shows that keyboard to an automated browser).
+ */
+function showViewportDebug(): void {
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:0;z-index:2147483647;pointer-events:none;direction:ltr';
+  const rows: HTMLElement[] = [];
+  for (let y = 0; y < 1400; y += 70) {
+    const row = document.createElement('div');
+    row.style.cssText = `position:absolute;left:0;top:${y}px;font:9px/11px ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.72);padding:0 3px;white-space:nowrap`;
+    box.appendChild(row);
+    rows.push(row);
+  }
+  document.documentElement.appendChild(box);
+  setInterval(() => {
+    const vv = window.visualViewport;
+    const el = document.activeElement;
+    const r = el instanceof HTMLElement && isEditable(el) ? el.getBoundingClientRect() : null;
+    const n = (v: number | undefined): string => (v === undefined ? '?' : String(Math.round(v)));
+    const text =
+      `ih${n(window.innerHeight)} ch${n(document.documentElement.clientHeight)} vh${n(vv?.height)} vt${n(vv?.offsetTop)} pt${n(vv?.pageTop)} ` +
+      `sy${n(window.scrollY)} ah${getComputedStyle(document.documentElement).getPropertyValue('--app-h').trim()} f${r ? `${n(r.top)}-${n(r.bottom)}` : '-'}`;
+    rows.forEach((row, i) => {
+      row.textContent = `y${i * 70} ${text}`;
+    });
+  }, 250);
 }
 
 /**
