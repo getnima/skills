@@ -5,8 +5,8 @@
  *
  * Every control (the strip, the menus, the keyboard, a phone remote) goes
  * through ONE action model (./actions.ts) and ONE dispatcher (`runAction`).
- * The TV is a display: the strip is hidden; the mouse shows it for a few seconds, keys and a
- * phone remote keep working (the owner's call, 13.11: no bar on the TV). `?bar=1` keeps the strip
+ * The TV is a display: the strip is hidden; the mouse at the bottom edge of the screen shows it
+ * for a few seconds, keys and a phone remote keep working (the owner's call, 13.11: no bar on the TV). `?bar=1` keeps the strip
  * on screen all the time, as it was before with no remote attached.
  */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
@@ -209,8 +209,16 @@ function Connection(props: { readonly room: HostRoom }): JSX.Element {
   );
 }
 
-/** While a remote is attached, moving the mouse on the laptop shows the strip this long. */
-const PEEK_MS = 4_000;
+/** The hidden strip stays this long after the mouse last moved over the bottom edge of the screen. */
+const PEEK_MS = 2_500;
+/**
+ * The bottom edge that wakes the hidden strip: about the strip's own height. Only there: the owner's
+ * call (13.11), a mouse that moves anywhere else (a nudge, a screenshot, the click that allows
+ * sound) must not bring the bar back over the show.
+ */
+function inWakeZone(y: number): boolean {
+  return y >= window.innerHeight - Math.max(56, window.innerHeight * 0.1);
+}
 /** A model change is sent to the remotes at most this often (players pouring in, the results clock). */
 const PUBLISH_MS = 120;
 
@@ -253,7 +261,7 @@ function stripWanted(): boolean {
   }
 }
 
-/** True while the pointer moved within PEEK_MS (only listens while `on`). */
+/** True while the pointer moved over the bottom edge of the screen within PEEK_MS (only listens while `on`). */
 function usePeek(on: boolean): boolean {
   const [peek, setPeek] = useState(false);
   useEffect(() => {
@@ -262,7 +270,8 @@ function usePeek(on: boolean): boolean {
       return undefined;
     }
     let t: ReturnType<typeof setTimeout> | undefined;
-    const wake = (): void => {
+    const wake = (e: PointerEvent): void => {
+      if (!inWakeZone(e.clientY)) return;
       setPeek(true);
       if (t !== undefined) clearTimeout(t);
       t = setTimeout(() => setPeek(false), PEEK_MS);

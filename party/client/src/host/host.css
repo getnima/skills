@@ -198,8 +198,8 @@ body {
 .hs-strip.is-idle {
   opacity: 0.38;
 }
-/* a phone remote is attached: the TV is a display. The strip is gone (no gap, no hint); the
-   mouse on the laptop brings it back for a few seconds, over the scene so nothing re-lays out. */
+/* the TV is a display (always; with a remote attached too). The strip is gone (no gap, no hint); the
+   mouse at the bottom edge of the screen brings it back for a few seconds, over the scene so nothing re-lays out. */
 .hs-root.is-display .hs-strip {
   position: absolute;
   inset-inline: 0;

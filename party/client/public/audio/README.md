@@ -4,6 +4,13 @@ Drop a song into this folder (`client/public/audio/`) under one of the names bel
 No code change. Each slot also accepts `.m4a`, `.ogg`, `.wav` or `.webm` (mp3 is the safest).
 A missing file is never an error. Every song plays on the TV only (phones play no music).
 
+**Songs are not in git** (`.gitignore`): they are the owner's own files, usually commercial
+recordings, and this repository is public. They stay in this folder on the owner's machine and
+go to the party's server with `deploy/gce-deploy.sh` (it uploads the folder as it is). A fresh
+clone has only `airhorn.mp3` and `gong.mp3`: copy the songs in again before deploying from it.
+For the 14.11 party: `lobby.mp3` (Technotronic, Pump Up The Jam), `tap.mp3` (Duck Sauce, Barbra
+Streisand) and `icy.mp3` (the Icy Tower tune), all from the owner's `~/Documents/music/`.
+
 **Files are picked up when the client is built or the dev server starts.** After adding
 or renaming a file: rebuild and redeploy, or restart `npm run dev`. Then check it in the
 sound check panel (below).

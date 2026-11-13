@@ -386,7 +386,8 @@ export function SuspenseScreen(): JSX.Element {
       <div class="ps-night">
         <div class="pp-spot" aria-hidden="true" />
         <GameArt id="show" emoji="🥁" size="big" class="pp-drum" />
-        <Logo text="והפרס הולך ל…" class="ps-susp-title" />
+        {/* the same question as on the TV (the owner's wording, 13.11) */}
+        <Logo text="מי זכה בסיבוב?" class="ps-susp-title" />
         <div class="ps-quip">השופטים מתייעצים. בארומה.</div>
         <div class="pp-tv-hint">📺 תסתכלו על הטלוויזיה</div>
       </div>

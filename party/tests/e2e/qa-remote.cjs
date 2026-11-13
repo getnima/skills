@@ -358,10 +358,16 @@ async function joinPlayer(browser, code, name) {
       await tv.keyboard.press('KeyE');
       await waitFor('TV back in lobby by key E', async () => (await tvState(tv)).phase === 'lobby', 5000);
       check('keyboard N / E on the TV work with a remote attached', true);
+      // anywhere on the show the mouse leaves the strip hidden; only the bottom edge of the screen wakes it
       await tv.mouse.move(400, 400);
       await tv.mouse.move(420, 420);
+      await sleep(500);
+      check('the mouse over the show does not bring the strip back', !(await visible(tv, '[data-testid=strip]')));
+      const bottom = (tv.viewportSize() || { height: 1080 }).height - 20;
+      await tv.mouse.move(400, bottom);
+      await tv.mouse.move(420, bottom);
       await waitFor('strip peeks', () => visible(tv, '[data-testid=strip]'), 2000);
-      check('moving the mouse on the laptop shows the strip', true);
+      check('the mouse at the bottom edge of the screen shows the strip', true);
       await waitFor('strip hides again', async () => !(await visible(tv, '[data-testid=strip]')), 7000);
       check('...and hides it again after a few seconds', true);
     });

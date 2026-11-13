@@ -6,3 +6,10 @@ tests/e2e/out
 .firebase
 .env*
 !.env.example
+
+# Songs (client/public/audio/README.md): the owner's own files, commercial recordings. They live on
+# the owner's machine and on the party's server, never in git. Only the two short samples are tracked.
+client/public/audio/*
+!client/public/audio/README.md
+!client/public/audio/airhorn.mp3
+!client/public/audio/gong.mp3

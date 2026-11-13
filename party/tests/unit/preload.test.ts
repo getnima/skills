@@ -831,7 +831,10 @@ describe('preloadItems: the sets as lists', () => {
     const items = m.preloadItems('tv');
     expect(items.map(pathOf).sort()).toEqual(LISTED.filter((p) => inPreloadSet(p, 'tv')).sort());
     for (const it of items) expect(it.decode, it.url).toBe(it.kind === 'image' ? true : undefined);
-    expect(items.filter((it) => it.kind === 'audio').map(pathOf).sort()).toEqual(['/audio/airhorn.mp3', '/audio/gong.mp3']);
+    // every sound file in the folder: the repository's two samples, and the songs the owner dropped in (those are not in git)
+    const audio = items.filter((it) => it.kind === 'audio').map(pathOf).sort();
+    expect(audio).toEqual(LISTED.filter((p) => p.startsWith('/audio/') && inPreloadSet(p, 'tv')).sort());
+    expect(audio).toEqual(expect.arrayContaining(['/audio/airhorn.mp3', '/audio/gong.mp3']));
     expect(items.some((it) => GAME_IDS.some((id) => it.url.startsWith(`/assets/${id}/`)))).toBe(false);
 
     const asked: string[] = [];

@@ -441,7 +441,7 @@ function Suspense(props: { plan: Plan; view: View; game: GameMeta; elimination: 
           <i>?</i>
           <i>?</i>
         </span>
-        <span class="sh-mystery-text">מי זוכה בשימי אנג׳ל?</span>
+        <span class="sh-mystery-text">מי זכה בסיבוב?</span>
       </div>
       <div class={`sh-rlist ${display.length <= 4 ? 'is-few' : ''}`}>
         {display.map((r) => {

@@ -81,7 +81,8 @@ anywhere (allows sound) → `F` (fullscreen). On **your own phone** open
 `server/config.ts`, server side only; to use another one set `PARTY_REMOTE_PASSWORD`
 on the server). From then on the phone is the remote, and the keyboard keys below keep
 working as a backup. The TV shows no bar of buttons at all (with or without a remote): move
-the mouse and it comes up for a few seconds; `/host?bar=1` keeps it on screen.
+the mouse to the bottom edge of the screen and it comes up for a few seconds; `/host?bar=1`
+keeps it on screen.
 
 **What the TV shows in the lobby.** Before the first game: the QR, the room code, the guests
 and the five games. Between games: only the standings and the game that is next (and one
