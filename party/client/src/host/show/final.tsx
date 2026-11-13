@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { sfx } from '../../kit/audio';
 import { soundOffsetMs } from '../../kit/av-sync';
-import { playTrack, stopTrack } from '../../kit/music';
+import { hasTrackFile, playTrack, stopTrack } from '../../kit/music';
+import { SHOW_SONG_VOLUME } from '../music-config';
 import { backdropUrl, crownUrl, podiumUrl, prizeArt } from './art';
 import { cardGrid } from './card-grid';
 import { PlayerCard, useBoardBox } from './cards';
@@ -190,7 +191,7 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
         if (heard === 2 || before < 1) sfx.drumroll(tlRef.current.first - ta - 150);
       }
       if (heard === 3) {
-        playTrack('final', { fallback: 'victory' });
+        playTrack('final', { fallback: 'victory', volume: hasTrackFile('final') ? SHOW_SONG_VOLUME.final : 1 });
         song.current = true;
         sfx.cheer();
       }

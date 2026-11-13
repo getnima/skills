@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { sfx } from '../../kit/audio';
 import { soundOffsetMs } from '../../kit/av-sync';
 import { hasTrackFile, playTrack, stopTrack } from '../../kit/music';
+import { SHOW_SONG_VOLUME } from '../music-config';
 import { WINNER_REVEAL_MS } from '../../../../shared/protocol';
 import { backdropUrl, lastPlaceArt } from './art';
 import { cardGrid } from './card-grid';
@@ -280,7 +281,7 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
       const elapsed = p.winners.length > 0 ? t - NAME_AT : t;
       if (p.winners.length > 0) {
         if (elapsed < 6_000 || hasTrackFile('victory')) {
-          playTrack('victory', { fallback: 'victory' });
+          playTrack('victory', { fallback: 'victory', volume: hasTrackFile('victory') ? SHOW_SONG_VOLUME.victory : 1 });
           song.current = true;
         }
         if (live) sfx.cheer();

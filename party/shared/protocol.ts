@@ -43,14 +43,15 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     id: 'tap',
     title: 'שימי טאפ',
     emoji: '👆',
-    instructions: 'יש לכם 30 שניות להתחיל. מהנגיעה הראשונה: 20 שניות של ספאם על שימי. כל הקשה נקודה!',
+    instructions: 'יש לכם 8 שניות להתחיל. מהנגיעה הראשונה: 20 שניות של ספאם על שימי. כל הקשה נקודה!',
     howTo: [
       ['👆', 'הקישו על שימי, מהר!'],
       ['⏱️', '20 שניות מהנגיעה הראשונה'],
       ['➕', 'כל הקשה = נקודה'],
     ],
-    // 30 s start window + 20 s personal sprint + a 3 s hold for the last starter's final frame
-    durationMs: 53_000,
+    // 8 s start window + 20 s personal sprint + a 2 s hold for the last starter's final frame
+    // (the owner's call, 13.11: 30 s in all; it was 30 + 20 + 3. The split is TAP in games/tap/pick.ts)
+    durationMs: 30_000,
     maxRaw: 300,
     mode: 'score',
   },

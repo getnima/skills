@@ -274,7 +274,8 @@ describe('scoring truth', () => {
           expectedRaw.delete(victim);
           totals.delete(victim);
         }
-        if (h.state().phase === 'playing') vi.advanceTimersByTime(TAP_MS * 3);
+        // (longer than any game: the longest is plotzel)
+        if (h.state().phase === 'playing') vi.advanceTimersByTime(Math.max(...GAME_IDS.map((g) => GAMES[g].durationMs)) + 30_000);
         expect(h.state().phase).toBe('results');
 
         if (late !== null) totals.set(late, { total: 0, wins: 0, best: 0, lastPos: null, join: joins++ });
@@ -851,7 +852,7 @@ describe('cutscenes and the clock', () => {
   it('automatic triggers fire once each, in order, and not at all with autoCutscenes off', () => {
     const defs: CutsceneDef[] = [
       { id: 'pre', title: '', file: '', when: { at: 'before', gameId: 'tap' } },
-      { id: 'mid', title: '', file: '', when: { at: 'during', gameId: 'tap', atMs: 30_000 } },
+      { id: 'mid', title: '', file: '', when: { at: 'during', gameId: 'tap', atMs: 20_000 } },
       { id: 'post', title: '', file: '', when: { at: 'after', gameId: 'tap' } },
       { id: 'fin', title: '', file: '', when: { at: 'final' } },
     ];

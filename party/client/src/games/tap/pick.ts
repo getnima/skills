@@ -20,9 +20,13 @@
 
 export const TAP = {
   STEP_MS: 1000 / 60,
-  /** Shares of ctx.durationMs: the start window and the sprint; the rest is the final hold. */
-  START_SHARE: 30 / 53,
-  SPRINT_SHARE: 20 / 53,
+  /**
+   * Shares of ctx.durationMs: the start window and the sprint; the rest is the final hold.
+   * The owner's call (13.11): a 30 s round. 8 s to start, 20 s of tapping, 2 s of hold. (It was
+   * 30 + 20 + 3 = 53 s: whoever started at once stood waiting for half a minute.)
+   */
+  START_SHARE: 8 / 30,
+  SPRINT_SHARE: 20 / 30,
   /** The production sprint the tap thresholds are written for. */
   BASE_SPRINT_MS: 20_000,
   /** Counted taps per second (all fingers together), bucket depth and the minimum gap. */
@@ -64,10 +68,16 @@ export interface TapTiming {
   readonly tapScale: number;
 }
 
-export function tapTiming(durationMs: number): TapTiming {
+/** How a round is split (shares of its length). Production: TAP; the engine's tests also run another split. */
+export interface TapShape {
+  readonly START_SHARE: number;
+  readonly SPRINT_SHARE: number;
+}
+
+export function tapTiming(durationMs: number, shape: TapShape = TAP): TapTiming {
   const dur = Math.max(1000, durationMs);
-  const startWindowMs = Math.round(dur * TAP.START_SHARE);
-  const sprintMs = Math.round(dur * TAP.SPRINT_SHARE);
+  const startWindowMs = Math.round(dur * shape.START_SHARE);
+  const sprintMs = Math.round(dur * shape.SPRINT_SHARE);
   return { durationMs: dur, startWindowMs, sprintMs, tapScale: sprintMs / TAP.BASE_SPRINT_MS };
 }
 
@@ -164,8 +174,8 @@ const DT = 1 / 60;
  * `joinedAtMs` = round time when this phone started the game: a phone that joins after the
  * start window starts its sprint at once (and it is cut at the end of the round).
  */
-export function createTapEngine(durationMs: number, on: TapListener = {}, joinedAtMs = 0): TapEngine {
-  const timing = tapTiming(durationMs);
+export function createTapEngine(durationMs: number, on: TapListener = {}, joinedAtMs = 0, shape: TapShape = TAP): TapEngine {
+  const timing = tapTiming(durationMs, shape);
   const milestoneAt = scaledThresholds(TAP.MILESTONES, timing.tapScale);
   const decay = Math.exp(-DT / TAP.TAU_S);
   const smooth = 1 - Math.exp(-DT / TAP.SMOOTH_S);

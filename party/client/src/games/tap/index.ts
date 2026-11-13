@@ -1183,8 +1183,11 @@ export const game: GameModule = {
       const s = engine.state;
       if (s.phase !== 'waiting') return;
       const W0 = timing.startWindowMs;
-      const cdStart = (W0 * 5) / 6;
-      const notch = W0 / 6 / 5;
+      // the 5-4-3-2-1 before the sprint starts by itself: a second a digit where the window has
+      // the room (the 8 s window: 3 s free, then the five digits), never more than 5/8 of the window
+      const cdLen = Math.max(W0 / 6, Math.min(5_000, W0 * 0.625));
+      const cdStart = W0 - cdLen;
+      const notch = cdLen / 5;
       if (elapsed >= cdStart) {
         const d = clamp(5 - Math.floor((elapsed - cdStart) / notch), 1, 5);
         countdownDigit = d;
@@ -1199,12 +1202,12 @@ export const game: GameModule = {
         }
         return;
       }
-      // one bit every 11% of the window (3.3 s), all four before any repeats; a bit that is
-      // still running pushes the next one back a little instead of skipping it
+      // one bit every 11% of the window, never closer than 2.5 s, all four before any repeats; a
+      // bit that is still running pushes the next one back a little instead of skipping it
       if (elapsed >= nextIdleAt) {
         if (cur || queue.length > 0) nextIdleAt = elapsed + 300;
         else {
-          nextIdleAt = elapsed + timing.startWindowMs * 0.11;
+          nextIdleAt = elapsed + Math.max(2_500, timing.startWindowMs * 0.11);
           if (elapsed + 2200 < cdStart) {
             const b = level.idleBits[idleIdx % level.idleBits.length] ?? IDLE_BIT.Yawn;
             idleIdx++;

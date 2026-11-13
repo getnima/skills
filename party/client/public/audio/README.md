@@ -8,9 +8,15 @@ A missing file is never an error. Every song plays on the TV only (phones play n
 recordings, and this repository is public. They stay in this folder on the owner's machine and
 go to the party's server with `deploy/gce-deploy.sh` (it uploads the folder as it is). A fresh
 clone has only `airhorn.mp3` and `gong.mp3`: copy the songs in again before deploying from it.
-For the 14.11 party: `lobby.mp3` (Technotronic, Pump Up The Jam), `tap.mp3` (Duck Sauce, Barbra
-Streisand), `icy.mp3` (the Icy Tower tune) and `flappy.mp3` (Nick Cave & The Bad Seeds, Red Right
-Hand), all from the owner's `~/Documents/music/`.
+For the 14.11 party, all from the owner's `~/Documents/music/`: `lobby.webm` (Technotronic, Pump Up
+The Jam), `tap.webm` (Duck Sauce, Barbra Streisand, radio edit), `icy.mp3` (the Icy Tower tune),
+`flappy.mp3` (Nick Cave & The Bad Seeds, Red Right Hand), `plotzel.webm` (Lobby Music, House
+Edition), `ninja.webm` (Yamasuki, Yama Yama), and `victory.mp3` = `final.mp3`: the London fanfare
+trumpets (its 3 s of leading silence cut), then Bee Gees, Stayin' Alive. The `.webm` are the sound
+of the owner's video files, copied out as it is (`ffmpeg -i in.webm -vn -c:a copy out.webm`):
+nothing is re-encoded. Only the winner's song is an MP3 made here (two files joined into one, and
+MP3 because the round winner's PHONE plays it too, and not every phone plays WebM). Levels are set
+in `music-config.ts` from the measured loudness of each file.
 
 **Files are picked up when the client is built or the dev server starts.** After adding
 or renaming a file: rebuild and redeploy, or restart `npm run dev`. Then check it in the
@@ -44,8 +50,8 @@ How a game's song behaves
 - The 🔊 / 🔇 button (key `M`) mutes everything, songs included. Calm mode does not touch music.
 
 Tuning: `client/src/host/music-config.ts`, one line per slot: `startSec` (where in the file
-to begin, e.g. 42 = at 0:42, the chorus), `volume` (full level, 0..1; games 0.6, lobby 0.4,
-round 0.3) and `introVolume` (ducked level; games 0.3, round 0.2). `victory` and `final`
+to begin, e.g. 42 = at 0:42, the chorus), `volume` (full level, 0..1; without a measured file:
+games 0.6, lobby 0.4, round 0.3) and `introVolume` (ducked level; games 0.3, round 0.2). `victory` and `final`
 always play from the start at full level.
 
 Sound check: on the TV, ☰ → **🎵 בדיקת סאונד** (lobby only) lists every slot with the exact

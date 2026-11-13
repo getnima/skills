@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { GAMES, GAME_IDS } from '../../../shared/protocol';
 import { setMuted } from '../kit/audio';
 import { findTrackFile, getTrackInfo, hasTrackFile, isTrackPlaying, pauseTrack, playTrack, resumeTrack, setTrackVolume, stopTrack } from '../kit/music';
-import { MUSIC_FADES } from './music-config';
+import { MUSIC_FADES, SHOW_SONG_VOLUME } from './music-config';
 import { DEFAULT_PRELUDE_MS, planMusic, preludeOf, resolveGameSlot, tuningOf } from './music-plan';
 import { Btn, Modal } from './ui';
 import { useMuted } from './util';
@@ -241,7 +241,7 @@ interface Playback {
 }
 
 function playbackOf(slot: CheckSlot): Playback | null {
-  if (slot === 'victory' || slot === 'final') return { track: slot, loop: false, volume: 1, startSec: 0, fallback: 'victory' };
+  if (slot === 'victory' || slot === 'final') return { track: slot, loop: false, volume: hasTrackFile(slot) ? SHOW_SONG_VOLUME[slot] : 1, startSec: 0, fallback: 'victory' };
   const real = slot === 'lobby' || slot === 'round' ? (hasTrackFile(slot) ? slot : null) : resolveGameSlot(slot, hasTrackFile);
   if (real === null) return null;
   const tune = tuningOf(real);

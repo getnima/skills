@@ -6,8 +6,9 @@ his hand rises and the deeper the finger goes. Art slots and how to replace a pi
 
 ## The rules (all in `pick.ts`, a pure engine, unit-tested in `tests/unit/tap-pick.test.ts`)
 
-- The round is `ctx.durationMs` (53 000 in production, `GAMES.tap` in `shared/protocol.ts`):
-  a start window of 30/53 (30 s), a personal sprint of 20/53 (20 s), and 3/53 (3 s) of hold, so a player who
+- The round is `ctx.durationMs` (30 000 in production, `GAMES.tap` in `shared/protocol.ts`; the owner's
+  call, 13.11, it was 53 000 with a 30 s start window):
+  a start window of 8/30 (8 s), a personal sprint of 20/30 (20 s), and 2/30 (2 s) of hold, so a player who
   starts at the very end of the window still sees the final frame. Test rounds scale (`tapTiming`).
 - The player's first touch starts the sprint and is tap #1. No touch: the sprint starts by itself when the
   window runs out. A phone that joins after the window starts at once and is cut at the round end.

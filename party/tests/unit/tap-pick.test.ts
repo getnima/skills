@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { GAMES } from '../../shared/protocol';
+
 import { createTapEngine, MILESTONE_IDS, rankOf, scaledThresholds, TAP, tapTiming } from '../../client/src/games/tap/pick';
 import { buildLevel, IDLE_BITS } from '../../client/src/games/tap/schedule';
 import { CLIP_KEYS, CLIP_SRC } from '../../client/src/games/tap/art';
@@ -55,7 +57,7 @@ function play(durationMs: number, times: readonly number[], mode: 'jit' | 'ahead
       r.doneAtStep = step;
     },
   };
-  const e = createTapEngine(durationMs, on, joinedAt);
+  const e = createTapEngine(durationMs, on, joinedAt, CLASSIC);
   const levelAt: Array<[number, number]> = [];
   let qi = 0;
   if (mode === 'ahead') for (const t of sorted) e.tap(t);
@@ -100,14 +102,36 @@ function steady(hz: number, from: number, forMs: number, jitter = 0, seed = 1): 
   return out;
 }
 
+/**
+ * The split these tests were written for: a 53 s round, 30 s to start, 20 s of sprint, 3 s of hold.
+ * The party's round is shorter now (TAP: 8 + 20 + 2 of 30 s); the engine's rules do not care.
+ */
+const CLASSIC = { START_SHARE: 30 / 53, SPRINT_SHARE: 20 / 53 };
+
 describe('tap timing', () => {
+  it('the party round: 30 s, 8 s to start, 20 s of tapping, 2 s of hold; thresholds as written', () => {
+    expect(GAMES.tap.durationMs).toBe(30_000);
+    const t = tapTiming(GAMES.tap.durationMs);
+    expect(t.startWindowMs).toBe(8_000);
+    expect(t.sprintMs).toBe(20_000);
+    expect(t.durationMs - t.startWindowMs - t.sprintMs).toBe(2_000);
+    expect(t.tapScale).toBe(1);
+    // nobody touches: the sprint starts by itself at 8 s and is over at 28 s
+    const e = createTapEngine(GAMES.tap.durationMs);
+    expect(e.state.phase).toBe('waiting');
+    for (let k = 1; k * STEP <= 30_000; k++) e.step(k * STEP);
+    expect(e.state).toMatchObject({ phase: 'done', auto: true, taps: 0 });
+    expect(Math.round(e.state.t0 / 100) / 10).toBe(8);
+    expect(Math.round(e.state.endAt / 100) / 10).toBe(28);
+  });
+
   it('derives the start window (30/53), the sprint (20/53) and the 3/53 hold from the round', () => {
-    const t = tapTiming(53_000);
+    const t = tapTiming(53_000, CLASSIC);
     expect(t.startWindowMs).toBe(30_000);
     expect(t.sprintMs).toBe(20_000);
     expect(t.durationMs - t.startWindowMs - t.sprintMs).toBe(3_000);
     expect(t.tapScale).toBe(1);
-    const s = tapTiming(10_600);
+    const s = tapTiming(10_600, CLASSIC);
     expect(s.startWindowMs).toBe(6_000);
     expect(s.sprintMs).toBe(4_000);
     expect(s.tapScale).toBeCloseTo(0.2);
@@ -205,7 +229,7 @@ describe('tap engine: the anti-mash cap', () => {
 
   it('continues a reloaded sprint: same start, same taps, same end, no events', () => {
     const fired: string[] = [];
-    const e = createTapEngine(53_000, { start: () => fired.push('start'), milestone: (id) => fired.push(id), done: () => fired.push('done') });
+    const e = createTapEngine(53_000, { start: () => fired.push('start'), milestone: (id) => fired.push(id), done: () => fired.push('done') }, 0, CLASSIC);
     e.resume(4_000, 37, false);
     expect(e.state.phase).toBe('sprint');
     expect(e.state.endAt).toBe(24_000);
@@ -218,7 +242,7 @@ describe('tap engine: the anti-mash cap', () => {
     expect(e.state.taps).toBe(38);
     expect(e.state.phase).toBe('done');
     expect(fired).toEqual(['done']);
-    const f = createTapEngine(53_000);
+    const f = createTapEngine(53_000, {}, 0, CLASSIC);
     f.resume(4_000, 120, true);
     f.step(25_000);
     expect(f.state.phase).toBe('done');
@@ -256,7 +280,7 @@ describe('tap engine: determinism', () => {
 
 describe('tap engine: the smoothed rate and the hand level', () => {
   it('settles at the tap rate', () => {
-    const e = createTapEngine(53_000);
+    const e = createTapEngine(53_000, {}, 0, CLASSIC);
     let t = 0;
     for (let i = 1; i <= 60 * 8; i++) {
       const now = i * STEP;

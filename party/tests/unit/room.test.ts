@@ -669,7 +669,9 @@ describe('host actions', () => {
 describe('cutscenes', () => {
   const manual: CutsceneDef = { id: 'joker', title: 'j', file: 'j.mp4', when: { at: 'manual' } };
   const before: CutsceneDef = { id: 'pre', title: 'p', file: 'p.mp4', when: { at: 'before', gameId: 'ninja' } };
-  const during: CutsceneDef = { id: 'mid', title: 'm', file: 'm.mp4', when: { at: 'during', gameId: 'tap', atMs: 30_000 } };
+  // (20 s into a tap round, which is 30 s long; it was 30 s into a 53 s round)
+  const MID_AT = 20_000;
+  const during: CutsceneDef = { id: 'mid', title: 'm', file: 'm.mp4', when: { at: 'during', gameId: 'tap', atMs: MID_AT } };
   const after: CutsceneDef = { id: 'post', title: 'a', file: 'a.mp4', when: { at: 'after' } };
   const final: CutsceneDef = { id: 'fin', title: 'f', file: 'f.mp4', when: { at: 'final' } };
   const all = [manual, before, during, after, final];
@@ -722,15 +724,15 @@ describe('cutscenes', () => {
     const a = h.join('a');
     h.room.start('tap');
     h.toPlaying();
-    vi.advanceTimersByTime(29_999);
+    vi.advanceTimersByTime(MID_AT - 1);
     expect(h.state().cutscene).toBeNull();
     vi.advanceTimersByTime(1);
     expect(h.state()).toMatchObject({ phase: 'playing', cutscene: { id: 'mid' } });
     expect(h.round().frozenAt).toBe(Date.now());
     const leftAtFreeze = left(h);
     const elapsedAtFreeze = elapsed(h);
-    expect(elapsedAtFreeze).toBe(30_000);
-    expect(leftAtFreeze).toBe(TAP_MS - 30_000);
+    expect(elapsedAtFreeze).toBe(MID_AT);
+    expect(leftAtFreeze).toBe(TAP_MS - MID_AT);
 
     // A long video: far past the original endAt. The round must not end, scores still count.
     vi.advanceTimersByTime(80_000);
@@ -757,7 +759,7 @@ describe('cutscenes', () => {
   });
 
   it("'during' is scaled to a shortened round", () => {
-    // a round a fifth as long as the game: 30 s of the nominal length is 6 s of this round, whatever the game's length
+    // a round a fifth as long as the game: 20 s of the nominal length is 4 s of this round, whatever the game's length
     const short = TAP_MS / 5;
     const timing: RoomTiming = { introMs: 1_500, countdownMs: 1_500, durationMs: () => short };
     const h = makeRoom({ cutscenes: all, timing });
@@ -765,7 +767,7 @@ describe('cutscenes', () => {
     h.room.start('tap');
     expect(h.round().endAt - h.round().startAt).toBe(short);
     h.toPlaying();
-    const at = 30_000 / 5;
+    const at = MID_AT / 5;
     expect(at).toBeLessThan(short);
     vi.advanceTimersByTime(at - 1);
     expect(h.state().cutscene).toBeNull();
@@ -795,13 +797,13 @@ describe('cutscenes', () => {
     vi.advanceTimersByTime(RESUME_COUNTDOWN_MS + 5_000);
     expect(elapsed(h)).toBe(15_000);
 
-    // The automatic one still fires at 30s of ROUND time, then the round runs out normally.
-    vi.advanceTimersByTime(15_000);
+    // The automatic one still fires at its time of ROUND time (20 s), then the round runs out normally.
+    vi.advanceTimersByTime(MID_AT - 15_000);
     expect(h.state().cutscene?.id).toBe('mid');
-    expect(elapsed(h)).toBe(30_000);
+    expect(elapsed(h)).toBe(MID_AT);
     vi.advanceTimersByTime(12_000);
     h.room.endCutscene();
-    vi.advanceTimersByTime(RESUME_COUNTDOWN_MS + (TAP_MS - 30_000) + FINAL_GRACE_MS - 1);
+    vi.advanceTimersByTime(RESUME_COUNTDOWN_MS + (TAP_MS - MID_AT) + FINAL_GRACE_MS - 1);
     expect(h.state().phase).toBe('playing');
     vi.advanceTimersByTime(1);
     expect(h.state().phase).toBe('results');
