@@ -1021,7 +1021,10 @@ const graphemes = (s) => Array.from(new Intl.Segmenter(undefined, { granularity:
       // scoring
       const players2 = S().players;
       const joinOrder = new Map(players2.map((p, k) => [p.id, k]));
-      const expect = computeRoundScores(res2.rows.map((x) => ({ id: x.playerId, raw: x.raw, reachedAt: x.reachedAt, joinOrder: joinOrder.get(x.playerId) ?? 1e9, totalBefore: totals.get(x.playerId) || 0 })));
+      const expect = computeRoundScores(
+        res2.rows.map((x) => ({ id: x.playerId, raw: x.raw, reachedAt: x.reachedAt, joinOrder: joinOrder.get(x.playerId) ?? 1e9, totalBefore: totals.get(x.playerId) || 0 })),
+        { lastStanding: game.mode === 'elimination' },
+      );
       const byRound = [...res2.rows].sort((a, b) => a.roundRank - b.roundRank);
       const scorers = byRound.filter((x) => x.raw > 0);
       check(res2.winnerIds.length === 1 && scorers[0] && res2.winnerIds[0] === scorers[0].playerId, `round ${n}: exactly one winner, the first scorer`, res2.winnerIds);

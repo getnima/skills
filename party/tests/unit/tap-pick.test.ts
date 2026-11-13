@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { GAMES } from '../../shared/protocol';
+import { clockTailMs, GAMES } from '../../shared/protocol';
 
 import { createTapEngine, MILESTONE_IDS, rankOf, scaledThresholds, TAP, tapTiming } from '../../client/src/games/tap/pick';
 import { buildLevel, IDLE_BITS } from '../../client/src/games/tap/schedule';
@@ -103,26 +103,73 @@ function steady(hz: number, from: number, forMs: number, jitter = 0, seed = 1): 
 }
 
 /**
- * The split these tests were written for: a 53 s round, 30 s to start, 20 s of sprint, 3 s of hold.
- * The party's round is shorter now (TAP: 8 + 20 + 2 of 30 s); the engine's rules do not care.
+ * The format these tests were written for: a personal sprint. A 53 s round, 30 s to start, 20 s of
+ * sprint from the first touch, 3 s of hold. The party's round is one shared 20 s sprint now (TAP,
+ * tested under 'tap timing'); everything else in the engine is the same for both.
  */
 const CLASSIC = { START_SHARE: 30 / 53, SPRINT_SHARE: 20 / 53 };
 
 describe('tap timing', () => {
-  it('the party round: 30 s, 8 s to start, 20 s of tapping, 2 s of hold; thresholds as written', () => {
-    expect(GAMES.tap.durationMs).toBe(30_000);
+  it('the party round: 23 s. One 20 s sprint for everyone from the start, then 3 s of hold; thresholds as written', () => {
+    expect(GAMES.tap.durationMs).toBe(23_000);
     const t = tapTiming(GAMES.tap.durationMs);
+    expect(t.shared).toBe(true);
     expect(t.startWindowMs).toBe(8_000);
     expect(t.sprintMs).toBe(20_000);
-    expect(t.durationMs - t.startWindowMs - t.sprintMs).toBe(2_000);
+    // the hold is what the TV's clock leaves out (GameMeta.holdMs): it reaches zero when the sprint ends
+    expect(t.durationMs - t.sprintMs).toBe(GAMES.tap.holdMs);
+    expect(clockTailMs('tap', GAMES.tap.durationMs)).toBe(3_000);
     expect(t.tapScale).toBe(1);
-    // nobody touches: the sprint starts by itself at 8 s and is over at 28 s
+    // nobody touches: the doll starts by itself at 8 s, and it is over at 20 s like everyone's
     const e = createTapEngine(GAMES.tap.durationMs);
     expect(e.state.phase).toBe('waiting');
-    for (let k = 1; k * STEP <= 30_000; k++) e.step(k * STEP);
+    for (let k = 1; k * STEP <= 23_000; k++) e.step(k * STEP);
     expect(e.state).toMatchObject({ phase: 'done', auto: true, taps: 0 });
     expect(Math.round(e.state.t0 / 100) / 10).toBe(8);
-    expect(Math.round(e.state.endAt / 100) / 10).toBe(28);
+    expect(Math.round(e.state.endAt / 100) / 10).toBe(20);
+  });
+
+  it('the party round ends for every phone at the same moment, whenever its player started', () => {
+    const doneAt: number[] = [];
+    const taps: number[] = [];
+    for (const start of [100, 1_000, 4_321, 7_990, 12_000]) {
+      let at = -1;
+      const e = createTapEngine(GAMES.tap.durationMs, { done: () => (at = e.state.elapsedMs) });
+      for (const t of steady(6, start, 30_000)) e.tap(t);
+      for (let k = 1; k * STEP <= 23_000; k++) e.step(k * STEP);
+      expect(e.state.endAt).toBe(20_000);
+      expect(e.state.phase).toBe('done');
+      doneAt.push(Math.round(at));
+      taps.push(e.state.taps);
+    }
+    // the same step for all of them: the TV's zero
+    expect(new Set(doneAt).size).toBe(1);
+    expect(doneAt[0]).toBeGreaterThanOrEqual(20_000);
+    expect(doneAt[0]).toBeLessThan(20_000 + STEP + 1);
+    // a later start only costs the time that already ran
+    for (let i = 1; i < taps.length; i++) expect(taps[i]).toBeLessThan(taps[i - 1] ?? 0);
+    expect(taps[0]).toBeGreaterThan(115);
+  });
+
+  it('the party round: the first touch is tap #1, a touch at 20 s counts for nothing, the last 5 s are 15..20 s', () => {
+    let lastAt = -1;
+    const e = createTapEngine(GAMES.tap.durationMs, { last: () => (lastAt = e.state.elapsedMs) });
+    for (const t of [3_000, 19_999, 20_000, 21_000]) e.tap(t);
+    for (let k = 1; k * STEP <= 23_000; k++) e.step(k * STEP);
+    expect(e.state).toMatchObject({ t0: 3_000, auto: false, taps: 2, late: 2, endAt: 20_000 });
+    expect(lastAt).toBeGreaterThanOrEqual(15_000);
+    expect(lastAt).toBeLessThan(15_000 + STEP + 1);
+  });
+
+  it('the party round: a reloaded phone keeps its taps and still ends with everyone; a phone that comes after the sprint has nothing to do', () => {
+    const e = createTapEngine(GAMES.tap.durationMs);
+    e.resume(2_000, 40, false);
+    expect(e.state.endAt).toBe(20_000);
+    const late = createTapEngine(GAMES.tap.durationMs, {}, 21_000);
+    late.tap(21_500);
+    late.step(21_000 + STEP);
+    late.step(21_600);
+    expect(late.state).toMatchObject({ phase: 'done', taps: 0 });
   });
 
   it('derives the start window (30/53), the sprint (20/53) and the 3/53 hold from the round', () => {

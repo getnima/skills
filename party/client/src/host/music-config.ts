@@ -27,9 +27,9 @@ export type MusicSlot = 'lobby' | GameId | 'round';
 /*
  * The levels below are set for the party's own files (13.11), which are mastered very differently.
  * Measured loudness of each file (ffmpeg ebur128, integrated): lobby -11.8 LUFS (Pump Up The Jam),
- * tap -5.6 (Barbra Streisand, radio edit), icy -19.1 (the Icy Tower tune), flappy -10.7 (Red Right
- * Hand, the owner's second download), plotzel -16.1 (Lobby Music, House Edition), ninja -10.0 (Yamasuki, Yama Yama), victory and
- * final -8.6 (the London fanfare trumpets, then Stayin' Alive). The aim: about -17 LUFS while a game is played, half of that level under the host's
+ * tap -5.6 (Barbra Streisand, radio edit), icy -19.1 (the Icy Tower tune), flappy -8.7 (Bee Gees,
+ * Stayin' Alive: the owner, 13.11, "not red right hand"), plotzel -16.1 (Lobby Music, House Edition), ninja -10.0 (Yamasuki, Yama Yama), victory and
+ * final -8.9 (the first phrase of the London fanfare trumpets, then Stayin' Alive). The aim: about -17 LUFS while a game is played, half of that level under the host's
  * explanation, about -21 in the lobby. A level is a plain volume (1 = the file as it is): the
  * files themselves are never re-encoded or processed. Replace a file: measure it and redo its line
  * (level = 10 ^ ((target - measured) / 20), at most 1). A slot with no file keeps the old defaults.
@@ -40,7 +40,7 @@ export const MUSIC: Readonly<Record<MusicSlot, SongTuning>> = {
   /** One song per game: from its intro to the end of play. */
   tap: { startSec: 0, volume: 0.27, introVolume: 0.14 },
   icy: { startSec: 0, volume: 1, introVolume: 0.5 },
-  flappy: { startSec: 0, volume: 0.48, introVolume: 0.24 },
+  flappy: { startSec: 0, volume: 0.38, introVolume: 0.19 },
   plotzel: { startSec: 0, volume: 0.9, introVolume: 0.45 },
   ninja: { startSec: 0, volume: 0.45, introVolume: 0.22 },
   /** round.mp3: the quiet fallback for a game that has no song of its own. */
@@ -53,6 +53,15 @@ export const MUSIC: Readonly<Record<MusicSlot, SongTuning>> = {
  * file is there (the built-in synth tune keeps its own level).
  */
 export const SHOW_SONG_VOLUME: Readonly<Record<'victory' | 'final', number>> = { victory: 0.6, final: 0.6 };
+
+/**
+ * Between games (the lobby once a game was played): the round winner's song plays on from the
+ * results, it is not cut for the lobby song (the owner, 13.11: "the stayin alive play also
+ * inbetween games, not the pump the jam"). `volume`: a step under the show's level. `startSec`:
+ * where the song itself begins in victory.mp3, after the trumpets (4.25 s in the party's file); used
+ * only when the song is not already playing (the TV was reloaded, or the round had no winner).
+ */
+export const BETWEEN_GAMES = { startSec: 4.25, volume: 0.45 } as const;
 
 /** Fade lengths in ms. */
 export const MUSIC_FADES = {

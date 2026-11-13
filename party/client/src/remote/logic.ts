@@ -3,7 +3,7 @@
  * the labels of the status header. No DOM, no sockets (unit tested).
  */
 import { GAMES } from '../../../shared/protocol';
-import { roundTime } from '../../../shared/round-clock';
+import { roundTime, shownLeftMs } from '../../../shared/round-clock';
 import { confirmQuestion, findAction } from '../host/actions';
 
 import type { GameId, Phase, RoomState } from '../../../shared/protocol';
@@ -36,7 +36,10 @@ export function roundClockText(state: RoomState | null, serverNow: number): stri
   if (state === null || r === null || r === undefined) return null;
   const rt = roundTime(r, serverNow);
   if (state.phase === 'intro' || state.phase === 'countdown') return `מתחיל בעוד ${clockText(-rt.elapsedMs)}`;
-  if (state.phase === 'playing') return rt.frozen && state.cutscene !== null ? `⏸ ${clockText(rt.leftMs)}` : `נשארו ${clockText(rt.leftMs)}`;
+  if (state.phase === 'playing') {
+    const left = shownLeftMs(r, rt);
+    return rt.frozen && state.cutscene !== null ? `⏸ ${clockText(left)}` : `נשארו ${clockText(left)}`;
+  }
   return null;
 }
 

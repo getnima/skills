@@ -26,7 +26,7 @@
 //     mid-round resume
 //   - winner ceremony: no phone shows a result before results.revealAt; the TV shows the winner's
 //     name and the round medal (no prize: the angel is given at the podium), the winner's phone shows the WIN moment within the same beat, the other
-//     phones show who won, the victory song started on the TV and on the winner's phone
+//     phones show who won, the victory song started on the TV (and on no phone)
 //   - points and totals on the host equal shared/scoring.ts applied to the raw scores
 // Plotzel (the word ladder to פלוץ) is typed on its on-screen Hebrew keyboard: every phone follows
 // the shortest path the game itself would show (window.__plotzel.path()), at a different pace.
@@ -553,6 +553,8 @@ function plotzelDriver(ph, keyGapMs) {
       const joinOrder = new Map((await hs()).players.map((pl, k) => [pl.id, k]));
       const expect = computeRoundScores(
         res.rows.map((r) => ({ playerId: r.playerId, id: r.playerId, raw: r.raw, reachedAt: r.reachedAt, joinOrder: joinOrder.get(r.playerId), totalBefore: totals.get(r.playerId) || 0 })),
+        // flappy is last-one-standing: its winner gets the bonus on top (shared/scoring.ts)
+        { lastStanding: GAMES[gameId].mode === 'elimination' },
       );
       const byRound = [...res.rows].sort((x, y) => x.roundRank - y.roundRank);
       const scorers = byRound.filter((r) => r.raw > 0);
@@ -617,8 +619,9 @@ function plotzelDriver(ph, keyGapMs) {
       check(tvName.includes(winner.name) && tvLine.includes('ניצחון בסיבוב') && (await host.locator('.sh-cer .sh-prize').count()) === 0 && (await host.locator('.sh-cer-prize .sh-medal').count()) === 1 && !/אנג׳ל|מלאך/.test(tvCer), `TV ceremony: ${winner.name} + the round medal, no prize`, { tvName, tvLine });
       const mh = await music(host);
       check(mh.started === songsBefore + 1 && mh.playing, 'TV: the victory song started with the ceremony', mh);
-      const mw = await music(winner.page);
-      check(mw.playing, `${winner.label}: victory song on the winner's phone`, mw);
+      // the song is the TV's alone (the owner, 13.11: no trumpets on the phones)
+      const mw = await winner.page.evaluate(() => (window.__partyMusic ? { started: window.__partyMusic.started.length, playing: window.__partyMusic.playing('victory') } : { started: 0, playing: false }));
+      check(!mw.playing && mw.started === 0, `${winner.label}: no song on the winner's phone (the TV plays it)`, mw);
       const winText = await winner.page.textContent('.pp-win');
       check(winText.includes('הסיבוב הזה שלך') && !/אנג׳ל|לקחת את הפרס/.test(winText), `${winner.label}: WIN moment (the round, not the prize)`, winText.slice(0, 60));
       const revText = await loser.page.textContent('.pp-reveal');
@@ -634,7 +637,7 @@ function plotzelDriver(ph, keyGapMs) {
       await host.waitForSelector('.sh-results--standings', { timeout: 15000 });
       await sleep(2600);
       await shots(tag('standings'), [H]);
-      check(!(await music(winner.page)).playing, `${winner.label}: the song stopped after the WIN moment`);
+      check(!(await winner.page.evaluate(() => (window.__partyMusic ? window.__partyMusic.playing('victory') : false))), `${winner.label}: no song after the WIN moment either`);
     }
 
     // ── the competition ──

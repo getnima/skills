@@ -72,7 +72,7 @@ export const NARRATION: Readonly<Record<NarrationMoment, MomentScript>> = {
   },
   intro_tap: {
     priority: 8,
-    takes: [[a('present', 'שימי טאפ: חוטטים לשימי באף, באישור משרד הבריאות.'), b('laugh', 'חצי דקה להתחיל, ומהנגיעה הראשונה עשרים שניות שלכם.')]],
+    takes: [[a('present', 'שימי טאפ: חוטטים לשימי באף, באישור משרד הבריאות.'), b('laugh', 'עשרים שניות, כולם יחד. מי שמתחיל מאוחר, מפסיד.')]],
   },
   intro_icy: {
     priority: 8,

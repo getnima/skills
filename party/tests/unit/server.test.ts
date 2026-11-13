@@ -288,7 +288,8 @@ describe('sockets under attack', () => {
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(GAME_MS - 50);
     const rows = back.state?.results?.rows ?? [];
     expect(rows).toHaveLength(MAX_PLAYERS - 1);
-    expect(rows.find((r) => r.playerId === p0.playerId)).toMatchObject({ raw: 120, points: 1100, roundRank: 1, rank: 1 });
+    // flappy is last-one-standing: 1000 + the podium's 100 + the 300 of the one who outlasted the others
+    expect(rows.find((r) => r.playerId === p0.playerId)).toMatchObject({ raw: 120, points: 1400, roundRank: 1, rank: 1 });
     expect(rows.find((r) => r.playerId === p1.playerId)).toMatchObject({ raw: 60, points: 560, roundRank: 2 });
     expect(rows.some((r) => r.playerId === p2.playerId)).toBe(false);
     expect(back.state?.results?.winnerIds).toEqual([p0.playerId]);

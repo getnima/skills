@@ -91,7 +91,7 @@ const FINAL_D: readonly number[] = [0, 0.62, 0.86, 1];
 // ───────────────────────────── Words (the doll's voice) ─────────────────────────────
 
 const W = {
-  start: 'הקישו כדי להתחיל!',
+  start: 'הקישו! השעון רץ!',
   sneak1: 'לא ראית כלום.',
   sneak2: 'זה לא מה שנראה. זה פילאטיס.',
   yawn: 'נו? יש לי הופעה בבת ים.',
@@ -116,7 +116,7 @@ const W = {
   lastSub: 'תן הכול!',
   ranks: ['חוטט מתחיל.', 'חוטט מוסמך.', 'דוקטור לחטטנות.', 'האף של המדינה.'],
   rankSubs: ['גם ביונסה התחילה ככה.', 'תעודה ממוסגרת בסלון.', 'מרצה אורח בטכניון.', 'מחר בכל המהדורות.'],
-  wait: 'תראו לשכן. מחכים לכולם.',
+  wait: 'תראו לשכן. התוצאות בטלוויזיה.',
 } as const;
 
 // ───────────────────────────── Debug (tests) ─────────────────────────────
@@ -178,7 +178,7 @@ export interface TapDebugState {
   /** Smaller things the player sees: milestone lines, the innocence gag, soft stickers, fillers. */
   readonly events: readonly TapBeatLog[];
   readonly finished: boolean;
-  /** Round time when the game called ctx.finish() (-1 = not yet). */
+  /** Round time when the sprint was over (-1 = not yet). */
   readonly finishedAtMs: number;
   readonly sprites: {
     readonly fingerprints: number;
@@ -379,7 +379,7 @@ export const game: GameModule = {
     const saved = readSaved(ctx);
     let resumed: SavedSprint | null = null;
     if (saved && saved.at <= startOffset + 2000 && saved.t0 <= startOffset + 2000) {
-      engine.resume(saved.t0, saved.taps, saved.done || startOffset >= saved.t0 + timing.sprintMs);
+      engine.resume(saved.t0, saved.taps, saved.done || startOffset >= (timing.shared ? timing.sprintMs : saved.t0 + timing.sprintMs));
       resumed = saved;
     } else if (saved) writeSaved(ctx, null);
     let savedTaps = -1;
@@ -1150,7 +1150,10 @@ export const game: GameModule = {
       if (!finished) {
         finished = true;
         finishedAtMs = Math.round(elapsed);
-        ctx.finish();
+        // The shared sprint ends for every phone at once, and the rest of the round is the hold
+        // for this final frame: finishing early would end the round under it (the server ends a
+        // round when every final is in). The personal format finishes early, as it always did.
+        if (!timing.shared) ctx.finish();
       }
     }
     function triggerInnocence(): void {
@@ -1245,9 +1248,11 @@ export const game: GameModule = {
         engine.step(elapsed, roundElapsed - elapsed > FLUSH_LAG_MS);
         const s = engine.state;
 
-        // HUD clock: the start window, then the personal sprint
+        // HUD clock: the sprint. The party's sprint is one for everyone and runs from the round's
+        // start, so a phone that has not started yet shows it too (the same seconds as the TV)
         if (ctx.setClock) {
-          if (s.phase === 'waiting') ctx.setClock(Math.max(0, timing.startWindowMs - elapsed), timing.startWindowMs);
+          if (s.phase === 'waiting' && timing.shared) ctx.setClock(Math.max(0, timing.sprintMs - elapsed), timing.sprintMs);
+          else if (s.phase === 'waiting') ctx.setClock(Math.max(0, timing.startWindowMs - elapsed), timing.startWindowMs);
           else if (s.phase === 'sprint') ctx.setClock(Math.max(0, s.endAt - elapsed), timing.sprintMs);
           else ctx.setClock(0, timing.sprintMs);
         }
@@ -1584,11 +1589,14 @@ export const game: GameModule = {
       if (counter) g.drawImage(counter.canvas, 0, top, counter.w, counter.h);
       const y = top + 12 + (geo.counterH - 12) / 2;
       let chip: Sticker;
-      if (s.phase === 'waiting') {
+      // the shared sprint already runs while this phone waits for its first touch: the same chip and bar
+      const running = s.phase === 'sprint' || (s.phase === 'waiting' && timing.shared);
+      const endAt = s.phase === 'sprint' ? s.endAt : timing.sprintMs;
+      if (s.phase === 'waiting' && !running) {
         const secs = Math.max(0, Math.ceil((timing.startWindowMs - elapsed) / 1000));
         chip = chipCache.get(`w${secs}`, (old) => renderChip(`מתחיל לבד בעוד ${secs}`, 16, PAL.white, PAL.ink, old));
-      } else if (s.phase === 'sprint') {
-        const secs = Math.max(0, Math.ceil((s.endAt - elapsed) / 1000));
+      } else if (running) {
+        const secs = Math.max(0, Math.ceil((endAt - elapsed) / 1000));
         const red = lastQuarter;
         chip = chipCache.get(`s${secs}${red ? 'r' : ''}`, (old) => renderChip(String(secs), 20, red ? PAL.red : PAL.yel, red ? PAL.white : PAL.ink, old));
       } else {
@@ -1606,7 +1614,7 @@ export const game: GameModule = {
       const barH = 18;
       drawBarWell(g, left, y - barH / 2, barW, barH);
       let frac = 0;
-      if (s.phase === 'sprint') frac = clamp((s.endAt - elapsed) / timing.sprintMs, 0, 1);
+      if (running) frac = clamp((endAt - elapsed) / timing.sprintMs, 0, 1);
       if (frac > 0) {
         const blink = lastQuarter && Math.sin(gt * Math.PI * 8) < 0;
         g.fillStyle = lastQuarter ? (blink ? PAL.redD : PAL.red) : PAL.yel;

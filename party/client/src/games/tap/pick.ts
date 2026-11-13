@@ -4,12 +4,19 @@
  * 60 Hz step, so the same touches give the same score and the same events on every phone
  * and at every frame rate (unit-tested in tests/unit/tap-pick.test.ts).
  *
- * The round is a personal sprint. Phase 'waiting' lasts the start window (30/53 of the round,
- * 30 s of 53 s): the player's first touch starts the sprint and is counted tap #1; with no
- * touch the sprint starts by itself when the window runs out. The sprint lasts 20/53 of the
- * round (20 s); then the phase is 'done' and the score (= counted taps, nothing else) is
- * final. The last 3/53 (3 s) is a hold, so even a player who started at the very end of the
- * window sees their final frame before the round ends.
+ * The party's round (TAP, a SHARED sprint): the sprint is the first 20/23 of the round (20 s of
+ * 23 s) for everyone, so the clock on the TV is the clock of every phone and the game is over
+ * for all of them at the same moment (the owner, 13.11: "the tv says 10s remaining but is
+ * over"). Phase 'waiting' lasts until the player's first touch (counted tap #1); whoever has
+ * not touched by 8/23 of the round (8 s) is started by the doll itself. Starting late only
+ * costs the time that already ran. The last 3/23 (3 s) is a hold: every phone shows its final
+ * frame, and then the round ends.
+ *
+ * The other format (a shape without SHARED; the engine's older tests run it): a personal sprint.
+ * The first touch inside the start window starts a sprint of the full length, with no touch it
+ * starts by itself when the window runs out, and the rest of the round is the hold.
+ *
+ * In both, phase 'done' means the score (= counted taps, nothing else) is final.
  *
  * Anti-mash cap: a token bucket (RATE per second, BURST deep) and a minimum gap between
  * counted taps. Touches over the cap "bounce": they count for nothing.
@@ -21,12 +28,15 @@
 export const TAP = {
   STEP_MS: 1000 / 60,
   /**
-   * Shares of ctx.durationMs: the start window and the sprint; the rest is the final hold.
-   * The owner's call (13.11): a 30 s round. 8 s to start, 20 s of tapping, 2 s of hold. (It was
-   * 30 + 20 + 3 = 53 s: whoever started at once stood waiting for half a minute.)
+   * Shares of ctx.durationMs. The party's round is 23 s: the sprint is its first 20 s, for
+   * everyone; a player who has not touched by 8 s is started by the doll; the last 3 s are the
+   * hold (the final frame). It was 8 s to start + a personal 20 s + 2 s of hold (30 s): whoever
+   * started at once was finished while the TV still showed 10 seconds.
    */
-  START_SHARE: 8 / 30,
-  SPRINT_SHARE: 20 / 30,
+  START_SHARE: 8 / 23,
+  SPRINT_SHARE: 20 / 23,
+  /** One sprint for everyone, from the round's start (see the header). */
+  SHARED: true,
   /** The production sprint the tap thresholds are written for. */
   BASE_SPRINT_MS: 20_000,
   /** Counted taps per second (all fingers together), bucket depth and the minimum gap. */
@@ -62,8 +72,11 @@ export type MilestoneId = (typeof MILESTONE_IDS)[number];
 
 export interface TapTiming {
   readonly durationMs: number;
+  /** Until here a touch starts the player; then the sprint starts by itself. */
   readonly startWindowMs: number;
   readonly sprintMs: number;
+  /** One sprint for everyone: it runs from the round's start to `sprintMs`, whenever a player starts. */
+  readonly shared: boolean;
   /** sprintMs / 20 000: tap thresholds are multiplied by it, so short test rounds reach them. */
   readonly tapScale: number;
 }
@@ -72,13 +85,15 @@ export interface TapTiming {
 export interface TapShape {
   readonly START_SHARE: number;
   readonly SPRINT_SHARE: number;
+  /** True: the sprint is the first SPRINT_SHARE of the round for everyone. Default: a personal sprint. */
+  readonly SHARED?: boolean;
 }
 
 export function tapTiming(durationMs: number, shape: TapShape = TAP): TapTiming {
   const dur = Math.max(1000, durationMs);
   const startWindowMs = Math.round(dur * shape.START_SHARE);
   const sprintMs = Math.round(dur * shape.SPRINT_SHARE);
-  return { durationMs: dur, startWindowMs, sprintMs, tapScale: sprintMs / TAP.BASE_SPRINT_MS };
+  return { durationMs: dur, startWindowMs, sprintMs, shared: shape.SHARED === true, tapScale: sprintMs / TAP.BASE_SPRINT_MS };
 }
 
 /** Scaled thresholds, kept strictly increasing and at least 1 (so every milestone exists). */
@@ -162,7 +177,7 @@ export interface TapEngine {
   readonly queued: number;
   /**
    * Continue a sprint this phone already played (the page was reloaded): the sprint keeps
-   * its start `t0` and its `taps`, so it still ends at t0 + sprintMs; `done` = it was over.
+   * its start `t0` and its `taps`, so it still ends where it would have; `done` = it was over.
    * Fires no events. Only while still 'waiting' (before the first step that starts anything).
    */
   resume(t0: number, taps: number, done: boolean): void;
@@ -172,7 +187,8 @@ const DT = 1 / 60;
 
 /**
  * `joinedAtMs` = round time when this phone started the game: a phone that joins after the
- * start window starts its sprint at once (and it is cut at the end of the round).
+ * start window starts its sprint at once (and it is cut at the end of the round; in the shared
+ * format at the end of the sprint, like everyone's).
  */
 export function createTapEngine(durationMs: number, on: TapListener = {}, joinedAtMs = 0, shape: TapShape = TAP): TapEngine {
   const timing = tapTiming(durationMs, shape);
@@ -200,10 +216,15 @@ export function createTapEngine(durationMs: number, on: TapListener = {}, joined
   let levelMs = 0;
   let inMs = 0;
 
+  /** Where a sprint that started at `t0` ends: the shared sprint ends for everyone at the same round time. */
+  const endOf = (t0: number): number => Math.min(timing.durationMs, timing.shared ? timing.sprintMs : t0 + timing.sprintMs);
+  /** Round time the last quarter ("the last 5 seconds") of the running sprint begins at. */
+  const lastFrom = (): number => (timing.shared ? st.endAt : st.t0 + timing.sprintMs) - timing.sprintMs * TAP.LAST_SHARE;
+
   function startSprint(t0: number, auto: boolean): void {
     st.phase = 'sprint';
     st.t0 = t0;
-    st.endAt = Math.min(timing.durationMs, t0 + timing.sprintMs);
+    st.endAt = endOf(t0);
     st.auto = auto;
     on.start?.(auto, t0);
   }
@@ -265,7 +286,7 @@ export function createTapEngine(durationMs: number, on: TapListener = {}, joined
     levelMs += TAP.STEP_MS;
     if (st.level >= 3) inMs += TAP.STEP_MS;
     const r = st.rateSm;
-    const last = e >= st.t0 + timing.sprintMs * (1 - TAP.LAST_SHARE);
+    const last = e >= lastFrom();
     const floor = last ? TAP.LAST_MIN_LEVEL : 0;
     let up = 0;
     for (let i = 0; i < TAP.LEVEL_UP.length; i++) if (r >= (TAP.LEVEL_UP[i] ?? Infinity)) up = i + 1;
@@ -302,7 +323,7 @@ export function createTapEngine(durationMs: number, on: TapListener = {}, joined
       if (st.phase !== 'waiting') return;
       st.phase = done ? 'done' : 'sprint';
       st.t0 = t0;
-      st.endAt = Math.min(timing.durationMs, t0 + timing.sprintMs);
+      st.endAt = endOf(t0);
       st.auto = false;
       st.taps = Math.max(0, Math.round(taps));
       while (st.milestones < milestoneAt.length && st.taps >= (milestoneAt[st.milestones] ?? Infinity)) st.milestones++;
@@ -327,7 +348,7 @@ export function createTapEngine(durationMs: number, on: TapListener = {}, joined
       if (st.phase === 'waiting' && elapsedMs >= timing.startWindowMs) startSprint(timing.startWindowMs, true);
       st.rateSm += (st.rate - st.rateSm) * smooth;
       if (st.phase === 'sprint') {
-        if (!st.lastQuarter && elapsedMs >= st.t0 + timing.sprintMs * (1 - TAP.LAST_SHARE) && st.endAt - elapsedMs > 0) {
+        if (!st.lastQuarter && elapsedMs >= lastFrom() && st.endAt - elapsedMs > 0) {
           st.lastQuarter = true;
           on.last?.();
         }

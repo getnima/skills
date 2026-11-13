@@ -1,9 +1,11 @@
 /**
- * The TV's background music: lobby.mp3 in the lobby, each game's own song
- * (tap.mp3, icy.mp3, …, else round.mp3, else silence) from its intro to the
- * end of play, and the "🎵 בדיקת סאונד" panel. Everything follows the room
- * state and the server clock (music-plan.ts); levels live in music-config.ts.
- * victory.mp3 / final.mp3 are played by the show scenes themselves.
+ * The TV's background music: lobby.mp3 in the lobby until the first game, each
+ * game's own song (tap.mp3, icy.mp3, …, else round.mp3, else silence) from its
+ * intro to the end of play, and the "🎵 בדיקת סאונד" panel. Everything follows
+ * the room state and the server clock (music-plan.ts); levels live in
+ * music-config.ts. victory.mp3 / final.mp3 are started by the show scenes
+ * themselves; between games the winner's song plays on in the lobby, and from
+ * there it is this hook's (show/song-carry.ts).
  */
 import { useEffect, useRef, useState } from 'preact/hooks';
 
@@ -11,7 +13,8 @@ import { GAMES, GAME_IDS } from '../../../shared/protocol';
 import { setMuted } from '../kit/audio';
 import { findTrackFile, getTrackInfo, hasTrackFile, isTrackPlaying, pauseTrack, playTrack, resumeTrack, setTrackVolume, stopTrack } from '../kit/music';
 import { MUSIC_FADES, SHOW_SONG_VOLUME } from './music-config';
-import { DEFAULT_PRELUDE_MS, planMusic, preludeOf, resolveGameSlot, tuningOf } from './music-plan';
+import { betweenGames, DEFAULT_PRELUDE_MS, planMusic, preludeOf, resolveGameSlot, tuningOf } from './music-plan';
+import { carryVictorySong } from './show/song-carry';
 import { Btn, Modal } from './ui';
 import { useMuted } from './util';
 
@@ -19,7 +22,7 @@ import type { JSX } from 'preact';
 import type { RoomState } from '../../../shared/protocol';
 import type { ServerClock } from '../net/connection';
 import type { MusicSlot } from './music-config';
-import type { MusicPlan } from './music-plan';
+import type { MusicPlan, PlanSlot } from './music-plan';
 
 const PRELUDE_STORE = 'party.musicPrelude';
 /** A song that keeps vanishing (an undecodable file) is not restarted more often than this per round. */
@@ -27,7 +30,7 @@ const MAX_RESTARTS = 2;
 
 interface Current {
   readonly key: string;
-  readonly slot: MusicSlot;
+  readonly slot: PlanSlot;
   paused: boolean;
   volume: number;
 }
@@ -87,6 +90,10 @@ export function useShowMusic(state: RoomState | null, clock: ServerClock, soundC
   const restarts = useRef(new Map<string, number>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Said while rendering, so the results scene knows it before it is taken down: between games
+  // its song is not stopped, it plays on in the lobby.
+  carryVictorySong(betweenGames({ phase: state?.phase ?? null, played: state?.played.length ?? 0, soundCheck, hasFile: hasTrackFile }));
+
   const preludeFor = (st: RoomState): number => {
     const key = roundKey(st);
     if (key === null || st.round === null) return DEFAULT_PRELUDE_MS;
@@ -110,6 +117,7 @@ export function useShowMusic(state: RoomState | null, clock: ServerClock, soundC
       now: clock.now(),
       preludeMs: st !== null ? preludeFor(st) : DEFAULT_PRELUDE_MS,
       soundCheck: checkRef.current,
+      played: st?.played.length ?? 0,
       hasFile: hasTrackFile,
     });
   };
@@ -127,20 +135,25 @@ export function useShowMusic(state: RoomState | null, clock: ServerClock, soundC
         cur.current = c = null;
       }
       if (c !== null && c.key !== plan.key) {
-        stopTrack(c.slot, c.slot === 'lobby' ? MUSIC_FADES.lobbyEndMs : MUSIC_FADES.roundEndMs);
+        stopTrack(c.slot, c.slot === 'lobby' || c.slot === 'victory' ? MUSIC_FADES.lobbyEndMs : MUSIC_FADES.roundEndMs);
         cur.current = c = null;
       }
       if (plan.slot !== null && plan.key !== null) {
         if (c === null) {
           if (plan.run === 'play' && (restarts.current.get(plan.key) ?? 0) <= MAX_RESTARTS) {
             const slot = plan.slot;
-            playTrack(slot, {
-              loop: true,
-              volume: plan.volume,
-              fallback: 'none',
-              // read when the sound really starts (after loading, or after the first click)
-              startAt: () => planNow().positionSec,
-            });
+            if (plan.carry && isTrackPlaying(slot)) {
+              // the results' song plays on between games: no restart, only down to the lobby's level
+              setTrackVolume(slot, plan.volume, MUSIC_FADES.rampUpMs);
+            } else {
+              playTrack(slot, {
+                loop: true,
+                volume: plan.volume,
+                fallback: 'none',
+                // read when the sound really starts (after loading, or after the first click)
+                startAt: () => planNow().positionSec,
+              });
+            }
             cur.current = { key: plan.key, slot, paused: false, volume: plan.volume };
           }
         } else if (plan.run === 'pause') {
@@ -219,11 +232,11 @@ function slotLabel(slot: CheckSlot): string {
 function slotWhen(slot: CheckSlot): string {
   switch (slot) {
     case 'lobby':
-      return 'בלובי ובין סיבובים, בלופ';
+      return 'בלובי עד המשחק הראשון, בלופ';
     case 'round':
       return 'במשחק שאין לו שיר משלו';
     case 'victory':
-      return 'כשמנצח הסיבוב נחשף';
+      return 'כשמנצח הסיבוב נחשף, וממשיך בין המשחקים';
     case 'final':
       return 'כשהאלוף עולה לפודיום';
     default:

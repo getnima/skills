@@ -9,6 +9,10 @@
 //   - P holds the autopilot and lets it go again
 //   - after the last game: the podium by itself, the prize there and only there, and it stays there
 //   - the TV as the party opens it (not an automated browser): autopilot on, fullscreen on the first click
+//   - שימי טאפ: the TV's clock is the phones' clock: it reaches zero when every phone's sprint is over
+//   - the music: the lobby song until the first game, the winner's song on the TV only, and it plays
+//     on (not restarted) in the lobby between games
+//   - flappy: the last one standing gets the bonus on top
 //
 // Needs a build (npm run build). Starts its own server on PORT (default 8831), or uses BASE_URL.
 //   NODE_PATH=<playwright>/node_modules node tests/e2e/qa-autopilot.cjs
@@ -109,7 +113,14 @@ async function titleFit(page, width, height) {
     const B = await openPhone(browser, code, 'יוסי');
 
     // ── the first game is the host's press ──
+    // (a key first: a browser plays no sound before a gesture; Shift does nothing else on the TV)
+    await tv.keyboard.press('Shift');
+    const music = () => tv.evaluate(() => ({ cur: window.__hostMusic.current(), victory: window.__partyMusic.info('victory'), lobby: window.__partyMusic.info('lobby'), starts: window.__partyMusic.started.filter((n) => n === 'victory').length }));
     await sleep(11500);
+    const m0 = await music();
+    const songs = { lobby: m0.lobby !== null && m0.lobby.source === 'file', victory: null };
+    if (songs.lobby) check('music: the lobby song in the first lobby', m0.cur !== null && m0.cur.slot === 'lobby', m0.cur);
+    else console.log('  (no lobby song in this build: the lobby music check is skipped)');
     check('the first game does not start by itself', (await phase(tv)) === 'lobby' && (await tv.locator('[data-testid=auto-start]').count()) === 0);
     await tv.keyboard.press('Space');
     await waitFor('intro', async () => (await phase(tv)) === 'intro', 5000, 50);
@@ -119,10 +130,33 @@ async function titleFit(page, width, height) {
     // ── round 1: דנה taps, יוסי does not ──
     await waitFor('playing', async () => (await phase(tv)) === 'playing', 10000, 50);
     const vp = A.viewportSize();
+    // the TV's clock and each phone's game, sampled together until the round is over
+    const tapDone = (p) => p.evaluate(() => { const c = document.querySelector('canvas[data-level]'); return c !== null && c.dataset.tapFinal === '1'; }).catch(() => false);
+    const tvClock = () => tv.evaluate(() => { const n = document.querySelector('.sh-ring-num'); return n ? n.textContent : null; }).catch(() => null);
+    const seen = { tvOverAt: 0, aDoneAt: 0, bDoneAt: 0, tvAtADone: null, tvBeforeOver: null, playStart: Date.now() };
+    let stopSampling = false;
+    const sampler = (async () => {
+      while (!stopSampling) {
+        const [clock, a, b] = await Promise.all([tvClock(), tapDone(A), tapDone(B)]);
+        const now = Date.now();
+        if (clock === 'סוף!' && seen.tvOverAt === 0) seen.tvOverAt = now;
+        if (clock !== null && clock !== 'סוף!' && seen.tvOverAt === 0) seen.tvBeforeOver = clock;
+        if (a && seen.aDoneAt === 0) { seen.aDoneAt = now; seen.tvAtADone = clock; }
+        if (b && seen.bDoneAt === 0) seen.bDoneAt = now;
+        await sleep(40);
+      }
+    })();
     const tapUntil = Date.now() + 8200;
     while (Date.now() < tapUntil && (await phase(tv)) === 'playing') await A.mouse.click(vp.width / 2, vp.height * 0.55).catch(() => undefined);
     await waitFor('results', async () => (await phase(tv)) === 'results', 15000, 50);
     const resultsAt = Date.now();
+    stopSampling = true;
+    await sampler;
+    // (the owner, 13.11: "the tv says 10s remaining but is over") the round is 9 s here: a 7.8 s sprint, 1.2 s of hold
+    check('tap: the TV says "סוף!" when the phones are done, not seconds later',
+      seen.tvOverAt > 0 && seen.aDoneAt > 0 && seen.bDoneAt > 0 && Math.abs(seen.tvOverAt - seen.aDoneAt) < 500 && Math.abs(seen.tvOverAt - seen.bDoneAt) < 500 && (seen.tvAtADone === 'סוף!' || seen.tvAtADone === '0:01' || seen.tvAtADone === '1'),
+      { tvOverAfterMs: seen.tvOverAt - seen.playStart, aDoneAfterMs: seen.aDoneAt - seen.playStart, bDoneAfterMs: seen.bDoneAt - seen.playStart, tvAtADone: seen.tvAtADone, tvBeforeOver: seen.tvBeforeOver });
+    check('tap: the round goes on a moment after the clock (the hold for the final frame)', resultsAt - seen.tvOverAt > 600 && resultsAt - seen.tvOverAt < 4000, { holdMs: resultsAt - seen.tvOverAt });
 
     // ── the suspense title fits every phone ──
     await waitScreen(B, 'suspense', 8000);
@@ -141,6 +175,12 @@ async function titleFit(page, width, height) {
     const cer = await tv.evaluate(() => ({ name: document.querySelector('.sh-cer-name').textContent, line: document.querySelector('.sh-cer-line').textContent, prize: document.querySelectorAll('.sh-cer .sh-prize').length, medal: document.querySelectorAll('.sh-cer .sh-medal').length, all: document.querySelector('.sh-cer').textContent }));
     check('TV ceremony: the round winner with a medal, no prize', cer.name.includes('דנה') && cer.line.includes('ניצחון בסיבוב') && cer.prize === 0 && cer.medal === 1 && !/אנג׳ל|מלאך/.test(cer.all), cer);
     await waitScreen(A, 'win', 6000);
+    // the winner's song: on the TV, and on no phone (the owner, 13.11: the trumpets on the TV only)
+    const m1 = await waitFor('the TV starts the song', async () => { const m = await music(); return m.starts > 0 ? m : null; }, 3000, 100).catch(() => null);
+    songs.victory = m1 !== null && m1.victory !== null && m1.victory.source === 'file';
+    songs.starts = m1 !== null ? m1.starts : 0;
+    const phoneSong = await A.evaluate(() => (window.__partyMusic ? window.__partyMusic.started.length : 0));
+    check("music: the winner's song is on the TV and not on the winner's phone", m1 !== null && phoneSong === 0, { tv: m1 && m1.starts, phone: phoneSong });
     const win = await A.textContent('.pp-win');
     check("winner's phone: the round is theirs, no prize", win.includes('ניצחת') && win.includes('הסיבוב הזה שלך') && win.includes('רק בסוף') && !/אנג׳ל|לקחת את הפרס/.test(win) && (await A.locator('.pp-win .pp-prize').count()) === 0, win.slice(0, 90));
     await waitScreen(B, 'reveal', 6000);
@@ -161,6 +201,14 @@ async function titleFit(page, width, height) {
     const toLobby = Date.now() - resultsAt;
     // 8 s suspense + 10.6 s ceremony + 9 s standings
     check('results -> lobby by itself, after the ceremony and the standings', toLobby > 24000 && toLobby < 34000, { ms: toLobby });
+    // between games the winner's song plays on: the same track, not restarted, a step quieter; no lobby song
+    if (songs.victory) {
+      await sleep(900);
+      const m2 = await music();
+      check("music: between games the winner's song plays on (no restart, no lobby song)",
+        m2.cur !== null && m2.cur.slot === 'victory' && m2.cur.key === 'between' && m2.victory !== null && m2.victory.playing && m2.starts === songs.starts && m2.victory.time > 15 && m2.victory.volume < 0.6 && (m2.lobby === null || !m2.lobby.playing),
+        { cur: m2.cur, time: m2.victory && Math.round(m2.victory.time), volume: m2.victory && m2.victory.volume, starts: m2.starts, lobby: m2.lobby && m2.lobby.playing });
+    } else console.log('  (no victory song in this build: the between-games music check is skipped)');
     const count = await waitFor('countdown on the next game', async () => (await tv.locator('[data-testid=auto-start]').count()) > 0 && (await tv.textContent('[data-testid=auto-start]')), 4000, 100);
     check('the lobby counts down to the next game', /מתחילים/.test(count), count.trim());
     await tv.screenshot({ path: path.join(OUT, 'tv-recap-countdown.png') });
@@ -177,9 +225,15 @@ async function titleFit(page, width, height) {
     await waitFor('autopilot on', async () => (await tv.evaluate(() => window.__host.autopilot())) === true, 3000, 50);
     await waitFor('the next game starts by itself', async () => ['intro', 'countdown', 'playing'].includes(await phase(tv)), 6000, 100);
     check('P again: the next game starts by itself', (await tvState(tv)).game === 'icy');
+    if (songs.victory) {
+      await sleep(1500);
+      const m3 = await music();
+      check("music: the next game's own song takes over", m3.cur !== null && m3.cur.slot !== 'victory' && (m3.victory === null || !m3.victory.playing), { cur: m3.cur, victory: m3.victory && m3.victory.playing });
+    }
 
     // ── the rest of the evening by itself (nobody plays: the nobody-won path) ──
     let nobodySeen = false;
+    let flappySeen = false;
     let lastPhase = '';
     const end = Date.now() + 420000;
     for (;;) {
@@ -189,6 +243,17 @@ async function titleFit(page, width, height) {
         lastPhase = s.phase;
       }
       if (s.phase === 'final') break;
+      // flappy: both phones fall at the first stand; whoever fell last outlasted the other
+      if (!flappySeen && s.phase === 'results') {
+        const rows = await tv.evaluate(() => { const r = window.__host.state().results; return r && r.gameId === 'flappy' ? r.rows.map((x) => ({ name: x.name, raw: x.raw, points: x.points, roundRank: x.roundRank })) : null; });
+        if (rows !== null) {
+          flappySeen = true;
+          const by = [...rows].sort((x, y) => x.roundRank - y.roundRank);
+          const scorers = by.filter((x) => x.raw > 0);
+          if (scorers.length >= 2) check('flappy: the last one standing gets 300 on top (1000 + 100 + 300), the other scores as always', scorers[0].points >= 1398 && scorers[0].points <= 1400 && scorers[1].points <= 1060, by);
+          else console.log(`  (flappy had ${scorers.length} scorer(s): the bonus needs two)`, JSON.stringify(by));
+        }
+      }
       if (!nobodySeen && s.phase === 'results' && (await tv.locator('.sh-cer--nobody').count()) > 0) {
         await sleep(2600);
         const t = await tv.textContent('.sh-cer--nobody').catch(() => '');

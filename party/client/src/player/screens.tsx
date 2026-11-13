@@ -20,7 +20,6 @@ import { roundTime } from '../../../shared/round-clock';
 import { preloadGame } from '../games/registry';
 import { sfx } from '../kit/audio';
 import { haptic, vibrate } from '../kit/haptics';
-import { playTrack, stopTrack } from '../kit/music';
 import { preloadGameArt } from '../kit/preload';
 import { usePreloadBar } from './boot-preload';
 import { GameArt } from './intro-art';
@@ -386,11 +385,11 @@ export function SuspenseScreen(): JSX.Element {
 
 export function WinScreen(props: { readonly onDone: () => void; readonly look: string | null }): JSX.Element {
   const v = useViewport();
+  // No song here (the owner, 13.11: "dont play the trumpets on the iphones, just the TV"): the
+  // winner's song comes from the TV's speakers; the phone cheers and buzzes.
   useEffect(() => {
-    playTrack('victory', { volume: 0.9 });
     sfx.cheer();
     vibrate([300, 120, 300, 120, 600, 150, 200, 80, 200]);
-    return (): void => stopTrack('victory', 900);
   }, []);
   return (
     <div class="pp-screen ps pp-win">

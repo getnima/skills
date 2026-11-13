@@ -1,3 +1,5 @@
+import { clockTailMs } from './protocol';
+
 import type { RoundPublic } from './protocol';
 
 export interface RoundTime {
@@ -35,4 +37,18 @@ export function roundTime(round: RoundPublic, now: number): RoundTime {
     frozen: t !== now,
     resumeInMs,
   };
+}
+
+/** Length of the part of a round its clock counts for people: the round without its hold (GameMeta.holdMs). */
+export function shownDurationMs(round: RoundPublic): number {
+  const whole = round.endAt - round.startAt;
+  return Math.max(0, whole - clockTailMs(round.gameId, whole));
+}
+
+/**
+ * The time left a clock for people shows (the TV, the remote): it reaches zero when nobody can
+ * score any more, which in a game with a hold (GameMeta.holdMs) is before `round.endAt`.
+ */
+export function shownLeftMs(round: RoundPublic, time: RoundTime): number {
+  return Math.max(0, time.leftMs - clockTailMs(round.gameId, round.endAt - round.startAt));
 }

@@ -10,6 +10,7 @@ import { sfx } from '../../kit/audio';
 import { soundOffsetMs } from '../../kit/av-sync';
 import { hasTrackFile, playTrack, stopTrack } from '../../kit/music';
 import { SHOW_SONG_VOLUME } from '../music-config';
+import { victorySongCarried } from './song-carry';
 import { WINNER_REVEAL_MS } from '../../../../shared/protocol';
 import { backdropUrl, lastPlaceArt } from './art';
 import { cardGrid } from './card-grid';
@@ -211,7 +212,13 @@ export function ResultsScene(props: ResultsSceneProps): JSX.Element {
     stopTrack('victory', fadeMs);
   };
 
-  useEffect(() => () => stopTrack('victory', 600), []);
+  // leaving the results: the song stops, unless the lobby between games takes it over (song-carry.ts)
+  useEffect(
+    () => () => {
+      if (!victorySongCarried()) stopTrack('victory', 600);
+    },
+    [],
+  );
 
   // a new round's results: start over
   useEffect(() => {

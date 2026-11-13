@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { findCutscene } from '../../../shared/cutscenes';
 import { GAMES, GAME_IDS } from '../../../shared/protocol';
-import { roundTime } from '../../../shared/round-clock';
+import { roundTime, shownDurationMs, shownLeftMs } from '../../../shared/round-clock';
 import { isMuted, preloadClips, setMuted, sfx, unlockAudio } from '../kit/audio';
 import { avSync, onAvSyncChange, pictureClock, pictureLeadMs, soundOffsetMs } from '../kit/av-sync';
 import { enterFullscreen } from '../kit/mobile';
@@ -150,7 +150,8 @@ function PlayingView(props: { readonly state: RoomState; readonly round: RoundPu
   roundRef.current = round;
   const clockRef = useRef((): RoundClockSample => {
     const rt = roundTime(roundRef.current, room.clock.now());
-    return { leftMs: rt.leftMs, frozen: rt.frozen };
+    // the clock the room sees ends with the game, not with the round's hold (שימי טאפ's final frame)
+    return { leftMs: shownLeftMs(roundRef.current, rt), frozen: rt.frozen };
   });
   const covered = state.cutscene !== null;
   return (
@@ -161,7 +162,7 @@ function PlayingView(props: { readonly state: RoomState; readonly round: RoundPu
         players={state.players}
         scores={room.scores}
         clock={clockRef.current}
-        durationMs={round.endAt - round.startAt}
+        durationMs={shownDurationMs(round)}
       />
       <RoundGo key={round.index} round={round} clock={props.showClock} />
       <ResumeOverlay round={round} clock={props.showClock} covered={covered} />

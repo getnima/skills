@@ -36,6 +36,12 @@ export interface GameMeta {
    * (ELIMINATION_END_DELAY_MS); `durationMs` is then only the hard cap.
    */
   readonly mode: 'score' | 'elimination';
+  /**
+   * The last part of the round is a hold: nobody can score any more and every phone shows its own
+   * result. A clock shown to people (the TV's) ends this long before `round.endAt`, so it reaches
+   * zero when the game is really over. In ms of the production `durationMs`; see clockTailMs().
+   */
+  readonly holdMs?: number;
 }
 
 export const GAMES: Readonly<Record<GameId, GameMeta>> = {
@@ -43,15 +49,18 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     id: 'tap',
     title: 'שימי טאפ',
     emoji: '👆',
-    instructions: 'יש לכם 8 שניות להתחיל. מהנגיעה הראשונה: 20 שניות של ספאם על שימי. כל הקשה נקודה!',
+    instructions: '20 שניות של ספאם על שימי, כולם יחד. השעון רץ מהיאללה. כל הקשה נקודה!',
     howTo: [
       ['👆', 'הקישו על שימי, מהר!'],
-      ['⏱️', '20 שניות מהנגיעה הראשונה'],
+      ['⏱️', '20 שניות, כולם יחד'],
       ['➕', 'כל הקשה = נקודה'],
     ],
-    // 8 s start window + 20 s personal sprint + a 2 s hold for the last starter's final frame
-    // (the owner's call, 13.11: 30 s in all; it was 30 + 20 + 3. The split is TAP in games/tap/pick.ts)
-    durationMs: 30_000,
+    // One 20 s sprint for everyone, from the round's start, and 3 s of hold for the final frame
+    // (the owner, 13.11: "the tv says 10s remaining but is over": it was 8 s to start + a personal
+    // 20 s + 2 s, so whoever started at once was done with 10 s left on the TV). The split is TAP
+    // in games/tap/pick.ts.
+    durationMs: 23_000,
+    holdMs: 3_000,
     maxRaw: 300,
     mode: 'score',
   },
@@ -74,11 +83,11 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     id: 'flappy',
     title: 'פלאפי תבורי',
     emoji: '🐤',
-    instructions: 'הקישו כדי לעוף. מי שמתרסק - בחוץ! האחרון שנשאר באוויר מנצח.',
+    instructions: 'הקישו כדי לעוף. מי שמתרסק - בחוץ! האחרון שנשאר באוויר מנצח, ולוקח בונוס של 300 נקודות.',
     howTo: [
       ['👆', 'הקשה = עפים למעלה'],
       ['💥', 'נגיעה = בחוץ'],
-      ['🏆', 'האחרון באוויר מנצח'],
+      ['🏆', 'אחרון באוויר: בונוס 300'],
     ],
     // Hard cap only: the round ends 1.5 s after one player is left (normally 20-50 s).
     durationMs: 90_000,
@@ -115,6 +124,14 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
     mode: 'score',
   },
 };
+
+/** GameMeta.holdMs of a round that lasts `durationMs` (a test round is shorter: the hold shrinks with it). */
+export function clockTailMs(gameId: GameId, durationMs: number): number {
+  const meta = GAMES[gameId];
+  const hold = meta.holdMs ?? 0;
+  if (hold <= 0 || meta.durationMs <= 0) return 0;
+  return Math.max(0, Math.round((durationMs * hold) / meta.durationMs));
+}
 
 // ───────────────────────────── Timing ─────────────────────────────
 

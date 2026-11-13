@@ -5,7 +5,7 @@
  */
 import { COUNTDOWN_MS, GAME_IDS, INTRO_MS } from '../../../shared/protocol';
 import { roundTime } from '../../../shared/round-clock';
-import { MUSIC } from './music-config';
+import { BETWEEN_GAMES, MUSIC } from './music-config';
 
 import type { GameId, Phase, RoundPublic } from '../../../shared/protocol';
 import type { MusicSlot, SongTuning } from './music-config';
@@ -26,13 +26,23 @@ export interface MusicInput {
   readonly preludeMs: number;
   /** The sound check panel is open: the bed stays quiet. */
   readonly soundCheck?: boolean;
+  /** Games already played in this competition (default 0): the lobby after one is "between games". */
+  readonly played?: number;
   /** An audio file exists for the slot. */
-  hasFile(slot: MusicSlot): boolean;
+  hasFile(slot: PlanSlot): boolean;
 }
+
+/** What the plan can ask for: a background slot, or the round winner's song (between games). */
+export type PlanSlot = MusicSlot | 'victory';
 
 export interface MusicPlan {
   /** The track to have (its file name), or null for silence. */
-  readonly slot: MusicSlot | null;
+  readonly slot: PlanSlot | null;
+  /**
+   * True: when the track is already playing (the results started it), it plays on as it is and
+   * only its level changes; it is started (at `positionSec`) only when it is not playing.
+   */
+  readonly carry: boolean;
   /** Identity of one playing instance: a new key restarts the song. Null with no slot. */
   readonly key: string | null;
   /** 'pause' keeps the song where it is (a video is on). */
@@ -47,7 +57,7 @@ export interface MusicPlan {
   readonly nextAt: number | null;
 }
 
-const SILENT: MusicPlan = { slot: null, key: null, run: 'play', volume: 0, ducked: false, positionSec: 0, nextAt: null };
+const SILENT: MusicPlan = { slot: null, key: null, carry: false, run: 'play', volume: 0, ducked: false, positionSec: 0, nextAt: null };
 
 function isGameId(v: string): v is GameId {
   return (GAME_IDS as readonly string[]).includes(v);
@@ -84,15 +94,34 @@ export function songElapsedMs(round: RoundPublic, now: number, preludeMs: number
   return Math.max(0, preludeMs + roundTime(round, now).elapsedMs);
 }
 
+/** The lobby between two games, with the winner's song there to play: it carries on from the results. */
+export function betweenGames(input: Pick<MusicInput, 'phase' | 'played' | 'soundCheck' | 'hasFile'>): boolean {
+  return input.phase === 'lobby' && (input.played ?? 0) > 0 && input.soundCheck !== true && input.hasFile('victory');
+}
+
 export function planMusic(input: MusicInput): MusicPlan {
   const { phase, round } = input;
   if (phase === null || input.soundCheck === true) return SILENT;
   if (phase === 'lobby') {
+    // between games: the round winner's song plays on (the lobby song is for the guests arriving)
+    if (betweenGames(input)) {
+      return {
+        slot: 'victory',
+        key: 'between',
+        carry: true,
+        run: input.cutscene ? 'pause' : 'play',
+        volume: BETWEEN_GAMES.volume,
+        ducked: false,
+        positionSec: BETWEEN_GAMES.startSec,
+        nextAt: null,
+      };
+    }
     if (!input.hasFile('lobby')) return SILENT;
     const tune = tuningOf('lobby');
     return {
       slot: 'lobby',
       key: 'lobby',
+      carry: false,
       run: input.cutscene ? 'pause' : 'play',
       volume: tune.volume,
       ducked: false,
@@ -118,6 +147,7 @@ export function planMusic(input: MusicInput): MusicPlan {
   return {
     slot,
     key: `${round.index}:${round.seed}:${slot}`,
+    carry: false,
     run: frozen ? 'pause' : 'play',
     volume: ducked ? tune.introVolume : tune.volume,
     ducked,

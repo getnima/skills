@@ -12,9 +12,9 @@ the final podium, where the evening's winner gets **the prize, a custom Shimi an
 figurine**.
 
 Five mini games:
-- **שימי טאפ** (tap): 8 s to start, then your own 20 s of tapping on Shimi picking his nose. Score = taps.
+- **שימי טאפ** (tap): 20 s of tapping on Shimi picking his nose, the same 20 s for everyone (the TV's clock). Score = taps.
 - **אייסי שימי** (icy): a tower climber; hold a side to run, he jumps when he lands. Best run counts.
-- **פלאפי תבורי** (flappy): last one in the air wins; when 3 are left a finale makes it harder.
+- **פלאפי תבורי** (flappy): last one in the air wins, and gets 300 points on top; when 3 are left a finale makes it harder.
 - **פלוצל** (plotzel): the owner's word ladder to פלוץ, opening with חמוד, פוקי, נדיר, שימי (two easy words after חמוד); 80% speed, 20% steps, no hints.
 - **נינג׳ה תבורי** (ninja): slice the Israeli food, never the two host bombs.
 
@@ -46,7 +46,7 @@ a deploy needs the deploy again** (step 3).
 | The prize (figurine): in the lobby and the intro, and in the champion's trophy at the podium | `client/public/assets/host/` | `prize.png` (transparent cut-out, best) or `prize.jpg` |
 | Round winner's song | `client/public/audio/` | `victory.mp3` |
 | Champion's song (final podium) | `client/public/audio/` | `final.mp3` |
-| Lobby song, quiet loop | `client/public/audio/` | `lobby.mp3` |
+| Lobby song, quiet loop (until the first game; between games the winner's song plays on) | `client/public/audio/` | `lobby.mp3` |
 | One song per game | `client/public/audio/` | `tap.mp3`, `icy.mp3`, `flappy.mp3`, `plotzel.mp3`, `ninja.mp3` (`round.mp3` plays for a game without its own) |
 | Videos (H.264 + AAC MP4, 5-20 s) | `client/public/cutscenes/` | `opening.mp4`, `tap_freeze.mp4`, `before_ninja.mp4`, `before_podium.mp4`, `joker_1.mp4`, `joker_2.mp4` |
 | Faces and game art | `client/public/assets/<game>/` | see the table under "Adding the real graphics" below |
@@ -219,9 +219,9 @@ the next game, or `final` (podium).
   with a TV and two phones in one browser on the real 30 s intro: the cues at -2999 /
   -1999 / -999 / +1 ms of `startAt`, every screen's digit within 35 ms of the same instant.
 
-- Game lengths: tap 30 s (an 8 s start window, then each guest's own 20 s; the round ends
-  early when everybody is done), icy 45 s, flappy until one is left (90 s at most),
-  plotzel 120 s, ninja 60 s.
+- Game lengths: tap 23 s (one 20 s sprint for everyone from the start, then 3 s in which every
+  phone shows its own result; the TV's clock counts the 20 s and reaches zero when the tapping
+  is over), icy 45 s, flappy until one is left (90 s at most), plotzel 120 s, ninja 60 s.
 - Every phone gets the same `seed`, so the same level.
 - Phones send their live score every 250 ms and a final score at the end; the
   server waits 1.5 s after `endAt` for finals, then scores the round. Reported
@@ -318,7 +318,11 @@ is strict too: total, then round wins, best round, latest round, join order.
 The **round winner** is the one player in first place with a score above 0 (nobody if
 nobody scored). The
 TV builds suspense for 8 s, reveals the winner with a medal and the victory
-song, then shows the standings. Phones hide their own result until the reveal.
+song, then shows the standings. The song is the TV's alone (no phone plays it) and it plays
+on in the lobby between games, until the next game's own song. Phones hide their own result
+until the reveal. In flappy (last one standing) the winner gets 300 points on top of the
+round's points (`LAST_STANDING_BONUS`): the round ends the moment one is left, so the distance
+alone would put the survivor a few points ahead of the runner-up.
 A round gives no prize (the owner's call, 13.11): the figurine goes to the one player in
 first place overall, at the podium, and only the podium (TV and that player's phone) says so.
 
@@ -400,7 +404,7 @@ Cloud Run image through `deploy/.build-env`, the Firebase build).
   `RESUME_COUNTDOWN_MS`, `MAX_PLAYERS` (60), `NAME_MAX_LEN`.
 - `shared/cutscenes.ts` → `CUTSCENES`: which video, when (`when`), the phone
   line (`phoneText`), `repeat`, `enabled`.
-- `shared/scoring.ts` → `MAX_ROUND_POINTS`, `PODIUM_BONUS`.
+- `shared/scoring.ts` → `MAX_ROUND_POINTS`, `PODIUM_BONUS`, `LAST_STANDING_BONUS` (flappy's winner).
 - `.env` (copy `.env.example`): deploy settings and build switches
   (`VITE_*`, e.g. `VITE_PUBLIC_URL` to force the address in the QR).
 

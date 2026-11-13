@@ -644,6 +644,7 @@ async function selfHosted(opts: Options): Promise<number> {
         joinOrder: joinOrder.get(row.playerId) ?? 1e9,
         totalBefore: expectedTotals.get(row.playerId) ?? 0,
       })),
+      { lastStanding: GAMES[gameId].mode === 'elimination' },
     );
     const oneToN = results.rows.map((_, k) => k + 1).join(',');
     if (results.rows.map((row) => row.rank).join(',') !== oneToN) failures.push(`round ${i}: overall ranks are not 1..n in row order`);

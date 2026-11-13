@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeRoundScores, MAX_ROUND_POINTS, orderOverall, orderRound, PODIUM_BONUS, rankOverall } from '../../shared/scoring';
+import { computeRoundScores, LAST_STANDING_BONUS, MAX_ROUND_POINTS, orderOverall, orderRound, PODIUM_BONUS, rankOverall } from '../../shared/scoring';
 
 import type { RoundEntry, StandingEntry } from '../../shared/scoring';
 
@@ -119,6 +119,38 @@ describe('computeRoundScores', () => {
       { points: 999, roundRank: 5 },
       { points: 998, roundRank: 6 },
     ]);
+  });
+
+  it('a last-one-standing round: the winner gets the bonus on top, everyone else scores as in any round', () => {
+    const list = entries([
+      ['a', 300, 10],
+      ['b', 290, 20],
+      ['c', 150, 30],
+      ['d', 0, 0],
+    ]);
+    const plain = computeRoundScores(list);
+    const last = computeRoundScores(list, { lastStanding: true });
+    expect(LAST_STANDING_BONUS).toBe(300);
+    // without it the survivor is 73 points ahead of the one it outlasted by a moment
+    expect(plain.get('a')!.points - plain.get('b')!.points).toBe(73);
+    expect(last.get('a')).toEqual({ points: MAX_ROUND_POINTS + PODIUM_BONUS[0]! + LAST_STANDING_BONUS, roundRank: 1 });
+    for (const id of ['b', 'c', 'd']) expect(last.get(id)).toEqual(plain.get(id));
+  });
+
+  it('a last-one-standing round with one scorer (nobody to outlast) has no bonus, and totals stay distinct with it', () => {
+    const solo = computeRoundScores(entries([['a', 120, 10], ['b', 0, 0]]), { lastStanding: true });
+    expect(solo.get('a')).toEqual({ points: MAX_ROUND_POINTS + PODIUM_BONUS[0]!, roundRank: 1 });
+    // the winner's new total would land exactly on c's (who scored nothing): one point less, as everywhere
+    const s = computeRoundScores(
+      [
+        { id: 'a', raw: 50, reachedAt: 10, joinOrder: 0, totalBefore: 0 },
+        { id: 'b', raw: 40, reachedAt: 20, joinOrder: 1, totalBefore: 0 },
+        { id: 'c', raw: 0, reachedAt: null, joinOrder: 2, totalBefore: MAX_ROUND_POINTS + PODIUM_BONUS[0]! + LAST_STANDING_BONUS },
+      ],
+      { lastStanding: true },
+    );
+    expect(s.get('a')!.points).toBe(MAX_ROUND_POINTS + PODIUM_BONUS[0]! + LAST_STANDING_BONUS - 1);
+    expect(s.get('b')!.points).toBe(800 + PODIUM_BONUS[1]!);
   });
 
   it('same raw in the same millisecond: join order decides', () => {

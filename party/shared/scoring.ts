@@ -12,7 +12,9 @@
  *    0..MAX_ROUND_POINTS, plus a podium bonus for the first three places of the
  *    strict order. Walking down the strict order every scorer gets at least one
  *    point less than the scorer above (and never less than 1), so no two
- *    scorers get the same points in a round.
+ *    scorers get the same points in a round. In a last-one-standing game (flappy) the
+ *    winner outlasts the runner-up by a moment only (the round ends when one is left), so
+ *    the raw scores say almost nothing about it: the winner gets LAST_STANDING_BONUS on top.
  * 3. Totals. When the totals before the round are given, a scorer whose new
  *    total would land exactly on somebody else's total gets one point less (or
  *    as many as it takes), so two players never stand on the same total unless
@@ -26,6 +28,17 @@
 
 export const MAX_ROUND_POINTS = 1000;
 export const PODIUM_BONUS: readonly number[] = [100, 60, 30];
+/**
+ * A last-one-standing round (GameMeta.mode 'elimination'): what its winner gets on top of the
+ * round's points, when it outlasted at least one other scorer (the owner, 13.11: "the last one
+ * stays alive gets a nice portion of points, not just 1 more").
+ */
+export const LAST_STANDING_BONUS = 300;
+
+export interface RoundScoring {
+  /** The round is a last-one-standing game: its winner gets LAST_STANDING_BONUS (rule 2). */
+  readonly lastStanding?: boolean;
+}
 
 export interface RoundEntry {
   readonly id: string;
@@ -65,10 +78,11 @@ export function orderRound<E extends RoundEntry>(entries: readonly E[]): E[] {
 }
 
 /** Points and strict position of every entry of one round (rules 1-3). */
-export function computeRoundScores(entries: readonly RoundEntry[]): Map<string, RoundScore> {
+export function computeRoundScores(entries: readonly RoundEntry[], scoring: RoundScoring = {}): Map<string, RoundScore> {
   const order = orderRound(entries);
   const scorers = order.filter((e) => cleanRaw(e.raw) > 0);
   const best = scorers.length > 0 ? cleanRaw(scorers[0]!.raw) : 0;
+  const winnerBonus = scoring.lastStanding === true && scorers.length >= 2 ? LAST_STANDING_BONUS : 0;
 
   // Totals that are already taken: players who score nothing keep theirs.
   const taken = new Set<number>();
@@ -85,7 +99,7 @@ export function computeRoundScores(entries: readonly RoundEntry[]): Map<string, 
   scorers.forEach((e, i) => {
     // Enough room below for every remaining scorer to get a different, positive number.
     const floor = scorers.length - i;
-    const target = Math.round((MAX_ROUND_POINTS * cleanRaw(e.raw)) / best) + (PODIUM_BONUS[i] ?? 0);
+    const target = Math.round((MAX_ROUND_POINTS * cleanRaw(e.raw)) / best) + (PODIUM_BONUS[i] ?? 0) + (i === 0 ? winnerBonus : 0);
     const ceil = i === 0 ? Number.POSITIVE_INFINITY : pts[i - 1]! - 1;
     let points = Math.min(ceil, Math.max(target, floor));
     if (!isFree(e, points)) {

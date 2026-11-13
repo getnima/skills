@@ -11,9 +11,8 @@
  *          its browser plays.
  *   phone  what a phone shows: the dressing room (the doll and every accessory), every game's art,
  *          the key art, the prize, the fonts. Never the hosts, the finale, the sound or the videos:
- *          a phone shows "watch the TV" while a video plays, and the one sound file a phone can
- *          play, the victory song on the winner's phone, is NOT loaded ahead on purpose (one
- *          guest hears it once a night; every phone would fetch a whole song for it).
+ *          a phone shows "watch the TV" while a video plays, and a phone plays no sound file
+ *          at all (every song is the TV's; a phone's sounds are synthesized).
  *
  * The order is per screen, by what it shows first: the TV opens on the lobby (the show art, the
  * hosts, the key art, the prize), a phone on the dressing room (the doll and the accessories).
@@ -66,7 +65,7 @@ export const PRELOAD_RULES: readonly PreloadRule[] = [
   { match: /^\/assets\/intro\//, sets: BOTH, rank: { tv: 1, phone: 2 }, why: 'the key art of each game, on the TV and on the phones' },
   { match: /^\/assets\/hosts?\//, sets: ['tv'], rank: { tv: 1 }, why: "the show: hosts, stickers, finale" },
   { match: new RegExp(`^/assets/(${GAME_IDS.join('|')})/`), sets: ['phone'], rank: { phone: 3 }, why: 'the games run on the phones' },
-  { match: /^\/audio\//, sets: ['tv'], rank: { tv: 3 }, why: 'only the TV loads sound files ahead (the winner phone fetches its victory song when it plays it)' },
+  { match: /^\/audio\//, sets: ['tv'], rank: { tv: 3 }, why: 'only the TV plays sound files' },
   { match: /^\/cutscenes\//, sets: ['tv'], rank: { tv: 4 }, why: 'only the TV plays the videos' },
 ];
 

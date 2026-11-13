@@ -1150,7 +1150,8 @@ export class Room {
         totalBefore: p.total,
       };
     });
-    const scored = computeRoundScores(entries);
+    // a last-one-standing round: the one who outlasted the others gets the bonus on top
+    const scored = computeRoundScores(entries, { lastStanding: r.elimination });
 
     this.prevOrder = orderOverall(this.standings());
     const prevRanks = new Map<string, number>();

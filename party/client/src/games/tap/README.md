@@ -1,18 +1,24 @@
 # שימי טאפ (tap)
 
-The opening game: a 20-second sprint of tapping Shimi while he picks his nose. The faster you tap, the further
+The opening game: a 20-second sprint of tapping Shimi while he picks his nose, the same 20 seconds for everyone. The faster you tap, the further
 his hand rises and the deeper the finger goes. Art slots and how to replace a picture:
 `client/public/assets/tap/README.md`.
 
 ## The rules (all in `pick.ts`, a pure engine, unit-tested in `tests/unit/tap-pick.test.ts`)
 
-- The round is `ctx.durationMs` (30 000 in production, `GAMES.tap` in `shared/protocol.ts`; the owner's
-  call, 13.11, it was 53 000 with a 30 s start window):
-  a start window of 8/30 (8 s), a personal sprint of 20/30 (20 s), and 2/30 (2 s) of hold, so a player who
-  starts at the very end of the window still sees the final frame. Test rounds scale (`tapTiming`).
-- The player's first touch starts the sprint and is tap #1. No touch: the sprint starts by itself when the
-  window runs out. A phone that joins after the window starts at once and is cut at the round end.
-- A touch counts when `t0 <= t < t0 + sprint`. At the end: `ctx.setScore(final)`, `ctx.finish()` once.
+- The round is `ctx.durationMs` (23 000 in production, `GAMES.tap` in `shared/protocol.ts`): **one sprint
+  for everyone**, the first 20/23 (20 s) of the round, then 3/23 (3 s) of hold in which every phone shows its
+  final frame (`GAMES.tap.holdMs`: the TV's clock leaves it out and reaches zero when the sprint ends). The
+  owner, 13.11: "the tv says 10s remaining but is over": until then every player had a personal 20 s from
+  the first touch inside an 8 s window (30 s in all; before that 30 + 20 + 3), so whoever started at once
+  was done while the TV still showed 10 seconds. Test rounds scale (`tapTiming`). The engine still knows the
+  personal format (a shape without `SHARED`); its older tests run it.
+- The player's first touch is tap #1 (the camera flash). The clock runs from the round's start whether the
+  player has touched or not: the chip and the bar show it while waiting, "הקישו! השעון רץ!". No touch by
+  8/23 (8 s): the doll starts by itself (the 5..1 and "התחלתי בלעדיך."). A phone that joins late plays what
+  is left of the sprint.
+- A touch counts when `t0 <= t < 20 s`. At the end: `ctx.setScore(final)`; the game does not `ctx.finish()`
+  (the server would end the round under the final frame once every final is in): the final goes at time-up.
 - **Score = counted taps.** Every finger of a touch anywhere below the HUD counts; a held finger counts once;
   touches during a freeze count for nothing.
 - Anti-mash cap: 12 counted taps per second (token bucket, depth 3) and 25 ms between taps, so at most 243 in a
@@ -47,7 +53,7 @@ frame. `tests/e2e/qa-tap-fluent.cjs` checks all of this per rendered frame.
 
 | When | What |
 | --- | --- |
-| Waiting, every 3.3 s | One of four bits, all four before any repeats (`schedule.ts`): the sneak (the hand sneaks up, caught by your stare, "לא ראית כלום." / "זה לא מה שנראה. זה פילאטיס.", the hand drops, he whistles), the yawn ("נו? יש לי הופעה בבת ים."), the knock (fist, glass cracks, face pressed to the glass, "טוק טוק. יש פה מישהו?"), dozing off ("רק עצמתי עיניים."). Between bits a white hand taps the glass: "הקישו כדי להתחיל!" |
+| Waiting, every 3.3 s | One of four bits, all four before any repeats (`schedule.ts`): the sneak (the hand sneaks up, caught by your stare, "לא ראית כלום." / "זה לא מה שנראה. זה פילאטיס.", the hand drops, he whistles), the yawn ("נו? יש לי הופעה בבת ים."), the knock (fist, glass cracks, face pressed to the glass, "טוק טוק. יש פה מישהו?"), dozing off ("רק עצמתי עיניים."). Between bits a white hand taps the glass: "הקישו! השעון רץ!" |
 | Last 5 s of the wait | Red star digits 5..1, faces get impatient, at 2 and 1 his hand starts up by itself, at 2 "טוב. אני מתחיל לבד."; at 0 the auto-start: the finger goes in, "התחלתי בלעדיך. נודר." |
 | First tap | Paparazzi flash, caught with the finger at the nostril, "קליק!", then "צלמו מהצד הטוב." and he carries on |
 | 8 / 18 / 28 / 40 / 54 / 68 / 84 / 120 / 150 taps | A line each, with stars from the nostril and a pop of the token: "אש!", "כורה ביטקוין מחולון.", "מחורחר!", "ארכיאולוג. של רשות העתיקות.", "טפו חמסה!", "חופר כמו בקו האדום.", "וואו!", "מנהרות הכרמל. בלי אגרה.", "אחשילי." A line stays at least 0.9 s. |
@@ -55,7 +61,7 @@ frame. `tests/e2e/qa-tap-fluent.cjs` checks all of this per rendered frame.
 | He slows down | The hand drops, he whistles innocently: "לא אני." (1st, 3rd, 5th time); the next tap and he is back at it |
 | Slow player, 1.2 s without a line | Up to three lines, once each: "לאט. / כמו ספא בים המלח.", "כפרה! / אייקונים לא ממהרים.", "קצב של שישי בצהריים. / מי ממהר." |
 | Last 5 s of the sprint | Red star digits 5..1 ("תן הכול!"), the finger stays in, the head rocks harder, a red frame pulses. A milestone here is stars and a pop. |
-| Final frame | A picture per rank under a white flash (under 70 the proud face, 70-129 the finger in, 130-189 eyes shut in bliss, 190+ both hands), the count on a red star, the rank and its line on top: "חוטט מתחיל. / גם ביונסה התחילה ככה.", "חוטט מוסמך. / תעודה ממוסגרת בסלון.", "דוקטור לחטטנות. / מרצה אורח בטכניון.", "האף של המדינה. / מחר בכל המהדורות.", and "תראו לשכן. מחכים לכולם." One small alive gag every 2 s (a nod, a little dig, a bounce). The stage does not cover it (`ownsFinalScreen`). |
+| Final frame | A picture per rank under a white flash (under 70 the proud face, 70-129 the finger in, 130-189 eyes shut in bliss, 190+ both hands), the count on a red star, the rank and its line on top: "חוטט מתחיל. / גם ביונסה התחילה ככה.", "חוטט מוסמך. / תעודה ממוסגרת בסלון.", "דוקטור לחטטנות. / מרצה אורח בטכניון.", "האף של המדינה. / מחר בכל המהדורות.", and "תראו לשכן. התוצאות בטלוויזיה." One small alive gag every 2 s (a nod, a little dig, a bounce). The stage does not cover it (`ownsFinalScreen`). |
 
 ## Where to change things
 

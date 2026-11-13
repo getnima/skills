@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { MUSIC } from '../../client/src/host/music-config';
+import { BETWEEN_GAMES, MUSIC } from '../../client/src/host/music-config';
 import { COUNTDOWN_MS, INTRO_MS } from '../../shared/protocol';
 import { DEFAULT_PRELUDE_MS, planMusic, preludeOf, resolveGameSlot, songElapsedMs } from '../../client/src/host/music-plan';
 
 import type { MusicSlot } from '../../client/src/host/music-config';
-import type { MusicInput } from '../../client/src/host/music-plan';
+import type { MusicInput, PlanSlot } from '../../client/src/host/music-plan';
 import type { RoundPublic } from '../../shared/protocol';
 
 const PRELUDE = 10_000;
@@ -14,7 +14,7 @@ function round(over: Partial<RoundPublic> = {}): RoundPublic {
   return { index: 2, number: 3, gameId: 'tap', seed: 7, startAt: 10_000, countdownMs: 3_000, endAt: 70_000, frozenAt: null, resumeAt: null, finale: null, ...over };
 }
 
-const files = (...have: MusicSlot[]) => (slot: MusicSlot): boolean => have.includes(slot);
+const files = (...have: PlanSlot[]) => (slot: PlanSlot): boolean => have.includes(slot);
 
 function input(over: Partial<MusicInput> = {}): MusicInput {
   return { phase: 'intro', round: round(), cutscene: false, now: 0, preludeMs: PRELUDE, hasFile: files('lobby', 'tap', 'round'), ...over };
@@ -34,6 +34,27 @@ describe('planMusic', () => {
     expect(p).toMatchObject({ slot: 'lobby', key: 'lobby', run: 'play', volume: MUSIC.lobby.volume, nextAt: null });
     expect(planMusic(input({ phase: 'lobby', round: null, cutscene: true })).run).toBe('pause');
     expect(planMusic(input({ phase: 'lobby', round: null, hasFile: files('tap') })).slot).toBeNull();
+  });
+
+  it("between games the winner's song plays on (no restart), and the lobby song is for the first lobby only", () => {
+    const has = files('lobby', 'tap', 'victory');
+    // the first lobby of a competition: the lobby song, whatever else is there
+    expect(planMusic(input({ phase: 'lobby', round: null, played: 0, hasFile: has }))).toMatchObject({ slot: 'lobby', key: 'lobby', carry: false });
+    // a game was played: the round winner's song, carried over from the results at its own level
+    const p = planMusic(input({ phase: 'lobby', round: null, played: 1, hasFile: has }));
+    expect(p).toMatchObject({ slot: 'victory', key: 'between', carry: true, run: 'play', volume: BETWEEN_GAMES.volume, ducked: false, nextAt: null });
+    // when it has to be started (a reloaded TV): after the trumpets, at the song itself
+    expect(p.positionSec).toBe(BETWEEN_GAMES.startSec);
+    expect(BETWEEN_GAMES.startSec).toBeGreaterThan(3);
+    // the same key through every lobby of the evening: never restarted by a new snapshot
+    expect(planMusic(input({ phase: 'lobby', round: null, played: 3, hasFile: has })).key).toBe(p.key);
+    expect(planMusic(input({ phase: 'lobby', round: null, played: 2, cutscene: true, hasFile: has })).run).toBe('pause');
+    // no winner's song in the folder: the lobby song as before
+    expect(planMusic(input({ phase: 'lobby', round: null, played: 2 })).slot).toBe('lobby');
+    // the sound check owns the speakers
+    expect(planMusic(input({ phase: 'lobby', round: null, played: 2, soundCheck: true, hasFile: has })).slot).toBeNull();
+    // the next game's intro takes over with its own song
+    expect(planMusic(input({ played: 1, hasFile: has })).slot).toBe('tap');
   });
 
   it('is silent while the sound check is open, in results and on the podium', () => {
