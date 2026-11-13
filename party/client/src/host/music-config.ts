@@ -27,8 +27,8 @@ export type MusicSlot = 'lobby' | GameId | 'round';
 /*
  * The levels below are set for the party's own files (13.11), which are mastered very differently.
  * Measured loudness of each file (ffmpeg ebur128, integrated): lobby -11.8 LUFS (Pump Up The Jam),
- * tap -5.6 (Barbra Streisand, radio edit), icy -19.5 (the Icy Tower tune), flappy -16.6 (Red Right
- * Hand), plotzel -16.1 (Lobby Music, House Edition), ninja -10.0 (Yamasuki, Yama Yama), victory and
+ * tap -5.6 (Barbra Streisand, radio edit), icy -19.5 (the Icy Tower tune), flappy -10.7 (Red Right
+ * Hand, the owner's second download), plotzel -16.1 (Lobby Music, House Edition), ninja -10.0 (Yamasuki, Yama Yama), victory and
  * final -8.6 (the London fanfare trumpets, then Stayin' Alive). The aim: about -17 LUFS while a game is played, half of that level under the host's
  * explanation, about -21 in the lobby. A level is a plain volume (1 = the file as it is): the
  * files themselves are never re-encoded or processed. Replace a file: measure it and redo its line
@@ -40,7 +40,7 @@ export const MUSIC: Readonly<Record<MusicSlot, SongTuning>> = {
   /** One song per game: from its intro to the end of play. */
   tap: { startSec: 0, volume: 0.27, introVolume: 0.14 },
   icy: { startSec: 0, volume: 1, introVolume: 0.5 },
-  flappy: { startSec: 0, volume: 0.95, introVolume: 0.48 },
+  flappy: { startSec: 0, volume: 0.48, introVolume: 0.24 },
   plotzel: { startSec: 0, volume: 0.9, introVolume: 0.45 },
   ninja: { startSec: 0, volume: 0.45, introVolume: 0.22 },
   /** round.mp3: the quiet fallback for a game that has no song of its own. */
