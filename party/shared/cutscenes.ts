@@ -40,6 +40,14 @@ export interface CutsceneDef {
   readonly phoneText?: string;
 }
 
+/**
+ * The owner's call (13.11): no videos for now. Nothing plays by itself: not the clip in the middle
+ * of שימי טאפ, not the ones before the ninja and before the podium (there are no real videos yet,
+ * so the room saw a test clip and placeholder cards). The entries stay, and each one still plays
+ * from the TV's video menu (C) or the remote. To bring the automatic ones back: set this to true.
+ */
+const AUTO = false;
+
 export const CUTSCENES: readonly CutsceneDef[] = [
   { id: 'opening', title: 'פתיחה', file: 'opening.mp4', when: { at: 'manual' } },
   {
@@ -50,9 +58,10 @@ export const CUTSCENES: readonly CutsceneDef[] = [
     // cannot have ended early yet, and it is well before the 30 s auto-start
     when: { at: 'during', gameId: 'tap', atMs: 8_000 },
     phoneText: '✋ עוצרים הכל! תסתכלו על הטלוויזיה',
+    enabled: AUTO,
   },
-  { id: 'before_ninja', title: 'לפני הנינג׳ה', file: 'before_ninja.mp4', when: { at: 'before', gameId: 'ninja' } },
-  { id: 'before_podium', title: 'לפני הפודיום', file: 'before_podium.mp4', when: { at: 'final' } },
+  { id: 'before_ninja', title: 'לפני הנינג׳ה', file: 'before_ninja.mp4', when: { at: 'before', gameId: 'ninja' }, enabled: AUTO },
+  { id: 'before_podium', title: 'לפני הפודיום', file: 'before_podium.mp4', when: { at: 'final' }, enabled: AUTO },
   { id: 'joker_1', title: 'ג׳וקר 1', file: 'joker_1.mp4', when: { at: 'manual' } },
   { id: 'joker_2', title: 'ג׳וקר 2', file: 'joker_2.mp4', when: { at: 'manual' } },
 ];

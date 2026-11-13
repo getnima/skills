@@ -892,7 +892,8 @@ describe('cutscenes and the clock', () => {
     // a round a fifth as long as the game: the manifest's tap_freeze time lands at a fifth of it, whatever the game's length
     const short = TAP_MS / 5;
     const timing: RoomTiming = { introMs: 1_500, countdownMs: 1_500, durationMs: () => short };
-    const h = makeRoom({ cutscenes: CUTSCENES, timing });
+    // (the manifest's automatic entries are switched off for now, the owner's call: here they are on, to keep their timing honest)
+    const h = makeRoom({ cutscenes: CUTSCENES.map((c) => ({ ...c, enabled: true })), timing });
     h.join('a');
     h.room.start('tap');
     h.toPlaying();
@@ -919,6 +920,34 @@ describe('cutscenes and the clock', () => {
     h2.toPlaying();
     vi.advanceTimersByTime(TAP_MS + FINAL_GRACE_MS);
     expect(h2.state()).toMatchObject({ phase: 'results', cutscene: null });
+  });
+
+  it('the manifest as shipped plays no video by itself: a whole competition, podium included (the owner: no videos for now)', () => {
+    for (const c of CUTSCENES) if (c.when.at !== 'manual') expect(c.enabled, c.id).toBe(false);
+    const h = makeRoom({ cutscenes: CUTSCENES });
+    const a = h.join('a');
+    const seen: string[] = [];
+    const watch = (ms: number): void => {
+      for (let t = 0; t < ms; t += 500) {
+        vi.advanceTimersByTime(500);
+        const c = h.state().cutscene;
+        if (c !== null) seen.push(c.id);
+      }
+    };
+    for (const g of GAME_IDS) {
+      h.room.start(g);
+      watch(200_000);
+      h.room.score(a, 0, 1);
+      expect(h.state().phase, g).toBe('results');
+      h.room.toLobby();
+    }
+    h.room.toFinal();
+    watch(120_000);
+    expect(h.state().phase).toBe('final');
+    expect(seen).toEqual([]);
+    // from the menu it still plays
+    expect(h.room.startCutscene('joker_1').ok).toBe(true);
+    expect(h.state().cutscene?.id).toBe('joker_1');
   });
 
   it('no timer of an old round fires later: endRound, reset, a new round, destroy', () => {

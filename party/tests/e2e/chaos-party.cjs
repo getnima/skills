@@ -1,3 +1,5 @@
+// NOTE (13.11): the automatic videos are switched off for now (shared/cutscenes.ts, AUTO = false). The parts of
+// this script that wait for tap_freeze, before_ninja or before_podium to start by themselves need AUTO = true.
 // chaos-party: ONE realistic party end to end, with real intro / countdown timing, and chaos.
 //
 //   PORT=8941 PARTY_TEST_DURATION_MS=28000 npx tsx server/index.ts

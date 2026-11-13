@@ -632,7 +632,8 @@ function plotzelDriver(ph, keyGapMs) {
     }
 
     // ── the competition ──
-    await playRound('tap', { startByCard: true, phoneReload: D, freeze: { id: 'tap_freeze', manual: false, phone: A } });
+    // (no video plays by itself for now, shared/cutscenes.ts AUTO: the tap clip is played from the TV's menu, mid-round)
+    await playRound('tap', { startByCard: true, phoneReload: D, freeze: { id: 'tap_freeze', manual: true, phone: A } });
     await host.click('[data-testid=btn-primary]', { force: true });
     await waitPhase('lobby');
     await Promise.all(phones.map((p) => waitScreen(p, ['lobby'], 5000, 'lobby')));

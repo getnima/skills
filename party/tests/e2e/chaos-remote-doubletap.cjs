@@ -1,3 +1,5 @@
+// NOTE (13.11): the automatic videos are switched off for now (shared/cutscenes.ts, AUTO = false). The parts of
+// this script that wait for tap_freeze, before_ninja or before_podium to start by themselves need AUTO = true.
 // chaos-remote-doubletap: the owner double-taps the remote's big button. Does the second tap of
 // ONE double tap leak into the NEXT screen? Sweeps the gap between the two taps.
 //   A. results (ceremony over) -> double-tap "continue": the next game must NOT start.

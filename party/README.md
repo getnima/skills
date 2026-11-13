@@ -52,7 +52,9 @@ a deploy needs the deploy again** (step 3).
 Songs may also be `.m4a`, `.ogg` or `.wav` (same base name). When the real
 `opening.mp4` / `tap_freeze.mp4` arrive, **delete `opening.webm` and
 `tap_freeze.webm`** (test clips). A video with a new name also needs one line in
-`shared/cutscenes.ts`.
+`shared/cutscenes.ts`. **No video plays by itself for now** (the owner's call, 13.11: `AUTO = false`
+in that file): the clip in the middle of שימי טאפ and the ones before the ninja and the podium stay
+off until that is set back to `true`. Every video still plays from the TV's video menu (`C`) or the remote.
 
 **2. Test locally (3 minutes).**
 ```bash
