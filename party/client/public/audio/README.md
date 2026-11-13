@@ -9,7 +9,7 @@ recordings, and this repository is public. They stay in this folder on the owner
 go to the party's server with `deploy/gce-deploy.sh` (it uploads the folder as it is). A fresh
 clone has only `airhorn.mp3` and `gong.mp3`: copy the songs in again before deploying from it.
 For the 14.11 party, all from the owner's `~/Documents/music/`: `lobby.webm` (Technotronic, Pump Up
-The Jam), `tap.webm` (Duck Sauce, Barbra Streisand, radio edit), `icy.mp3` (the Icy Tower tune),
+The Jam), `tap.webm` (Duck Sauce, Barbra Streisand, radio edit), `icy.webm` (the Icy Tower tune),
 `flappy.webm` (Nick Cave & The Bad Seeds, Red Right Hand), `plotzel.webm` (Lobby Music, House
 Edition), `ninja.webm` (Yamasuki, Yama Yama), and `victory.mp3` = `final.mp3`: the London fanfare
 trumpets (its 3 s of leading silence cut), then Bee Gees, Stayin' Alive. The `.webm` are the sound

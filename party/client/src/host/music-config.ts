@@ -27,7 +27,7 @@ export type MusicSlot = 'lobby' | GameId | 'round';
 /*
  * The levels below are set for the party's own files (13.11), which are mastered very differently.
  * Measured loudness of each file (ffmpeg ebur128, integrated): lobby -11.8 LUFS (Pump Up The Jam),
- * tap -5.6 (Barbra Streisand, radio edit), icy -19.5 (the Icy Tower tune), flappy -10.7 (Red Right
+ * tap -5.6 (Barbra Streisand, radio edit), icy -19.1 (the Icy Tower tune), flappy -10.7 (Red Right
  * Hand, the owner's second download), plotzel -16.1 (Lobby Music, House Edition), ninja -10.0 (Yamasuki, Yama Yama), victory and
  * final -8.6 (the London fanfare trumpets, then Stayin' Alive). The aim: about -17 LUFS while a game is played, half of that level under the host's
  * explanation, about -21 in the lobby. A level is a plain volume (1 = the file as it is): the
