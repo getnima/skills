@@ -64,7 +64,8 @@ export const GAMES: Readonly<Record<GameId, GameMeta>> = {
       ['⬆️', 'קופצים לבד. מהר = גבוה'],
       ['🏆', 'הכי גבוה מנצח'],
     ],
-    durationMs: 75_000,
+    // the owner's call (13.11): 45 s, not 75 (a long climb with nothing new to see)
+    durationMs: 45_000,
     maxRaw: 100_000,
     mode: 'score',
   },

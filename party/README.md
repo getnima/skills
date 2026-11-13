@@ -13,7 +13,7 @@ Five mini games:
 - **שימי טאפ** (tap): 30 s to start, then your own 20 s of tapping on Shimi picking his nose. Score = taps.
 - **אייסי שימי** (icy): a tower climber; hold a side to run, he jumps when he lands. Best run counts.
 - **פלאפי תבורי** (flappy): last one in the air wins; when 3 are left a finale makes it harder.
-- **פלוצל** (plotzel): the owner's word ladder to פלוץ, opening with חמוד, פוקי, נדיר, שימי; 80% speed, 20% steps, no hints.
+- **פלוצל** (plotzel): the owner's word ladder to פלוץ, opening with חמוד, פוקי, נדיר, שימי (an easy word on each side of פוקי); 80% speed, 20% steps, no hints.
 - **נינג׳ה תבורי** (ninja): slice the Israeli food, never the two host bombs.
 
 Short **cutscene videos** can interrupt at any moment: phones freeze with "watch the
@@ -77,8 +77,13 @@ address>` must say *All good*. After changing files later: `deploy/gce-deploy.sh
 anywhere (allows sound) → `F` (fullscreen). On **your own phone** open
 `https://<address>/remote` and enter the remote password (the default is set in
 `server/config.ts`, server side only; to use another one set `PARTY_REMOTE_PASSWORD`
-on the server). From then on the phone is the remote: the TV hides its own buttons
-and the keyboard keys below keep working as a backup.
+on the server). From then on the phone is the remote, and the keyboard keys below keep
+working as a backup. The TV shows no bar of buttons at all (with or without a remote): move
+the mouse and it comes up for a few seconds; `/host?bar=1` keeps it on screen.
+
+**What the TV shows in the lobby.** Before the first game: the QR, the room code, the guests
+and the five games. Between games: only the standings and the game that is next (and one
+small line for a guest who arrived late: `<address>/j`, which opens the room that is on the TV).
 
 **Optional, the Shimi QR code.** A designed QR with Shimi's face (made with QRocodile):
 after step 3, run the two commands in `tools/qr/README.md` with your address, then
@@ -204,7 +209,7 @@ the next game, or `final` (podium).
   -1999 / -999 / +1 ms of `startAt`, every screen's digit within 35 ms of the same instant.
 
 - Game lengths: tap 53 s (a 30 s start window, then each guest's own 20 s; the round ends
-  early when everybody is done), icy 75 s, flappy until one is left (90 s at most),
+  early when everybody is done), icy 45 s, flappy until one is left (90 s at most),
   plotzel 120 s, ninja 60 s.
 - Every phone gets the same `seed`, so the same level.
 - Phones send their live score every 250 ms and a final score at the end; the

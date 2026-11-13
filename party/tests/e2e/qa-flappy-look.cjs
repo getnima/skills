@@ -85,13 +85,17 @@ async function harness(browser) {
   check(none.head.look === null && none.head.dressed === false, 'no look: the round token', none.head);
   check(none.errors.length === 0, 'no look: no errors', none.errors);
   const dressed = await harnessCase(browser, 'look', `&look=${LOOK}`);
-  check(dressed.head.look === LOOK && dressed.head.dressed === true && dressed.head.w > 20 && dressed.head.h > dressed.head.w, '?look=: the dressed head (a three-hat tower is taller than wide)', dressed.head);
+  // the bird wears no hats (13.11): the look has a three-hat tower, the sprite is just the head (a tower made it far taller than wide)
+  check(dressed.head.look === LOOK && dressed.head.dressed === true && dressed.head.w > 20 && dressed.head.h < dressed.head.w * 1.5, '?look=: the dressed head, without the hat tower', dressed.head);
   check(dressed.mode === 'fly' && dressed.errors.length === 0, '?look=: flying, no errors', { mode: dressed.mode, errors: dressed.errors });
   const noDoll = await harnessCase(browser, 'no-doll', `&look=${LOOK}`, '**/assets/shimi/doll.webp');
   check(noDoll.head.look === LOOK && noDoll.head.dressed === false, 'the doll picture fails: the round token', noDoll.head);
   check(noDoll.mode === 'fly' && noDoll.errors.length === 0, 'the doll picture fails: flying, no errors', { mode: noDoll.mode, errors: noDoll.errors });
+  const noEars = await harnessCase(browser, 'no-ears', `&look=${LOOK}`, '**/assets/shimi/props/13_*');
+  check(noEars.head.dressed === false && noEars.mode === 'fly' && noEars.errors.length === 0, 'an accessory picture fails: the round token, no errors', { head: noEars.head, errors: noEars.errors });
+  // a hat's picture is not needed at all: the bird does not wear it
   const noHat = await harnessCase(browser, 'no-hat', `&look=${LOOK}`, '**/assets/shimi/props/10_*');
-  check(noHat.head.dressed === false && noHat.mode === 'fly' && noHat.errors.length === 0, 'an accessory picture fails: the round token, no errors', { head: noHat.head, errors: noHat.errors });
+  check(noHat.head.dressed === true && noHat.mode === 'fly', 'a hat picture fails: still the dressed head (hats are not worn in flight)', { head: noHat.head, errors: noHat.errors });
 }
 
 // ───────────────────────── B. a real room ─────────────────────────

@@ -1105,7 +1105,8 @@ describe('abuse and limits', () => {
     A.score(a.playerId, 0, 10);
     B.score(b.playerId, 0, 77);
     B.score(a.playerId, 0, 5_000); // A's player id means nothing in B
-    vi.advanceTimersByTime(GAMES.icy.durationMs + FINAL_GRACE_MS);
+    // the longer of the two rounds (tap in A, icy in B)
+    vi.advanceTimersByTime(Math.max(GAMES.tap.durationMs, GAMES.icy.durationMs) + FINAL_GRACE_MS);
     expect(A.snapshot().phase).toBe('results');
     expect(A.snapshot().results?.rows.map((r) => r.raw)).toEqual([10]);
     expect(B.snapshot().results?.rows.map((r) => [r.playerId, r.raw])).toEqual([[b.playerId, 77]]);

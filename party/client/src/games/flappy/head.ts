@@ -2,14 +2,16 @@
  * The guest's own dressed Shimi head as the bird (and the small heads of the "out" view).
  *
  * Made ONCE at load into a cached canvas at the size it is drawn at: the frame loop only blits it.
- * The bird keeps the whole hat tower: the head is composed with the 'bust' crop (which always holds
- * the whole tower), cut just under the chin (or under the neck item, like the 'icon' crop) and
- * trimmed to its pixels. Everything here is looks only: nothing feeds the flight.
+ * The bird wears NO hats (the owner's call, 13.11): a tower of hats made the bird up to three heads
+ * tall while only the head itself can hit an obstacle, so nobody could tell what was safe. Glasses,
+ * ears, face and neck items stay: the guest still knows their own doll. The head is composed with the
+ * 'bust' crop, cut just under the chin (or under the neck item, like the 'icon' crop) and trimmed
+ * to its pixels. Everything here is looks only: nothing feeds the flight.
  *
  * Never throws and never rejects: no look, a look whose pictures did not all load, or any failure
  * gives null, and the game draws its own round token as before.
  */
-import { decodeLook } from '../../../../shared/avatar';
+import { type AvatarLook, decodeLook, encodeLook } from '../../../../shared/avatar';
 import { DOLL, normalizeLook } from '../../avatar/catalog';
 import { avatarBitmap, avatarCanvas, peekAvatarBitmap } from '../../avatar/compose';
 import { frameLook } from '../../avatar/layout';
@@ -43,8 +45,13 @@ const CUT_BARE = 50.6;
 const FADE_BARE = 48.2;
 const CUT_NECK = 57;
 const FADE_NECK = 52;
-/** Biggest canvas we compose for one head (device px): a three-hat tower on a large phone stays well under it. */
+/** Biggest canvas we compose for one head (device px): a head on a large phone stays well under it. */
 const MAX_PX = 1400;
+
+/** The guest's look as the bird wears it: everything but the hats. */
+function birdLook(look: string): AvatarLook {
+  return { ...normalizeLook(decodeLook(look)), head: [] };
+}
 
 function plainCanvas(w: number, h: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -74,7 +81,7 @@ async function isComplete(look: string): Promise<boolean> {
 export function warmHead(look: string | null | undefined): Promise<void> {
   if (typeof look !== 'string' || look.trim() === '') return Promise.resolve();
   try {
-    return avatarBitmap(look, 1).then(
+    return avatarBitmap(encodeLook(birdLook(look)), 1).then(
       () => undefined,
       () => undefined,
     );
@@ -115,13 +122,13 @@ function opaqueBox(c: HTMLCanvasElement, rows: number): { x: number; y: number; 
 export async function makeHeadSprite(look: string | null | undefined, headPx: number): Promise<HeadSprite | null> {
   if (typeof look !== 'string' || look.trim() === '') return null;
   try {
-    const l = normalizeLook(decodeLook(look));
+    const l = birdLook(look);
     const frame = frameLook(l, 'bust');
-    // device px per doll px, then the square that holds head, shoulders and the whole tower
+    // device px per doll px, then the square that holds head and shoulders
     const want = Math.max(8, headPx) / HEAD_H;
     const side = Math.min(MAX_PX, Math.max(48, Math.round(frame.w * want)));
     const bust = await avatarCanvas(l, side, { crop: 'bust', plate: false });
-    if (!(await isComplete(look))) return null;
+    if (!(await isComplete(encodeLook(l)))) return null;
     const k = bust.width / frame.w;
     if (!Number.isFinite(k) || k <= 0) return null;
     const cutY = ((l.neck !== null ? CUT_NECK : CUT_BARE) / 100) * DOLL.height;
@@ -202,8 +209,7 @@ export function createHeadShelf(cssSize: number, onReady: () => void): HeadShelf
       void (async (): Promise<void> => {
         let canvas: HTMLCanvasElement | null = null;
         try {
-          // the same cut-out as the bird (the whole hat tower, no flat cut at the top), fitted into
-          // the square and standing on its bottom edge
+          // the same cut-out as the bird (no hats), fitted into the square and standing on its bottom edge
           const sprite = await makeHeadSprite(next.look, px);
           if (sprite !== null) {
             const c = plainCanvas(px, px);

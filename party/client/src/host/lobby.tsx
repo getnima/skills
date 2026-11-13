@@ -1,4 +1,4 @@
-/** The lobby: the join QR, the players popping in, the five games, and the standings between rounds. */
+/** The lobby: before the first game the join QR, the players popping in and the five games; between games only the standings and the next game. */
 import { create as createQr } from 'qrcode';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
@@ -338,6 +338,49 @@ function GameCards(props: { readonly played: readonly GameId[]; onStart(g: GameI
   );
 }
 
+/**
+ * Between games: the one game that is next, big (the owner's call, 13.11: between games the TV
+ * shows the table and what is next, nothing else). After the last game: the podium is next.
+ * `late` is one small line for a guest who walked in after the first game: where to join.
+ */
+function NextUp(props: { readonly played: readonly GameId[]; readonly late: string; onStart(g: GameId): void }): JSX.Element {
+  const next = nextGame(props.played);
+  const g = next !== null ? GAMES[next] : null;
+  return (
+    <section class="hs-nextup" data-testid="games">
+      <div class="hs-nextup-title">{next !== null ? 'המשחק הבא' : 'שיחקנו הכול!'}</div>
+      {next !== null && g !== null ? (
+        <button
+          type="button"
+          class="hs-nextup-card"
+          data-testid={`game-${next}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onStart(next);
+          }}
+        >
+          <GameArt id={next} emoji={g.emoji} class="hs-nextup-art" />
+          <span class="hs-nextup-name">{g.title}</span>
+          <span class="hs-nextup-dur">⏱ {secondsLabel(g.durationMs)}</span>
+        </button>
+      ) : (
+        <div class="hs-nextup-card is-podium" data-testid="next-podium">
+          <span class="hs-nextup-art is-emoji" aria-hidden="true">
+            🏆
+          </span>
+          <span class="hs-nextup-name">הפודיום</span>
+        </div>
+      )}
+      <div class="hs-nextup-step">
+        {next !== null ? `משחק ${Math.min(props.played.length + 1, GAME_IDS.length)} מתוך ${GAME_IDS.length}` : 'ועכשיו: מי לקח את הערב'}
+      </div>
+      <div class="hs-nextup-late" data-testid="join-late">
+        <span>עוד לא בפנים?</span> <b dir="ltr">{props.late}</b>
+      </div>
+    </section>
+  );
+}
+
 // ───────────────────────────── Lobby ─────────────────────────────
 
 export interface LobbyProps {
@@ -354,6 +397,20 @@ export function Lobby(props: LobbyProps): JSX.Element {
   const info = useJoinInfo(state.code);
   const designed = useDesignedQr(info);
   const hero = introArtUrl('show');
+  if (between) {
+    // No QR, no room code tiles, no guest list here: by now everybody is in. One small line stays
+    // for a late guest: the short link (it opens the room on this TV without a code), or on a
+    // local address the link with the room's code.
+    const late = info.pending ? '' : info.local ? prettyUrl(info.url) : prettyUrl(`${info.base}/j`);
+    return (
+      <div class="hs-lobby is-recap" data-testid="lobby">
+        <div class="hs-standings-slot" data-testid="standings">
+          <StandingsPanel players={state.players} results={state.results} />
+        </div>
+        <NextUp played={state.played} late={late} onStart={props.onStart} />
+      </div>
+    );
+  }
   return (
     <div class={`hs-lobby ${between ? 'is-between' : 'is-first'} ${n > CROWD_FROM ? 'is-crowded' : ''} ${designed !== null ? 'has-designed-qr' : ''}`} data-testid="lobby">
       <JoinPanel code={state.code} compact={between} info={info} designed={designed} />

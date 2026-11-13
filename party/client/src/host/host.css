@@ -561,6 +561,109 @@ body {
     'join standings players'
     'games games games';
 }
+/* between games (the owner's call, 13.11): only the table and the game that is next */
+.hs-lobby.is-recap {
+  --sun-x: 30%;
+  --sun-y: 40%;
+  grid-template-columns: minmax(0, 1fr) calc(560 * var(--hu));
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: 'standings nextup';
+}
+.hs-nextup {
+  grid-area: nextup;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: calc(22 * var(--hu));
+  min-width: 0;
+  min-height: 0;
+  padding: calc(30 * var(--hu)) calc(30 * var(--hu)) calc(26 * var(--hu));
+  border: calc(5 * var(--hu)) solid var(--ink);
+  border-radius: calc(40 * var(--hu));
+  color: #fff;
+  text-align: center;
+  background-color: var(--cob-d);
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.1) calc(2.2 * var(--hu)), transparent calc(3.2 * var(--hu)));
+  background-size: calc(20 * var(--hu)) calc(20 * var(--hu));
+  box-shadow: calc(8 * var(--hu)) calc(10 * var(--hu)) 0 var(--ink);
+}
+.hs-nextup-title {
+  font: 700 calc(76 * var(--hu)) / 1 var(--disp);
+  color: var(--yel);
+}
+.hs-nextup-card {
+  position: relative;
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(8 * var(--hu));
+  min-height: 0;
+  padding: calc(22 * var(--hu)) calc(18 * var(--hu)) calc(26 * var(--hu));
+  border: calc(5 * var(--hu)) solid var(--ink);
+  border-radius: calc(34 * var(--hu));
+  font: inherit;
+  color: var(--ink);
+  background: var(--yel);
+  box-shadow: 0 calc(9 * var(--hu)) 0 var(--ink);
+}
+button.hs-nextup-card {
+  cursor: pointer;
+  animation: hs-tile-hop 2.6s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+}
+button.hs-nextup-card:active {
+  transform: translateY(calc(5 * var(--hu)));
+  box-shadow: 0 calc(3 * var(--hu)) 0 var(--ink);
+}
+.hs-nextup-art {
+  flex: 0 1 auto;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: calc(380 * var(--hu));
+  min-height: 0;
+  font-size: calc(230 * var(--hu));
+  line-height: 1;
+}
+.hs-nextup-art.is-pic {
+  display: block;
+}
+.hs-nextup-art.is-pic > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.hs-nextup-name {
+  max-width: 100%;
+  font: 700 calc(92 * var(--hu)) / 0.94 var(--disp);
+  text-wrap: balance;
+}
+.hs-nextup-dur {
+  font-size: calc(36 * var(--hu));
+  font-weight: 800;
+  color: rgba(22, 18, 14, 0.62);
+}
+.hs-nextup-step {
+  font-size: calc(34 * var(--hu));
+  font-weight: 800;
+}
+/* 28 px at 1080p: the smallest text the room reads from the sofa */
+.hs-nextup-late {
+  font-size: calc(28 * var(--hu));
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.72);
+}
+.hs-nextup-late b {
+  color: #fff;
+  white-space: nowrap;
+}
+.hs-nextup-late b:empty,
+.hs-nextup-late:has(b:empty) {
+  display: none;
+}
 
 /* the join panel: a cobalt frame around the white QR card */
 .hs-join {
@@ -2304,6 +2407,45 @@ body {
       'join'
       'players'
       'games';
+  }
+  .hs-lobby.is-recap {
+    --sun-x: 50%;
+    --sun-y: 50%;
+    gap: calc(20 * var(--hu));
+    padding: calc(20 * var(--hu)) calc(20 * var(--hu)) calc(26 * var(--hu));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'standings'
+      'nextup';
+  }
+  .hs-lobby.is-recap .hs-nextup {
+    gap: calc(10 * var(--hu));
+    padding: calc(16 * var(--hu));
+  }
+  .hs-lobby.is-recap .hs-nextup-title {
+    font-size: max(20px, calc(44 * var(--hu)));
+  }
+  .hs-lobby.is-recap .hs-nextup-card {
+    flex-direction: row;
+    gap: calc(16 * var(--hu));
+    padding: calc(10 * var(--hu)) calc(18 * var(--hu));
+  }
+  .hs-lobby.is-recap .hs-nextup-art {
+    width: auto;
+    height: max(56px, calc(110 * var(--hu)));
+    aspect-ratio: 1;
+    font-size: max(40px, calc(90 * var(--hu)));
+  }
+  .hs-lobby.is-recap .hs-nextup-name {
+    font-size: max(22px, calc(54 * var(--hu)));
+  }
+  .hs-lobby.is-recap .hs-nextup-dur,
+  .hs-lobby.is-recap .hs-nextup-step {
+    display: none;
+  }
+  .hs-lobby.is-recap .hs-nextup-late {
+    font-size: max(13px, calc(24 * var(--hu)));
   }
   .hs-lobby.is-between {
     grid-template-rows: auto minmax(0, 1fr) auto auto;

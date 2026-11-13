@@ -54,6 +54,14 @@ export function ladderScore(steps: number, par: number, elapsedMs: number): numb
  * (parBand(0) is the first puzzle after the openers).
  */
 export const OPENERS: readonly string[] = ['חמוד', 'פוקי', 'נדיר', 'שימי'];
+/**
+ * Easy words between the openers (the owner's call, 13.11: two easy words in between, פוקי stays):
+ * EASY_AFTER[i] par-2 words, drawn by the round's seed, follow OPENERS[i]. So a round opens
+ * חמוד, an easy word, פוקי, an easy word, נדיר, שימי: a breather on each side of the hardest one.
+ */
+export const EASY_AFTER: readonly number[] = [1, 1, 0, 0];
+/** How many puzzles the opening takes: the openers and the easy words between them. */
+export const OPENING_LENGTH = OPENERS.length + EASY_AFTER.reduce((a, b) => a + b, 0);
 
 /** Dictionary words one letter away from `w` (for a start word that is not in the dictionary). */
 function wordsOneAway(ladder: Ladder, w: string): string[] {
@@ -136,7 +144,8 @@ const cache = new Map<number, readonly string[]>();
 
 /**
  * Every start word of the round with `seed`, in play order (normalized), no
- * repeats. It always opens with OPENERS, in order. After them, puzzle i of the seeded part draws a par from
+ * repeats. It always opens with OPENERS, in order, with easy words between them (EASY_AFTER). After
+ * that opening, puzzle i of the seeded part draws a par from
  * parBand(i), then a word of that par; when a par runs out the nearest par that
  * still has words is used.
  */
@@ -150,7 +159,17 @@ export function roundSequence(seed: number, ladder: Ladder): readonly string[] {
   for (const p of pars) queues.set(p, rng.shuffle(pools.get(p) ?? []));
   let left = 0;
   for (const q of queues.values()) left += q.length;
-  const out: string[] = OPENERS.filter((w) => startPar(ladder, w) !== undefined);
+  const out: string[] = [];
+  OPENERS.forEach((w, i) => {
+    if (startPar(ladder, w) === undefined) return;
+    out.push(w);
+    for (let k = 0; k < (EASY_AFTER[i] ?? 0); k++) {
+      const easy = queues.get(2)?.shift();
+      if (easy === undefined) break;
+      out.push(easy);
+      left--;
+    }
+  });
   for (let i = 0; left > 0; i++) {
     const band = parBand(i);
     let par = band[rng.int(0, band.length - 1)] ?? 2;

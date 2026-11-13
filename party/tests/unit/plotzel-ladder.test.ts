@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { COMMON, DICT, STARTS } from '../../client/src/games/plotzel/data';
 import { checkStep, diffCount, diffPos, disp, getLadder, norm, TARGET, TARGET_D, unpack } from '../../client/src/games/plotzel/ladder';
-import { DEMO_WORDS, ladderScore, OPENERS, parBand, roundSequence, SCORE, speedFactor, startPar, startPath, stepsFactor } from '../../client/src/games/plotzel/round';
+import { DEMO_WORDS, EASY_AFTER, ladderScore, OPENERS, OPENING_LENGTH, parBand, roundSequence, SCORE, speedFactor, startPar, startPath, stepsFactor } from '../../client/src/games/plotzel/round';
 import { GAMES } from '../../shared/protocol';
 
 const ORIGINAL = resolve(import.meta.dirname, '../../client/src/games/plotzel/original/plotzel.netlify.app.html');
@@ -218,9 +218,25 @@ describe('plotzel round sequence', () => {
     expect(a).not.toBe(b);
   });
 
-  it('opens with the owner\'s four words in order: חמוד, פוקי, נדיר, שימי', () => {
+  it('opens with the owner\'s four words in order, an easy word on each side of פוקי: חמוד, easy, פוקי, easy, נדיר, שימי', () => {
     expect(OPENERS).toEqual(['חמוד', 'פוקי', 'נדיר', 'שימי']);
-    for (const seed of [1, 7, 99, 123456, 987654321]) expect(roundSequence(seed, ladder).slice(0, 4)).toEqual([...OPENERS]);
+    expect(EASY_AFTER).toEqual([1, 1, 0, 0]);
+    expect(OPENING_LENGTH).toBe(6);
+    const easy = new Set<string>();
+    for (const seed of [1, 7, 99, 123456, 987654321]) {
+      const head = roundSequence(seed, ladder).slice(0, OPENING_LENGTH);
+      expect([head[0], head[2], head[4], head[5]]).toEqual([...OPENERS]);
+      // the two words in between: two steps from the goal, through common words, and not the same word twice
+      for (const w of [head[1] as string, head[3] as string]) {
+        expect(ladder.dist(w), disp(w)).toBe(2);
+        expect(ladder.cdist(w), disp(w)).toBe(2);
+        expect(OPENERS).not.toContain(w);
+        easy.add(w);
+      }
+      expect(head[1]).not.toBe(head[3]);
+    }
+    // drawn by the seed: not the same pair in every round
+    expect(easy.size).toBeGreaterThan(2);
     // the minimum steps of each
     expect(OPENERS.map((w) => startPar(ladder, w))).toEqual([3, 5, 5, 5]);
     // every opener has a real way to פלוץ, one letter at a time, through dictionary words after the start
@@ -243,19 +259,19 @@ describe('plotzel round sequence', () => {
     expect(checkStep(ladder, 'פוקא', ['פוקי'])).toMatchObject({ ok: false });
   });
 
-  it('after the openers: no repeats, only words with a common path as short as par, and the par ramp from the easy end', () => {
+  it('after the opening: no repeats, only words with a common path as short as par, and the par ramp from the easy end', () => {
     for (const seed of [1, 7, 99, 123456, 987654321]) {
       const seq = roundSequence(seed, ladder);
       expect(seq.length).toBeGreaterThan(300);
       expect(new Set(seq).size).toBe(seq.length);
       for (const w of DEMO_WORDS) expect(seq).not.toContain(w);
-      seq.slice(OPENERS.length).forEach((w, i) => {
+      seq.slice(OPENING_LENGTH).forEach((w, i) => {
         const par = ladder.dist(w);
         expect(par).toBeDefined();
         expect(ladder.cdist(w)).toBe(par);
-        if (i < 60) expect(parBand(i), `${seed}#${i + OPENERS.length} ${disp(w)} par ${par}`).toContain(par);
+        if (i < 60) expect(parBand(i), `${seed}#${i + OPENING_LENGTH} ${disp(w)} par ${par}`).toContain(par);
       });
-      expect(ladder.dist(seq[OPENERS.length] as string)).toBe(2);
+      expect(ladder.dist(seq[OPENING_LENGTH] as string)).toBe(2);
     }
   });
 });

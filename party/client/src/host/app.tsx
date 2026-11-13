@@ -5,8 +5,9 @@
  *
  * Every control (the strip, the menus, the keyboard, a phone remote) goes
  * through ONE action model (./actions.ts) and ONE dispatcher (`runAction`).
- * While a phone remote is attached (state.remotes > 0) the TV is a display:
- * the strip is hidden; the mouse shows it for a few seconds, keys keep working.
+ * The TV is a display: the strip is hidden; the mouse shows it for a few seconds, keys and a
+ * phone remote keep working (the owner's call, 13.11: no bar on the TV). `?bar=1` keeps the strip
+ * on screen all the time, as it was before with no remote attached.
  */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
@@ -231,6 +232,22 @@ interface RunOptions {
 const done = (text: string): ActResult => ({ ok: true, text });
 const refused = (text: string): ActResult => ({ ok: false, text });
 
+/**
+ * Whether the strip of buttons stays on screen. Not on the TV (the owner's call, 13.11): the room
+ * looks at a show, not at a toolbar. `?bar=1` keeps it; so does an automated browser, whose scripts
+ * press the strip's buttons (`?bar=0` there shows the TV as the party sees it).
+ */
+function stripWanted(): boolean {
+  try {
+    const q = new URLSearchParams(window.location.search).get('bar');
+    if (q === '1') return true;
+    if (q === '0') return false;
+    return navigator.webdriver === true;
+  } catch {
+    return false;
+  }
+}
+
 /** True while the pointer moved within PEEK_MS (only listens while `on`). */
 function usePeek(on: boolean): boolean {
   const [peek, setPeek] = useState(false);
@@ -308,7 +325,10 @@ export function App(): JSX.Element {
   const stripIdle = useIdle(STRIP_IDLE_MS);
   const remotes = state?.remotes ?? 0;
   const display = remotes > 0;
-  const peek = usePeek(display);
+  // no strip on screen: a remote is attached, or simply the TV at the party (stripWanted)
+  const [bare] = useState(() => !stripWanted());
+  const hidden = display || bare;
+  const peek = usePeek(hidden);
 
   const phase = state?.phase ?? null;
   const cutscene = state?.cutscene ?? null;
@@ -701,10 +721,10 @@ export function App(): JSX.Element {
   const newRoomAction = tool('new-room');
 
   const def = cutscene !== null ? findCutscene(cutscene.id) : undefined;
-  const stripClass = display ? (peek || armed !== null ? 'is-peek' : 'is-gone') : stripIdle && armed === null ? 'is-idle' : '';
+  const stripClass = hidden ? (peek || armed !== null ? 'is-peek' : 'is-gone') : stripIdle && armed === null ? 'is-idle' : '';
 
   return (
-    <div class={`hs-root hs-phase-${phase ?? 'boot'} ${display ? 'is-display' : ''}`} data-phase={phase ?? 'boot'}>
+    <div class={`hs-root hs-phase-${phase ?? 'boot'} ${hidden ? 'is-display' : ''}`} data-phase={phase ?? 'boot'}>
       <main class="hs-stage">
         {scene}
         {state !== null ? <PreloadBar /> : null}
