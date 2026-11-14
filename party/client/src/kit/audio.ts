@@ -516,6 +516,25 @@ function gong(): void {
   playClip('gong', gongSynth, 0.9, 4.5);
 }
 
+/** A drop-in clip's file is in client/public/audio/ (known at build time; it may still be decoding). */
+export function hasClip(name: string): boolean {
+  return findPublicFile(`/audio/${name}.mp3`, CLIP_EXTS) !== null;
+}
+
+/** How long a decoded clip is (ms), or null while it is not decoded (or there is no such file). */
+export function clipMs(name: string): number | null {
+  const b = decoded.get(name);
+  return b ? Math.round(b.duration * 1000) : null;
+}
+
+/**
+ * The podium's drum roll: drumroll.mp3 (the owner's file, 14.11) for at most `ms`, faded over its
+ * last second when the file is longer; without the file, the synthesized roll for `ms`.
+ */
+function podiumDrumroll(ms = 4_200): void {
+  playClip('drumroll', () => drumroll(ms), 1, ms / 1000);
+}
+
 // ───────────────────────────── Cues on the audio clock ─────────────────────────────
 
 /**
@@ -792,6 +811,8 @@ export const sfx = {
   airhorn,
   /** A gong (~4 s): the TV strikes it when a round starts and when it is over. */
   gong,
+  /** The podium's drum roll while the curtain is still closed (drumroll.mp3; the synthesized roll without it). */
+  podiumDrumroll,
   /** Crowd-ish swell. */
   cheer: (): void => {
     noise({ dur: 1.3, vol: 0.2, attack: 0.3, filter: { type: 'bandpass', freq: 1100, to: 2100, q: 0.7 } });

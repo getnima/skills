@@ -154,6 +154,10 @@ export const FINAL_GRACE_MS = 1_500;
 export const RESUME_COUNTDOWN_MS = 3_000;
 /** A cutscene the TV never reports as finished is ended by the server after this long. */
 export const CUTSCENE_MAX_MS = 90_000;
+/** Why a TV page ends a cutscene (host:cutsceneEnd). */
+export type CutsceneEndReason = 'ended' | 'skip' | 'novideo';
+/** A TV page showing a cutscene's video says so this often (host:cutsceneVideo). */
+export const CUTSCENE_VIDEO_REPORT_MS = 5_000;
 /** Suspense between the start of the results phase and the round winner's reveal. */
 export const WINNER_REVEAL_MS = 8_000;
 /** Elimination rounds: the round ends this long after one player (or nobody) is left. */
@@ -420,8 +424,15 @@ export interface C2S {
   'host:kick': (req: { playerId: string }, ack: (res: Ack<{}>) => void) => void;
   /** Play a cutscene now, in any phase (freezes a running round). BAD_PHASE if one is already playing. */
   'host:cutscene': (req: { id: string }, ack: (res: Ack<{}>) => void) => void;
-  /** The TV finished playing the current cutscene (or the host skipped it). */
-  'host:cutsceneEnd': (req: {}, ack: (res: Ack<{}>) => void) => void;
+  /**
+   * The TV finished playing the current cutscene (or the host skipped it). `reason`: 'ended' (the
+   * video played to its end), 'skip' (the host), 'novideo' (this page has no video to show: its
+   * file is missing or did not play). A 'novideo' end, or one without a reason (a TV page on an
+   * older build), waits while another TV page shows the video (host:cutsceneVideo).
+   */
+  'host:cutsceneEnd': (req: { reason?: CutsceneEndReason }, ack: (res: Ack<{}>) => void) => void;
+  /** This TV page shows the video of cutscene `id` (on), or has none to show (off). Sent again every few seconds. */
+  'host:cutsceneVideo': (req: { id: string; on: boolean }, ack: (res: Ack<{}>) => void) => void;
   'host:setAutoCutscenes': (req: { enabled: boolean }, ack: (res: Ack<{}>) => void) => void;
   /**
    * Attach this socket as a HOST of a room with role 'remote' (the owner's phone).

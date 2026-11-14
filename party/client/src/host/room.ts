@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { applyLooks } from '../../../shared/room-looks';
 import { connect, createServerClock } from '../net/connection';
 
-import type { Ack, ErrorCode, GameId, HostRole, RelayData, RoomState } from '../../../shared/protocol';
+import type { Ack, CutsceneEndReason, ErrorCode, GameId, HostRole, RelayData, RoomState } from '../../../shared/protocol';
 import type { PartySocket, ServerClock } from '../net/connection';
 
 export type ConnStatus = 'connecting' | 'online' | 'offline';
@@ -80,7 +80,10 @@ export interface HostRoom {
   reset(opts?: ActOptions): Promise<ActResult>;
   kick(playerId: string, opts?: ActOptions): Promise<ActResult>;
   cutscene(id: string, opts?: ActOptions): Promise<ActResult>;
-  cutsceneEnd(opts?: ActOptions): Promise<ActResult>;
+  /** End the cutscene: 'ended' (the video played to its end), 'skip' (the host), 'novideo' (this page has none to show). */
+  cutsceneEnd(reason: CutsceneEndReason, opts?: ActOptions): Promise<ActResult>;
+  /** This page shows the video of cutscene `id` (on) or has none to show (off). Fire and forget. */
+  cutsceneVideo(id: string, on: boolean): void;
   setAutoCutscenes(enabled: boolean, opts?: ActOptions): Promise<ActResult>;
   newRoom(): void;
   /** To the other host sockets of this room (the phone remotes). Fire and forget. */
@@ -246,7 +249,10 @@ export function useHostRoom(): HostRoom {
     reset: (opts) => act((ack) => socket.emit('host:reset', {}, ack), opts),
     kick: (playerId, opts) => act((ack) => socket.emit('host:kick', { playerId }, ack), opts),
     cutscene: (id, opts) => act((ack) => socket.emit('host:cutscene', { id }, ack), opts),
-    cutsceneEnd: (opts) => act((ack) => socket.emit('host:cutsceneEnd', {}, ack), opts),
+    cutsceneEnd: (reason, opts) => act((ack) => socket.emit('host:cutsceneEnd', { reason }, ack), opts),
+    cutsceneVideo: (id: string, on: boolean): void => {
+      if (socket.connected) socket.emit('host:cutsceneVideo', { id, on }, () => undefined);
+    },
     setAutoCutscenes: (enabled, opts) => act((ack) => socket.emit('host:setAutoCutscenes', { enabled }, ack), opts),
     relay: (data: RelayData): void => {
       if (socket.connected) socket.emit('host:relay', { data }, () => undefined);

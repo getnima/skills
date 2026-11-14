@@ -7,6 +7,7 @@
 import { CUTSCENES } from '../shared/cutscenes';
 import {
   CUTSCENE_MAX_MS,
+  CUTSCENE_VIDEO_REPORT_MS,
   ELIMINATION_END_DELAY_MS,
   FINAL_GRACE_MS,
   FINALE_LATEST_MS,
@@ -170,6 +171,12 @@ interface RoundRec {
 /** How long a disconnected participant is waited for before the others' finals may end the round early. */
 export const DISCONNECT_END_GRACE_MS = 5_000;
 
+/**
+ * A TV page that showed a cutscene's video disconnected: how long it may take to come back (a
+ * reload, a Wi-Fi blip) and say so again before a waiting 'novideo' end goes through.
+ */
+export const CUTSCENE_VIDEO_GONE_MS = 15_000;
+
 const OK: OkAck = { ok: true };
 
 function fail(error: ErrorCode, message: string): { ok: false; error: ErrorCode; message: string } {
@@ -206,6 +213,19 @@ export class Room {
   private played: GameId[] = [];
   private results: RoundResults | null = null;
   private cutscene: CutsceneState | null = null;
+  /**
+   * TV pages (connection ids) showing the current cutscene's video (host:cutsceneVideo). While one
+   * does, another page's 'novideo' end (a second tab on an older build, whose file list lacks the
+   * video) waits: the owner, 14.11, "the ad stops in the middle after like 5 seconds".
+   */
+  private readonly cutsceneVideoConns = new Set<string>();
+  /** A 'novideo' end is waiting for the pages that show the video. */
+  private cutsceneEndWaiting = false;
+  /**
+   * When a page that showed the video last disconnected (null: none did). For CUTSCENE_VIDEO_GONE_MS
+   * after that a 'novideo' end still waits: the page may be reconnecting or reloading.
+   */
+  private cutsceneVideoGoneAt: number | null = null;
   private autoCutscenes = true;
   /** Automatic cutscenes already fired in this competition. */
   private readonly firedCutscenes = new Set<string>();
@@ -410,6 +430,12 @@ export class Room {
     const wasRemote = this.hostConns.get(connId) === 'remote';
     const wasAttached = this.detach(connId);
     if (!wasAttached) return;
+    if (this.cutsceneVideoConns.delete(connId)) {
+      // a TV page that showed the video is gone: a 'novideo' end (now or within the grace) waits for
+      // it to come back (a reload, a Wi-Fi blip) and say so again, CUTSCENE_VIDEO_GONE_MS at most
+      this.cutsceneVideoGoneAt = this.scheduler.now();
+      if (this.cutsceneEndWaiting) this.armVideoGone();
+    }
     if (this.connectionCount === 0) this.emptySince = this.scheduler.now();
     if (playerId === undefined) {
       if (wasRemote) this.broadcast();
@@ -511,6 +537,9 @@ export class Room {
     this.clearCutsceneTimer();
     this.clearScoresTimer();
     this.cutscene = null;
+    this.cutsceneVideoConns.clear();
+    this.cutsceneEndWaiting = false;
+    this.cutsceneVideoGoneAt = null;
     this.phase = 'lobby';
     this.round = null;
     // nextRoundIndex is NOT reset: round ids stay unique for the room's lifetime (phones key on them).
@@ -561,12 +590,45 @@ export class Room {
     return OK;
   }
 
-  /** The TV finished (or skipped) the video, or the safety timer ran out. Idempotent. */
-  endCutscene(): OkAck {
+  /**
+   * A TV page says whether it shows the video of cutscene `id` (on) or has none to show (off).
+   * A report for another cutscene (one that already ended) is ignored.
+   */
+  cutsceneVideo(id: unknown, on: unknown, connId: string): OkAck {
+    if (typeof id !== 'string' || typeof on !== 'boolean') return fail('BAD_REQUEST', 'id and on are required');
+    if (this.cutscene === null || this.cutscene.id !== id) return OK;
+    if (on) this.cutsceneVideoConns.add(connId);
+    else if (this.cutsceneVideoConns.delete(connId)) this.endWaitingCutscene();
+    return OK;
+  }
+
+  /**
+   * The TV finished (or skipped) the video, or the safety timer ran out. Idempotent.
+   * `reason` is the TV page's (host:cutsceneEnd): 'ended' and 'skip' always end it; any other
+   * ('novideo', or none from a page on an older build) waits while another TV page shows the video.
+   * The server's own calls (the safety timer, the waiting end) pass 'force'.
+   */
+  endCutscene(reason: unknown = 'force', connId?: string): OkAck {
     const cs = this.cutscene;
     if (cs === null) return OK;
+    if (reason !== 'ended' && reason !== 'skip' && reason !== 'force') {
+      for (const c of this.cutsceneVideoConns) {
+        if (c !== connId) {
+          this.cutsceneEndWaiting = true;
+          return OK;
+        }
+      }
+      if (this.videoPageMayBeBack()) {
+        this.cutsceneEndWaiting = true;
+        this.armVideoGone();
+        return OK;
+      }
+    }
     const now = this.scheduler.now();
     this.cutscene = null;
+    this.cutsceneVideoConns.clear();
+    this.cutsceneEndWaiting = false;
+    this.cutsceneVideoGoneAt = null;
     this.clearCutsceneTimer();
 
     // The winner reveal never happens under a video.
@@ -980,10 +1042,35 @@ export class Room {
     return this.cutscenes.find((c) => match(c) && this.autoAllowed(c));
   }
 
+  /** A waiting 'novideo' end goes through once no TV page shows the video any more (and none may be coming back). */
+  private endWaitingCutscene(): void {
+    if (this.cutscene === null || !this.cutsceneEndWaiting || this.cutsceneVideoConns.size > 0) return;
+    if (this.videoPageMayBeBack()) return;
+    this.endCutscene('force');
+  }
+
+  /** A page that showed the video disconnected less than CUTSCENE_VIDEO_GONE_MS ago. */
+  private videoPageMayBeBack(): boolean {
+    return this.cutsceneVideoGoneAt !== null && this.scheduler.now() - this.cutsceneVideoGoneAt < CUTSCENE_VIDEO_GONE_MS;
+  }
+
+  /** Check a waiting end again when the grace after the last disconnect is over. */
+  private armVideoGone(): void {
+    const at = this.cutsceneVideoGoneAt;
+    if (at === null) return;
+    const cs = this.cutscene;
+    this.later(at + CUTSCENE_VIDEO_GONE_MS - this.scheduler.now(), () => {
+      if (this.cutscene === cs) this.endWaitingCutscene();
+    });
+  }
+
   /** Sets the cutscene and freezes a running round. The caller broadcasts. */
   private beginCutscene(id: string, auto: boolean): void {
     const now = this.scheduler.now();
     this.cutscene = { id, startedAt: now };
+    this.cutsceneVideoConns.clear();
+    this.cutsceneEndWaiting = false;
+    this.cutsceneVideoGoneAt = null;
     if (auto) this.firedCutscenes.add(id);
     this.clearCutsceneTimer();
     this.cutsceneTimer = this.later(CUTSCENE_MAX_MS, () => {

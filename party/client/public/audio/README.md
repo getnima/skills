@@ -11,7 +11,7 @@ go to the party's server with `deploy/gce-deploy.sh` (it uploads the folder as i
 clone has only `airhorn.mp3` and `gong.mp3`: copy the songs in again before deploying from it.
 For the 14.11 party, all from the owner's `~/Documents/music/`: `lobby.webm` (Technotronic, Pump Up
 The Jam), `tap.webm` (Duck Sauce, Barbra Streisand, radio edit), `icy.webm` (the Icy Tower tune),
-`flappy.webm` (Bee Gees, Stayin' Alive; it was Red Right Hand until the evening of 13.11), `plotzel.webm` (Lobby Music, House
+`flappy.webm` (Boney M, Rasputin, played from 0:58; it was Red Right Hand, then Stayin' Alive until the morning of 14.11), `plotzel.webm` (Lobby Music, House
 Edition), `ninja.webm` (Yamasuki, Yama Yama), and `victory.mp3` = `final.mp3`: the London fanfare
 trumpets (its 3 s of leading silence cut), then Bee Gees, Stayin' Alive. The `.webm` are the sound
 of the owner's video files, copied out as it is (`ffmpeg -i in.webm -vn -c:a copy out.webm`):
@@ -39,6 +39,7 @@ sound check panel (below).
 | `final.mp3` | the champion's song on the final podium, when first place is revealed | 30 to 60 s | the built-in synth victory tune |
 | `airhorn.mp3` | **in place.** The DJ air horn, once each time the show switches to the next game (the intro screen) | 2.8 s (the owner's sample, leading silence trimmed) | a synthesized air horn |
 | `gong.mp3` | **in place.** The gong, when a round starts (with "יאללה!") and when it is over (the results come up); at most 4.5 s, faded | 6.1 s (the owner's sample, trimmed and faded) | a synthesized gong |
+| `drumroll.mp3` | the drum roll at the start of the final podium, with the curtain still closed; the curtain opens the moment it ends (the owner, 14.11). At most 7 s. Not in git (the owner's download) | 4.2 s (the owner's file, as it is) | the podium opens as before: the curtain after 0.65 s under a synthesized roll |
 
 How a game's song behaves
 

@@ -2,14 +2,14 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { CUTSCENES } from '../../../shared/cutscenes';
-import { GAMES } from '../../../shared/protocol';
+import { CUTSCENE_VIDEO_REPORT_MS, GAMES } from '../../../shared/protocol';
 import { soundOffsetMs } from '../kit/av-sync';
 import { allCutsceneStatuses, cutsceneUrl, resolveSources } from './media';
 import { Btn, Modal, Switch } from './ui';
 
 import type { JSX } from 'preact';
 import type { CutsceneDef, CutsceneTrigger } from '../../../shared/cutscenes';
-import type { CutsceneState } from '../../../shared/protocol';
+import type { CutsceneEndReason, CutsceneState } from '../../../shared/protocol';
 import type { ServerClock } from '../net/connection';
 import type { FileStatus } from './media';
 
@@ -33,8 +33,15 @@ export interface CutscenePlayerProps {
   readonly def: CutsceneDef | undefined;
   readonly clock: ServerClock;
   readonly muted: boolean;
-  /** Emit host:cutsceneEnd (idempotent on the server). */
-  onEnd(): void;
+  /**
+   * Emit host:cutsceneEnd (idempotent on the server). 'novideo': this page has no video to show; the
+   * server waits with it while another TV page shows the video (a second tab on an older build).
+   */
+  onEnd(reason: CutsceneEndReason): void;
+  /** Emit host:cutsceneVideo: this page shows the video (true) or has none to show (false). */
+  onVideo(on: boolean): void;
+  /** Attached to the room right now: a report goes out again the moment the page is back. */
+  readonly online: boolean;
 }
 
 export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
@@ -49,6 +56,8 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
   const startedRef = useRef(false);
   const onEndRef = useRef(props.onEnd);
   onEndRef.current = props.onEnd;
+  const onVideoRef = useRef(props.onVideo);
+  onVideoRef.current = props.onVideo;
   const mutedRef = useRef(props.muted);
   mutedRef.current = props.muted;
   /** How far into the cutscene we are on mount (a TV refresh mid-video). */
@@ -56,7 +65,7 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
   const title = props.def?.title ?? 'סרטון';
   const file = props.def?.file ?? `${props.cutscene.id}.mp4`;
 
-  const finish = (): void => {
+  const finish = (reason: CutsceneEndReason): void => {
     if (endedRef.current) return;
     endedRef.current = true;
     setEnded(true);
@@ -66,8 +75,22 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
     } catch {
       // ignore
     }
-    onEndRef.current();
+    onEndRef.current(reason);
   };
+
+  // tell the server whether this page shows the video, and again every few seconds while it does
+  // (a reconnect gets a new connection; the server forgets a page that went away)
+  useEffect(() => {
+    if (mode.kind === 'loading' || !props.online) return undefined;
+    const on = mode.kind === 'video';
+    const say = (): void => {
+      if (!endedRef.current) onVideoRef.current(on);
+    };
+    say();
+    if (!on) return undefined;
+    const id = setInterval(say, CUTSCENE_VIDEO_REPORT_MS);
+    return () => clearInterval(id);
+  }, [mode.kind, props.online]);
 
   // pick a source
   useEffect(() => {
@@ -93,14 +116,14 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
       const p = Math.min(1, (performance.now() - started) / left);
       if (barRef.current) barRef.current.style.transform = `scaleX(${p})`;
       if (p >= 1) {
-        finish();
+        finish('novideo');
         return;
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     // a hidden tab gets no animation frames: the card still ends on time
-    const done = setTimeout(finish, left + 50);
+    const done = setTimeout(() => finish('novideo'), left + 50);
     return () => {
       cancelAnimationFrame(raf);
       clearTimeout(done);
@@ -158,7 +181,7 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
         at = offsetMs.current / 1000;
         offsetMs.current = 0;
         if (at >= v.duration - 0.3) {
-          finish();
+          finish('ended');
           return;
         }
         try {
@@ -189,7 +212,7 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
       startedRef.current = true;
     };
     const onError = (): void => nextSource();
-    const onEnded = (): void => finish();
+    const onEnded = (): void => finish('ended');
     v.addEventListener('loadedmetadata', onMeta);
     v.addEventListener('playing', onPlaying);
     v.addEventListener('error', onError);
@@ -287,7 +310,7 @@ export function CutscenePlayer(props: CutscenePlayerProps): JSX.Element {
             🔊 הפעלת סאונד
           </button>
         ) : null}
-        <button type="button" class="hs-cut-skip" onClick={finish} data-testid="cutscene-skip">
+        <button type="button" class="hs-cut-skip" onClick={() => finish('skip')} data-testid="cutscene-skip">
           דלג ⏭ <kbd>S</kbd>
         </button>
       </div>

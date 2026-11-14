@@ -19,7 +19,7 @@ import {
 } from '../../shared/protocol';
 import { roundTime } from '../../shared/round-clock';
 import { computeRoundScores, MAX_ROUND_POINTS, PODIUM_BONUS } from '../../shared/scoring';
-import { DISCONNECT_END_GRACE_MS, Room } from '../../server/room';
+import { CUTSCENE_VIDEO_GONE_MS, DISCONNECT_END_GRACE_MS, Room } from '../../server/room';
 import { MAX_ROOMS, RoomRegistry } from '../../server/rooms';
 
 import type { CutsceneDef } from '../../shared/cutscenes';
@@ -793,6 +793,143 @@ describe('cutscenes and the clock', () => {
     expect(h.errors).toEqual([]);
   });
 
+  describe('two TV pages (the owner, 14.11: "the ad stops in the middle after like 5 seconds")', () => {
+    const ad: CutsceneDef = { id: 'ad', title: '', file: 'ad.mp4', when: { at: 'before', gameId: 'ninja' } };
+    /** Two TV pages on one room; ninja starts and the commercial plays. */
+    const twoTvs = (): Harness => {
+      const h = makeRoom({ cutscenes: [ad] });
+      h.room.attachHost('tv-a');
+      h.room.attachHost('tv-b');
+      h.join('a');
+      h.room.start('ninja');
+      expect(h.state()).toMatchObject({ phase: 'intro', cutscene: { id: 'ad' } });
+      return h;
+    };
+
+    it('a page with no video (a tab on an older build) cannot end the video another page plays; the end comes from that page', () => {
+      const h = twoTvs();
+      expect(h.room.cutsceneVideo('ad', true, 'tv-a')).toEqual({ ok: true });
+      vi.advanceTimersByTime(4_000);
+      // tv-b showed its "no video" card for 4 s (the old build sends no reason: the socket makes it 'novideo')
+      expect(h.room.endCutscene('novideo', 'tv-b')).toEqual({ ok: true });
+      expect(h.state().cutscene?.id).toBe('ad');
+      vi.advanceTimersByTime(20_000);
+      expect(h.state()).toMatchObject({ phase: 'intro', cutscene: { id: 'ad' } });
+      vi.advanceTimersByTime(29_000);
+      expect(h.room.endCutscene('ended', 'tv-a')).toEqual({ ok: true });
+      expect(h.state().cutscene).toBeNull();
+      expect(h.state().phase).toBe('intro');
+      expect(h.errors).toEqual([]);
+    });
+
+    it('one page alone with no video ends it at once, as before', () => {
+      const h = twoTvs();
+      expect(h.room.endCutscene('novideo', 'tv-b')).toEqual({ ok: true });
+      expect(h.state().cutscene).toBeNull();
+    });
+
+    it('a page reporting its own video does not hold back its own "no video" end (its video failed)', () => {
+      const h = twoTvs();
+      h.room.cutsceneVideo('ad', true, 'tv-a');
+      expect(h.room.endCutscene('novideo', 'tv-a')).toEqual({ ok: true });
+      expect(h.state().cutscene).toBeNull();
+    });
+
+    it('the host skips from any page, also while another one plays the video', () => {
+      const h = twoTvs();
+      h.room.cutsceneVideo('ad', true, 'tv-a');
+      expect(h.room.endCutscene('skip', 'tv-b')).toEqual({ ok: true });
+      expect(h.state().cutscene).toBeNull();
+    });
+
+    it('the playing page falls back to its card (its video failed): the waiting end goes through at once', () => {
+      const h = twoTvs();
+      h.room.cutsceneVideo('ad', true, 'tv-a');
+      h.room.endCutscene('novideo', 'tv-b');
+      expect(h.state().cutscene?.id).toBe('ad');
+      expect(h.room.cutsceneVideo('ad', false, 'tv-a')).toEqual({ ok: true });
+      expect(h.state().cutscene).toBeNull();
+    });
+
+    it('the playing page goes away: a waiting end goes through after CUTSCENE_VIDEO_GONE_MS, unless the page is back and says so', () => {
+      const h = twoTvs();
+      h.room.cutsceneVideo('ad', true, 'tv-a');
+      h.room.endCutscene('novideo', 'tv-b');
+      // a reload: the page comes back on a new connection and reports again in time
+      h.room.disconnect('tv-a');
+      vi.advanceTimersByTime(3_000);
+      h.room.attachHost('tv-a2');
+      h.room.cutsceneVideo('ad', true, 'tv-a2');
+      vi.advanceTimersByTime(CUTSCENE_VIDEO_GONE_MS);
+      expect(h.state().cutscene?.id).toBe('ad');
+      // gone for good: the end that waited goes through
+      h.room.disconnect('tv-a2');
+      vi.advanceTimersByTime(CUTSCENE_VIDEO_GONE_MS - 1);
+      expect(h.state().cutscene?.id).toBe('ad');
+      vi.advanceTimersByTime(1);
+      expect(h.state().cutscene).toBeNull();
+      expect(h.errors).toEqual([]);
+    });
+
+    it('the playing page is reconnecting when the "no video" end arrives: it waits for the page to be back', () => {
+      const h = twoTvs();
+      h.room.cutsceneVideo('ad', true, 'tv-a');
+      vi.advanceTimersByTime(1_000);
+      h.room.disconnect('tv-a');
+      vi.advanceTimersByTime(3_000);
+      h.room.endCutscene('novideo', 'tv-b');
+      expect(h.state().cutscene?.id).toBe('ad');
+      vi.advanceTimersByTime(2_000);
+      h.room.attachHost('tv-a2');
+      h.room.cutsceneVideo('ad', true, 'tv-a2');
+      vi.advanceTimersByTime(CUTSCENE_VIDEO_GONE_MS * 2);
+      expect(h.state().cutscene?.id).toBe('ad');
+      expect(h.room.endCutscene('ended', 'tv-a2')).toEqual({ ok: true });
+      expect(h.state().cutscene).toBeNull();
+    });
+
+    it('...and if it never comes back, the end goes through when the grace after its disconnect is over', () => {
+      const h = twoTvs();
+      h.room.cutsceneVideo('ad', true, 'tv-a');
+      h.room.disconnect('tv-a');
+      vi.advanceTimersByTime(4_000);
+      h.room.endCutscene('novideo', 'tv-b');
+      vi.advanceTimersByTime(CUTSCENE_VIDEO_GONE_MS - 4_000 - 1);
+      expect(h.state().cutscene?.id).toBe('ad');
+      vi.advanceTimersByTime(1);
+      expect(h.state().cutscene).toBeNull();
+    });
+
+    it('a page gone longer than the grace holds nothing; a report for another cutscene is ignored', () => {
+      const h = twoTvs();
+      h.room.cutsceneVideo('ad', true, 'tv-a');
+      h.room.disconnect('tv-a');
+      vi.advanceTimersByTime(CUTSCENE_VIDEO_GONE_MS * 2);
+      expect(h.state().cutscene?.id).toBe('ad');
+      expect(h.room.cutsceneVideo('other', true, 'tv-b')).toEqual({ ok: true });
+      expect(h.room.endCutscene('novideo', 'tv-b')).toEqual({ ok: true });
+      expect(h.state().cutscene).toBeNull();
+      expect(h.room.cutsceneVideo('ad', 'yes', 'tv-b')).toMatchObject({ ok: false, error: 'BAD_REQUEST' });
+    });
+
+    it('the safety timer still ends a video nobody reports the end of', () => {
+      const h = twoTvs();
+      h.room.cutsceneVideo('ad', true, 'tv-a');
+      h.room.endCutscene('novideo', 'tv-b');
+      vi.advanceTimersByTime(CUTSCENE_MAX_MS);
+      expect(h.state().cutscene).toBeNull();
+    });
+
+    it('a new cutscene starts with no page counted as playing', () => {
+      const h = twoTvs();
+      h.room.cutsceneVideo('ad', true, 'tv-a');
+      h.room.endCutscene('ended', 'tv-a');
+      expect(h.room.startCutscene('ad')).toEqual({ ok: true });
+      expect(h.room.endCutscene('novideo', 'tv-b')).toEqual({ ok: true });
+      expect(h.state().cutscene).toBeNull();
+    });
+  });
+
   it('a TV that never reports the end: the server ends it after CUTSCENE_MAX_MS in every phase', () => {
     for (const at of ['intro', 'countdown', 'playing'] as const) {
       const h = makeRoom({ cutscenes: [joker] });
@@ -923,8 +1060,8 @@ describe('cutscenes and the clock', () => {
     expect(h2.state()).toMatchObject({ phase: 'results', cutscene: null });
   });
 
-  it('the manifest as shipped plays no video by itself: a whole competition, podium included (the owner: no videos for now)', () => {
-    for (const c of CUTSCENES) if (c.when.at !== 'manual') expect(c.enabled, c.id).toBe(false);
+  it('the manifest as shipped plays one video by itself, the commercial before ninja: a whole competition, podium included (the owner: no videos, 13.11; then the commercial before the last game)', () => {
+    for (const c of CUTSCENES) if (c.when.at !== 'manual' && c.id !== 'before_ninja') expect(c.enabled, c.id).toBe(false);
     const h = makeRoom({ cutscenes: CUTSCENES });
     const a = h.join('a');
     const seen: string[] = [];
@@ -932,7 +1069,7 @@ describe('cutscenes and the clock', () => {
       for (let t = 0; t < ms; t += 500) {
         vi.advanceTimersByTime(500);
         const c = h.state().cutscene;
-        if (c !== null) seen.push(c.id);
+        if (c !== null && !seen.includes(c.id)) seen.push(c.id);
       }
     };
     for (const g of GAME_IDS) {
@@ -945,7 +1082,7 @@ describe('cutscenes and the clock', () => {
     h.room.toFinal();
     watch(120_000);
     expect(h.state().phase).toBe('final');
-    expect(seen).toEqual([]);
+    expect(seen).toEqual(['before_ninja']);
     // from the menu it still plays
     expect(h.room.startCutscene('joker_1').ok).toBe(true);
     expect(h.state().cutscene?.id).toBe('joker_1');

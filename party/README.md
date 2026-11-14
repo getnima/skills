@@ -297,7 +297,12 @@ bottom bar, the remote.
 When the video ends the server shifts `startAt` / `endAt` forward by the frozen
 time and, during `playing`, sets `resumeAt` 3 s ahead: phones show a 3-2-1 and
 the game continues at exactly the elapsed time where it stopped. A video the TV
-never reports as finished is ended by the server after 90 s. A cutscene during
+never reports as finished is ended by the server after 90 s. Every TV page says
+whether it shows the video (`host:cutsceneVideo`) and why it ends it (`reason`):
+a page with no video to show (its file missing, or a second tab still on an
+older build, whose file list is from before the video) cannot end it while
+another TV page plays it (the owner, 14.11: "the ad stops after 5 seconds").
+A video that ended, or the host's skip, always ends it. A cutscene during
 `results` before the winner reveal pushes the reveal back by its length.
 
 Cutscene triggers (`shared/cutscenes.ts`): `manual` (host button only),

@@ -1,7 +1,7 @@
 /** FinalScene: drum-roll, third, second, first with the crown, the champion song, then the full ranking. */
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
-import { sfx } from '../../kit/audio';
+import { clipMs, hasClip, sfx } from '../../kit/audio';
 import { soundOffsetMs } from '../../kit/av-sync';
 import { hasTrackFile, playTrack, stopTrack } from '../../kit/music';
 import { SHOW_SONG_VOLUME } from '../music-config';
@@ -35,6 +35,14 @@ const PAGE_MS = 5_500;
 const NEVER = Number.POSITIVE_INFINITY;
 /** The curtain opens on the podium this long into the drum roll. */
 const CURTAIN_OPEN_MS = 650;
+/**
+ * The owner's drum roll (drumroll.mp3, 14.11: "a 5 seconds drum roll before we reveal the podium,
+ * keep the curtains hidden"): it plays first with the curtain closed, and the podium below starts
+ * so that the curtain opens the moment it ends. Its length is the file's (DRUMROLL_MS while it is
+ * still decoding), at most DRUMROLL_MAX_MS. Without the file the podium starts as it always did.
+ */
+const DRUMROLL_MS = 4_200;
+const DRUMROLL_MAX_MS = 7_000;
 /** The toy cannons fire this long after the champion is named (they pop up first), and once more. */
 const CANNON_FIRE_MS = [520, 2_300] as const;
 /** Where the spotlights' lenses are (design units; final.css puts the lamps there). */
@@ -49,10 +57,15 @@ function beamAngle(lensX: number, lensY: number, x: number, y: number): number {
   return (-Math.atan2(x - lensX, Math.max(1, y - lensY)) * 180) / Math.PI;
 }
 
-function timelineFor(n: number): Timeline {
-  if (n >= 3) return { third: 2_600, second: 4_900, first: 7_600, table: 13_200 };
-  if (n === 2) return { third: NEVER, second: 2_600, first: 5_200, table: NEVER };
-  return { third: NEVER, second: NEVER, first: 2_600, table: NEVER };
+function timelineFor(n: number, shift = 0): Timeline {
+  const tl = n >= 3 ? { third: 2_600, second: 4_900, first: 7_600, table: 13_200 } : n === 2 ? { third: NEVER, second: 2_600, first: 5_200, table: NEVER } : { third: NEVER, second: NEVER, first: 2_600, table: NEVER };
+  return { third: tl.third + shift, second: tl.second + shift, first: tl.first + shift, table: tl.table + shift };
+}
+
+/** How long the podium's own drum roll holds the curtain closed (ms): 0 without drumroll.mp3. */
+function drumrollHoldMs(): number {
+  if (!hasClip('drumroll')) return 0;
+  return Math.min(DRUMROLL_MAX_MS, clipMs('drumroll') ?? DRUMROLL_MS);
 }
 
 /** 0 intro, 1 third is up, 2 second is up, 3 the champion, 4 the full table. */
@@ -107,7 +120,11 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
     return [...props.players].sort((a, b) => a.rank - b.rank).map((player, i) => ({ player, rank: i + 1 }));
   }, [props.players]);
   const n = ranked.length;
-  const tl = timelineFor(n);
+  /** The drum roll with the curtain closed (0: none), and how far it moves the podium's timeline. */
+  const hold = useMemo(drumrollHoldMs, []);
+  const shift = hold > 0 ? hold - CURTAIN_OPEN_MS : 0;
+  const curtainAt = CURTAIN_OPEN_MS + shift;
+  const tl = timelineFor(n, shift);
   const tlRef = useRef(tl);
   tlRef.current = tl;
   const champion = ranked[0];
@@ -121,6 +138,8 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
   /** The sound side of the timeline: the step last heard, and the curtain's whoosh. */
   const heardStep = useRef(-1);
   const heardCurtain = useRef(false);
+  /** The short roll that leads from the open curtain to the first place, after the owner's drum roll. */
+  const heardLead = useRef(false);
   const [page, setPage] = useState(0);
   const pageRef = useRef(0);
   const activeRef = useRef(props.active);
@@ -176,7 +195,7 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
     const t = ta - soundOffsetMs();
     const next = stepAt(t, tlRef.current);
     const layer = funny.layer();
-    if (!heardCurtain.current && ta >= CURTAIN_OPEN_MS) {
+    if (!heardCurtain.current && ta >= curtainAt) {
       heardCurtain.current = true;
       if (finaleArt().curtain !== null && !isShowCalm()) sfx.whoosh(1.2);
     }
@@ -184,7 +203,10 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
     if (heard !== heardStep.current) {
       const before = heardStep.current;
       heardStep.current = heard;
-      if (heard === 0) sfx.drumroll(2_500);
+      if (heard === 0) {
+        if (hold > 0) sfx.podiumDrumroll(hold);
+        else sfx.drumroll(2_500);
+      }
       if (heard === 1 || heard === 2) {
         sfx.land();
         sfx.fanfare();
@@ -196,7 +218,13 @@ export function FinalScene(props: FinalSceneProps): JSX.Element {
         sfx.cheer();
       }
     }
-    if (!openedRef.current && t >= CURTAIN_OPEN_MS) {
+    // after the owner's drum roll: the usual short roll up to the first place, as the curtain opens
+    if (hold > 0 && !heardLead.current && ta >= hold) {
+      heardLead.current = true;
+      const firstAt = Math.min(tlRef.current.third, tlRef.current.second, tlRef.current.first);
+      if (heard === 0 && firstAt - ta > 400) sfx.drumroll(firstAt - ta - 150);
+    }
+    if (!openedRef.current && t >= curtainAt) {
       openedRef.current = true;
       setOpened(true);
     }

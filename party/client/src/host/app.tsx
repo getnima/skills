@@ -560,7 +560,7 @@ export function App(): JSX.Element {
       case 'cutscene':
         return arg !== undefined ? room.cutscene(arg, q) : refused('לא נבחר סרטון');
       case 'cutscene-skip':
-        return room.cutsceneEnd(q);
+        return room.cutsceneEnd('skip', q);
       case 'auto-cutscenes': {
         const want = arg === 'on' ? true : arg === 'off' ? false : !(s?.autoCutscenes ?? true);
         return room.setAutoCutscenes(want, q);
@@ -952,7 +952,9 @@ export function App(): JSX.Element {
           def={def}
           clock={room.clock}
           muted={muted}
-          onEnd={() => void room.cutsceneEnd()}
+          onEnd={(reason) => void room.cutsceneEnd(reason)}
+          onVideo={(on) => room.cutsceneVideo(cutscene.id, on)}
+          online={room.status === 'online'}
         />
       ) : null}
 

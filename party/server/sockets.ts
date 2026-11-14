@@ -213,7 +213,9 @@ export function attachSocketHandlers(io: PartyServer, registry: RoomRegistry, re
     socket.on('host:reset', (req: unknown, ack: unknown) => hostAction('host:reset', req, ack, (room) => room.reset()));
     socket.on('host:kick', (req: unknown, ack: unknown) => hostAction('host:kick', req, ack, (room, body) => room.kick(body.playerId)));
     socket.on('host:cutscene', (req: unknown, ack: unknown) => hostAction('host:cutscene', req, ack, (room, body) => room.startCutscene(body.id)));
-    socket.on('host:cutsceneEnd', (req: unknown, ack: unknown) => hostAction('host:cutsceneEnd', req, ack, (room) => room.endCutscene()));
+    // no reason (a TV page on an older build) counts as 'novideo': room.endCutscene
+    socket.on('host:cutsceneEnd', (req: unknown, ack: unknown) => hostAction('host:cutsceneEnd', req, ack, (room, body) => room.endCutscene(body.reason ?? 'novideo', socket.id)));
+    socket.on('host:cutsceneVideo', (req: unknown, ack: unknown) => hostAction('host:cutsceneVideo', req, ack, (room, body) => room.cutsceneVideo(body.id, body.on, socket.id)));
     socket.on('host:setAutoCutscenes', (req: unknown, ack: unknown) =>
       hostAction('host:setAutoCutscenes', req, ack, (room, body) => room.setAutoCutscenes(body.enabled)),
     );

@@ -27,7 +27,7 @@ import { preloadIntroArt } from './show/art';
 import type { PreloadBatch, PreloadItem, PreloadKind, PreloadProgress } from '../kit/preload';
 
 /** The clips the show plays from a decoded buffer. Never a song: decoded, a song is tens of MB. */
-export const TV_CLIPS: readonly string[] = ['airhorn', 'gong'];
+export const TV_CLIPS: readonly string[] = ['airhorn', 'gong', 'drumroll'];
 
 /** The thin bar waits this long: a refresh with everything in the cache is over before it and never shows it. */
 const LATE_MS = 400;
